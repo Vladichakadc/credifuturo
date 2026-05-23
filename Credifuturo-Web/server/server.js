@@ -101,6 +101,25 @@ if (process.env.SETUP_KEY) {
         }
     });
     console.log('[SETUP] Database restore endpoint enabled at /api/setup/restore-db');
+
+    // One-time password reset: POST /api/setup/reset-password { email, newPassword }
+    app.post('/api/setup/reset-password', express.json(), async (req, res) => {
+        if (req.headers['x-setup-key'] !== process.env.SETUP_KEY) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+        const { email, newPassword } = req.body;
+        if (!email || !newPassword) return res.status(400).json({ error: 'email y newPassword requeridos' });
+        try {
+            const user = await Client.findOne({ where: { email } });
+            if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+            const hash = await bcrypt.hash(newPassword, 10);
+            await user.update({ password: hash, mustChangePassword: true });
+            res.json({ ok: true, message: `Contraseña de ${email} actualizada. mustChangePassword=true.` });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+    console.log('[SETUP] Password reset endpoint enabled at /api/setup/reset-password');
 }
 
 // Sync Database and Start Server
