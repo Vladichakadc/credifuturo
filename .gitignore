@@ -31,3 +31,11 @@ Thumbs.db
 
 # VSCode
 .vscode/
+
+# Tokens temporales y archivos transitorios
+temp_token.json
+*temp_token*
+
+# Scripts de sincronizacion Railway (locales, no deben ir a produccion)
+sincronizar_desde_railway_auto.bat
+sincronizar_desde_railway.bat
