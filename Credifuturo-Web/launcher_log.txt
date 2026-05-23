@@ -1,0 +1,4 @@
+Diagnostico en curso... 
+Directorio actual: C:\Credifuturo\Credifuturo-Web 
+v24.13.0
+Node.js OK. 

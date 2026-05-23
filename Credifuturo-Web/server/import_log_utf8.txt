@@ -1,0 +1,13 @@
+﻿--- Iniciando Conexi├│n a Base de Datos ---
+Conexi├│n establecida correctamente.
+Modelos sincronizados.
+
+--- Iniciando Importaci├│n desde: C:/Credifuturo ---
+
+--- Resultado de la Importaci├│n ---
+Clientes: 23
+Ahorros: 72
+Pr├®stamos Desembolsados: 0
+Pagos de Pr├®stamos: 0
+
+┬íProceso completado con ├®xito!

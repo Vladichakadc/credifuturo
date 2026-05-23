@@ -1,0 +1,41 @@
+﻿--- Iniciando Conexi├│n a Base de Datos ---
+Conexi├│n establecida correctamente.
+Modelos sincronizados.
+
+--- Iniciando Importaci├│n desde: C:/Credifuturo ---
+Sample Disbursed Row Keys: [
+  'id_vm',           'customer_id',
+  'nombre',          'apellido',
+  'estado',          'fecha prestamo',
+  'mes desembolso',  'a├▒o desembolso',
+  'valor prestado',  '# cuotas prestamo',
+  'interes mensual', 'dias de pago max',
+  'item_quantity',   'banco desembolsado',
+  '# transaccion',   'cuenta de ahorros'
+]
+Sample Disbursed Row (Normalized): {
+  id_vm: 'SOL1',
+  customer_id: 3,
+  nombre: 'Xiomara ',
+  apellido: 'Rojas ',
+  estado: 'Cancelado',
+  'fecha prestamo': 45671,
+  'mes desembolso': 'Enero',
+  'a├▒o desembolso': 2025,
+  'valor prestado': 2000000,
+  '# cuotas prestamo': 5,
+  'interes mensual': 0.015,
+  'dias de pago max': 15,
+  item_quantity: 1,
+  'banco desembolsado': 'Scotiabank',
+  '# transaccion': '9b71ab967733',
+  'cuenta de ahorros': 2014
+}
+
+--- Resultado de la Importaci├│n ---
+Clientes: 23
+Ahorros: 72
+Pr├®stamos Desembolsados: 0
+Pagos de Pr├®stamos: 0
+
+┬íProceso completado con ├®xito!

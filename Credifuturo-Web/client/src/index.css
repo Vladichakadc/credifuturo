@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-ui-background text-gray-900 antialiased font-sans;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-bold tracking-tight text-brand-dark;
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@layer components {
+
+  /* Mejora Global de Tablas - Auto Layout & No-Cut */
+  .table-container {
+    @apply overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm;
+  }
+
+  .premium-table {
+    @apply w-full text-sm border-collapse table-auto;
+  }
+
+  .premium-table thead tr {
+    @apply bg-brand-primary text-white;
+  }
+
+  .premium-table th {
+    @apply px-4 py-3 font-semibold text-xs uppercase tracking-wider whitespace-nowrap text-center border-r border-brand-dark/20 last:border-r-0;
+  }
+
+  .premium-table td {
+    @apply px-4 py-3 whitespace-nowrap border-b border-gray-100;
+  }
+
+  /* Sticky header para todas las tablas coordinadas */
+  .premium-table thead {
+    @apply sticky top-0 z-10 shadow-sm;
+  }
+
+  /* Tooltip fallback style for interactive cells if needed */
+  .cell-expandable {
+    @apply truncate max-w-[200px] hover:whitespace-normal hover:bg-gray-50 cursor-help transition-all;
+  }
+}

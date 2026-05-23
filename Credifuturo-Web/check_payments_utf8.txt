@@ -1,0 +1,125 @@
+﻿=== TODOS LOS REGISTROS ===
+id=114 | id_ep=P58 | id_vm=SOL13 | estado=Pago | socio=Gimena
+id=198 | id_ep=P111 | id_vm=SOL1 | estado=Pendiente | socio=Xiomara
+id=199 | id_ep=P112 | id_vm=SOL1 | estado=Pendiente | socio=Xiomara
+id=200 | id_ep=P113 | id_vm=SOL1 | estado=Pendiente | socio=Xiomara
+id=201 | id_ep=P114 | id_vm=SOL1 | estado=Pendiente | socio=Xiomara
+id=202 | id_ep=P115 | id_vm=SOL1 | estado=Pendiente | socio=Xiomara
+id=203 | id_ep=P116 | id_vm=SOL2 | estado=Pendiente | socio=Diana
+id=204 | id_ep=P117 | id_vm=SOL2 | estado=Pendiente | socio=Diana
+id=205 | id_ep=P118 | id_vm=SOL2 | estado=Pendiente | socio=Diana
+id=206 | id_ep=P119 | id_vm=SOL2 | estado=Pendiente | socio=Diana
+id=207 | id_ep=P120 | id_vm=SOL2 | estado=Pendiente | socio=Diana
+id=208 | id_ep=P121 | id_vm=SOL2 | estado=Pendiente | socio=Diana
+id=209 | id_ep=P122 | id_vm=SOL2 | estado=Pendiente | socio=Diana
+id=210 | id_ep=P123 | id_vm=SOL2 | estado=Pendiente | socio=Diana
+id=211 | id_ep=P124 | id_vm=SOL3 | estado=Pendiente | socio=Juan Carlos
+id=212 | id_ep=P125 | id_vm=SOL3 | estado=Pendiente | socio=Juan Carlos
+id=213 | id_ep=P126 | id_vm=SOL3 | estado=Pendiente | socio=Juan Carlos
+id=214 | id_ep=P127 | id_vm=SOL3 | estado=Pendiente | socio=Juan Carlos
+id=215 | id_ep=P128 | id_vm=SOL4 | estado=Pendiente | socio=Leonardo
+id=216 | id_ep=P129 | id_vm=SOL4 | estado=Pendiente | socio=Leonardo
+id=217 | id_ep=P130 | id_vm=SOL5 | estado=Pendiente | socio=Juan Carlos
+id=218 | id_ep=P131 | id_vm=SOL5 | estado=Pendiente | socio=Juan Carlos
+id=219 | id_ep=P132 | id_vm=SOL5 | estado=Pendiente | socio=Juan Carlos
+id=220 | id_ep=P133 | id_vm=SOL5 | estado=Pendiente | socio=Juan Carlos
+id=221 | id_ep=P134 | id_vm=SOL5 | estado=Pendiente | socio=Juan Carlos
+id=222 | id_ep=P135 | id_vm=SOL5 | estado=Pendiente | socio=Juan Carlos
+id=223 | id_ep=P136 | id_vm=SOL5 | estado=Pendiente | socio=Juan Carlos
+id=224 | id_ep=P137 | id_vm=SOL6 | estado=Pendiente | socio=Lady
+id=225 | id_ep=P138 | id_vm=SOL6 | estado=Pendiente | socio=Lady
+id=226 | id_ep=P139 | id_vm=SOL6 | estado=Pendiente | socio=Lady
+id=227 | id_ep=P140 | id_vm=SOL6 | estado=Pendiente | socio=Lady
+id=228 | id_ep=P141 | id_vm=SOL7 | estado=Pendiente | socio=Doris
+id=229 | id_ep=P142 | id_vm=SOL7 | estado=Pendiente | socio=Doris
+id=230 | id_ep=P143 | id_vm=SOL7 | estado=Pendiente | socio=Doris
+id=231 | id_ep=P144 | id_vm=SOL7 | estado=Pendiente | socio=Doris
+id=232 | id_ep=P145 | id_vm=SOL8 | estado=Pendiente | socio=David
+id=233 | id_ep=P146 | id_vm=SOL8 | estado=Pendiente | socio=David
+id=234 | id_ep=P147 | id_vm=SOL8 | estado=Pendiente | socio=David
+id=235 | id_ep=P148 | id_vm=SOL8 | estado=Pendiente | socio=David
+id=236 | id_ep=P149 | id_vm=SOL8 | estado=Pendiente | socio=David
+id=237 | id_ep=P150 | id_vm=SOL8 | estado=Pendiente | socio=David
+id=238 | id_ep=P151 | id_vm=SOL9 | estado=Pendiente | socio=Jesus Vladimir
+id=239 | id_ep=P152 | id_vm=SOL9 | estado=Pendiente | socio=Jesus Vladimir
+id=240 | id_ep=P153 | id_vm=SOL9 | estado=Pendiente | socio=Jesus Vladimir
+id=241 | id_ep=P154 | id_vm=SOL9 | estado=Pendiente | socio=Jesus Vladimir
+id=242 | id_ep=P155 | id_vm=SOL10 | estado=Pendiente | socio=Vladimir
+id=243 | id_ep=P156 | id_vm=SOL10 | estado=Pendiente | socio=Vladimir
+id=244 | id_ep=P157 | id_vm=SOL10 | estado=Pendiente | socio=Vladimir
+id=245 | id_ep=P158 | id_vm=SOL10 | estado=Pendiente | socio=Vladimir
+id=246 | id_ep=P159 | id_vm=SOL10 | estado=Pendiente | socio=Vladimir
+id=247 | id_ep=P160 | id_vm=SOL11 | estado=Pendiente | socio=Fermin
+id=248 | id_ep=P161 | id_vm=SOL11 | estado=Pendiente | socio=Fermin
+id=249 | id_ep=P162 | id_vm=SOL11 | estado=Pendiente | socio=Fermin
+id=250 | id_ep=P163 | id_vm=SOL11 | estado=Pendiente | socio=Fermin
+id=251 | id_ep=P164 | id_vm=SOL11 | estado=Pendiente | socio=Fermin
+id=252 | id_ep=P165 | id_vm=SOL12 | estado=Pendiente | socio=Leonardo
+id=253 | id_ep=P166 | id_vm=SOL12 | estado=Pendiente | socio=Leonardo
+id=254 | id_ep=P167 | id_vm=SOL12 | estado=Pendiente | socio=Leonardo
+id=255 | id_ep=P168 | id_vm=SOL15 | estado=Pendiente | socio=Diana
+id=256 | id_ep=P169 | id_vm=SOL15 | estado=Pendiente | socio=Diana
+id=257 | id_ep=P170 | id_vm=SOL15 | estado=Pendiente | socio=Diana
+id=258 | id_ep=P171 | id_vm=SOL15 | estado=Pendiente | socio=Diana
+id=259 | id_ep=P172 | id_vm=SOL15 | estado=Pendiente | socio=Diana
+id=260 | id_ep=P173 | id_vm=SOL15 | estado=Pendiente | socio=Diana
+id=261 | id_ep=P174 | id_vm=SOL16 | estado=Pendiente | socio=David
+id=262 | id_ep=P175 | id_vm=SOL16 | estado=Pendiente | socio=David
+id=263 | id_ep=P176 | id_vm=SOL16 | estado=Pendiente | socio=David
+id=264 | id_ep=P177 | id_vm=SOL16 | estado=Pendiente | socio=David
+id=265 | id_ep=P178 | id_vm=SOL16 | estado=Pendiente | socio=David
+id=266 | id_ep=P179 | id_vm=SOL16 | estado=Pendiente | socio=David
+id=267 | id_ep=P180 | id_vm=SOL16 | estado=Pendiente | socio=David
+id=268 | id_ep=P181 | id_vm=SOL16 | estado=Pendiente | socio=David
+id=269 | id_ep=P182 | id_vm=SOL16 | estado=Pendiente | socio=David
+id=270 | id_ep=P183 | id_vm=SOL16 | estado=Pendiente | socio=David
+id=271 | id_ep=P184 | id_vm=SOL17 | estado=Pendiente | socio=Gimena
+id=272 | id_ep=P185 | id_vm=SOL17 | estado=Pendiente | socio=Gimena
+id=273 | id_ep=P186 | id_vm=SOL17 | estado=Pendiente | socio=Gimena
+id=274 | id_ep=P187 | id_vm=SOL17 | estado=Pendiente | socio=Gimena
+id=275 | id_ep=P188 | id_vm=SOL17 | estado=Pendiente | socio=Gimena
+id=276 | id_ep=P189 | id_vm=SOL17 | estado=Pendiente | socio=Gimena
+id=277 | id_ep=P190 | id_vm=SOL14 | estado=Pendiente | socio=Juan Carlos
+id=278 | id_ep=P191 | id_vm=SOL14 | estado=Pendiente | socio=Juan Carlos
+id=279 | id_ep=P192 | id_vm=SOL14 | estado=Pendiente | socio=Juan Carlos
+id=280 | id_ep=P193 | id_vm=SOL14 | estado=Pendiente | socio=Juan Carlos
+id=281 | id_ep=P194 | id_vm=SOL14 | estado=Pendiente | socio=Juan Carlos
+id=282 | id_ep=P195 | id_vm=SOL14 | estado=Pendiente | socio=Juan Carlos
+id=283 | id_ep=P196 | id_vm=SOL14 | estado=Pendiente | socio=Juan Carlos
+id=284 | id_ep=P197 | id_vm=SOL14 | estado=Pendiente | socio=Juan Carlos
+id=285 | id_ep=P198 | id_vm=SOL14 | estado=Pendiente | socio=Juan Carlos
+id=286 | id_ep=P199 | id_vm=SOL14 | estado=Pendiente | socio=Juan Carlos
+id=287 | id_ep=P200 | id_vm=SOL18 | estado=Pendiente | socio=Vladimir
+id=288 | id_ep=P201 | id_vm=SOL18 | estado=Pendiente | socio=Vladimir
+id=289 | id_ep=P202 | id_vm=SOL18 | estado=Pendiente | socio=Vladimir
+id=290 | id_ep=P203 | id_vm=SOL18 | estado=Pendiente | socio=Vladimir
+id=291 | id_ep=P204 | id_vm=SOL18 | estado=Pendiente | socio=Vladimir
+id=292 | id_ep=P205 | id_vm=SOL18 | estado=Pendiente | socio=Vladimir
+id=293 | id_ep=P206 | id_vm=SOL18 | estado=Pendiente | socio=Vladimir
+id=294 | id_ep=P207 | id_vm=SOL18 | estado=Pendiente | socio=Vladimir
+id=295 | id_ep=P208 | id_vm=SOL18 | estado=Pendiente | socio=Vladimir
+id=296 | id_ep=P209 | id_vm=SOL18 | estado=Pendiente | socio=Vladimir
+id=297 | id_ep=P210 | id_vm=SOL19 | estado=Pendiente | socio=Jesus Vladimir
+id=298 | id_ep=P211 | id_vm=SOL19 | estado=Pendiente | socio=Jesus Vladimir
+id=299 | id_ep=P212 | id_vm=SOL19 | estado=Pendiente | socio=Jesus Vladimir
+id=300 | id_ep=P213 | id_vm=SOL19 | estado=Pendiente | socio=Jesus Vladimir
+id=301 | id_ep=P214 | id_vm=SOL19 | estado=Pendiente | socio=Jesus Vladimir
+id=302 | id_ep=P215 | id_vm=SOL20 | estado=Pendiente | socio=Laura
+id=303 | id_ep=P216 | id_vm=SOL20 | estado=Pendiente | socio=Laura
+id=304 | id_ep=P217 | id_vm=SOL20 | estado=Pendiente | socio=Laura
+id=305 | id_ep=P218 | id_vm=SOL20 | estado=Pendiente | socio=Laura
+id=306 | id_ep=P219 | id_vm=SOL21 | estado=Pendiente | socio=Xiomara
+id=307 | id_ep=P220 | id_vm=SOL21 | estado=Pendiente | socio=Xiomara
+id=308 | id_ep=P221 | id_vm=SOL21 | estado=Pendiente | socio=Xiomara
+id=309 | id_ep=P222 | id_vm=SOL21 | estado=Pendiente | socio=Xiomara
+id=310 | id_ep=P223 | id_vm=SOL21 | estado=Pendiente | socio=Xiomara
+id=311 | id_ep=P224 | id_vm=SOL21 | estado=Pendiente | socio=Xiomara
+id=312 | id_ep=P225 | id_vm=SOL21 | estado=Pendiente | socio=Xiomara
+id=313 | id_ep=P226 | id_vm=SOL21 | estado=Pendiente | socio=Xiomara
+id=314 | id_ep=P227 | id_vm=SOL21 | estado=Pendiente | socio=Xiomara
+id=315 | id_ep=P228 | id_vm=SOL21 | estado=Pendiente | socio=Xiomara
+id=316 | id_ep=P229 | id_vm=SOL22 | estado=Pendiente | socio=Leonardo
+id=317 | id_ep=P230 | id_vm=SOL22 | estado=Pendiente | socio=Leonardo
+
+=== REGISTROS CON estado=Pago ===
+id=114 | id_ep=P58 | id_vm=SOL13 | socio=Gimena | valor_cuota_pago=3704750

@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npx vite *)",
+      "Bash(node -e ' *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Credifuturo\\\\Credifuturo-Web\" -Directory)",
+      "Bash(Select-Object Name)",
+      "Bash(xargs grep -l \"bcrypt\\\\|password\\\\|hash\")",
+      "Bash(xargs grep -l \"forgot\\\\|reset\\\\|email\\\\|nodemailer\")",
+      "Bash(xargs grep -l \"password\\\\|Password\")",
+      "Bash(node -e \"const { Sequelize } = require\\('sequelize'\\); const path = require\\('path'\\); const dbPath = path.join\\(__dirname, '..', 'database.sqlite'\\); const seq = new Sequelize\\({ dialect: 'sqlite', storage: dbPath, logging: false }\\); seq.query\\('SELECT name FROM sqlite_master WHERE type=\\\\\"table\\\\\"'\\).then\\(\\([rows]\\) => { rows.forEach\\(r => console.log\\(JSON.stringify\\(r\\)\\)\\); seq.close\\(\\); }\\).catch\\(e => console.error\\(e.message\\)\\);\")",
+      "Bash(node -e \"const { Sequelize } = require\\('sequelize'\\); const path = require\\('path'\\); const dbPath = path.join\\(__dirname, '..', 'database.sqlite'\\); const seq = new Sequelize\\({ dialect: 'sqlite', storage: dbPath, logging: false }\\); seq.query\\('SELECT id, name, apellido1, email FROM Clients ORDER BY id'\\).then\\(\\([rows]\\) => { rows.forEach\\(r => console.log\\(JSON.stringify\\(r\\)\\)\\); seq.close\\(\\); }\\).catch\\(e => console.error\\(e.message\\)\\);\")",
+      "Bash(dir \"C:\\\\Credifuturo\\\\Informes\" /b)",
+      "Bash(findstr /i \"AUDITORIA\\\\|INFORME\\\\|REPORTE\")",
+      "Bash(Get-ChildItem -Path 'C:\\\\Credifuturo')",
+      "Bash(Select-Object Name, PSIsContainer)",
+      "Bash(grep -E \"^d|\\\\.js$\")",
+      "Bash(findstr /i \"lucide-react\" \"C:\\\\Credifuturo\\\\Credifuturo-Web\\\\client\\\\package.json\")",
+      "Bash(npm run *)"
+    ]
+  }
+}

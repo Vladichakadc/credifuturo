@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Propuesta: Ranking de Ahorro Mensual — Credifuturo</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --brand: #16a34a;
+      --brand-light: #dcfce7;
+      --brand-dark: #14532d;
+      --gold: #f59e0b;
+      --silver: #94a3b8;
+      --bronze: #b45309;
+      --surface: #f8fafc;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --muted: #64748b;
+      --danger: #ef4444;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--surface);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    /* ── Layout ── */
+    .wrapper {
+      max-width: 860px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    /* ── Header ── */
+    .modal-header {
+      background: linear-gradient(135deg, #14532d 0%, #16a34a 60%, #22c55e 100%);
+      border-radius: 1.25rem;
+      padding: 1.75rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 10px 40px -10px rgba(22,163,74,.45);
+      color: white;
+    }
+    .modal-header .left { display: flex; align-items: center; gap: 1rem; }
+    .modal-header .icon-wrap {
+      width: 52px; height: 52px;
+      background: rgba(255,255,255,.18);
+      border-radius: 1rem;
+      display: grid; place-items: center;
+      font-size: 1.6rem;
+      backdrop-filter: blur(4px);
+    }
+    .modal-header h1 { font-size: 1.35rem; font-weight: 900; letter-spacing: -.03em; }
+    .modal-header p { font-size: .8rem; opacity: .75; margin-top: .1rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+    .badge-date {
+      background: rgba(255,255,255,.15);
+      border: 1px solid rgba(255,255,255,.25);
+      border-radius: .6rem;
+      padding: .4rem .85rem;
+      font-size: .78rem;
+      font-weight: 700;
+      backdrop-filter: blur(4px);
+    }
+
+    /* ── KPI Cards ── */
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+    }
+    .kpi {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      padding: 1.1rem 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      box-shadow: 0 1px 6px rgba(0,0,0,.06);
+      transition: transform .15s, box-shadow .15s;
+    }
+    .kpi:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,.1); }
+    .kpi-icon {
+      width: 44px; height: 44px;
+      border-radius: .75rem;
+      display: grid; place-items: center;
+      font-size: 1.3rem;
+      flex-shrink: 0;
+    }
+    .kpi-icon.green { background: #dcfce7; }
+    .kpi-icon.blue  { background: #dbeafe; }
+    .kpi-icon.amber { background: #fef3c7; }
+    .kpi-label { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+    .kpi-value { font-size: 1.25rem; font-weight: 900; color: var(--text); letter-spacing: -.03em; margin-top: .15rem; }
+    .kpi-sub   { font-size: .72rem; color: var(--muted); margin-top: .1rem; }
+
+    /* ── Podium ── */
+    .podium-section {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 1.25rem;
+      padding: 1.75rem 2rem;
+      box-shadow: 0 1px 6px rgba(0,0,0,.06);
+    }
+    .section-title {
+      font-size: .78rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+    .section-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .podium {
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      gap: 1rem;
+    }
+    .podium-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: .5rem;
+    }
+    .podium-avatar {
+      width: 56px; height: 56px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem;
+      font-weight: 900;
+      color: white;
+      border: 3px solid transparent;
+      box-shadow: 0 4px 14px rgba(0,0,0,.18);
+    }
+    .podium-avatar.gold   { background: linear-gradient(135deg,#f59e0b,#d97706); border-color: #f59e0b; }
+    .podium-avatar.silver { background: linear-gradient(135deg,#94a3b8,#64748b); border-color: #94a3b8; }
+    .podium-avatar.bronze { background: linear-gradient(135deg,#d97706,#92400e); border-color: #b45309; }
+    .podium-medal { font-size: 1.4rem; }
+    .podium-name  { font-size: .82rem; font-weight: 800; text-align: center; max-width: 100px; }
+    .podium-amount { font-size: .9rem; font-weight: 900; color: var(--brand); }
+
+    .podium-block {
+      border-radius: .75rem .75rem 0 0;
+      display: flex; align-items: flex-end; justify-content: center;
+      padding-bottom: .5rem;
+      font-size: 1.5rem; font-weight: 900;
+      color: rgba(255,255,255,.5);
+      min-width: 90px;
+    }
+    .podium-block.first  { height: 90px; background: linear-gradient(180deg,#fef3c7,#fbbf24); }
+    .podium-block.second { height: 64px; background: linear-gradient(180deg,#f1f5f9,#cbd5e1); }
+    .podium-block.third  { height: 46px; background: linear-gradient(180deg,#fef3c7 0%,#d97706 100%); }
+
+    /* ── Full Ranking Table ── */
+    .ranking-section {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 1.25rem;
+      padding: 1.75rem 2rem;
+      box-shadow: 0 1px 6px rgba(0,0,0,.06);
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .rank-row {
+      display: flex;
+      align-items: center;
+      gap: .85rem;
+      padding: .6rem .75rem;
+      border-radius: .75rem;
+      transition: background .15s;
+    }
+    .rank-row:hover { background: var(--surface); }
+    .rank-row.top3  { background: #f0fdf4; }
+
+    .rank-pos {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      display: grid; place-items: center;
+      font-size: .8rem; font-weight: 900;
+      flex-shrink: 0;
+    }
+    .rank-pos.p1 { background: #fef3c7; color: #b45309; }
+    .rank-pos.p2 { background: #f1f5f9; color: #475569; }
+    .rank-pos.p3 { background: #fff7ed; color: #92400e; }
+    .rank-pos.pn { background: #f1f5f9; color: var(--muted); font-size: .75rem; }
+
+    .rank-avatar {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      display: grid; place-items: center;
+      font-weight: 800; font-size: .85rem;
+      color: white;
+      flex-shrink: 0;
+    }
+
+    .rank-info { flex: 1; min-width: 0; }
+    .rank-name { font-size: .875rem; font-weight: 700; truncate: overflow; }
+    .rank-id   { font-size: .72rem; color: var(--muted); font-weight: 600; }
+
+    .rank-bar-wrap {
+      flex: 2; display: flex; flex-direction: column; gap: .25rem;
+    }
+    .rank-bar-track {
+      height: 8px;
+      background: #e2e8f0;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .rank-bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      transition: width .6s cubic-bezier(.4,0,.2,1);
+    }
+    .rank-bar-info {
+      display: flex; justify-content: space-between;
+      font-size: .68rem; font-weight: 700;
+      color: var(--muted);
+    }
+
+    .rank-amount {
+      text-align: right;
+      min-width: 80px;
+    }
+    .rank-amount .val { font-size: .9rem; font-weight: 900; color: var(--text); }
+    .rank-amount .pct { font-size: .7rem; color: var(--muted); font-weight: 600; }
+
+    .rank-trend {
+      font-size: 1rem;
+      width: 20px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    /* ── Brecha / Group separator ── */
+    .brecha {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      padding: .4rem 0;
+    }
+    .brecha-line { flex: 1; height: 1px; background: #fee2e2; }
+    .brecha-badge {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: .5rem;
+      padding: .2rem .65rem;
+      font-size: .7rem;
+      font-weight: 800;
+      color: #b91c1c;
+      white-space: nowrap;
+    }
+
+    /* ── Search / filters bar ── */
+    .filters-bar {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      flex-wrap: wrap;
+      margin-bottom: .5rem;
+    }
+    .search-wrap {
+      flex: 1; min-width: 180px;
+      position: relative;
+    }
+    .search-wrap input {
+      width: 100%;
+      padding: .55rem .75rem .55rem 2.25rem;
+      border: 1px solid var(--border);
+      border-radius: .75rem;
+      font-size: .85rem;
+      background: var(--surface);
+      outline: none;
+      font-family: inherit;
+      color: var(--text);
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .search-wrap input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(22,163,74,.12); }
+    .search-icon {
+      position: absolute; left: .75rem; top: 50%; transform: translateY(-50%);
+      color: var(--muted); font-size: .9rem; pointer-events: none;
+    }
+    .pill-filter {
+      display: flex; align-items: center; gap: .45rem;
+      padding: .5rem .9rem;
+      border: 1px solid var(--border);
+      border-radius: .75rem;
+      font-size: .8rem; font-weight: 700;
+      background: var(--card);
+      cursor: pointer;
+      color: var(--muted);
+      transition: all .15s;
+      font-family: inherit;
+    }
+    .pill-filter:hover, .pill-filter.active {
+      border-color: var(--brand);
+      background: var(--brand-light);
+      color: var(--brand-dark);
+    }
+
+    /* ── Annotation labels ── */
+    .note {
+      display: inline-flex; align-items: center; gap: .3rem;
+      font-size: .7rem; font-weight: 700;
+      color: var(--muted);
+      border: 1px dashed var(--border);
+      padding: .25rem .6rem;
+      border-radius: .5rem;
+      background: var(--surface);
+    }
+    .note.green { color: var(--brand); border-color: #bbf7d0; background: #f0fdf4; }
+    .note.red   { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
+    .note.amber { color: #b45309; border-color: #fde68a; background: #fffbeb; }
+
+    /* ── Footer design note ── */
+    .design-note {
+      background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+      border: 1px solid #bbf7d0;
+      border-radius: 1rem;
+      padding: 1.25rem 1.5rem;
+      display: flex; gap: 1rem; align-items: flex-start;
+    }
+    .design-note .icon { font-size: 1.4rem; flex-shrink: 0; margin-top: .1rem; }
+    .design-note h3 { font-size: .9rem; font-weight: 800; color: var(--brand-dark); }
+    .design-note ul { margin-top: .5rem; padding-left: 1rem; }
+    .design-note li { font-size: .82rem; color: #15803d; margin-top: .2rem; font-weight: 600; }
+
+    /* ── Responsiveness ── */
+    @media (max-width: 600px) {
+      .kpis { grid-template-columns: 1fr 1fr; }
+      .kpis .kpi:last-child { grid-column: span 2; }
+      .rank-bar-wrap { display: none; }
+      .modal-header { flex-direction: column; align-items: flex-start; gap: .75rem; }
+    }
+  </style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- ── HEADER ── -->
+  <div class="modal-header">
+    <div class="left">
+      <div class="icon-wrap">🏆</div>
+      <div>
+        <h1>Ranking de Ahorro Mensual</h1>
+        <p>Propuesta de diseño mejorado — Credifuturo</p>
+      </div>
+    </div>
+    <div class="badge-date">📅 Mayo 2026</div>
+  </div>
+
+  <!-- ── KPI CARDS ── -->
+  <div class="kpis">
+    <div class="kpi">
+      <div class="kpi-icon green">👥</div>
+      <div>
+        <div class="kpi-label">Socios activos</div>
+        <div class="kpi-value">14</div>
+        <div class="kpi-sub">con ahorro este mes</div>
+      </div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-icon blue">💰</div>
+      <div>
+        <div class="kpi-label">Total acumulado</div>
+        <div class="kpi-value">$2.840.000</div>
+        <div class="kpi-sub">en el mes</div>
+      </div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-icon amber">📊</div>
+      <div>
+        <div class="kpi-label">Promedio por socio</div>
+        <div class="kpi-value">$202.857</div>
+        <div class="kpi-sub">meta: $200.000</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PODIUM TOP 3 ── -->
+  <div class="podium-section">
+    <div class="section-title">🥇 Podio — Top 3 del mes</div>
+
+    <div class="podium" style="gap:1.5rem;">
+
+      <!-- 2nd -->
+      <div class="podium-card">
+        <span class="podium-medal">🥈</span>
+        <div class="podium-avatar silver">MR</div>
+        <div class="podium-name">María Rodríguez</div>
+        <div class="podium-amount">$380.000</div>
+        <div class="podium-block second">2</div>
+      </div>
+
+      <!-- 1st -->
+      <div class="podium-card">
+        <span class="podium-medal" style="font-size:1.8rem">🥇</span>
+        <div class="podium-avatar gold">JG</div>
+        <div class="podium-name" style="font-size:.9rem;font-weight:900;">Jorge García</div>
+        <div class="podium-amount" style="font-size:1.05rem;">$450.000</div>
+        <div class="podium-block first">1</div>
+      </div>
+
+      <!-- 3rd -->
+      <div class="podium-card">
+        <span class="podium-medal">🥉</span>
+        <div class="podium-avatar bronze">LP</div>
+        <div class="podium-name">Luz Patiño</div>
+        <div class="podium-amount">$320.000</div>
+        <div class="podium-block third">3</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── FULL RANKING ── -->
+  <div class="ranking-section">
+    <div class="section-title">📋 Clasificación completa</div>
+
+    <!-- Filters -->
+    <div class="filters-bar">
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input type="text" placeholder="Buscar socio..." />
+      </div>
+      <button class="pill-filter active">📈 Mayor a menor</button>
+      <button class="pill-filter">💯 Solo activos</button>
+      <button class="pill-filter">📥 Exportar</button>
+    </div>
+
+    <!-- ░░░ GRUPO ELITE (top 3) ░░░ -->
+    <div style="display:flex;flex-direction:column;gap:.25rem;">
+
+      <!-- #1 -->
+      <div class="rank-row top3">
+        <div class="rank-pos p1">🥇</div>
+        <div class="rank-avatar" style="background:linear-gradient(135deg,#f59e0b,#d97706);">JG</div>
+        <div class="rank-info">
+          <div class="rank-name">Jorge García</div>
+          <div class="rank-id">VM-001</div>
+        </div>
+        <div class="rank-bar-wrap">
+          <div class="rank-bar-track"><div class="rank-bar-fill" style="width:100%;background:linear-gradient(90deg,#16a34a,#4ade80);"></div></div>
+          <div class="rank-bar-info"><span>0</span><span>$450K</span></div>
+        </div>
+        <div class="rank-amount"><div class="val">$450.000</div><div class="pct">15,8%</div></div>
+        <div class="rank-trend" title="Tendencia al alza">↑</div>
+      </div>
+
+      <!-- #2 -->
+      <div class="rank-row top3">
+        <div class="rank-pos p2">🥈</div>
+        <div class="rank-avatar" style="background:linear-gradient(135deg,#94a3b8,#64748b);">MR</div>
+        <div class="rank-info">
+          <div class="rank-name">María Rodríguez</div>
+          <div class="rank-id">VM-004</div>
+        </div>
+        <div class="rank-bar-wrap">
+          <div class="rank-bar-track"><div class="rank-bar-fill" style="width:84%;background:linear-gradient(90deg,#3b82f6,#93c5fd);"></div></div>
+          <div class="rank-bar-info"><span>0</span><span>$380K</span></div>
+        </div>
+        <div class="rank-amount"><div class="val">$380.000</div><div class="pct">13,4%</div></div>
+        <div class="rank-trend" title="Estable">─</div>
+      </div>
+
+      <!-- #3 -->
+      <div class="rank-row top3">
+        <div class="rank-pos p3">🥉</div>
+        <div class="rank-avatar" style="background:linear-gradient(135deg,#d97706,#92400e);">LP</div>
+        <div class="rank-info">
+          <div class="rank-name">Luz Patiño</div>
+          <div class="rank-id">VM-007</div>
+        </div>
+        <div class="rank-bar-wrap">
+          <div class="rank-bar-track"><div class="rank-bar-fill" style="width:71%;background:linear-gradient(90deg,#d97706,#fde68a);"></div></div>
+          <div class="rank-bar-info"><span>0</span><span>$320K</span></div>
+        </div>
+        <div class="rank-amount"><div class="val">$320.000</div><div class="pct">11,3%</div></div>
+        <div class="rank-trend" title="Tendencia al alza">↑</div>
+      </div>
+    </div>
+
+    <!-- ── BRECHA ── -->
+    <div class="brecha">
+      <div class="brecha-line"></div>
+      <div class="brecha-badge">⚡ Brecha del 30% hasta el siguiente grupo</div>
+      <div class="brecha-line"></div>
+    </div>
+
+    <!-- ░░░ GRUPO MEDIO ░░░ -->
+    <div style="display:flex;flex-direction:column;gap:.25rem;">
+
+      <!-- #4 -->
+      <div class="rank-row">
+        <div class="rank-pos pn">4</div>
+        <div class="rank-avatar" style="background:linear-gradient(135deg,#16a34a,#4ade80);">CA</div>
+        <div class="rank-info">
+          <div class="rank-name">Carlos Arango</div>
+          <div class="rank-id">VM-002</div>
+        </div>
+        <div class="rank-bar-wrap">
+          <div class="rank-bar-track"><div class="rank-bar-fill" style="width:56%;background:linear-gradient(90deg,#16a34a,#86efac);"></div></div>
+          <div class="rank-bar-info"><span>0</span><span>$250K</span></div>
+        </div>
+        <div class="rank-amount"><div class="val">$250.000</div><div class="pct">8,8%</div></div>
+        <div class="rank-trend" style="color:#16a34a">↑</div>
+      </div>
+
+      <!-- #5 -->
+      <div class="rank-row">
+        <div class="rank-pos pn">5</div>
+        <div class="rank-avatar" style="background:linear-gradient(135deg,#0ea5e9,#38bdf8);">SV</div>
+        <div class="rank-info">
+          <div class="rank-name">Sandra Vargas</div>
+          <div class="rank-id">VM-011</div>
+        </div>
+        <div class="rank-bar-wrap">
+          <div class="rank-bar-track"><div class="rank-bar-fill" style="width:50%;background:linear-gradient(90deg,#0ea5e9,#7dd3fc);"></div></div>
+          <div class="rank-bar-info"><span>0</span><span>$225K</span></div>
+        </div>
+        <div class="rank-amount"><div class="val">$225.000</div><div class="pct">7,9%</div></div>
+        <div class="rank-trend" style="color:#64748b">─</div>
+      </div>
+
+      <!-- #6 -->
+      <div class="rank-row">
+        <div class="rank-pos pn">6</div>
+        <div class="rank-avatar" style="background:linear-gradient(135deg,#8b5cf6,#c4b5fd);">RT</div>
+        <div class="rank-info">
+          <div class="rank-name">Ramiro Torres</div>
+          <div class="rank-id">VM-009</div>
+        </div>
+        <div class="rank-bar-wrap">
+          <div class="rank-bar-track"><div class="rank-bar-fill" style="width:45%;background:linear-gradient(90deg,#8b5cf6,#ddd6fe);"></div></div>
+          <div class="rank-bar-info"><span>0</span><span>$200K</span></div>
+        </div>
+        <div class="rank-amount"><div class="val">$200.000</div><div class="pct">7,0%</div></div>
+        <div class="rank-trend" style="color:#ef4444">↓</div>
+      </div>
+
+      <!-- #7 -->
+      <div class="rank-row">
+        <div class="rank-pos pn">7</div>
+        <div class="rank-avatar" style="background:linear-gradient(135deg,#ec4899,#f9a8d4);">NM</div>
+        <div class="rank-info">
+          <div class="rank-name">Natalia Mora</div>
+          <div class="rank-id">VM-006</div>
+        </div>
+        <div class="rank-bar-wrap">
+          <div class="rank-bar-track"><div class="rank-bar-fill" style="width:42%;background:linear-gradient(90deg,#ec4899,#fbcfe8);"></div></div>
+          <div class="rank-bar-info"><span>0</span><span>$190K</span></div>
+        </div>
+        <div class="rank-amount"><div class="val">$190.000</div><div class="pct">6,7%</div></div>
+        <div class="rank-trend" style="color:#16a34a">↑</div>
+      </div>
+    </div>
+
+    <!-- ── BRECHA ── -->
+    <div class="brecha">
+      <div class="brecha-line"></div>
+      <div class="brecha-badge">⚠️ Brecha del 38% — oportunidad de mejora</div>
+      <div class="brecha-line"></div>
+    </div>
+
+    <!-- ░░░ GRUPO BASE ░░░ -->
+    <div style="display:flex;flex-direction:column;gap:.25rem;">
+
+      <!-- #8 -->
+      <div class="rank-row">
+        <div class="rank-pos pn">8</div>
+        <div class="rank-avatar" style="background:linear-gradient(135deg,#f97316,#fed7aa);">BH</div>
+        <div class="rank-info">
+          <div class="rank-name">Beatriz Herrera</div>
+          <div class="rank-id">VM-013</div>
+        </div>
+        <div class="rank-bar-wrap">
+          <div class="rank-bar-track"><div class="rank-bar-fill" style="width:26%;background:linear-gradient(90deg,#f97316,#fdba74);"></div></div>
+          <div class="rank-bar-info"><span>0</span><span>$120K</span></div>
+        </div>
+        <div class="rank-amount"><div class="val">$120.000</div><div class="pct">4,2%</div></div>
+        <div class="rank-trend" style="color:#64748b">─</div>
+      </div>
+
+      <!-- #9 -->
+      <div class="rank-row">
+        <div class="rank-pos pn">9</div>
+        <div class="rank-avatar" style="background:linear-gradient(135deg,#14b8a6,#99f6e4);">PO</div>
+        <div class="rank-info">
+          <div class="rank-name">Pedro Ospina</div>
+          <div class="rank-id">VM-003</div>
+        </div>
+        <div class="rank-bar-wrap">
+          <div class="rank-bar-track"><div class="rank-bar-fill" style="width:22%;background:linear-gradient(90deg,#14b8a6,#5eead4);"></div></div>
+          <div class="rank-bar-info"><span>0</span><span>$100K</span></div>
+        </div>
+        <div class="rank-amount"><div class="val">$100.000</div><div class="pct">3,5%</div></div>
+        <div class="rank-trend" style="color:#ef4444">↓</div>
+      </div>
+
+      <!-- #10 -->
+      <div class="rank-row">
+        <div class="rank-pos pn">10</div>
+        <div class="rank-avatar" style="background:linear-gradient(135deg,#64748b,#94a3b8);">AF</div>
+        <div class="rank-info">
+          <div class="rank-name">Ana Fonseca</div>
+          <div class="rank-id">VM-015</div>
+        </div>
+        <div class="rank-bar-wrap">
+          <div class="rank-bar-track"><div class="rank-bar-fill" style="width:18%;background:linear-gradient(90deg,#94a3b8,#cbd5e1);"></div></div>
+          <div class="rank-bar-info"><span>0</span><span>$80K</span></div>
+        </div>
+        <div class="rank-amount"><div class="val">$80.000</div><div class="pct">2,8%</div></div>
+        <div class="rank-trend" style="color:#ef4444">↓</div>
+      </div>
+    </div>
+
+    <!-- Footer legend -->
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem;padding-top:.75rem;border-top:1px solid var(--border);">
+      <span class="note green">↑ Tendencia positiva</span>
+      <span class="note">─ Sin cambio</span>
+      <span class="note red">↓ Tendencia negativa</span>
+      <span class="note amber">⚡ Brecha de rendimiento</span>
+    </div>
+  </div>
+
+  <!-- ── DESIGN NOTE ── -->
+  <div class="design-note">
+    <div class="icon">💡</div>
+    <div>
+      <h3>Características del nuevo diseño propuesto</h3>
+      <ul>
+        <li>Podio visual con tarjetas elevadas para el Top 3, reforzando reconocimiento y motivación</li>
+        <li>Barras de progreso con gradientes de color únicos por posición, más legibles que porcentajes solos</li>
+        <li>Indicadores de tendencia (↑ ↓ ─) para mostrar evolución respecto al mes anterior</li>
+        <li>Separadores de "brecha" entre grupos de desempeño para identificar oportunidades</li>
+        <li>KPIs de resumen en la cabecera: socios activos, total y promedio vs. meta</li>
+        <li>Barra de búsqueda y filtros de ordenamiento en la misma vista</li>
+        <li>Porcentaje del total por socio para contexto relativo al fondo</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

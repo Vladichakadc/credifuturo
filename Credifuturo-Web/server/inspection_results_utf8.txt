@@ -1,0 +1,178 @@
+﻿
+--- Inspecting: Tabla_Clientes.xlsx ---
+Total rows: 23
+Columns: [
+  'Customer_id',      'Nombre',
+  '1 Apellido',       '2 Apellido',
+  'Estado',           'Genero ',
+  'Pais',             'Ciudad',
+  'Tipo de Cliente',  'Concatenar',
+  'Socio Fundador ',  'Cargo ',
+  'Fecha de Ingreso'
+]
+First row sample: {
+  "Customer_id": 1,
+  "Nombre": "Vladimir ",
+  "1 Apellido": "Escobar",
+  "2 Apellido": "Diaz",
+  "Estado": "Activo",
+  "Genero ": "M",
+  "Pais": "Colombia",
+  "Ciudad": "Bogot├í",
+  "Tipo de Cliente": "Final",
+  "Concatenar": "Vladimir EscobarDiaz",
+  "Socio Fundador ": "SI",
+  "Cargo ": "Gerente",
+  "Fecha de Ingreso": 45627
+}
+
+--- Inspecting: 1-orders_table_ahorro_mensual.xlsx ---
+Total rows: 377
+Columns: [
+  'Id_VM',          'Customer_id',
+  'Nombre',         'Apellido',
+  'Estado',         'Fecha Pago',
+  'A├▒o pago ',      'Mes pago',
+  'Penalizacion ',  'Dias Penalizacion ',
+  'Valor Mensual',  'Valor a Penalizar',
+  'Valor Ahorrado', 'Mes Abonado',
+  'A├▒o Abonado',    'Item_Quantity',
+  'Banco ',         '# Transaccion',
+  'Tipo de Ahorro'
+]
+First row sample: {
+  "Id_VM": "AM338",
+  "Customer_id": 12,
+  "Nombre": "David ",
+  "Apellido": "Camargo ",
+  "Estado": "Abono",
+  "Fecha Pago": 46059,
+  "A├▒o pago ": 2026,
+  "Mes pago": "Febrero",
+  "Penalizacion ": "NO",
+  "Dias Penalizacion ": 0,
+  "Valor Mensual": 50000,
+  "Valor a Penalizar": 0,
+  "Valor Ahorrado": 50000,
+  "Mes Abonado": 2,
+  "A├▒o Abonado": 2026,
+  "Item_Quantity": 1,
+  "Banco ": "Bancolombia",
+  "# Transaccion": 3836,
+  "Tipo de Ahorro": "Mensual"
+}
+
+--- Inspecting: 1-orders_table_aportes_iniciales.xlsx ---
+Total rows: 41
+Columns: [
+  'Id_AI',
+  'Customer_id',
+  'Nombre',
+  'Apellido',
+  'Estado',
+  'Fecha Pago',
+  'A├▒o',
+  'Mes',
+  'Valor ',
+  'Item_Quantity',
+  'Banco ',
+  '# Transaccion',
+  'Desde Cuenta de Ahorros'
+]
+First row sample: {
+  "Id_AI": "AI1",
+  "Customer_id": 1,
+  "Nombre": "Vladimir ",
+  "Apellido": "Escobar",
+  "Estado": "Activo",
+  "Fecha Pago": 45646,
+  "A├▒o": 2024,
+  "Mes": "Diciembre",
+  "Valor ": 500000,
+  "Item_Quantity": 1,
+  "Banco ": "Nubank",
+  "# Transaccion": "e826b904",
+  "Desde Cuenta de Ahorros": 9763
+}
+
+--- Inspecting: 1-orders_table_prestamos_desembolsados.xlsx ---
+Total rows: 21
+Columns: [
+  'Id_VM',            'Customer_id',
+  'Nombre',           'Apellido',
+  'Estado',           'Fecha Prestamo',
+  'Mes Desembolso ',  'A├▒o Desembolso ',
+  ' Valor Prestado ', '# Cuotas Prestamo',
+  'Interes Mensual',  'Dias de pago Max ',
+  'Item_Quantity',    'Banco desembolsado',
+  '# Transaccion',    'Cuenta de Ahorros'
+]
+First row sample: {
+  "Id_VM": "SOL1",
+  "Customer_id": 3,
+  "Nombre": "Xiomara ",
+  "Apellido": "Rojas ",
+  "Estado": "Cancelado",
+  "Fecha Prestamo": 45671,
+  "Mes Desembolso ": "Enero",
+  "A├▒o Desembolso ": 2025,
+  " Valor Prestado ": 2000000,
+  "# Cuotas Prestamo": 5,
+  "Interes Mensual": 0.015,
+  "Dias de pago Max ": 15,
+  "Item_Quantity": 1,
+  "Banco desembolsado": "Scotiabank",
+  "# Transaccion": "9b71ab967733",
+  "Cuenta de Ahorros": 2014
+}
+
+--- Inspecting: 1-orders_table_estado_prestamos.xlsx ---
+Total rows: 119
+Columns: [
+  'Id_EP',
+  'Customer_id',
+  'Nombre',
+  'Apellido',
+  'Mes Desembolso ',
+  'Saldo Inicial',
+  '# Cuotas Prestamo',
+  'Interes Mensual',
+  'Valor Intereses amortizados ',
+  'Fecha de Pago Max',
+  'Mes de Pago ',
+  'Valor Cuota Variable ',
+  'Estado ',
+  'Valor Cuota Pago',
+  'Saldo Final',
+  'Item_Quantity',
+  'Banco desembolsado',
+  '# Transaccion',
+  'Cuenta de Ahorros',
+  'Observaciones',
+  'Id_VM',
+  'Estado Prestamo'
+]
+First row sample: {
+  "Id_EP": "P1",
+  "Customer_id": 3,
+  "Nombre": "Xiomara ",
+  "Apellido": "Rojas ",
+  "Mes Desembolso ": "Enero",
+  "Saldo Inicial": 2000000,
+  "# Cuotas Prestamo": 1,
+  "Interes Mensual": 0.015,
+  "Valor Intereses amortizados ": 30000,
+  "Fecha de Pago Max": 45703,
+  "Mes de Pago ": "Febrero",
+  "Valor Cuota Variable ": 430000,
+  "Estado ": "Pago",
+  "Valor Cuota Pago": 430000,
+  "Saldo Final": 1570000,
+  "Item_Quantity": 1,
+  "Banco desembolsado": "Scotiabank",
+  "# Transaccion": "9b71ab967733",
+  "Cuenta de Ahorros": 2014,
+  "Observaciones": "Cuota Inicial",
+  "Id_VM": "SOL1",
+  "Estado Prestamo": "Cancelado"
+}

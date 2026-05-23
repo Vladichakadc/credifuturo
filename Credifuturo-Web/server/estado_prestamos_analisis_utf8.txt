@@ -1,0 +1,133 @@
+﻿­ƒôé Archivos encontrados: [ '1-orders_table_estado_prestamos.xlsx' ]
+­ƒôä Leyendo: C:\Credifuturo\1-orders_table_estado_prestamos.xlsx
+
+­ƒôï Hoja: Prestamo
+­ƒôè Rango: A1:V120 (120 filas x 22 columnas)
+
+ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+   COLUMNAS DEL EXCEL (orden exacto)
+ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+  1. "Id_EP" (tipo celda: s)
+  2. "Customer_id" (tipo celda: s)
+  3. "Nombre" (tipo celda: s)
+  4. "Apellido" (tipo celda: s)
+  5. "Mes Desembolso " (tipo celda: s)
+  6. "Saldo Inicial" (tipo celda: s)
+  7. "# Cuotas Prestamo" (tipo celda: s)
+  8. "Interes Mensual" (tipo celda: s)
+  9. "Valor Intereses amortizados " (tipo celda: s)
+  10. "Fecha de Pago Max" (tipo celda: s)
+  11. "Mes de Pago " (tipo celda: s)
+  12. "Valor Cuota Variable " (tipo celda: s)
+  13. "Estado " (tipo celda: s)
+  14. "Valor Cuota Pago" (tipo celda: s)
+  15. "Saldo Final" (tipo celda: s)
+  16. "Item_Quantity" (tipo celda: s)
+  17. "Banco desembolsado" (tipo celda: s)
+  18. "# Transaccion" (tipo celda: s)
+  19. "Cuenta de Ahorros" (tipo celda: s)
+  20. "Observaciones" (tipo celda: s)
+  21. "Id_VM" (tipo celda: s)
+  22. "Estado Prestamo" (tipo celda: s)
+
+ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+   MUESTRA DE DATOS (primeras 3 filas)
+ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+
+--- Fila 1 ---
+  Id_EP: P1 (string)
+  Customer_id: 3 (number)
+  Nombre: Xiomara  (string)
+  Apellido: Rojas  (string)
+  Mes Desembolso : Enero (string)
+  Saldo Inicial: 2000000 (number)
+  # Cuotas Prestamo: 1 (number)
+  Interes Mensual: 0.015 (number)
+  Valor Intereses amortizados : 30000 (number)
+  Fecha de Pago Max: 45703 (number)
+  Mes de Pago : Febrero (string)
+  Valor Cuota Variable : 430000 (number)
+  Estado : Pago (string)
+  Valor Cuota Pago: 430000 (number)
+  Saldo Final: 1570000 (number)
+  Item_Quantity: 1 (number)
+  Banco desembolsado: Scotiabank (string)
+  # Transaccion: 9b71ab967733 (string)
+  Cuenta de Ahorros: 2014 (number)
+  Observaciones: Cuota Inicial (string)
+  Id_VM: SOL1 (string)
+  Estado Prestamo: Cancelado (string)
+
+--- Fila 2 ---
+  Id_EP: P2 (string)
+  Customer_id: 3 (number)
+  Nombre: Xiomara  (string)
+  Apellido: Rojas  (string)
+  Mes Desembolso : 0 (number)
+  Saldo Inicial: 1570000 (number)
+  # Cuotas Prestamo: 2 (number)
+  Interes Mensual: 0.015 (number)
+  Valor Intereses amortizados : 23550 (number)
+  Fecha de Pago Max: 45730 (number)
+  Mes de Pago : Marzo (string)
+  Valor Cuota Variable : 423550 (number)
+  Estado : Pago (string)
+  Valor Cuota Pago: 423550 (number)
+  Saldo Final: 1146450 (number)
+  Item_Quantity: 1 (number)
+  Banco desembolsado: Scotiabank (string)
+  # Transaccion: 174196893193700 (number)
+  Cuenta de Ahorros: 2014 (number)
+  Id_VM: SOL1 (string)
+  Estado Prestamo: Cancelado (string)
+
+--- Fila 3 ---
+  Id_EP: P3 (string)
+  Customer_id: 3 (number)
+  Nombre: Xiomara  (string)
+  Apellido: Rojas  (string)
+  Mes Desembolso : 0 (number)
+  Saldo Inicial: 1146450 (number)
+  # Cuotas Prestamo: 3 (number)
+  Interes Mensual: 0.015 (number)
+  Valor Intereses amortizados : 17196.75 (number)
+  Fecha de Pago Max: 45761 (number)
+  Mes de Pago : Abril (string)
+  Valor Cuota Variable : 417196.75 (number)
+  Estado : Pago (string)
+  Valor Cuota Pago: 418000 (number)
+  Saldo Final: 729253.25 (number)
+  Item_Quantity: 1 (number)
+  Banco desembolsado: Scotiabank (string)
+  # Transaccion: 1744763560463 (number)
+  Cuenta de Ahorros: 2014 (number)
+  Id_VM: SOL1 (string)
+  Estado Prestamo: Cancelado (string)
+
+ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+   AN├üLISIS DE TIPOS POR COLUMNA
+ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+  1. "Id_EP" | Tipos: string | Muestra: P1, P2
+  2. "Customer_id" | Tipos: number | Muestra: 3, 3
+  3. "Nombre" | Tipos: string | Muestra: Xiomara , Xiomara 
+  4. "Apellido" | Tipos: string | Muestra: Rojas , Rojas 
+  5. "Mes Desembolso " | Tipos: string/number | Muestra: Enero, 0
+  6. "Saldo Inicial" | Tipos: number | Muestra: 2000000, 1570000
+  7. "# Cuotas Prestamo" | Tipos: number | Muestra: 1, 2
+  8. "Interes Mensual" | Tipos: number | Muestra: 0.015, 0.015
+  9. "Valor Intereses amortizados " | Tipos: number | Muestra: 30000, 23550
+  10. "Fecha de Pago Max" | Tipos: number | Muestra: 45703, 45730
+  11. "Mes de Pago " | Tipos: string | Muestra: Febrero, Marzo
+  12. "Valor Cuota Variable " | Tipos: number | Muestra: 430000, 423550
+  13. "Estado " | Tipos: string | Muestra: Pago, Pago
+  14. "Valor Cuota Pago" | Tipos: number | Muestra: 430000, 423550
+  15. "Saldo Final" | Tipos: number | Muestra: 1570000, 1146450
+  16. "Item_Quantity" | Tipos: number | Muestra: 1, 1
+  17. "Banco desembolsado" | Tipos: string | Muestra: Scotiabank, Scotiabank
+  18. "# Transaccion" | Tipos: string/number | Muestra: 9b71ab967733, 174196893193700
+  19. "Cuenta de Ahorros" | Tipos: number | Muestra: 2014, 2014
+  20. "Observaciones" | Tipos: string | Muestra: Cuota Inicial, Ultima Cuota
+  21. "Id_VM" | Tipos: string | Muestra: SOL1, SOL1
+  22. "Estado Prestamo" | Tipos: string | Muestra: Cancelado, Cancelado
+
+Ô£à Total columnas: 22
