@@ -120,6 +120,21 @@ if (process.env.SETUP_KEY) {
         }
     });
     console.log('[SETUP] Password reset endpoint enabled at /api/setup/reset-password');
+
+    // Database download: GET /api/setup/download-db (header: X-Setup-Key)
+    // Allows pulling the production SQLite back to local for syncing development data.
+    app.get('/api/setup/download-db', (req, res) => {
+        if (req.headers['x-setup-key'] !== process.env.SETUP_KEY) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+        const fs = require('fs');
+        const sourcePath = process.env.DATABASE_PATH || require('path').join(__dirname, '..', 'database.sqlite');
+        if (!fs.existsSync(sourcePath)) return res.status(404).json({ error: 'Database file not found' });
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('Content-Disposition', `attachment; filename="database.sqlite"`);
+        fs.createReadStream(sourcePath).pipe(res);
+    });
+    console.log('[SETUP] Database download endpoint enabled at /api/setup/download-db');
 }
 
 // Sync Database and Start Server
