@@ -1,0 +1,8 @@
+node_modules
+server/node_modules
+client/node_modules
+*.sqlite
+*.db
+*.sqlite.bak*
+.env
+server/.env
