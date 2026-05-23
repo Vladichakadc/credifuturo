@@ -30,6 +30,7 @@ import UserPaymentsListPage from './pages/user/UserPaymentsListPage';
 import UserAccountDetailsPage from './pages/user/UserAccountDetailsPage';
 import UserStatutesPage from './pages/user/UserStatutesPage';
 import UserResolutionsPage from './pages/user/UserResolutionsPage';
+import UserSavingsSummaryPage from './pages/user/UserSavingsSummaryPage';
 
 import Navbar from './components/Navbar';
 import { useState, useEffect } from 'react';
@@ -121,6 +122,7 @@ function App() {
                     <Route path="account-details" element={<UserAccountDetailsPage />} />
                     <Route path="statutes" element={<UserStatutesPage />} />
                     <Route path="resolutions" element={<UserResolutionsPage />} />
+                    <Route path="savings/summary" element={<UserSavingsSummaryPage />} />
                 </Route>
 
                 <Route path="/" element={<Navigate to={user ? (user.role === 'admin' ? '/admin' : '/dashboard') : '/login'} />} />

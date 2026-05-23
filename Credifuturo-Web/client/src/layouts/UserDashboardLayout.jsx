@@ -135,6 +135,7 @@ const UserDashboardLayout = ({ user, onLogout }) => {
             children: [
                 { icon: LayoutDashboard, label: 'Panel Principal', path: '/dashboard' },
                 { icon: CreditCard, label: 'Detalle de Cuenta', path: '/dashboard/account-details' },
+                { icon: TrendingUp, label: 'Resumen Total Socios', path: '/dashboard/savings/summary' },
             ]
         },
         {

@@ -1032,14 +1032,14 @@ const DefaultDetail = () => (
 
 // ─── Main SavingsSummaryPage ───────────────────────────────────────────────────
 
-const SavingsSummaryPage = () => {
+const SavingsSummaryPage = ({ lockedSocio = null, hideControls = false }) => {
     const { toast } = useUi();
     const [activeCard, setActiveCard] = useState(null);
     const [loading, setLoading] = useState(false);
     const [selectedYear, setSelectedYear] = useState('Todos');
     const [availableYears, setAvailableYears] = useState([]);
     const location = useLocation();
-    const isTotalView = new URLSearchParams(location.search).get('view') === 'total';
+    const isTotalView = new URLSearchParams(location.search).get('view') === 'total' || hideControls;
     
     // Partner Selection
     const [clients, setClients] = useState([]);
@@ -1071,8 +1071,9 @@ const SavingsSummaryPage = () => {
 
     const fmt = (v) => `$${Number(v || 0).toLocaleString('es-CO')}`;
 
-    // Load initial client list
+    // Load initial client list (skip if socio is locked)
     useEffect(() => {
+        if (hideControls) return;
         const fetchClients = async () => {
             try {
                 const res = await api.get('/admin/clients/list');
@@ -1080,7 +1081,8 @@ const SavingsSummaryPage = () => {
             } catch (err) { console.error('Error fetching clients:', err.message); }
         };
         fetchClients();
-    }, []);
+    }, [hideControls]);
+
 
     // Fetch data for selected socio
     const fetchData = useCallback(async (cedula) => {
@@ -1155,6 +1157,14 @@ const SavingsSummaryPage = () => {
             .catch(() => {})
             .finally(() => setLoadingAnalysis(false));
     };
+
+    // Auto-select locked socio on mount (must be after handleSelectSocio is defined)
+    useEffect(() => {
+        if (lockedSocio && lockedSocio.cedula) {
+            handleSelectSocio(lockedSocio);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [lockedSocio?.cedula]);
 
     const filteredClients = clients.filter(c => {
         const fullName = `${c.name || ''} ${c.surname1 || ''} ${c.surname2 || ''}`.toLowerCase();
@@ -1608,23 +1618,40 @@ const SavingsSummaryPage = () => {
             
             {/* Socio Selector & Year Filter Header */}
             <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm relative z-50 print:hidden">
-                <div className="flex-1 max-w-xl">
-                    <SocioSelect clients={clients} selectedSocio={selectedSocio} onSelect={handleSelectSocio} />
-                </div>
+                {!hideControls && (
+                    <div className="flex-1 max-w-xl">
+                        <SocioSelect clients={clients} selectedSocio={selectedSocio} onSelect={handleSelectSocio} />
+                    </div>
+                )}
+                {hideControls && selectedSocio && (
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-brand-primary/10 flex items-center justify-center font-black text-brand-primary text-sm">
+                            {(selectedSocio.name || '?')[0].toUpperCase()}
+                        </div>
+                        <div>
+                            <p className="font-bold text-gray-900 text-sm">{selectedSocio.name} {selectedSocio.surname1} {selectedSocio.surname2 || ''}</p>
+                            <p className="text-xs text-gray-400 font-mono">C.C. {selectedSocio.cedula} · {selectedSocio.customerId}</p>
+                        </div>
+                    </div>
+                )}
 
                 <div className="flex items-center gap-3 shrink-0 print:hidden">
-                    <button 
-                        onClick={() => window.print()}
-                        className="bg-brand-primary hover:bg-brand-dark text-white px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-brand-primary/20 transition-all active:scale-95 flex items-center gap-2 group"
-                    >
-                        <Download className="h-4 w-4 group-hover:-translate-y-1 transition-transform" /> Informe PDF
-                    </button>
-                    <button 
-                        onClick={() => setShowRankingModal(true)}
-                        className="bg-amber-400 hover:bg-amber-500 text-amber-950 px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-amber-400/20 transition-all active:scale-95 flex items-center gap-2 group"
-                    >
-                        <Trophy className="h-4 w-4 group-hover:rotate-12 transition-transform" /> Ranking
-                    </button>
+                    {!hideControls && (
+                        <>
+                            <button 
+                                onClick={() => window.print()}
+                                className="bg-brand-primary hover:bg-brand-dark text-white px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-brand-primary/20 transition-all active:scale-95 flex items-center gap-2 group"
+                            >
+                                <Download className="h-4 w-4 group-hover:-translate-y-1 transition-transform" /> Informe PDF
+                            </button>
+                            <button 
+                                onClick={() => setShowRankingModal(true)}
+                                className="bg-amber-400 hover:bg-amber-500 text-amber-950 px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-amber-400/20 transition-all active:scale-95 flex items-center gap-2 group"
+                            >
+                                <Trophy className="h-4 w-4 group-hover:rotate-12 transition-transform" /> Ranking
+                            </button>
+                        </>
+                    )}
 
                     <PillSelect
                         icon={Calendar}

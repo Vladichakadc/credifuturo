@@ -66,7 +66,7 @@ set "TEMP_KEY=sync_%RANDOM%%RANDOM%_%time:~6,2%%time:~3,2%"
 
 echo.
 echo [1/5] Activando SETUP_KEY temporal en Railway...
-railway variables --set "SETUP_KEY=%TEMP_KEY%" >nul 2>&1
+railway variable set "SETUP_KEY=%TEMP_KEY%" >nul 2>&1
 if errorlevel 1 (
     echo       [ERROR] No se pudo establecer SETUP_KEY.
     echo       Ejecuta manualmente: railway variables --set "SETUP_KEY=valor"
@@ -87,7 +87,7 @@ if !ATTEMPTS! GTR 24 (
     echo.
     echo       [ERROR] Tiempo de espera excedido ^(6 min^).
     echo       El redeploy de Railway no termino. Removiendo SETUP_KEY...
-    railway variables --remove SETUP_KEY >nul 2>&1
+    railway variable delete SETUP_KEY >nul 2>&1
     pause
     exit /b 1
 )
@@ -120,7 +120,7 @@ curl.exe -s -f -H "X-Setup-Key: %TEMP_KEY%" -o "database.sqlite.tmp" https://cre
 if errorlevel 1 (
     echo       [ERROR] Descarga fallo.
     if exist "database.sqlite.tmp" del "database.sqlite.tmp"
-    railway variables --remove SETUP_KEY >nul 2>&1
+    railway variable delete SETUP_KEY >nul 2>&1
     pause
     exit /b 1
 )
@@ -129,7 +129,7 @@ if !SIZE! LSS 100000 (
     echo       [ERROR] Archivo muy pequeno ^(!SIZE! bytes^), probablemente error.
     type "database.sqlite.tmp"
     del "database.sqlite.tmp"
-    railway variables --remove SETUP_KEY >nul 2>&1
+    railway variable delete SETUP_KEY >nul 2>&1
     pause
     exit /b 1
 )
@@ -139,7 +139,7 @@ echo.
 
 REM --- Desactivar SETUP_KEY ---
 echo [5/5] Desactivando SETUP_KEY en Railway...
-railway variables --remove SETUP_KEY >nul 2>&1
+railway variable delete SETUP_KEY >nul 2>&1
 if errorlevel 1 (
     echo       [ADVERTENCIA] No se pudo remover SETUP_KEY automaticamente.
     echo       Eliminala manualmente desde Railway dashboard:
