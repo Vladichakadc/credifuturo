@@ -314,9 +314,9 @@ const RankingModal = ({ onClose }) => {
         const fetchRanking = async () => {
             try {
                 const res = await api.get('/admin/savings/ranking');
-                if (res.data.ok) setRanking(res.data.data);
+                if (res.data.ok && Array.isArray(res.data.data)) setRanking(res.data.data);
             } catch (err) {
-                console.error('Error fetching ranking:', err);
+                console.error('Error fetching ranking:', err.message);
             } finally {
                 setLoading(false);
             }
@@ -1076,7 +1076,7 @@ const SavingsSummaryPage = () => {
         const fetchClients = async () => {
             try {
                 const res = await api.get('/admin/clients/list');
-                if (res.data?.ok) setClients(res.data.data.filter(c => c.estatus === 'Activo'));
+                if (res.data?.ok && Array.isArray(res.data.data)) setClients(res.data.data.filter(c => c.estatus === 'Activo'));
             } catch (err) { console.error('Error fetching clients:', err.message); }
         };
         fetchClients();

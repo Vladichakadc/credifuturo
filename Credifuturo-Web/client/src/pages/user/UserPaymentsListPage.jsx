@@ -167,8 +167,10 @@ const UserPaymentsListPage = () => {
         let dateStr = dateVal instanceof Date ? dateVal.toISOString().split('T')[0] : String(dateVal);
         if (dateStr.includes('T')) dateStr = dateStr.split('T')[0];
 
+        const validDate = (d) => (d instanceof Date && !isNaN(d.getTime()) ? d : null);
+
         const parts = dateStr.split('-');
-        if (parts.length !== 3) return new Date(dateStr + 'T00:00:00');
+        if (parts.length !== 3) return validDate(new Date(dateStr + 'T00:00:00'));
 
         const [p1, p2, p3] = parts.map(Number);
         if (String(parts[0]).length === 4) {
@@ -176,19 +178,18 @@ const UserPaymentsListPage = () => {
             if (mesRef) {
                 const targetIdx = monthsLower.indexOf(mesRef.toLowerCase().trim()) + 1;
                 if (targetIdx > 0) {
-                    if (m === targetIdx) return new Date(y, m - 1, d);
-                    if (d === targetIdx) return new Date(y, d - 1, m);
+                    if (m === targetIdx) return validDate(new Date(y, m - 1, d));
+                    if (d === targetIdx) return validDate(new Date(y, d - 1, m));
                 }
             }
-            return new Date(y, m - 1, d);
+            return validDate(new Date(y, m - 1, d));
         }
 
         if (String(parts[2]).length === 4) {
-            return new Date(p3, p2 - 1, p1);
+            return validDate(new Date(p3, p2 - 1, p1));
         }
 
-        const fallback = new Date(dateStr + 'T00:00:00');
-        return isNaN(fallback.getTime()) ? null : fallback;
+        return validDate(new Date(dateStr + 'T00:00:00'));
     }, [monthsLower]);
 
     const stats = useMemo(() => {

@@ -2127,11 +2127,15 @@ router.post('/payments', async (req, res) => {
         if (req.body.interesMensual === undefined || req.body.interesMensual === null || req.body.interesMensual === '') {
             return res.status(400).json({ error: 'El interés mensual es obligatorio.' });
         }
+        const interesMensualValidado = parseFloat(req.body.interesMensual);
+        if (isNaN(interesMensualValidado) || interesMensualValidado <= 0) {
+            return res.status(400).json({ error: 'El interés mensual debe ser mayor a 0.' });
+        }
 
         // 3. Cálculos automáticos (si no vienen del frontend)
         // Intereses amortizados = saldoInicial * interesMensual
         const saldoInicial = parseFloat(req.body.saldoInicial);
-        const interesMensual = parseFloat(req.body.interesMensual);
+        const interesMensual = interesMensualValidado;
         let valorInteresesAmortizados = req.body.valorInteresesAmortizados;
 
         if (!valorInteresesAmortizados && saldoInicial && interesMensual) {

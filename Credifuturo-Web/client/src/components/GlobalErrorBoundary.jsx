@@ -33,8 +33,8 @@ class GlobalErrorBoundary extends React.Component {
                             </code>
                         </div>
 
-                        {/* Component Stack */}
-                        {errorInfo && errorInfo.componentStack && (
+                        {/* Component Stack — only in dev */}
+                        {import.meta.env.DEV && errorInfo && errorInfo.componentStack && (
                             <details style={{ marginBottom: '1.5rem' }}>
                                 <summary style={{ cursor: 'pointer', fontWeight: 'bold', color: '#991b1b', marginBottom: '0.5rem' }}>
                                     Ver pila de componentes (Component Stack)
