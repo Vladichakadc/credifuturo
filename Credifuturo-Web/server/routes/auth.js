@@ -6,7 +6,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { verifyToken } = require('../middleware/authMiddleware');
 
-const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_SECRET = process.env.JWT_SECRET || 'credifuturo_secret_key_change_me';
 
 // Login
 router.post('/login', async (req, res) => {
