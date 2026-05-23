@@ -1,7 +1,8 @@
 import axios from 'axios';
 
-// URL base configurable por variable de entorno Vite
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+// In production Express serves both frontend and API from the same origin,
+// so relative /api works. In dev, Vite proxies /api → localhost:3000.
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 const api = axios.create({
     baseURL: API_BASE_URL,
@@ -27,7 +28,7 @@ api.interceptors.response.use(
     (response) => response,
     (error) => {
         if (!error.response) {
-            error.message = 'No se puede conectar con el servidor. Verifique que el backend esté activo en el puerto 3000.';
+            error.message = 'No se puede conectar con el servidor. Verifique su conexión a internet.';
         } else if (error.response.status === 401) {
             // Token ausente o expirado — limpiar sesión y redirigir a login
             localStorage.removeItem('token');
