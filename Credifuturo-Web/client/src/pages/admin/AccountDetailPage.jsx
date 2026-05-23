@@ -522,6 +522,14 @@ const AccountDetailPage = () => {
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
+    useEffect(() => {
+        if (loading) return;
+        const t = setTimeout(() => {
+            document.getElementById('capital-ahorrado-anchor')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 150);
+        return () => clearTimeout(t);
+    }, [loading]);
+
     // Derived Filtered Data
     const filteredSavings = React.useMemo(() => {
         if (selectedYear === 'Todos') return rawSavings;
@@ -698,17 +706,21 @@ const AccountDetailPage = () => {
                 {/* LEFT: Vertical cards */}
                 <div className="w-72 shrink-0 flex flex-col gap-2 overflow-y-auto pr-1" style={{ maxHeight: '640px' }}>
                     {cards.map(card => (
-                        <VerticalStatCard
+                        <div
                             key={card.id || card.title}
-                            title={card.title}
-                            value={card.value}
-                            description={card.description}
-                            icon={card.icon}
-                            color={card.color}
-                            bgColor={card.bgColor}
-                            active={activeCard === card.panel}
-                            onClick={() => card.panel ? setActiveCard(activeCard === card.panel ? null : card.panel) : null}
-                        />
+                            id={card.id === 'savings' ? 'capital-ahorrado-anchor' : undefined}
+                        >
+                            <VerticalStatCard
+                                title={card.title}
+                                value={card.value}
+                                description={card.description}
+                                icon={card.icon}
+                                color={card.color}
+                                bgColor={card.bgColor}
+                                active={activeCard === card.panel}
+                                onClick={() => card.panel ? setActiveCard(activeCard === card.panel ? null : card.panel) : null}
+                            />
+                        </div>
                     ))}
 
                     <div className="mt-4 mb-2 flex items-center gap-2 px-1">
