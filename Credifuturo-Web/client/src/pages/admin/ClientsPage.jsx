@@ -227,11 +227,19 @@ const ClientsPage = () => {
     const handleResetPassword = async () => {
         if (!formData.id) return;
         const nombre = `${formData.name} ${formData.surname1 || ''}`.trim();
-        if (!window.confirm(`¿Resetear contraseña de "${nombre}"?\nSe asignará la contraseña temporal CF2026 y el socio deberá cambiarla en su próximo ingreso.`)) return;
+        const tempPassword = window.prompt(
+            `Contraseña temporal para "${nombre}":\n(El socio deberá cambiarla en su próximo ingreso)`,
+            'CF2026'
+        );
+        if (tempPassword === null) return; // canceló
+        if (!tempPassword.trim()) {
+            toast.error('Debe ingresar una contraseña temporal.');
+            return;
+        }
 
         setLoading(true);
         try {
-            const res = await api.post(`/admin/clients/${formData.id}/reset-password`);
+            const res = await api.post(`/admin/clients/${formData.id}/reset-password`, { tempPassword: tempPassword.trim() });
             toast.success(res.data.message || 'Contraseña restablecida correctamente.');
             fetchResetRequests();
         } catch (error) {
@@ -242,9 +250,17 @@ const ClientsPage = () => {
     };
 
     const handleResolveRequest = async (requestId, clientId) => {
-        if (!window.confirm('¿Marcar esta solicitud como resuelta y resetear la contraseña del socio?')) return;
+        const tempPassword = window.prompt(
+            '¿Resetear contraseña del socio?\nIngresa la contraseña temporal:',
+            'CF2026'
+        );
+        if (tempPassword === null) return; // canceló
+        if (!tempPassword.trim()) {
+            toast.error('Debe ingresar una contraseña temporal.');
+            return;
+        }
         try {
-            await api.post(`/admin/clients/${clientId}/reset-password`);
+            await api.post(`/admin/clients/${clientId}/reset-password`, { tempPassword: tempPassword.trim() });
             toast.success('Contraseña restablecida y solicitud resuelta.');
             fetchResetRequests();
         } catch (error) {
