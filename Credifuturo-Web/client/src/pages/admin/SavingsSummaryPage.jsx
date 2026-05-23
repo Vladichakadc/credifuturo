@@ -1938,4 +1938,15 @@ const Card = ({ children, className = '', style }) => <div className={`bg-white 
 
 const PaymentStatCard = ({ title, value, description, icon: Icon, color, customBg }) => (
     <Card className="transition-all duration-200 overflow-hidden relative !p-5" style={customBg ? { background: customBg, border: 'none' } : {}}>
-        <div className="flex flex-row items-center justify-between space
+        <div className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
+            <h3 className="text-[11px] font-bold text-gray-500 tracking-wide uppercase">{title}</h3>
+            <Icon className={`h-4 w-4 ${color}`} />
+        </div>
+        <div className="relative z-10">
+            <div className={`text-xl font-black ${customBg ? 'text-gray-900' : 'text-gray-900'}`}>{value}</div>
+            <p className="text-[10px] mt-1 text-gray-400 font-medium">{description}</p>
+        </div>
+    </Card>
+);
+
+export default SavingsSummaryPage;
