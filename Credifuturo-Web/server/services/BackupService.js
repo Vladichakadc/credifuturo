@@ -6,7 +6,7 @@ const Saving = require('../models/Saving');
 const DisbursedLoan = require('../models/DisbursedLoan');
 const LoanPayment = require('../models/LoanPayment');
 
-const BACKUP_BASE_DIR = process.env.BACKUP_DIR || 'C:\\Credifuturo\\Backups';
+const BACKUP_BASE_DIR = process.env.BACKUP_DIR || path.join(__dirname, '..', '..', 'Backups');
 
 // Formatea fechas al formato dd-mm-aaaa para los Excel de backup
 const formatDate = (value) => {

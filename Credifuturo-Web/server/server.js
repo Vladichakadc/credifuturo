@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const sequelize = require('./config/database');
 const bcrypt = require('bcryptjs');
 const cron = require('node-cron');
@@ -18,12 +19,20 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
+const isProduction = process.env.NODE_ENV === 'production';
 app.use(cors({
-    // Orígenes permitidos: cliente Vite en dev y servidor local en producción
-    origin: ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000'],
+    origin: isProduction
+        ? true  // mismo origen — frontend servido por Express, CORS no aplica
+        : ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000'],
     credentials: true
 }));
 app.use(express.json());
+
+// Servir frontend React en producción
+if (isProduction) {
+    const clientDist = path.join(__dirname, '..', 'client', 'dist');
+    app.use(express.static(clientDist));
+}
 
 // Request Logger — excluye rutas de auth para no exponer contraseñas en consola
 app.use((req, res, next) => {
@@ -43,15 +52,22 @@ app.get('/api/health', (req, res) => {
     res.json({ ok: true, status: 'UP', timestamp: new Date() });
 });
 
-// Simple connection test
-app.get('/', (req, res) => {
-    res.send('Credifuturo API Running');
-});
+// Simple connection test (solo en desarrollo)
+if (!isProduction) {
+    app.get('/', (_req, res) => res.send('Credifuturo API Running'));
+}
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/user', require('./routes/user'));
+
+// En producción: cualquier ruta no-API devuelve el index.html de React
+if (isProduction) {
+    app.get('*', (_req, res) => {
+        res.sendFile(path.join(__dirname, '..', 'client', 'dist', 'index.html'));
+    });
+}
 
 // Global Error Handler
 app.use((err, req, res, next) => {
@@ -110,4 +126,4 @@ sequelize.sync().then(async () => {
 }).catch(err => {
     console.error('Database connection failed:', err);
 });
-app.post('/api/admin/log-crash', (req, res) => { require('fs').writeFileSync('c:/Credifuturo/Credifuturo-Web/server/crash_log.txt', req.body.error + '\\n' + req.body.stack); res.send('ok'); });
+app.post('/api/admin/log-crash', (req, res) => { require('fs').writeFileSync(path.join(__dirname, 'crash_log.txt'), req.body.error + '\n' + req.body.stack); res.send('ok'); });
