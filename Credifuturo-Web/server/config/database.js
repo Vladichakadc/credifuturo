@@ -1,8 +1,8 @@
 ﻿const { Sequelize } = require('sequelize');
 const path = require('path');
 
-// Use absolute path to database in C:\Credifuturo
-const dbPath = path.join(__dirname, '..', '..', 'database.sqlite');
+// DATABASE_PATH env var allows overriding (Railway volume: /data/database.sqlite)
+const dbPath = process.env.DATABASE_PATH || path.join(__dirname, '..', '..', 'database.sqlite');
 
 const sequelize = new Sequelize({
   dialect: 'sqlite',

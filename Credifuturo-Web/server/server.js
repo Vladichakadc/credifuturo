@@ -79,11 +79,52 @@ app.use((err, req, res, next) => {
     });
 });
 
+// ── One-time database restore endpoint (gated by SETUP_KEY env var) ──────────
+// Usage: curl -X POST -F "db=@database.sqlite" -H "X-Setup-Key: <value>" <url>/api/setup/restore-db
+// Disable by removing SETUP_KEY from env vars after use.
+if (process.env.SETUP_KEY) {
+    const multer = require('multer');
+    const fs = require('fs');
+    const dbRestoreStorage = multer.memoryStorage();
+    const dbRestoreUpload = multer({ storage: dbRestoreStorage, limits: { fileSize: 50 * 1024 * 1024 } });
+    app.post('/api/setup/restore-db', dbRestoreUpload.single('db'), (req, res) => {
+        if (req.headers['x-setup-key'] !== process.env.SETUP_KEY) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+        if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+        const targetPath = process.env.DATABASE_PATH || require('path').join(__dirname, '..', 'database.sqlite');
+        try {
+            fs.writeFileSync(targetPath, req.file.buffer);
+            res.json({ ok: true, message: `Database restored to ${targetPath} (${req.file.size} bytes). Restart the service now.` });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+    console.log('[SETUP] Database restore endpoint enabled at /api/setup/restore-db');
+}
+
 // Sync Database and Start Server
 // Using sync() without alter to avoid SQLite migration issues with foreign keys
 // The new column fechaBaja has been verified to exist manually.
 sequelize.sync().then(async () => {
     console.log('Database synced');
+
+    // Auto-seed admin if no admin user exists (e.g. first deploy with empty DB)
+    try {
+        const adminCount = await Client.count({ where: { role: 'admin' } });
+        if (adminCount === 0) {
+            const hash = await bcrypt.hash('admin123', 10);
+            await Client.create({
+                name: 'Admin', surname1: 'Sistema', cedula: '0000000000',
+                email: 'admin@credifuturo.com', password: hash,
+                role: 'admin', estatus: 'Activo', customerId: 'ADM001',
+                mustChangePassword: false
+            });
+            console.log('[SEED] Admin creado: admin@credifuturo.com / admin123  ← cambiar contraseña después de ingresar');
+        }
+    } catch (e) {
+        console.warn('[SEED] No se pudo verificar/crear admin:', e.message);
+    }
 
     // Crear índices sobre tablas existentes (IF NOT EXISTS — seguro en re-arranques)
     const indexStatements = [
