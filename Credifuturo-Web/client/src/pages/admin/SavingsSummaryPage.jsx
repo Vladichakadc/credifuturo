@@ -1032,7 +1032,7 @@ const DefaultDetail = () => (
 
 // ─── Main SavingsSummaryPage ───────────────────────────────────────────────────
 
-const SavingsSummaryPage = ({ lockedSocio = null, hideControls = false }) => {
+const SavingsSummaryPage = ({ lockedSocio = null, hideControls = false, preloadedData = null }) => {
     const { toast } = useUi();
     const [activeCard, setActiveCard] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -1089,21 +1089,29 @@ const SavingsSummaryPage = ({ lockedSocio = null, hideControls = false }) => {
         if (!cedula) return;
         setLoading(true);
         try {
-            const [resSavings, resAportes] = await Promise.all([
-                api.get('/admin/savings/list'),
-                api.get('/admin/savings/list?type=Aporte Inicial')
-            ]);
+            let mySavings, myAportes;
 
-            const allSavings = resSavings.data?.ok && Array.isArray(resSavings.data.data) ? resSavings.data.data : [];
-            const allAportes = resAportes.data?.ok && Array.isArray(resAportes.data.data) ? resAportes.data.data : [];
+            if (preloadedData) {
+                // Use preloaded data directly (for authenticated user view)
+                mySavings = preloadedData.savings || [];
+                myAportes = preloadedData.aportes || [];
+            } else {
+                const [resSavings, resAportes] = await Promise.all([
+                    api.get('/admin/savings/list'),
+                    api.get('/admin/savings/list?type=Aporte Inicial')
+                ]);
 
-            const socioFilter = (arr) => arr.filter(s => 
-                String(s.clientCedula) === String(cedula) || 
-                String(s.clientCustomerId) === String(cedula)
-            );
+                const allSavings = resSavings.data?.ok && Array.isArray(resSavings.data.data) ? resSavings.data.data : [];
+                const allAportes = resAportes.data?.ok && Array.isArray(resAportes.data.data) ? resAportes.data.data : [];
 
-            const mySavings = socioFilter(allSavings.filter(s => s.type !== 'Aporte Inicial'));
-            const myAportes = socioFilter(allAportes);
+                const socioFilter = (arr) => arr.filter(s => 
+                    String(s.clientCedula) === String(cedula) || 
+                    String(s.clientCustomerId) === String(cedula)
+                );
+
+                mySavings = socioFilter(allSavings.filter(s => s.type !== 'Aporte Inicial'));
+                myAportes = socioFilter(allAportes);
+            }
 
             setRawSavings(mySavings);
             setRawAportes(myAportes);
@@ -1118,7 +1126,7 @@ const SavingsSummaryPage = ({ lockedSocio = null, hideControls = false }) => {
         } finally {
             setLoading(false);
         }
-    }, [toast]);
+    }, [toast, preloadedData]);
 
     const handleSelectSocio = ( socio ) => {
         setSelectedSocio(socio);
@@ -1127,27 +1135,36 @@ const SavingsSummaryPage = ({ lockedSocio = null, hideControls = false }) => {
         setSelectedYear('Todos');
         setActiveCard('savings');
         fetchData(socio.cedula);
-        // Fetch loans for this socio
-        setSocioLoans([]);
-        setLoadingLoans(true);
-        api.get('/admin/disbursed-loans/list')
-            .then(res => {
-                const all = res.data?.ok && Array.isArray(res.data.data) ? res.data.data : [];
-                setSocioLoans(all.filter(l => l.clientId === socio.id || String(l.clientCedula) === String(socio.cedula)));
-            })
-            .catch(() => {})
-            .finally(() => setLoadingLoans(false));
 
-        // Fetch loan payments for this socio
-        setSocioPayments([]);
-        setLoadingPayments(true);
-        api.get(`/admin/payments/list?clientId=${socio.id}`)
-            .then(res => {
-                const all = res.data?.ok && Array.isArray(res.data.data) ? res.data.data : [];
-                setSocioPayments(all.filter(p => p.clientId === socio.id || String(p.clientCedula) === String(socio.cedula)));
-            })
-            .catch(() => {})
-            .finally(() => setLoadingPayments(false));
+        if (preloadedData) {
+            // Use preloaded loans and payments from the user-accessible endpoints
+            setSocioLoans(preloadedData.loans || []);
+            setSocioPayments(preloadedData.payments || []);
+            setLoadingLoans(false);
+            setLoadingPayments(false);
+        } else {
+            // Fetch loans for this socio (admin endpoints)
+            setSocioLoans([]);
+            setLoadingLoans(true);
+            api.get('/admin/disbursed-loans/list')
+                .then(res => {
+                    const all = res.data?.ok && Array.isArray(res.data.data) ? res.data.data : [];
+                    setSocioLoans(all.filter(l => l.clientId === socio.id || String(l.clientCedula) === String(socio.cedula)));
+                })
+                .catch(() => {})
+                .finally(() => setLoadingLoans(false));
+
+            // Fetch loan payments for this socio
+            setSocioPayments([]);
+            setLoadingPayments(true);
+            api.get(`/admin/payments/list?clientId=${socio.id}`)
+                .then(res => {
+                    const all = res.data?.ok && Array.isArray(res.data.data) ? res.data.data : [];
+                    setSocioPayments(all.filter(p => p.clientId === socio.id || String(p.clientCedula) === String(socio.cedula)));
+                })
+                .catch(() => {})
+                .finally(() => setLoadingPayments(false));
+        }
 
         // Fetch loan capacity analysis
         setLoanAnalysis(null);
