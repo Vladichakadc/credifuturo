@@ -62,31 +62,14 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/user', require('./routes/user'));
 
-// En producción: cualquier ruta no-API devuelve el index.html de React
-if (isProduction) {
-    app.get('*', (_req, res) => {
-        res.sendFile(path.join(__dirname, '..', 'client', 'dist', 'index.html'));
-    });
-}
-
-// Global Error Handler
-app.use((err, req, res, next) => {
-    console.error('🔥 SERVER ERROR:', err);
-    res.status(500).json({
-        ok: false,
-        error: err.message || 'Internal Server Error',
-        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
-    });
-});
-
-// ── One-time database restore endpoint (gated by SETUP_KEY env var) ──────────
-// Usage: curl -X POST -F "db=@database.sqlite" -H "X-Setup-Key: <value>" <url>/api/setup/restore-db
-// Disable by removing SETUP_KEY from env vars after use.
+// ── Setup endpoints (gated by SETUP_KEY env var) MUST be registered BEFORE the
+// React catch-all below, otherwise app.get('*') intercepts them and returns HTML.
 if (process.env.SETUP_KEY) {
     const multer = require('multer');
     const fs = require('fs');
     const dbRestoreStorage = multer.memoryStorage();
     const dbRestoreUpload = multer({ storage: dbRestoreStorage, limits: { fileSize: 50 * 1024 * 1024 } });
+
     app.post('/api/setup/restore-db', dbRestoreUpload.single('db'), (req, res) => {
         if (req.headers['x-setup-key'] !== process.env.SETUP_KEY) {
             return res.status(403).json({ error: 'Forbidden' });
@@ -100,9 +83,7 @@ if (process.env.SETUP_KEY) {
             res.status(500).json({ error: e.message });
         }
     });
-    console.log('[SETUP] Database restore endpoint enabled at /api/setup/restore-db');
 
-    // One-time password reset: POST /api/setup/reset-password { email, newPassword }
     app.post('/api/setup/reset-password', express.json(), async (req, res) => {
         if (req.headers['x-setup-key'] !== process.env.SETUP_KEY) {
             return res.status(403).json({ error: 'Forbidden' });
@@ -119,10 +100,7 @@ if (process.env.SETUP_KEY) {
             res.status(500).json({ error: e.message });
         }
     });
-    console.log('[SETUP] Password reset endpoint enabled at /api/setup/reset-password');
 
-    // Database download: GET /api/setup/download-db (header: X-Setup-Key)
-    // Allows pulling the production SQLite back to local for syncing development data.
     app.get('/api/setup/download-db', (req, res) => {
         if (req.headers['x-setup-key'] !== process.env.SETUP_KEY) {
             return res.status(403).json({ error: 'Forbidden' });
@@ -134,8 +112,26 @@ if (process.env.SETUP_KEY) {
         res.setHeader('Content-Disposition', `attachment; filename="database.sqlite"`);
         fs.createReadStream(sourcePath).pipe(res);
     });
-    console.log('[SETUP] Database download endpoint enabled at /api/setup/download-db');
+
+    console.log('[SETUP] Endpoints enabled: restore-db, reset-password, download-db');
 }
+
+// En producción: cualquier ruta no-API devuelve el index.html de React
+if (isProduction) {
+    app.get('*', (_req, res) => {
+        res.sendFile(path.join(__dirname, '..', 'client', 'dist', 'index.html'));
+    });
+}
+
+// Global Error Handler
+app.use((err, req, res, next) => {
+    console.error('🔥 SERVER ERROR:', err);
+    res.status(500).json({
+        ok: false,
+        error: err.message || 'Internal Server Error',
+        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
+});
 
 // Sync Database and Start Server
 // Using sync() without alter to avoid SQLite migration issues with foreign keys
