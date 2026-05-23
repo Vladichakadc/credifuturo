@@ -10,7 +10,7 @@ class GlobalErrorBoundary extends React.Component {
         return { hasError: true, error };
     }
 
-    componentDidCatch(error, errorInfo) { fetch('http://localhost:3000/api/admin/log-crash', { method: 'POST', body: JSON.stringify({ error: error.message, stack: errorInfo.componentStack }), headers: { 'Content-Type': 'application/json' } }).catch(console.error); 
+    componentDidCatch(error, errorInfo) { fetch('/api/admin/log-crash', { method: 'POST', body: JSON.stringify({ error: error.message, stack: errorInfo.componentStack }), headers: { 'Content-Type': 'application/json' } }).catch(() => {});
         console.error("CRITICAL UI ERROR:", error.message);
         console.error("Component stack:", errorInfo.componentStack);
         this.setState({ hasError: true, error, errorInfo });
