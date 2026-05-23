@@ -110,7 +110,10 @@ function App() {
                         <UserDashboardLayout user={user} onLogout={handleLogout} />
                     </ProtectedRoute>
                 }>
-                    <Route index element={<UserDashboardHome />} />
+                    {/* Inicio del socio: panel del admin en modo solo-lectura */}
+                    <Route index element={<DashboardHome />} />
+                    {/* UserDashboardHome queda accesible en /dashboard/mi-resumen */}
+                    <Route path="mi-resumen" element={<UserDashboardHome />} />
                     <Route path="loans" element={<UserLoansListPage />} />
                     <Route path="savings" element={<UserSavingsListPage />} />
                     <Route path="contributions" element={<UserContributionsListPage />} />

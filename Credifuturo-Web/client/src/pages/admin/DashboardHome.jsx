@@ -1541,6 +1541,10 @@ const FinancialChart = ({ stats }) => {
 // ─── Dashboard Home ───────────────────────────────────────────────────────────
 const DashboardHome = () => {
     const { toast, navigate } = useUi();
+    const isAdmin = (() => {
+        try { return (JSON.parse(localStorage.getItem('user') || '{}').role) === 'admin'; }
+        catch { return false; }
+    })();
     const [statusFilter, setStatusFilter] = useState('Activo');
     const [selectedYears, setSelectedYears] = useState([new Date().getFullYear(), new Date().getFullYear() + 1]);
     const [availableStatuses, setAvailableStatuses] = useState([]);
@@ -2131,25 +2135,27 @@ const DashboardHome = () => {
                         }
                     </button>
 
-                    <button
-                        id="save-db-button"
-                        onClick={handleSaveChanges}
-                        disabled={saving}
-                        className={`
-                            inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm
-                            shadow-lg shadow-brand-primary/20 hover:shadow-xl hover:shadow-brand-primary/30 
-                            transition-all duration-300 shrink-0
-                            ${saving
-                                ? 'bg-brand-primary/60 text-white cursor-not-allowed'
-                                : 'bg-gradient-to-br from-brand-primary to-brand-dark text-white hover:bg-brand-dark active:scale-[0.97] border border-brand-dark/50'
+                    {isAdmin && (
+                        <button
+                            id="save-db-button"
+                            onClick={handleSaveChanges}
+                            disabled={saving}
+                            className={`
+                                inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm
+                                shadow-lg shadow-brand-primary/20 hover:shadow-xl hover:shadow-brand-primary/30
+                                transition-all duration-300 shrink-0
+                                ${saving
+                                    ? 'bg-brand-primary/60 text-white cursor-not-allowed'
+                                    : 'bg-gradient-to-br from-brand-primary to-brand-dark text-white hover:bg-brand-dark active:scale-[0.97] border border-brand-dark/50'
+                                }
+                            `}
+                        >
+                            {saving
+                                ? <><RefreshCw className="h-4 w-4 animate-spin" /> Validando...</>
+                                : <><Save className="h-4 w-4" /> Guardar Cambios en la Base de Datos</>
                             }
-                        `}
-                    >
-                        {saving
-                            ? <><RefreshCw className="h-4 w-4 animate-spin" /> Validando...</>
-                            : <><Save className="h-4 w-4" /> Guardar Cambios en la Base de Datos</>
-                        }
-                    </button>
+                        </button>
+                    )}
                 </div>
             </div>
 

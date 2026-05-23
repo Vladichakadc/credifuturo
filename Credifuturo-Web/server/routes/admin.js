@@ -102,9 +102,15 @@ async function validateAndFixLoanStatuses() {
 
 // Todas las rutas de este router requieren autenticación.
 // Las rutas /my/* usan requireRole('user') individualmente;
-// el resto requiere rol admin.
+// READ_ONLY_FOR_ALL: rutas GET que socios autenticados pueden consultar
+// (vista de Inicio comparte el panel del admin en modo solo-lectura).
+// El resto requiere rol admin.
+const READ_ONLY_FOR_ALL = new Set(['/clients/list', '/dashboard-stats']);
 router.use((req, res, next) => {
     if (req.path.startsWith('/my/')) return next();
+    if (req.method === 'GET' && READ_ONLY_FOR_ALL.has(req.path)) {
+        return verifyToken(req, res, next);
+    }
     verifyToken(req, res, () => requireRole('admin')(req, res, next));
 });
 
