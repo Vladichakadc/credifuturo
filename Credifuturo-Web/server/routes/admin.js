@@ -6,6 +6,7 @@ const bcrypt = require('bcryptjs');
 const { verifyToken, requireRole, requireFreshPassword } = require('../middleware/authMiddleware');
 const { validatePassword, generateTempPassword } = require('../services/passwordPolicy');
 const { logSecurityEvent, getClientIp } = require('../services/securityLogger');
+const { verifyFileMagicBytes } = require('../services/fileValidator');
 
 // --- Funciones de Utilidad ---
 /**
@@ -1296,7 +1297,7 @@ router.delete('/savings/:id', async (req, res) => {
 // ── Soportes de Pago (imágenes adjuntas a un ahorro) ─────────────────
 
 // POST /savings/:id/soporte — subir imagen de soporte
-router.post('/savings/:id/soporte', upload.single('soporte'), async (req, res) => {
+router.post('/savings/:id/soporte', upload.single('soporte'), verifyFileMagicBytes, async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ error: 'No se recibió ningún archivo' });
         const saving = await Saving.findByPk(req.params.id);
@@ -2274,7 +2275,7 @@ router.post('/validate-loan-statuses', async (req, res) => {
 // --- Soportes para Estado de Préstamos ---
 
 // 1. Subir/Reemplazar soporte (para pagos)
-router.post('/payments/:id/soporte', upload.single('soporte'), async (req, res) => {
+router.post('/payments/:id/soporte', upload.single('soporte'), verifyFileMagicBytes, async (req, res) => {
     try {
         const paymentId = req.params.id;
         const file = req.file;

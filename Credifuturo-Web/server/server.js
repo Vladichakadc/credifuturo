@@ -184,13 +184,21 @@ if (isProduction) {
 }
 
 // Global Error Handler
+// A05 (Security Misconfiguration): en producción no filtramos err.message para
+// errores 5xx — pueden revelar rutas internas, nombres de columnas, etc.
+// Los errores 4xx (validación, multer, etc.) sí pasan el mensaje porque están
+// pensados para el usuario.
 app.use((err, req, res, next) => {
-    console.error('🔥 SERVER ERROR:', err);
-    res.status(500).json({
-        ok: false,
-        error: err.message || 'Internal Server Error',
-        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
-    });
+    const status = err.status || err.statusCode || 500;
+    if (status >= 500) {
+        console.error('🔥 SERVER ERROR:', err);
+        return res.status(status).json({
+            ok: false,
+            error: isProduction ? 'Error interno del servidor.' : (err.message || 'Internal Server Error'),
+            stack: isProduction ? undefined : err.stack
+        });
+    }
+    res.status(status).json({ ok: false, error: err.message });
 });
 
 // Sync Database and Start Server
