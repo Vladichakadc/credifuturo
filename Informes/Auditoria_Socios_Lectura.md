@@ -9,7 +9,7 @@ Se implementó exitosamente el sistema de acceso seguro y de solo lectura para l
   - Se modificó el endpoint `/api/auth/login`.
   - Se bloqueó explícitamente el acceso a los socios en estado "Desactivado" (Ej. cliente11, cliente19).
   - Se configuró la sesión (JWT) con una duración de 8 horas.
-  - Se añadió la validación Failsafe para proteger a los administradores (`cliente1@credifuturo.com` y `admin@credifuturo.com`).
+  - ~~Se añadió la validación Failsafe para proteger a los administradores.~~ **Removido en commit `04236995` (security F0):** el failsafe asignaba `role=admin` basado en el email, lo cual era un vector de privilege escalation. Ahora el rol se lee siempre de la BD.
 - **Seguridad y Filtros (Row-Level Security):**
   - Se creó un middleware `authMiddleware.js` que verifica y protege las rutas mediante JWT.
   - Se añadieron 5 nuevos endpoints protegidos (`/admin/my/*`) que extraen el `id` del socio directamente del token (evitando manipulaciones del frontend) y filtran las consultas SQL (`where: { clientId: req.user.id }`).
