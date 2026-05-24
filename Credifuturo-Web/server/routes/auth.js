@@ -8,6 +8,7 @@ const jwt = require('jsonwebtoken');
 const { verifyToken } = require('../middleware/authMiddleware');
 const { validatePassword } = require('../services/passwordPolicy');
 const { logSecurityEvent, getClientIp } = require('../services/securityLogger');
+const { recordLoginFailure, recordLoginSuccess } = require('../services/bruteForceDetector');
 
 // A07 (Identification and Authentication Failures): protección anti fuerza bruta
 const loginLimiter = rateLimit({
@@ -41,24 +42,27 @@ router.post('/login', loginLimiter, async (req, res) => {
         const user = await Client.findOne({ where: { email } });
         if (!user) {
             logSecurityEvent('LOGIN_FAIL_USER_NOT_FOUND', { email, ip });
-            // A07: respuesta genérica — no revelar si el usuario existe.
+            recordLoginFailure({ email, ip, reason: 'USER_NOT_FOUND' });
             return res.status(401).json({ message: 'Credenciales inválidas' });
         }
 
         if (user.estatus === 'Desactivado') {
             logSecurityEvent('LOGIN_FAIL_DEACTIVATED', { userId: user.id, email, ip });
+            recordLoginFailure({ email, ip, reason: 'DEACTIVATED' });
             return res.status(403).json({ message: 'Usuario desactivado. No tiene acceso al sistema.' });
         }
 
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
             logSecurityEvent('LOGIN_FAIL_BAD_PASSWORD', { userId: user.id, email, ip });
+            recordLoginFailure({ email, ip, reason: 'BAD_PASSWORD' });
             return res.status(401).json({ message: 'Credenciales inválidas' });
         }
 
         const role = user.role;
         const mustChangePassword = !!user.mustChangePassword;
         logSecurityEvent('LOGIN_SUCCESS', { userId: user.id, email, role, ip, mustChangePassword });
+        recordLoginSuccess({ email, ip });
 
         const token = jwt.sign(
             { id: user.id, role, name: user.name, customerId: user.customerId, email: user.email, mustChangePassword },
