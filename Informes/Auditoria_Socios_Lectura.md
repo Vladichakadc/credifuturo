@@ -4,7 +4,7 @@
 Se implementó exitosamente el sistema de acceso seguro y de solo lectura para los socios de Credifuturo. A partir de ahora, cada socio puede ingresar al sistema utilizando su correo electrónico y visualizar única y exclusivamente sus propios datos financieros (Préstamos, Ahorros, Aportes Iniciales y Estado de Préstamos).
 
 ## 2. Acciones Realizadas (Backend)
-- **Generación de Contraseñas:** Se ejecutó un script de migración que actualizó las contraseñas de los 22 socios (rol `user`) a `Cf@2026`. Se encriptaron con `bcryptjs`.
+- **Generación de Contraseñas:** ~~Se ejecutó un script de migración que actualizó las contraseñas de los 22 socios (rol `user`) a una contraseña compartida.~~ **Reemplazado durante remediación de seguridad (security F1):** la contraseña compartida quedó documentada en el repo, lo que la convertía en credencial pública. Se rotó cada socio a una contraseña aleatoria única (`services/passwordPolicy.js → generateTempPassword`) y se forzó `mustChangePassword=true` para que cada socio defina la suya en el próximo ingreso. Encriptación: `bcryptjs` rounds=10.
 - **Autenticación (JWT):** 
   - Se modificó el endpoint `/api/auth/login`.
   - Se bloqueó explícitamente el acceso a los socios en estado "Desactivado" (Ej. cliente11, cliente19).
