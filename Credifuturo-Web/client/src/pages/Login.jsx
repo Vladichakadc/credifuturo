@@ -5,11 +5,12 @@ import logo from '../assets/logo.jpg';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '../components/ui/Card';
 import { Input, Label } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
-import { Lock, Mail, AlertCircle, X } from 'lucide-react';
+import { Lock, Mail, AlertCircle, X, Eye, EyeOff } from 'lucide-react';
 
 const Login = ({ setUser }) => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const navigate = useNavigate();
@@ -114,14 +115,24 @@ const Login = ({ setUser }) => {
                                 <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
                                 <Input
                                     id="password"
-                                    type="password"
+                                    type={showPassword ? 'text' : 'password'}
                                     placeholder="••••••••"
-                                    className="pl-9"
+                                    className="pl-9 pr-10"
                                     required
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     disabled={isLoading}
                                 />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword((v) => !v)}
+                                    disabled={isLoading}
+                                    tabIndex={-1}
+                                    aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                                    className="absolute right-3 top-3 text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                </button>
                             </div>
                         </div>
                         <Button
