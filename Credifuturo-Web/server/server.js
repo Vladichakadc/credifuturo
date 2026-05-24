@@ -1,6 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const path = require('path');
 const sequelize = require('./config/database');
 const bcrypt = require('bcryptjs');
@@ -20,13 +22,25 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 const isProduction = process.env.NODE_ENV === 'production';
+
+// A05 (Security Misconfiguration): headers de seguridad por defecto
+app.use(helmet({
+    // El frontend React vive en mismo origen, pero permitimos contentSecurityPolicy
+    // por defecto; si rompe algo en prod, ajustar las directivas aquí.
+    contentSecurityPolicy: isProduction ? undefined : false,
+    crossOriginEmbedderPolicy: false
+}));
+
+// A05: CORS restrictivo en producción usando ALLOWED_ORIGINS (CSV) si está definido
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
 app.use(cors({
     origin: isProduction
-        ? true  // mismo origen — frontend servido por Express, CORS no aplica
+        ? (allowedOrigins.length > 0 ? allowedOrigins : true) // mismo origen si no hay lista
         : ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000'],
     credentials: true
 }));
-app.use(express.json());
+app.use(express.json({ limit: '1mb' })); // A04: límite explícito al body JSON
 
 // Servir frontend React en producción
 if (isProduction) {
@@ -34,13 +48,23 @@ if (isProduction) {
     app.use(express.static(clientDist));
 }
 
-// Request Logger — excluye rutas de auth para no exponer contraseñas en consola
+// Request Logger — excluye rutas de auth para no exponer contraseñas en consola.
+// A09 (Logging Failures): registra ip y user-agent en cada request; el usuario
+// autenticado se loguea cuando la respuesta termina (req.user ya está poblado).
 app.use((req, res, next) => {
     const isSensitiveRoute = req.url.startsWith('/api/auth');
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-    if (!isSensitiveRoute && Object.keys(req.body).length > 0) {
+    const start = Date.now();
+    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip;
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} ip=${ip}`);
+    if (!isSensitiveRoute && Object.keys(req.body || {}).length > 0) {
         console.log('Body:', JSON.stringify(req.body, null, 2).substring(0, 500));
     }
+    res.on('finish', () => {
+        if (req.user) {
+            const ms = Date.now() - start;
+            console.log(`  ↳ ${res.statusCode} user=${req.user.id} role=${req.user.role} (${ms}ms)`);
+        }
+    });
     next();
 });
 
@@ -57,6 +81,26 @@ if (!isProduction) {
     app.get('/', (_req, res) => res.send('Credifuturo API Running'));
 }
 
+// A04 (Insecure Design) + A07: log de crashes del frontend con tamaño y rate limit.
+// Fuera de /api/admin para que el ErrorBoundary del cliente pueda llamarlo sin token.
+const crashLogLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false
+});
+app.post('/api/log-crash', crashLogLimiter, (req, res) => {
+    const error = String(req.body?.error || '').slice(0, 2000);
+    const stack = String(req.body?.stack || '').slice(0, 8000);
+    const line = `[${new Date().toISOString()}] ${error}\n${stack}\n---\n`;
+    try {
+        require('fs').appendFileSync(path.join(__dirname, 'crash_log.txt'), line);
+    } catch (e) {
+        console.warn('[crash-log] no se pudo escribir:', e.message);
+    }
+    res.json({ ok: true });
+});
+
 // Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/admin', require('./routes/admin'));
@@ -64,7 +108,23 @@ app.use('/api/user', require('./routes/user'));
 
 // ── Setup endpoints (gated by SETUP_KEY env var) MUST be registered BEFORE the
 // React catch-all below, otherwise app.get('*') intercepts them and returns HTML.
-if (process.env.SETUP_KEY) {
+//
+// A04 (Insecure Design): defense in depth — además de SETUP_KEY,
+// se exige longitud mínima de 32 caracteres y ALLOW_SETUP_IN_PRODUCTION=true
+// para montar estos endpoints destructivos en NODE_ENV=production.
+const setupKey = process.env.SETUP_KEY;
+const setupAllowedInProd = process.env.ALLOW_SETUP_IN_PRODUCTION === 'true';
+const setupKeyStrong = typeof setupKey === 'string' && setupKey.length >= 32;
+const setupEnabled = setupKey && setupKeyStrong && (!isProduction || setupAllowedInProd);
+
+if (setupKey && !setupKeyStrong) {
+    console.warn('[SETUP] SETUP_KEY definida pero < 32 caracteres. Endpoints de setup NO se montaron.');
+}
+if (setupKey && isProduction && !setupAllowedInProd) {
+    console.warn('[SETUP] Endpoints de setup deshabilitados en producción. Defina ALLOW_SETUP_IN_PRODUCTION=true para activarlos (no recomendado).');
+}
+
+if (setupEnabled) {
     const multer = require('multer');
     const fs = require('fs');
     const dbRestoreStorage = multer.memoryStorage();
@@ -197,4 +257,3 @@ sequelize.sync().then(async () => {
 }).catch(err => {
     console.error('Database connection failed:', err);
 });
-app.post('/api/admin/log-crash', (req, res) => { require('fs').writeFileSync(path.join(__dirname, 'crash_log.txt'), req.body.error + '\n' + req.body.stack); res.send('ok'); });

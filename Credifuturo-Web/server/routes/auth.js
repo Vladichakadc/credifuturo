@@ -1,15 +1,38 @@
 const express = require('express');
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 const Client = require('../models/Client');
 const PasswordResetRequest = require('../models/PasswordResetRequest');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { verifyToken } = require('../middleware/authMiddleware');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'credifuturo_secret_key_change_me';
+// A07 (Identification and Authentication Failures): protección anti fuerza bruta
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: 'Demasiados intentos. Intente de nuevo en 15 minutos.' }
+});
+
+const resetLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: 'Demasiadas solicitudes de recuperación. Intente más tarde.' }
+});
+
+// A02 (Cryptographic Failures): sin fallback hardcodeado.
+// Falla al arrancar si la env var no está configurada.
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+    throw new Error('FATAL: JWT_SECRET no está definido en variables de entorno.');
+}
 
 // Login
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
     const { email, password } = req.body;
     try {
         const user = await Client.findOne({ where: { email } });
@@ -22,12 +45,7 @@ router.post('/login', async (req, res) => {
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) return res.status(400).json({ message: 'Credenciales inválidas' });
 
-        // FAILSAFE: Force admin role for the main admin emails
-        let role = user.role;
-        if (email === 'admin@credifuturo.com' || email === 'cliente1@credifuturo.com') {
-            role = 'admin';
-        }
-
+        const role = user.role;
         const mustChangePassword = !!user.mustChangePassword;
 
         const token = jwt.sign(
@@ -92,7 +110,7 @@ router.put('/change-password', verifyToken, async (req, res) => {
 });
 
 // Solicitud de recuperación de contraseña (sin autenticación)
-router.post('/request-reset', async (req, res) => {
+router.post('/request-reset', resetLimiter, async (req, res) => {
     const { cedula, email } = req.body;
     try {
         if (!cedula && !email) {

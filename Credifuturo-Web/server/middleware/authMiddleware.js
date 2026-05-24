@@ -28,7 +28,20 @@ const requireRole = (role) => {
     };
 };
 
+// A07 (Authentication Failures): si el token marca mustChangePassword=true,
+// el usuario solo puede llamar al endpoint de cambio de contraseña.
+const requireFreshPassword = (req, res, next) => {
+    if (req.user?.mustChangePassword) {
+        return res.status(403).json({
+            error: 'Debe cambiar su contraseña antes de continuar.',
+            code: 'PASSWORD_CHANGE_REQUIRED'
+        });
+    }
+    next();
+};
+
 module.exports = {
     verifyToken,
-    requireRole
+    requireRole,
+    requireFreshPassword
 };

@@ -3,7 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const { Client, Saving, Soporte, Loan, DisbursedLoan, LoanPayment } = require('../models');
 const bcrypt = require('bcryptjs');
-const { verifyToken, requireRole } = require('../middleware/authMiddleware');
+const { verifyToken, requireRole, requireFreshPassword } = require('../middleware/authMiddleware');
 
 // --- Funciones de Utilidad ---
 /**
@@ -100,24 +100,30 @@ async function validateAndFixLoanStatuses() {
     }
 }
 
-// Todas las rutas de este router requieren autenticación.
-// Las rutas /my/* usan requireRole('user') individualmente;
-// READ_ONLY_FOR_ALL: rutas GET que socios autenticados pueden consultar
-// (vista de Inicio comparte el panel del admin en modo solo-lectura).
-// El resto requiere rol admin.
-const READ_ONLY_FOR_ALL = new Set(['/clients/list', '/dashboard-stats']);
+// A01 (Broken Access Control): deny-by-default.
+// /my/* lleva su propia auth por ruta. /dashboard-stats lo puede leer cualquier socio
+// autenticado (el panel de Inicio lo comparte). El resto exige rol admin.
+// A07: ademas exigimos que el usuario no tenga mustChangePassword pendiente.
+const READ_ONLY_FOR_ALL = new Set(['/dashboard-stats']);
 router.use((req, res, next) => {
     if (req.path.startsWith('/my/')) return next();
     if (req.method === 'GET' && READ_ONLY_FOR_ALL.has(req.path)) {
-        return verifyToken(req, res, next);
+        return verifyToken(req, res, () => requireFreshPassword(req, res, next));
     }
-    verifyToken(req, res, () => requireRole('admin')(req, res, next));
+    verifyToken(req, res, () =>
+        requireFreshPassword(req, res, () =>
+            requireRole('admin')(req, res, next)
+        )
+    );
 });
 
 // --- Clients ---
 router.get('/clients', async (req, res) => {
     try {
-        const clients = await Client.findAll({ limit: 500 });
+        const clients = await Client.findAll({
+            limit: 500,
+            attributes: { exclude: ['password'] } // A02: no exponer hashes bcrypt
+        });
         res.json(clients);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -184,7 +190,10 @@ router.get('/clients/list', async (req, res) => {
 
 router.get('/clients/cedula/:cedula', async (req, res) => {
     try {
-        const client = await Client.findOne({ where: { cedula: req.params.cedula } });
+        const client = await Client.findOne({
+            where: { cedula: req.params.cedula },
+            attributes: { exclude: ['password'] } // A02: no exponer hashes bcrypt
+        });
         if (!client) return res.status(404).json({ error: 'Socio no encontrado con esa cédula.' });
         res.json(client);
     } catch (err) {
@@ -263,25 +272,38 @@ router.post('/clients', async (req, res) => {
     }
 });
 
+// A08 (Software and Data Integrity Failures): whitelist explícita de campos
+// editables. Bloquea mass-assignment de role, customerId, password, mustChangePassword, etc.
+const ALLOWED_CLIENT_FIELDS = [
+    'cedula', 'name', 'surname1', 'surname2', 'email',
+    'genero', 'pais', 'ciudad', 'tipoCliente', 'socioFundador',
+    'referido', 'cargo', 'fechaIngreso', 'fechaBaja', 'estatus'
+];
+
 router.put('/clients/:id', async (req, res) => {
     try {
         const client = await Client.findByPk(req.params.id);
         if (!client) return res.status(404).json({ error: 'Socio no encontrado' });
 
-        if (req.body.fechaBaja === '' || req.body.fechaBaja === 'Invalid date') {
-            req.body.fechaBaja = null;
+        // Rechaza cambios de contraseña por este endpoint — existe /clients/:id/reset-password
+        if (req.body.password !== undefined) {
+            return res.status(400).json({
+                error: 'Use /clients/:id/reset-password para cambiar contraseñas.'
+            });
         }
 
-        if (req.body.email === '' || req.body.email === 'null') {
-            req.body.email = null;
+        const updates = {};
+        for (const k of ALLOWED_CLIENT_FIELDS) {
+            if (req.body[k] !== undefined) updates[k] = req.body[k];
         }
+        if (updates.fechaBaja === '' || updates.fechaBaja === 'Invalid date') updates.fechaBaja = null;
+        if (updates.email === '' || updates.email === 'null') updates.email = null;
 
-        if (req.body.password) {
-            req.body.password = await bcrypt.hash(req.body.password, 10);
-        }
+        await client.update(updates);
 
-        await client.update(req.body);
-        res.json(client);
+        const safe = client.toJSON();
+        delete safe.password;
+        res.json(safe);
     } catch (err) {
         console.error("Error updating client:", err);
         if (err.name === 'SequelizeValidationError') {
@@ -3147,7 +3169,7 @@ router.delete('/informes/:name', async (req, res) => {
 // ENDPOINTS PARA SOCIOS (SOLO LECTURA)
 // ─────────────────────────────────────────────
 
-router.get('/my/profile', verifyToken, requireRole('user'), async (req, res) => {
+router.get('/my/profile', verifyToken, requireFreshPassword, requireRole('user'), async (req, res) => {
     try {
         const client = await Client.findByPk(req.user.id, {
             attributes: { exclude: ['password'] }
@@ -3159,7 +3181,7 @@ router.get('/my/profile', verifyToken, requireRole('user'), async (req, res) => 
     }
 });
 
-router.get('/my/loans', verifyToken, requireRole('user'), async (req, res) => {
+router.get('/my/loans', verifyToken, requireFreshPassword, requireRole('user'), async (req, res) => {
     try {
         const loans = await DisbursedLoan.findAll({
             where: { clientId: req.user.id },
@@ -3183,7 +3205,7 @@ router.get('/my/loans', verifyToken, requireRole('user'), async (req, res) => {
     }
 });
 
-router.get('/my/savings', verifyToken, requireRole('user'), async (req, res) => {
+router.get('/my/savings', verifyToken, requireFreshPassword, requireRole('user'), async (req, res) => {
     try {
         const { Op } = require('sequelize');
         const savings = await Saving.findAll({
@@ -3208,7 +3230,7 @@ router.get('/my/savings', verifyToken, requireRole('user'), async (req, res) => 
     }
 });
 
-router.get('/my/initial-contributions', verifyToken, requireRole('user'), async (req, res) => {
+router.get('/my/initial-contributions', verifyToken, requireFreshPassword, requireRole('user'), async (req, res) => {
     try {
         const contributions = await Saving.findAll({
             where: { clientId: req.user.id, type: 'Aporte Inicial' },
@@ -3232,7 +3254,7 @@ router.get('/my/initial-contributions', verifyToken, requireRole('user'), async 
     }
 });
 
-router.get('/my/payments', verifyToken, requireRole('user'), async (req, res) => {
+router.get('/my/payments', verifyToken, requireFreshPassword, requireRole('user'), async (req, res) => {
     try {
         const payments = await LoanPayment.findAll({
             where: { clientId: req.user.id },
@@ -3257,7 +3279,7 @@ router.get('/my/payments', verifyToken, requireRole('user'), async (req, res) =>
     }
 });
 
-router.get('/my/balance', verifyToken, requireRole('user'), async (req, res) => {
+router.get('/my/balance', verifyToken, requireFreshPassword, requireRole('user'), async (req, res) => {
     try {
         const clientId = req.user.id;
         const totalSavings = await Saving.sum('amount', { where: { clientId } }) || 0;
