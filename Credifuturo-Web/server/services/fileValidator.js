@@ -31,4 +31,15 @@ async function verifyFileMagicBytes(req, res, next) {
     }
 }
 
-module.exports = { verifyFileMagicBytes, ALLOWED_MIME };
+// A05 (HTTP Response Header Injection / CWE-113): sanitiza el nombre original
+// del archivo antes de meterlo en el header Content-Disposition. El nombre
+// viene del cliente al subir, puede contener CRLF, comillas, etc.
+function sanitizeFilename(name) {
+    const fallback = 'soporte';
+    if (!name || typeof name !== 'string') return fallback;
+    // Quitar CR, LF, comillas dobles, backslash; limitar longitud.
+    const cleaned = name.replace(/[\r\n"\\]/g, '').trim().substring(0, 200);
+    return cleaned || fallback;
+}
+
+module.exports = { verifyFileMagicBytes, ALLOWED_MIME, sanitizeFilename };

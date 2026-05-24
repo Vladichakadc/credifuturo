@@ -6,7 +6,7 @@ const bcrypt = require('bcryptjs');
 const { verifyToken, requireRole, requireFreshPassword } = require('../middleware/authMiddleware');
 const { validatePassword, generateTempPassword } = require('../services/passwordPolicy');
 const { logSecurityEvent, getClientIp } = require('../services/securityLogger');
-const { verifyFileMagicBytes } = require('../services/fileValidator');
+const { verifyFileMagicBytes, sanitizeFilename } = require('../services/fileValidator');
 
 // --- Funciones de Utilidad ---
 /**
@@ -1326,7 +1326,7 @@ router.get('/savings/:id/soporte', async (req, res) => {
         const soporte = await Soporte.findOne({ where: { savingId: req.params.id } });
         if (!soporte) return res.status(404).json({ error: 'Soporte no encontrado' });
         res.setHeader('Content-Type', soporte.mimeType);
-        res.setHeader('Content-Disposition', `attachment; filename="${soporte.originalName}"`);
+        res.setHeader('Content-Disposition', `attachment; filename="${sanitizeFilename(soporte.originalName)}"`);
         res.send(soporte.data);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -1362,7 +1362,11 @@ router.delete('/savings/:id/soporte', async (req, res) => {
 // --- Loans ---
 router.get('/loans', async (req, res) => {
     try {
-        const loans = await Loan.findAll({ include: Client, limit: 500 });
+        // A02: excluir password del Client embebido para no filtrar hashes bcrypt.
+        const loans = await Loan.findAll({
+            include: [{ model: Client, attributes: { exclude: ['password'] } }],
+            limit: 500
+        });
         res.json(loans);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -1396,8 +1400,9 @@ router.put('/loans/:id', async (req, res) => {
 // --- Disbursed Loans (Préstamos Desembolsados) ---
 router.get('/disbursed-loans', async (req, res) => {
     try {
+        // A02: excluir password del Client embebido para no filtrar hashes bcrypt.
         const disbursedLoans = await DisbursedLoan.findAll({
-            include: Client,
+            include: [{ model: Client, attributes: { exclude: ['password'] } }],
             order: [['fechaPrestamo', 'DESC']],
             limit: 500
         });
@@ -2353,7 +2358,7 @@ router.get('/payments/:id/soporte', async (req, res) => {
         }
 
         res.set('Content-Type', soporte.mimeType);
-        res.set('Content-Disposition', `attachment; filename="${soporte.originalName}"`);
+        res.set('Content-Disposition', `attachment; filename="${sanitizeFilename(soporte.originalName)}"`);
         res.send(soporte.data);
     } catch (err) {
         console.error('Error al descargar soporte de pago:', err);

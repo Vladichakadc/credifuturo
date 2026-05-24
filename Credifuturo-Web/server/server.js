@@ -31,15 +31,30 @@ app.use(helmet({
     crossOriginEmbedderPolicy: false
 }));
 
-// A05: CORS restrictivo en producción usando ALLOWED_ORIGINS (CSV) si está definido
+// A05: CORS restrictivo en producción.
+// Falla cerrado: si ALLOWED_ORIGINS no está definida en prod, refleja solo el
+// mismo origen (sin wildcard). Antes 'origin: true' reflejaba CUALQUIER origin,
+// lo que combinado con credentials:true era riesgo de exposición de respuestas.
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
     .split(',').map(s => s.trim()).filter(Boolean);
-app.use(cors({
-    origin: isProduction
-        ? (allowedOrigins.length > 0 ? allowedOrigins : true) // mismo origen si no hay lista
-        : ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000'],
-    credentials: true
-}));
+if (isProduction && allowedOrigins.length === 0) {
+    console.warn('[CORS] ALLOWED_ORIGINS no definida en producción — solo se aceptarán requests del mismo origen.');
+}
+const corsOriginCheck = (origin, callback) => {
+    // Same-origin / herramientas (curl, Postman) no envían Origin
+    if (!origin) return callback(null, true);
+    if (isProduction) {
+        if (allowedOrigins.length === 0) return callback(new Error('CORS: origen no permitido'));
+        return allowedOrigins.includes(origin)
+            ? callback(null, true)
+            : callback(new Error(`CORS: origen no permitido: ${origin}`));
+    }
+    const devOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000'];
+    return devOrigins.includes(origin)
+        ? callback(null, true)
+        : callback(new Error(`CORS dev: origen no permitido: ${origin}`));
+};
+app.use(cors({ origin: corsOriginCheck, credentials: true }));
 app.use(express.json({ limit: '1mb' })); // A04: límite explícito al body JSON
 
 // Servir frontend React en producción
@@ -49,15 +64,29 @@ if (isProduction) {
 }
 
 // Request Logger — excluye rutas de auth para no exponer contraseñas en consola.
-// A09 (Logging Failures): registra ip y user-agent en cada request; el usuario
-// autenticado se loguea cuando la respuesta termina (req.user ya está poblado).
+// A09 (Logging Failures): registra ip y status; el usuario autenticado se
+// loguea cuando la respuesta termina (req.user ya está poblado).
+// A02: redacta campos sensibles del body antes de loguear — endpoints como
+// /admin/clients/:id/reset-password reciben tempPassword en el body.
+const SENSITIVE_BODY_KEYS = [
+    'password', 'tempPassword', 'newPassword', 'currentPassword',
+    'token', 'refreshToken', 'secret', 'apiKey'
+];
+function redactSensitiveBody(body) {
+    if (!body || typeof body !== 'object') return body;
+    const out = { ...body };
+    for (const k of SENSITIVE_BODY_KEYS) {
+        if (k in out) out[k] = '[REDACTED]';
+    }
+    return out;
+}
 app.use((req, res, next) => {
     const isSensitiveRoute = req.url.startsWith('/api/auth');
     const start = Date.now();
     const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip;
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} ip=${ip}`);
     if (!isSensitiveRoute && Object.keys(req.body || {}).length > 0) {
-        console.log('Body:', JSON.stringify(req.body, null, 2).substring(0, 500));
+        console.log('Body:', JSON.stringify(redactSensitiveBody(req.body), null, 2).substring(0, 500));
     }
     res.on('finish', () => {
         if (req.user) {
