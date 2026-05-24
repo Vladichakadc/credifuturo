@@ -200,17 +200,30 @@ sequelize.sync().then(async () => {
     console.log('Database synced');
 
     // Auto-seed admin if no admin user exists (e.g. first deploy with empty DB)
+    // A07: sin credenciales por defecto. Se genera una contraseña aleatoria que
+    // se imprime UNA SOLA VEZ en consola y se fuerza mustChangePassword=true.
     try {
         const adminCount = await Client.count({ where: { role: 'admin' } });
         if (adminCount === 0) {
-            const hash = await bcrypt.hash('admin123', 10);
+            const { generateTempPassword } = require('./services/passwordPolicy');
+            const { logSecurityEvent } = require('./services/securityLogger');
+            const tempPassword = generateTempPassword();
+            const hash = await bcrypt.hash(tempPassword, 10);
             await Client.create({
                 name: 'Admin', surname1: 'Sistema', cedula: '0000000000',
                 email: 'admin@credifuturo.com', password: hash,
                 role: 'admin', estatus: 'Activo', customerId: 'ADM001',
-                mustChangePassword: false
+                mustChangePassword: true
             });
-            console.log('[SEED] Admin creado: admin@credifuturo.com / admin123  ← cambiar contraseña después de ingresar');
+            logSecurityEvent('ADMIN_SEEDED', { email: 'admin@credifuturo.com' });
+            console.log('');
+            console.log('═══════════════════════════════════════════════════════════════');
+            console.log('  [SEED] Admin inicial creado. ANOTE ESTA CONTRASEÑA:');
+            console.log('  email:    admin@credifuturo.com');
+            console.log(`  password: ${tempPassword}`);
+            console.log('  Deberá cambiarla en el primer ingreso.');
+            console.log('═══════════════════════════════════════════════════════════════');
+            console.log('');
         }
     } catch (e) {
         console.warn('[SEED] No se pudo verificar/crear admin:', e.message);

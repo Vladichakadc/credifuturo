@@ -4,6 +4,8 @@ const multer = require('multer');
 const { Client, Saving, Soporte, Loan, DisbursedLoan, LoanPayment } = require('../models');
 const bcrypt = require('bcryptjs');
 const { verifyToken, requireRole, requireFreshPassword } = require('../middleware/authMiddleware');
+const { validatePassword, generateTempPassword } = require('../services/passwordPolicy');
+const { logSecurityEvent, getClientIp } = require('../services/securityLogger');
 
 // --- Funciones de Utilidad ---
 /**
@@ -226,7 +228,18 @@ router.post('/clients', async (req, res) => {
             nextCustomerId = lastClient ? (parseInt(lastClient.customerId) + 1).toString() : "1";
         }
 
-        const hashedPassword = await bcrypt.hash(password || '123', 10);
+        // A07: sin contraseña por defecto compartida. Si el admin no la provee,
+        // generamos una temporal aleatoria que cumple política y la devolvemos
+        // UNA SOLA VEZ en la respuesta para que se la comunique al socio.
+        const providedPassword = password && String(password).trim();
+        let tempPasswordForResponse = null;
+        if (providedPassword) {
+            const policyError = validatePassword(providedPassword);
+            if (policyError) return res.status(400).json({ error: policyError });
+        } else {
+            tempPasswordForResponse = generateTempPassword();
+        }
+        const hashedPassword = await bcrypt.hash(providedPassword || tempPasswordForResponse, 10);
 
         let resolvedEmail = (email === '' || email === 'null' || email === 'undefined') ? null : email;
         if (!resolvedEmail) {
@@ -256,7 +269,11 @@ router.post('/clients', async (req, res) => {
             estatus: estatus || 'Activo',
             mustChangePassword: true
         });
-        res.status(201).json(newClient);
+        logSecurityEvent('CLIENT_CREATED', { actorId: req.user?.id, newClientId: newClient.id, ip: getClientIp(req) });
+        const safeClient = newClient.toJSON();
+        delete safeClient.password;
+        // tempPassword se devuelve solo si el admin no proveyó una — debe comunicársela al socio
+        res.status(201).json({ ...safeClient, tempPassword: tempPasswordForResponse });
     } catch (err) {
         console.error("Error creating client:", err);
         if (err.name === 'SequelizeValidationError') {
@@ -3310,21 +3327,34 @@ router.get('/my/balance', verifyToken, requireFreshPassword, requireRole('user')
 // ── Gestión de contraseñas (admin) ────────────────────────────────────────
 
 // Resetear contraseña de un socio (admin)
+// A07: si el admin no envía contraseña, se genera una temporal aleatoria.
+// Si la envía, debe cumplir la política. La temporal se devuelve UNA SOLA VEZ.
 router.post('/clients/:id/reset-password', verifyToken, requireRole('admin'), async (req, res) => {
     try {
         const client = await Client.findByPk(req.params.id);
         if (!client) return res.status(404).json({ error: 'Socio no encontrado.' });
 
-        const tempPassword = req.body.tempPassword;
-        if (!tempPassword || !tempPassword.trim()) {
-            return res.status(400).json({ error: 'La contraseña temporal es obligatoria.' });
+        const provided = req.body.tempPassword && String(req.body.tempPassword).trim();
+        let tempPassword;
+        if (provided) {
+            const policyError = validatePassword(provided);
+            if (policyError) return res.status(400).json({ error: policyError });
+            tempPassword = provided;
+        } else {
+            tempPassword = generateTempPassword();
         }
-        const hashed = await bcrypt.hash(tempPassword.trim(), 10);
+        const hashed = await bcrypt.hash(tempPassword, 10);
         await client.update({ password: hashed, mustChangePassword: true });
 
         // Marcar solicitudes pendientes de este socio como resueltas
         const PasswordResetRequest = require('../models/PasswordResetRequest');
         await PasswordResetRequest.update({ status: 'resolved' }, { where: { clientId: client.id, status: 'pending' } });
+
+        logSecurityEvent('PASSWORD_RESET_BY_ADMIN', {
+            actorId: req.user?.id,
+            targetClientId: client.id,
+            ip: getClientIp(req)
+        });
 
         res.json({ ok: true, message: `Contraseña restablecida. El socio deberá cambiarla en su próximo ingreso.`, tempPassword });
     } catch (err) {

@@ -131,8 +131,16 @@ const ClientsPage = () => {
                 toast.success('Socio actualizado exitosamente.');
             } else {
                 // CREATE (POST)
-                await api.post('/admin/clients', formData);
+                const res = await api.post('/admin/clients', formData);
                 toast.success('Socio registrado exitosamente.');
+                // A07: si el backend generó una contraseña temporal, mostrarla
+                // UNA SOLA VEZ al admin para que se la comunique al socio.
+                if (res.data?.tempPassword) {
+                    window.alert(
+                        `Socio creado.\n\nContraseña temporal: ${res.data.tempPassword}\n\n` +
+                        `Anote este valor y entréguelo al socio.\nEl socio deberá cambiarla en su primer ingreso.`
+                    );
+                }
             }
             notifyUpdate('clients');
             handleReset();
@@ -227,19 +235,26 @@ const ClientsPage = () => {
     const handleResetPassword = async () => {
         if (!formData.id) return;
         const nombre = `${formData.name} ${formData.surname1 || ''}`.trim();
-        const tempPassword = window.prompt(
-            `Contraseña temporal para "${nombre}":\n(El socio deberá cambiarla en su próximo ingreso)`,
-            'CF2026'
+        // A07: deje vacío para que el backend genere una contraseña aleatoria
+        // que cumple la política (≥8 chars, mayúscula+minúscula+dígito).
+        const input = window.prompt(
+            `Contraseña temporal para "${nombre}":\n\n` +
+            `• Deje vacío para generar una contraseña aleatoria segura.\n` +
+            `• O escriba una (mín. 8 chars, mayúscula+minúscula+dígito).`,
+            ''
         );
-        if (tempPassword === null) return; // canceló
-        if (!tempPassword.trim()) {
-            toast.error('Debe ingresar una contraseña temporal.');
-            return;
-        }
+        if (input === null) return; // canceló
 
         setLoading(true);
         try {
-            const res = await api.post(`/admin/clients/${formData.id}/reset-password`, { tempPassword: tempPassword.trim() });
+            const payload = input.trim() ? { tempPassword: input.trim() } : {};
+            const res = await api.post(`/admin/clients/${formData.id}/reset-password`, payload);
+            if (res.data?.tempPassword) {
+                window.alert(
+                    `Contraseña restablecida.\n\nNueva contraseña temporal: ${res.data.tempPassword}\n\n` +
+                    `Anote este valor y entréguelo al socio.`
+                );
+            }
             toast.success(res.data.message || 'Contraseña restablecida correctamente.');
             fetchResetRequests();
         } catch (error) {
@@ -250,17 +265,22 @@ const ClientsPage = () => {
     };
 
     const handleResolveRequest = async (requestId, clientId) => {
-        const tempPassword = window.prompt(
-            '¿Resetear contraseña del socio?\nIngresa la contraseña temporal:',
-            'CF2026'
+        const input = window.prompt(
+            '¿Resetear contraseña del socio?\n\n' +
+            '• Deje vacío para generar una contraseña aleatoria segura.\n' +
+            '• O escriba una (mín. 8 chars, mayúscula+minúscula+dígito).',
+            ''
         );
-        if (tempPassword === null) return; // canceló
-        if (!tempPassword.trim()) {
-            toast.error('Debe ingresar una contraseña temporal.');
-            return;
-        }
+        if (input === null) return; // canceló
         try {
-            await api.post(`/admin/clients/${clientId}/reset-password`, { tempPassword: tempPassword.trim() });
+            const payload = input.trim() ? { tempPassword: input.trim() } : {};
+            const res = await api.post(`/admin/clients/${clientId}/reset-password`, payload);
+            if (res.data?.tempPassword) {
+                window.alert(
+                    `Contraseña restablecida.\n\nNueva contraseña temporal: ${res.data.tempPassword}\n\n` +
+                    `Anote este valor y entréguelo al socio.`
+                );
+            }
             toast.success('Contraseña restablecida y solicitud resuelta.');
             fetchResetRequests();
         } catch (error) {

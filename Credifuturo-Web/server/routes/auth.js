@@ -6,6 +6,8 @@ const PasswordResetRequest = require('../models/PasswordResetRequest');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { verifyToken } = require('../middleware/authMiddleware');
+const { validatePassword } = require('../services/passwordPolicy');
+const { logSecurityEvent, getClientIp } = require('../services/securityLogger');
 
 // A07 (Identification and Authentication Failures): protección anti fuerza bruta
 const loginLimiter = rateLimit({
@@ -34,19 +36,29 @@ if (!JWT_SECRET) {
 // Login
 router.post('/login', loginLimiter, async (req, res) => {
     const { email, password } = req.body;
+    const ip = getClientIp(req);
     try {
         const user = await Client.findOne({ where: { email } });
-        if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
+        if (!user) {
+            logSecurityEvent('LOGIN_FAIL_USER_NOT_FOUND', { email, ip });
+            // A07: respuesta genérica — no revelar si el usuario existe.
+            return res.status(401).json({ message: 'Credenciales inválidas' });
+        }
 
         if (user.estatus === 'Desactivado') {
+            logSecurityEvent('LOGIN_FAIL_DEACTIVATED', { userId: user.id, email, ip });
             return res.status(403).json({ message: 'Usuario desactivado. No tiene acceso al sistema.' });
         }
 
         const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) return res.status(400).json({ message: 'Credenciales inválidas' });
+        if (!isMatch) {
+            logSecurityEvent('LOGIN_FAIL_BAD_PASSWORD', { userId: user.id, email, ip });
+            return res.status(401).json({ message: 'Credenciales inválidas' });
+        }
 
         const role = user.role;
         const mustChangePassword = !!user.mustChangePassword;
+        logSecurityEvent('LOGIN_SUCCESS', { userId: user.id, email, role, ip, mustChangePassword });
 
         const token = jwt.sign(
             { id: user.id, role, name: user.name, customerId: user.customerId, email: user.email, mustChangePassword },
@@ -81,21 +93,23 @@ router.put('/change-password', verifyToken, async (req, res) => {
         if (!currentPassword || !newPassword) {
             return res.status(400).json({ message: 'Debe enviar currentPassword y newPassword.' });
         }
-        if (newPassword.length < 6) {
-            return res.status(400).json({ message: 'La nueva contraseña debe tener al menos 6 caracteres.' });
-        }
-        if (!/\d/.test(newPassword)) {
-            return res.status(400).json({ message: 'La nueva contraseña debe contener al menos un número.' });
+        const policyError = validatePassword(newPassword);
+        if (policyError) {
+            return res.status(400).json({ message: policyError });
         }
 
         const user = await Client.findByPk(req.user.id);
         if (!user) return res.status(404).json({ message: 'Usuario no encontrado.' });
 
         const isMatch = await bcrypt.compare(currentPassword, user.password);
-        if (!isMatch) return res.status(400).json({ message: 'La contraseña actual es incorrecta.' });
+        if (!isMatch) {
+            logSecurityEvent('PASSWORD_CHANGE_FAIL_BAD_CURRENT', { userId: user.id, ip: getClientIp(req) });
+            return res.status(400).json({ message: 'La contraseña actual es incorrecta.' });
+        }
 
         const hashed = await bcrypt.hash(newPassword, 10);
         await user.update({ password: hashed, mustChangePassword: false });
+        logSecurityEvent('PASSWORD_CHANGED', { userId: user.id, ip: getClientIp(req) });
 
         // Emit new token with mustChangePassword = false
         const newToken = jwt.sign(
@@ -122,6 +136,11 @@ router.post('/request-reset', resetLimiter, async (req, res) => {
         else if (email) where.email = email.trim().toLowerCase();
 
         const user = await Client.findOne({ where });
+        logSecurityEvent('PASSWORD_RESET_REQUESTED', {
+            ip: getClientIp(req),
+            matched: !!user,
+            userId: user?.id || null
+        });
         if (!user) {
             // Respuesta genérica por seguridad
             return res.json({ ok: true, message: 'Si el dato coincide con un socio registrado, el administrador recibirá la solicitud.' });
