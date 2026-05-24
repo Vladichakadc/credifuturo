@@ -24,23 +24,25 @@ Se realizó una auditoría completa del sistema de autenticación y gestión de 
 | Scripts de importación (`import_data.js`) | Hash correcto | ✅ OK |
 | Reset masivo (`set_user_passwords.js`) | Hash correcto | ✅ OK |
 
-**Contraseñas por defecto encontradas:**
+**Contraseñas por defecto encontradas (DOCUMENTO HISTÓRICO):**
 
-| Contexto | Contraseña por defecto |
-|---|---|
-| Socios importados (`import_data.js`) | `123` |
-| Creación desde admin panel | `123` |
-| Admin principal (`seed-admin.js`) | `Admin2026!` |
-| Reset masivo (`set_user_passwords.js`) | `Cf@2026` |
-| Reset administrativo (nuevo) | `CF2026` |
+> ⚠️ **Las contraseñas listadas a continuación fueron REMEDIADAS en commits `security(F0)` y `security(F1)`.** Se conservan solo como registro histórico. Ninguna de estas cadenas es válida en el sistema actual: el default `'123'` fue reemplazado por contraseñas aleatorias por socio, el script `set_user_passwords.js` fue eliminado, y los 20 socios que aún tenían la contraseña compartida fueron rotados con `mustChangePassword=true`.
+
+| Contexto | Contraseña por defecto (histórica, ya inválida) | Estado |
+|---|---|---|
+| Socios importados (`import_data.js`) | ~~`123`~~ | Remediado en F1 |
+| Creación desde admin panel | ~~`123`~~ | Remediado en F1 (genera aleatoria) |
+| Admin principal (`seed-admin.js`) | ~~`Admin2026!`~~ | Remediado en F1 (genera aleatoria) |
+| Reset masivo (`set_user_passwords.js`) | ~~(script eliminado)~~ | Remediado en F1 (script borrado, contraseñas rotadas) |
+| Reset administrativo | ~~`CF2026`~~ | Remediado en F1 (frontend permite generar aleatoria) |
 
 ### 2.2 Autenticación JWT
 
 | Componente | Hallazgo | Riesgo |
 |---|---|---|
-| JWT Secret en `auth.js` | Hardcodeado: `credifuturo_secret_key_change_me` | ⚠️ Medio |
-| JWT Secret en `authMiddleware.js` | Mismo valor hardcodeado | ⚠️ Medio |
-| Variable `JWT_SECRET` en `.env` | `super_secret_key_credifuturo_2026` — **ignorada** | ⚠️ Medio |
+| JWT Secret en `auth.js` | ~~Hardcodeado~~ → ahora exige env var, falla al arrancar si falta | ✅ Remediado F0 |
+| JWT Secret en `authMiddleware.js` | ~~Hardcodeado~~ → ahora solo lee de env var | ✅ Remediado F0 |
+| Variable `JWT_SECRET` en `.env` | Rotada a 128 chars aleatorios + `.env` removido de git | ✅ Remediado F0 |
 | Expiración del token | 8 horas | ✅ Aceptable |
 | Almacenamiento en cliente | `localStorage` | ⚠️ Aceptable (sin HTTPS) |
 
