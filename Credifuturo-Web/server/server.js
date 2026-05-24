@@ -23,6 +23,14 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 const isProduction = process.env.NODE_ENV === 'production';
 
+// Railway (y otros PaaS) terminan TLS en un proxy y añaden X-Forwarded-*.
+// Sin esto, express-rate-limit avisa con ERR_ERL_UNEXPECTED_X_FORWARDED_FOR
+// y todas las requests parecen venir de la misma IP del proxy, desactivando
+// efectivamente el límite anti brute-force. '1' = confiar en un solo hop.
+if (isProduction) {
+    app.set('trust proxy', 1);
+}
+
 // A05 (Security Misconfiguration): headers de seguridad por defecto
 app.use(helmet({
     // El frontend React vive en mismo origen, pero permitimos contentSecurityPolicy
