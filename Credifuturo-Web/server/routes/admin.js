@@ -290,11 +290,42 @@ router.post('/clients', async (req, res) => {
 });
 
 // A08 (Software and Data Integrity Failures): whitelist explícita de campos
-// editables. Bloquea mass-assignment de role, customerId, password, mustChangePassword, etc.
+// editables. Bloquea mass-assignment de role, customerId, password,
+// mustChangePassword, externalId, idVm, etc.
+//
+// pickFields(body, allowed) → solo conserva las llaves de la whitelist.
+// Aplicar antes de cualquier .update(body) o .create({ ...body }) directo.
+function pickFields(body, allowed) {
+    if (!body || typeof body !== 'object') return {};
+    const out = {};
+    for (const k of allowed) {
+        if (body[k] !== undefined) out[k] = body[k];
+    }
+    return out;
+}
+
 const ALLOWED_CLIENT_FIELDS = [
     'cedula', 'name', 'surname1', 'surname2', 'email',
     'genero', 'pais', 'ciudad', 'tipoCliente', 'socioFundador',
     'referido', 'cargo', 'fechaIngreso', 'fechaBaja', 'estatus'
+];
+
+const ALLOWED_DISBURSED_LOAN_FIELDS = [
+    'clientId', 'estado', 'fechaPrestamo', 'mesDesembolso', 'anioDesembolso',
+    'valorPrestado', 'cuotas', 'interesMensual', 'diasPagoMax', 'itemQuantity',
+    'banco', 'numeroTransaccion', 'cuentaAhorros', 'observaciones',
+    // legacy
+    'socio', 'fechaDesembolso', 'monto', 'cuenta'
+    // NOTA: 'idVm' y 'orderId' deliberadamente excluidos — no cambian por API.
+];
+
+const ALLOWED_LOAN_PAYMENT_FIELDS = [
+    'clientId', 'mesDesembolso', 'saldoInicial', 'cuotasPrestamo',
+    'interesMensual', 'valorInteresesAmortizados', 'fechaPagoMax', 'mesPago',
+    'valorCuotaVariable', 'estado', 'valorCuotaPago', 'saldoFinal',
+    'itemQuantity', 'banco', 'numeroTransaccion', 'cuentaAhorros',
+    'observaciones', 'idVm', 'estadoPrestamo', 'esPrepago'
+    // NOTA: 'externalId' deliberadamente excluido — se autogenera en POST.
 ];
 
 router.put('/clients/:id', async (req, res) => {
@@ -309,10 +340,7 @@ router.put('/clients/:id', async (req, res) => {
             });
         }
 
-        const updates = {};
-        for (const k of ALLOWED_CLIENT_FIELDS) {
-            if (req.body[k] !== undefined) updates[k] = req.body[k];
-        }
+        const updates = pickFields(req.body, ALLOWED_CLIENT_FIELDS);
         if (updates.fechaBaja === '' || updates.fechaBaja === 'Invalid date') updates.fechaBaja = null;
         if (updates.email === '' || updates.email === 'null') updates.email = null;
 
@@ -1856,8 +1884,9 @@ router.put('/disbursed-loans/:id', async (req, res) => {
             socio = `${client.name} ${client.surname1 || ''}`.trim();
         }
 
+        // A08: whitelist explícita. Bloquea mass-assignment de idVm, orderId, etc.
         const updateData = {
-            ...req.body,
+            ...pickFields(req.body, ALLOWED_DISBURSED_LOAN_FIELDS),
             mesDesembolso,
             anioDesembolso,
             valorPrestado,
@@ -2187,8 +2216,9 @@ router.post('/payments', async (req, res) => {
             valorInteresesAmortizados = saldoInicial * interesMensual;
         }
 
+        // A08: whitelist; externalId solo lo asigna el backend.
         const data = {
-            ...req.body,
+            ...pickFields(req.body, ALLOWED_LOAN_PAYMENT_FIELDS),
             externalId: nextExternalId,
             valorInteresesAmortizados: valorInteresesAmortizados,
             itemQuantity: req.body.itemQuantity || 0
@@ -2207,7 +2237,8 @@ router.put('/payments/:id', async (req, res) => {
         const payment = await LoanPayment.findByPk(req.params.id);
         if (!payment) return res.status(404).json({ error: 'Registro de pago no encontrado' });
 
-        await payment.update(req.body);
+        // A08: whitelist; bloquea cambios a externalId.
+        await payment.update(pickFields(req.body, ALLOWED_LOAN_PAYMENT_FIELDS));
         validateAndFixLoanStatuses().catch(() => { });
         res.json(payment);
     } catch (err) {
