@@ -32,29 +32,41 @@ app.use(helmet({
 }));
 
 // A05: CORS restrictivo en producción.
-// Falla cerrado: si ALLOWED_ORIGINS no está definida en prod, refleja solo el
-// mismo origen (sin wildcard). Antes 'origin: true' reflejaba CUALQUIER origin,
-// lo que combinado con credentials:true era riesgo de exposición de respuestas.
+// - Same-origin: si el host del header Origin coincide con el host de la
+//   request (req.headers.host), se acepta sin necesitar ALLOWED_ORIGINS.
+//   Esto soporta module scripts de Vite, que envían Origin incluso same-origin.
+// - Cross-origin: solo se permiten orígenes listados en ALLOWED_ORIGINS (prod)
+//   o en la lista hardcoded de dev. Nunca 'origin: true' (reflejaba cualquier).
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
     .split(',').map(s => s.trim()).filter(Boolean);
 if (isProduction && allowedOrigins.length === 0) {
     console.warn('[CORS] ALLOWED_ORIGINS no definida en producción — solo se aceptarán requests del mismo origen.');
 }
-const corsOriginCheck = (origin, callback) => {
-    // Same-origin / herramientas (curl, Postman) no envían Origin
-    if (!origin) return callback(null, true);
-    if (isProduction) {
-        if (allowedOrigins.length === 0) return callback(new Error('CORS: origen no permitido'));
-        return allowedOrigins.includes(origin)
-            ? callback(null, true)
-            : callback(new Error(`CORS: origen no permitido: ${origin}`));
+const devOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000'];
+const corsDelegate = (req, callback) => {
+    const baseOptions = { credentials: true };
+    const origin = req.headers.origin;
+
+    // Sin Origin (curl, Postman, navegación top-level same-origin): permitir.
+    if (!origin) return callback(null, { ...baseOptions, origin: true });
+
+    // Same-origin: comparar host del Origin con el Host de la request.
+    // Proxies como Railway preservan el Host público; si el cliente envía
+    // Origin: https://app.railway.app y Host: app.railway.app, coinciden.
+    try {
+        const originHost = new URL(origin).host;
+        if (originHost === req.headers.host) {
+            return callback(null, { ...baseOptions, origin: true });
+        }
+    } catch (_) { /* Origin malformado: cae al check explícito abajo */ }
+
+    const allowList = isProduction ? allowedOrigins : devOrigins;
+    if (allowList.includes(origin)) {
+        return callback(null, { ...baseOptions, origin: true });
     }
-    const devOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000'];
-    return devOrigins.includes(origin)
-        ? callback(null, true)
-        : callback(new Error(`CORS dev: origen no permitido: ${origin}`));
+    return callback(new Error(`CORS: origen no permitido: ${origin}`));
 };
-app.use(cors({ origin: corsOriginCheck, credentials: true }));
+app.use(cors(corsDelegate));
 app.use(express.json({ limit: '1mb' })); // A04: límite explícito al body JSON
 
 // Servir frontend React en producción
