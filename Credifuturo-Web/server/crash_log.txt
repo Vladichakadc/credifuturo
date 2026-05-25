@@ -1,0 +1,36 @@
+[2026-05-25T03:19:52.576Z] totalsByStatus is not defined
+
+    at UserSavingsListPage (http://localhost:5173/src/pages/user/UserSavingsListPage.jsx?t=1779679191482:127:21)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Outlet (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4537:26)
+    at div
+    at main
+    at div
+    at UserDashboardLayout (http://localhost:5173/src/layouts/UserDashboardLayout.jsx?t=1779678752155:209:32)
+    at ProtectedRoute (http://localhost:5173/src/App.jsx:71:29)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4601:5)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4544:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:5290:5)
+    at App (http://localhost:5173/src/App.jsx:64:27)
+    at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
+    at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
+---
+[2026-05-25T03:21:08.851Z] totalsByStatus is not defined
+
+    at UserSavingsListPage (http://localhost:5173/src/pages/user/UserSavingsListPage.jsx?t=1779679191482:127:21)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Outlet (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4537:26)
+    at div
+    at main
+    at div
+    at UserDashboardLayout (http://localhost:5173/src/layouts/UserDashboardLayout.jsx?t=1779678752155:209:32)
+    at ProtectedRoute (http://localhost:5173/src/App.jsx?t=1779679191482:71:29)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4601:5)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4544:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:5290:5)
+    at App (http://localhost:5173/src/App.jsx?t=1779679191482:64:27)
+    at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
+    at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
+---

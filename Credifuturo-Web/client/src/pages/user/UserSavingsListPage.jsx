@@ -167,6 +167,19 @@ const UserSavingsListPage = () => {
         };
     }, [filteredSavings]);
 
+    const totalsByStatus = useMemo(() => {
+        const totals = {};
+        filteredSavings.forEach(s => {
+            const status = s.status ? s.status.trim() : 'Sin Estado';
+            if (!totals[status]) totals[status] = 0;
+            const ahorrado = parseFloat(s.valorAhorrado || 0);
+            const amount = parseFloat(s.amount || 0);
+            const penalizado = parseFloat(s.valorAPenalizar || 0);
+            totals[status] += ahorrado || amount || penalizado;
+        });
+        return totals;
+    }, [filteredSavings]);
+
     const uniqueStatuses = useMemo(() => {
         const statuses = savings.map(s => (s.status || '').trim()).filter(Boolean);
         return [...new Set(statuses)].sort();
@@ -423,16 +436,7 @@ const UserSavingsListPage = () => {
                     <p className="text-gray-500 text-sm">Historial de aportes mensuales</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-                    <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border-2 border-gray-200/80 shadow-sm transition-all hover:shadow-lg hover:border-gray-300 flex-1 lg:w-48">
-                        <Search className="h-4 w-4 text-gray-400" />
-                        <input
-                            type="text"
-                            placeholder="Buscar..."
-                            className="w-full bg-transparent border-none focus:ring-0 text-sm font-medium text-gray-800 placeholder:text-gray-400 p-0"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
-                    </div>
+
                     <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border-2 border-gray-200/80 shadow-sm transition-all hover:shadow-lg hover:border-gray-300">
                         <select
                             className="text-sm font-medium text-gray-700 bg-transparent border-none focus:ring-0 cursor-pointer outline-none p-0"
@@ -456,7 +460,7 @@ const UserSavingsListPage = () => {
                 </div>
             </div>
 
-            {/* Tarjeta de Suma Total */}
+            {/* Tarjetas Dinámicas de Totales */}
             <div className="grid gap-4 md:grid-cols-3">
                 <Card className="bg-emerald-50/50 border-emerald-100">
                     <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
@@ -465,9 +469,24 @@ const UserSavingsListPage = () => {
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold text-emerald-900">${summaryStats.totalAhorrado.toLocaleString('es-CO', { minimumFractionDigits: 0 })}</div>
-                        <p className="text-xs text-emerald-600 mt-1">Total acumulado en pantalla</p>
+                        <p className="text-xs text-emerald-600 mt-1">Total global acumulado</p>
                     </CardContent>
                 </Card>
+                {Object.entries(totalsByStatus).map(([status, total]) => {
+                    if (total <= 0) return null;
+                    return (
+                        <Card key={status} className="bg-blue-50/50 border-blue-100">
+                            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                                <CardTitle className="text-sm font-medium text-blue-800">{status}</CardTitle>
+                                <PiggyBank className="h-4 w-4 text-blue-600" />
+                            </CardHeader>
+                            <CardContent>
+                                <div className="text-2xl font-bold text-blue-900">${total.toLocaleString('es-CO', { minimumFractionDigits: 0 })}</div>
+                                <p className="text-xs text-blue-600 mt-1">Total acumulado en pantalla</p>
+                            </CardContent>
+                        </Card>
+                    );
+                })}
             </div>
 
             {/* Gráfico de Evolución */}
