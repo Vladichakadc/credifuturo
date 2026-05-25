@@ -28,7 +28,7 @@ const articles = [
     },
     {
         num: 'VII',
-        text: 'Después del Dia 11 del Mes se procederá a cobrar intereses por mora, Estos serán de $1.000 pesos colombianos diarios independientemente del APORTE MENSUAL que se vaya a ahorrar.'
+        text: 'A partir del Dia 11 del Mes se procederá a cobrar intereses por mora, Estos serán de $1.000 pesos colombianos diarios independientemente del APORTE MENSUAL que se vaya a ahorrar.'
     },
     {
         num: 'VIII',
