@@ -419,7 +419,7 @@ const UserSavingsListPage = () => {
                     <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
                         <PiggyBank className="h-6 w-6 text-brand-primary" />
                         Mis Ahorros
-                     {!user?.nombre ? '' : `- ${user.nombre} ${user.apellido || ''}`.trim()}</</h2>>
+                     {!user?.nombre ? '' : `- ${user.nombre} ${user.apellido || ''}`.trim()}</h2>
                     <p className="text-gray-500 text-sm">Historial de aportes mensuales</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">

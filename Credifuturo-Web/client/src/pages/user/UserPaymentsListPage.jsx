@@ -291,7 +291,7 @@ const UserPaymentsListPage = () => {
                     <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
                         <BarChart2 className="h-6 w-6 text-brand-primary" />
                         Estado Préstamos
-                     {!user?.nombre ? '' : `- ${user.nombre} ${user.apellido || ''}`.trim()}</</h2>>
+                     {!user?.nombre ? '' : `- ${user.nombre} ${user.apellido || ''}`.trim()}</h2>
                     <p className="text-gray-500 text-sm">Historial de pagos de préstamos</p>
                 </div>
                 <div className="flex items-center gap-3 w-full lg:w-auto">
