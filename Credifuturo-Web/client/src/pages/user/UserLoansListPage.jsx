@@ -10,7 +10,7 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Toolti
 
 const fmtCOP = v => `$${Number(v).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
-const LOAN_BAR_COLORS = ['#6366f1', '#8b5cf6', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#06b6d4'];
+const LOAN_BAR_COLORS = ['#166534', '#fbbf24', '#1a7a42', '#d97706', '#2d9652', '#f5c518', '#052e16'];
 
 const LoanBarTooltip = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null;
@@ -272,15 +272,15 @@ const UserLoansListPage = () => {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                     {/* Tarjeta total */}
                     <div className="lg:col-span-1 flex flex-col gap-4">
-                        <Card className="overflow-hidden border-0 shadow-md" style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 55%, #4338ca 100%)' }}>
+                        <Card className="overflow-hidden border-0 shadow-md" style={{ background: 'linear-gradient(135deg, #052e16 0%, #166534 55%, #1a7a42 100%)' }}>
                             <div className="p-6 relative">
-                                <div className="absolute top-4 right-4 bg-white/10 rounded-xl p-2">
-                                    <CreditCard className="h-6 w-6 text-white/80" />
+                                <div className="absolute top-4 right-4 rounded-xl p-2" style={{ backgroundColor: 'rgba(251,191,36,0.2)' }}>
+                                    <CreditCard className="h-6 w-6" style={{ color: '#fbbf24' }} />
                                 </div>
-                                <p className="text-indigo-200 text-xs font-semibold uppercase tracking-wider mb-1">Total Desembolsado</p>
+                                <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#86efac' }}>Total Desembolsado</p>
                                 <p className="text-3xl font-bold text-white tabular-nums leading-tight">{fmtCOP(loanStats.totalPrestado)}</p>
                                 <div className="h-px bg-white/15 my-3" />
-                                <div className="flex items-center gap-1.5 text-indigo-200 text-sm">
+                                <div className="flex items-center gap-1.5 text-sm" style={{ color: '#86efac' }}>
                                     <Hash className="h-3.5 w-3.5" />
                                     {loanStats.count} {loanStats.count === 1 ? 'préstamo' : 'préstamos'} en total
                                 </div>
@@ -311,7 +311,7 @@ const UserLoansListPage = () => {
                     {/* Gráfico de barras por ID de préstamo */}
                     <Card className="lg:col-span-2 border border-gray-100 shadow-sm overflow-hidden">
                         <div className="px-5 pt-5 pb-3 border-b border-gray-50 flex items-center gap-2">
-                            <TrendingUp className="h-4 w-4 text-indigo-500" />
+                            <TrendingUp className="h-4 w-4" style={{ color: '#166534' }} />
                             <h3 className="text-sm font-bold text-gray-700">Valor Desembolsado por ID Préstamo</h3>
                         </div>
                         <div className="p-5">
@@ -337,7 +337,7 @@ const UserLoansListPage = () => {
                                                 tickFormatter={v => `$${(v / 1000000).toFixed(1)}M`}
                                                 width={56}
                                             />
-                                            <Tooltip content={<LoanBarTooltip />} cursor={{ fill: '#eef2ff' }} />
+                                            <Tooltip content={<LoanBarTooltip />} cursor={{ fill: '#f0fdf4' }} />
                                             <Bar dataKey="valor" radius={[6, 6, 0, 0]}>
                                                 {loanStats.barData.map((_, i) => (
                                                     <Cell key={i} fill={LOAN_BAR_COLORS[i % LOAN_BAR_COLORS.length]} />

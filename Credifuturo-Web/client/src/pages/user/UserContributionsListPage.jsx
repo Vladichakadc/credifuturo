@@ -10,7 +10,7 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Toolti
 
 const fmtCOP = v => `$${Number(v).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
-const BAR_COLORS = ['#10b981', '#059669', '#34d399', '#6ee7b7', '#a7f3d0'];
+const BAR_COLORS = ['#166534', '#fbbf24', '#1a7a42', '#d97706', '#2d9652', '#f5c518', '#052e16'];
 
 const BarTooltip = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null;
@@ -167,7 +167,7 @@ const UserContributionsListPage = () => {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                     {/* Tarjeta resumen total */}
                     <div className="lg:col-span-1 flex flex-col gap-4">
-                        <Card className="overflow-hidden border-0 shadow-md" style={{ background: 'linear-gradient(135deg, #064e3b 0%, #065f46 60%, #047857 100%)' }}>
+                        <Card className="overflow-hidden border-0 shadow-md" style={{ background: 'linear-gradient(135deg, #052e16 0%, #166534 55%, #1a7a42 100%)' }}>
                             <div className="p-6 relative">
                                 <div className="absolute top-4 right-4 bg-white/10 rounded-xl p-2">
                                     <Wallet className="h-6 w-6 text-white/80" />

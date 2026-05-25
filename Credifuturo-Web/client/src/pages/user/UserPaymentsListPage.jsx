@@ -1,11 +1,32 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../../config/api';
-import { Search, RefreshCw, BarChart2, Inbox, Download, DollarSign, Activity, CheckCircle, BarChart3, AlertTriangle, PieChart, Clock, X } from 'lucide-react';
+import { Search, RefreshCw, BarChart2, Inbox, Download, Activity, CheckCircle, BarChart3, AlertTriangle, PieChart, Clock, X, TrendingUp, Hash } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card';
 import { useUi } from '../../context/UiContext';
 import * as XLSX from 'xlsx';
 import { formatDate } from '../../utils/excelUtils';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList } from 'recharts';
+
+const fmtCOP = v => `$${Number(v).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+
+const PaymentTooltip = ({ active, payload, label }) => {
+    if (!active || !payload?.length) return null;
+    return (
+        <div className="bg-white border border-gray-100 rounded-xl shadow-lg px-4 py-3 text-sm min-w-[160px]">
+            <p className="font-bold text-gray-700 mb-2">{label}</p>
+            {payload.map(p => (
+                <div key={p.dataKey} className="flex items-center justify-between gap-4">
+                    <span className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: p.fill }} />
+                        <span className="text-gray-500">{p.name}</span>
+                    </span>
+                    <span className="font-semibold" style={{ color: p.fill }}>{fmtCOP(p.value)}</span>
+                </div>
+            ))}
+        </div>
+    );
+};
 
 const TABLE_COLUMNS = [
     { key: 'externalId', label: 'Id_EP', align: 'center', minWidth: '80px', highlight: true },
@@ -30,17 +51,17 @@ const TABLE_COLUMNS = [
     { key: 'observaciones', label: 'Observaciones', align: 'left', minWidth: '200px' }
 ];
 
-const StatCard = ({ title, value, description, icon: Icon, color, customBg, isDark = false, textColor }) => (
+const StatCard = ({ title, value, description, icon: Icon, accentColor, customBg, isDark = false }) => (
     <Card
-        className="transition-all duration-200 overflow-hidden relative"
-        style={customBg ? { background: customBg, border: 'none' } : {}}
+        className="transition-all duration-200 overflow-hidden relative bg-white"
+        style={customBg ? { background: customBg, border: 'none' } : { borderTop: `3px solid ${accentColor || '#166534'}` }}
     >
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
             <CardTitle className={`text-sm font-medium ${isDark ? 'text-white/90' : 'text-gray-500'}`}>{title}</CardTitle>
-            <Icon className={`h-4 w-4 ${color}`} />
+            <Icon className="h-4 w-4" style={{ color: isDark ? 'rgba(255,255,255,0.7)' : (accentColor || '#166534') }} />
         </CardHeader>
         <CardContent className="relative z-10">
-            <div className={`text-2xl font-bold ${textColor || (isDark ? 'text-white' : 'text-gray-900')}`}>{value}</div>
+            <div className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>{value}</div>
             <p className={`text-xs mt-1 ${isDark ? 'text-white/80' : 'text-gray-500'}`}>{description}</p>
         </CardContent>
     </Card>
@@ -58,8 +79,8 @@ const StatusBadge = ({ value }) => {
         ring = 'bg-emerald-100 text-emerald-800 ring-emerald-200';
         dot = 'bg-emerald-500';
     } else if (isVigente) {
-        ring = 'bg-blue-100 text-blue-800 ring-blue-200';
-        dot = 'bg-blue-500';
+        ring = 'bg-amber-100 text-amber-800 ring-amber-200';
+        dot = 'bg-amber-500';
     }
 
     return (
@@ -250,6 +271,18 @@ const UserPaymentsListPage = () => {
         });
     }, [filteredPayments, payments, safeParseDate]);
 
+    const paymentsByLoan = useMemo(() => {
+        const map = {};
+        payments.forEach(p => {
+            if (!p.idVm) return;
+            if (!map[p.idVm]) map[p.idVm] = { id: p.idVm, pagado: 0, pendiente: 0 };
+            const val = parseFloat(p.valorCuotaVariable || 0);
+            if ((p.estado || '').trim().toLowerCase() === 'pago') map[p.idVm].pagado += val;
+            else if ((p.estado || '').trim().toLowerCase() === 'pendiente') map[p.idVm].pendiente += val;
+        });
+        return Object.values(map).sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+    }, [payments]);
+
     const handleExport = () => {
         if (filteredPayments.length === 0) { toast.error('No hay datos para exportar.'); return; }
         const exportData = filteredPayments.map(p => ({
@@ -300,37 +333,36 @@ const UserPaymentsListPage = () => {
                 </div>
             </div>
 
-            {/* Smart Summary Cards */}
-
+            {/* Tarjetas de resumen — colores corporativos */}
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                 <StatCard
                     title="Cartera Activa"
-                    value={`$${stats.carteraActiva.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+                    value={fmtCOP(stats.carteraActiva)}
                     description="Suma cuotas pendientes"
                     icon={Activity}
-                    color="text-emerald-700"
+                    accentColor="#166534"
                 />
                 <StatCard
                     title="Total Pagado"
-                    value={`$${stats.totalRecaudo.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+                    value={fmtCOP(stats.totalRecaudo)}
                     description="Suma cuotas pagadas"
                     icon={CheckCircle}
-                    color="text-blue-600"
+                    accentColor="#1a7a42"
                 />
                 <StatCard
                     title="Intereses Pagados"
-                    value={`$${stats.totalIntereses.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+                    value={fmtCOP(stats.totalIntereses)}
                     description="Intereses amortizados"
                     icon={BarChart3}
-                    color="text-amber-500"
+                    accentColor="#fbbf24"
                 />
                 <StatCard
                     title="Cartera Vencida"
-                    value={`$${stats.moraCartera.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+                    value={fmtCOP(stats.moraCartera)}
                     description="Cuotas en mora"
                     icon={AlertTriangle}
-                    color="text-red-500"
-                    customBg="linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)"
+                    accentColor="#d97706"
+                    customBg="linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)"
                 />
             </div>
 
@@ -340,23 +372,96 @@ const UserPaymentsListPage = () => {
                     value={stats.totalCuotas}
                     description="Registros actuales"
                     icon={PieChart}
-                    color="text-gray-500"
+                    accentColor="#052e16"
                 />
                 <StatCard
                     title="Cuotas Pagadas"
                     value={stats.cuotasPagadas}
                     description="Estado 'Pago'"
                     icon={CheckCircle}
-                    color="text-green-600"
+                    accentColor="#166534"
                 />
                 <StatCard
                     title="Cuotas Pendientes"
                     value={stats.totalCuotas - stats.cuotasPagadas}
                     description="Estado 'Pendiente'"
                     icon={Clock}
-                    color="text-amber-600"
+                    accentColor="#f5c518"
                 />
             </div>
+
+            {/* Tarjeta total + Gráfico por préstamo */}
+            {payments.length > 0 && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    {/* Tarjeta principal */}
+                    <div className="lg:col-span-1 flex flex-col gap-4">
+                        <Card className="overflow-hidden border-0 shadow-md" style={{ background: 'linear-gradient(135deg, #052e16 0%, #166534 55%, #1a7a42 100%)' }}>
+                            <div className="p-6 relative">
+                                <div className="absolute top-4 right-4 rounded-xl p-2" style={{ backgroundColor: 'rgba(251,191,36,0.2)' }}>
+                                    <TrendingUp className="h-6 w-6" style={{ color: '#fbbf24' }} />
+                                </div>
+                                <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#86efac' }}>Total Recaudado</p>
+                                <p className="text-3xl font-bold text-white tabular-nums leading-tight">{fmtCOP(stats.totalRecaudo)}</p>
+                                <div className="h-px bg-white/15 my-3" />
+                                <div className="flex items-center gap-1.5 text-sm" style={{ color: '#86efac' }}>
+                                    <Hash className="h-3.5 w-3.5" />
+                                    {stats.cuotasPagadas} cuotas pagadas de {stats.totalCuotas}
+                                </div>
+                            </div>
+                        </Card>
+
+                        {/* Detalle por préstamo */}
+                        {paymentsByLoan.length > 0 && (
+                            <Card className="border border-gray-100 shadow-sm">
+                                <div className="px-4 pt-4 pb-2 border-b border-gray-50">
+                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Detalle por Préstamo</p>
+                                </div>
+                                <div className="p-3 space-y-2">
+                                    {paymentsByLoan.map(d => (
+                                        <div key={d.id} className="text-sm">
+                                            <div className="flex justify-between mb-1">
+                                                <span className="font-semibold text-gray-700">{d.id}</span>
+                                                <span className="text-gray-400 text-xs">{fmtCOP(d.pagado + d.pendiente)}</span>
+                                            </div>
+                                            <div className="flex rounded-full overflow-hidden h-1.5 bg-gray-100">
+                                                <div className="h-full" style={{ width: `${d.pagado + d.pendiente > 0 ? (d.pagado / (d.pagado + d.pendiente)) * 100 : 0}%`, backgroundColor: '#166534' }} />
+                                                <div className="h-full" style={{ width: `${d.pagado + d.pendiente > 0 ? (d.pendiente / (d.pagado + d.pendiente)) * 100 : 0}%`, backgroundColor: '#fbbf24' }} />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </Card>
+                        )}
+                    </div>
+
+                    {/* Gráfico de barras por préstamo */}
+                    <Card className="lg:col-span-2 border border-gray-100 shadow-sm overflow-hidden">
+                        <div className="px-5 pt-5 pb-3 border-b border-gray-50 flex items-center gap-2">
+                            <BarChart3 className="h-4 w-4" style={{ color: '#166534' }} />
+                            <h3 className="text-sm font-bold text-gray-700">Pagado vs Pendiente por Préstamo</h3>
+                        </div>
+                        <div className="p-5">
+                            {paymentsByLoan.length === 0 ? (
+                                <div className="h-40 flex items-center justify-center text-gray-400 text-sm">Sin datos</div>
+                            ) : (
+                                <div style={{ height: paymentsByLoan.length <= 2 ? 180 : 240 }}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={paymentsByLoan} margin={{ top: 16, right: 16, left: 8, bottom: 4 }} barSize={paymentsByLoan.length <= 3 ? 40 : 28} barGap={4}>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                                            <XAxis dataKey="id" axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 11, fontWeight: 600 }} />
+                                            <YAxis axisLine={false} tickLine={false} tick={{ fill: '#9ca3af', fontSize: 10 }} tickFormatter={v => `$${(v / 1000000).toFixed(1)}M`} width={56} />
+                                            <Tooltip content={<PaymentTooltip />} cursor={{ fill: '#f0fdf4' }} />
+                                            <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                                            <Bar dataKey="pagado" name="Pagado" fill="#166534" radius={[4, 4, 0, 0]} />
+                                            <Bar dataKey="pendiente" name="Pendiente" fill="#fbbf24" radius={[4, 4, 0, 0]} />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            )}
+                        </div>
+                    </Card>
+                </div>
+            )}
 
             {/* Filters Bar */}
             <div className="bg-white rounded-xl border border-ui-border shadow-sm p-4">

@@ -14,18 +14,18 @@ import SavingsListPDF from './SavingsListPDF'; // Nuevo componente para el PDF
 
 const fmtCOP = v => `$${Number(v).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
-const ACCENT_PALETTE = ['#6366f1', '#0ea5e9', '#8b5cf6', '#f59e0b', '#06b6d4', '#ec4899', '#84cc16'];
+const ACCENT_PALETTE = ['#166534', '#fbbf24', '#1a7a42', '#d97706', '#2d9652', '#f5c518', '#052e16'];
 
 const getStatusColor = (status, index) => {
     const s = (status || '').toLowerCase();
     if (s.includes('abono') || s.includes('deposito') || s.includes('pagado') || s.includes('activo') || s.includes('vigente'))
-        return { accent: '#10b981', Icon: CheckCircle2 };
+        return { accent: '#166534', Icon: CheckCircle2 };
     if (s.includes('descuento') || s.includes('penaliz') || s.includes('mora') || s.includes('multa') || s.includes('sancion'))
-        return { accent: '#f97316', Icon: AlertTriangle };
+        return { accent: '#d97706', Icon: AlertTriangle };
     if (s.includes('interes') || s.includes('distribucion') || s.includes('rendimiento') || s.includes('dividendo'))
-        return { accent: '#6366f1', Icon: Hash };
+        return { accent: '#fbbf24', Icon: Hash };
     if (s.includes('pendiente') || s.includes('proceso'))
-        return { accent: '#f59e0b', Icon: Clock };
+        return { accent: '#f5c518', Icon: Clock };
     return { accent: ACCENT_PALETTE[index % ACCENT_PALETTE.length], Icon: Hash };
 };
 
@@ -478,7 +478,7 @@ const UserSavingsListPage = () => {
             {savings.length > 0 && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     {/* Tarjeta total global */}
-                    <Card className="overflow-hidden border-0 shadow-md sm:col-span-2 lg:col-span-1" style={{ background: 'linear-gradient(135deg, #064e3b 0%, #065f46 60%, #047857 100%)' }}>
+                    <Card className="overflow-hidden border-0 shadow-md sm:col-span-2 lg:col-span-1" style={{ background: 'linear-gradient(135deg, #052e16 0%, #166534 55%, #1a7a42 100%)' }}>
                         <div className="p-5 relative">
                             <div className="absolute top-4 right-4 bg-white/10 rounded-xl p-2">
                                 <PiggyBank className="h-5 w-5 text-white/80" />
@@ -525,8 +525,8 @@ const UserSavingsListPage = () => {
                             <XAxis dataKey="name" tick={{ fill: '#6b7280', fontSize: 12 }} />
                             <YAxis tickFormatter={(value) => value > 0 ? `$${(value / 1000000).toFixed(1)}M` : '$0'} tick={{ fill: '#9ca3af', fontSize: 11 }} />
                             <Tooltip formatter={(value) => [`$${Number(value).toLocaleString('es-CO')}`, "Ahorros"]} cursor={{ fill: 'rgba(130, 202, 157, 0.1)' }} />
-                            <Bar dataKey="ahorros" fill="#22c55e" radius={[4, 4, 0, 0]}>
-                                <LabelList dataKey="ahorros" position="top" fill="#15803d" fontSize={10} fontWeight="bold" formatter={(value) => `$${Number(value).toLocaleString('es-CO')}`} />
+                            <Bar dataKey="ahorros" fill="#166534" radius={[4, 4, 0, 0]}>
+                                <LabelList dataKey="ahorros" position="top" fill="#052e16" fontSize={10} fontWeight="bold" formatter={(value) => `$${Number(value).toLocaleString('es-CO')}`} />
                             </Bar>
                         </BarChart>
                     </ResponsiveContainer>
