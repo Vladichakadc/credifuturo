@@ -882,7 +882,7 @@ const UserAccountDetailsPage = () => {
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-                    <h1 className="text-2xl font-bold text-brand-primary">Detalle de la Cuenta</h1>
+                    <h1 className="text-2xl font-bold text-brand-primary">Detalle de la Cuenta {!user?.nombre ? '' : `- ${user.nombre} ${user.apellido || ''}`.trim()}</</h1>>
                     <span className="hidden sm:block text-brand-primary/30 text-2xl">|</span>
                     {(fullUserData || authUser).name ? (
                         <h2 className="text-2xl font-bold text-brand-primary">

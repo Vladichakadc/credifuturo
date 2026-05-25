@@ -9,6 +9,11 @@ import {
 import { useUi } from '../../context/UiContext';
 
 const UserLoanAnalyzerPage = () => {
+    const user = (() => {
+        try { return JSON.parse(localStorage.getItem('user') || '{}'); }
+        catch { return {}; }
+    })();
+
     const { toast } = useUi();
     const [analysis, setAnalysis] = useState(null);
     const [loadingAnalysis, setLoadingAnalysis] = useState(true);
@@ -124,7 +129,7 @@ const UserLoanAnalyzerPage = () => {
                 <h1 className="text-2xl font-bold text-brand-primary flex items-center gap-2">
                     <Scale className="h-6 w-6 text-emerald-600" />
                     Mi Capacidad de Préstamo
-                </h1>
+                 {!user?.nombre ? '' : `- ${user.nombre} ${user.apellido || ''}`.trim()}</</h1>>
                 <p className="text-gray-500 text-sm mt-1">
                     Evaluación financiera personal · Basada en la regla de 3× Ahorro Acumulado
                 </p>

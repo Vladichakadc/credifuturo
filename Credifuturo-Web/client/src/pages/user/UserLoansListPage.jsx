@@ -64,6 +64,11 @@ const CellValue = ({ column, value }) => {
 };
 
 const UserLoansListPage = () => {
+    const user = (() => {
+        try { return JSON.parse(localStorage.getItem('user') || '{}'); }
+        catch { return {}; }
+    })();
+
     const { toast } = useUi();
     const [loans, setLoans] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -172,7 +177,7 @@ const UserLoansListPage = () => {
                     <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
                         <CreditCard className="h-6 w-6 text-brand-primary" />
                         Mis Préstamos
-                    </h2>
+                     {!user?.nombre ? '' : `- ${user.nombre} ${user.apellido || ''}`.trim()}</</h2>>
                     <p className="text-gray-500 text-sm">Historial de préstamos desembolsados</p>
                 </div>
                 <div className="flex items-center gap-3 w-full lg:w-auto">

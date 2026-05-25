@@ -49,6 +49,11 @@ const articles = [
 ];
 
 const UserStatutesPage = () => {
+    const user = (() => {
+        try { return JSON.parse(localStorage.getItem('user') || '{}'); }
+        catch { return {}; }
+    })();
+
     return (
         <div className="max-w-3xl mx-auto space-y-6">
             {/* Header */}
@@ -58,7 +63,7 @@ const UserStatutesPage = () => {
                         <Scale className="h-6 w-6 text-brand-primary" />
                     </div>
                     <div>
-                        <h1 className="text-xl font-bold text-gray-900">Estatutos del Fondo Familiar</h1>
+                        <h1 className="text-xl font-bold text-gray-900">Estatutos del Fondo Familiar {!user?.nombre ? '' : `- ${user.nombre} ${user.apellido || ''}`.trim()}</</h1>>
                         <div className="flex items-center gap-1.5 mt-1 text-sm text-gray-500">
                             <Calendar className="h-4 w-4" />
                             <span>Estatutos Iniciales — Fecha de Fundación: 01/12/2024</span>
