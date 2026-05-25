@@ -2957,6 +2957,7 @@ const EXCEL_SYNC_ENABLED = process.env.ENABLE_EXCEL_SYNC === 'true';
 router.get('/sync-status', (req, res) => {
     res.json({
         enabled: EXCEL_SYNC_ENABLED,
+        isProduction: process.env.NODE_ENV === 'production',
         message: EXCEL_SYNC_ENABLED
             ? 'Sincronización Excel habilitada.'
             : 'Sincronización Excel deshabilitada. Los datos se gestionan directamente desde la base de datos.'

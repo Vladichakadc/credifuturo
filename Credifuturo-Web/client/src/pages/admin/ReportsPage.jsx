@@ -14,6 +14,7 @@ const ReportsPage = () => {
     const [lastBackup, setLastBackup] = useState(null);
     const [lastFullBackup, setLastFullBackup] = useState(null);
     const [backupHistory, setBackupHistory] = useState([]);
+    const [isProduction, setIsProduction] = useState(false);
 
     // Raw Data for exports
     const [clients, setClients] = useState([]);
@@ -42,12 +43,16 @@ const ReportsPage = () => {
                 api.get('/admin/clients'),
                 api.get('/admin/savings'),
                 api.get('/admin/disbursed-loans'),
-                api.get('/admin/payments')
+                api.get('/admin/payments'),
+                api.get('/admin/sync-status')
             ]);
             setClients(Array.isArray(resClients.data) ? resClients.data : []);
             setSavings(Array.isArray(resSavings.data) ? resSavings.data : []);
             setDisbursedLoans(Array.isArray(resDisbursed.data) ? resDisbursed.data : []);
             setPayments(Array.isArray(resPayments.data) ? resPayments.data : []);
+            if (resSyncStatus.data && resSyncStatus.data.isProduction) {
+                setIsProduction(true);
+            }
         } catch (error) {
             console.error('Error fetching backup data:', error);
         } finally {
@@ -374,43 +379,45 @@ const ReportsPage = () => {
             </div>
 
             {/* ── Backup Completo (Excel + BD) ─────────────────────────── */}
-            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 p-6 text-white shadow-xl">
-                <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
-                <div className="relative flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                    <div className="flex items-start gap-4">
-                        <div className="shrink-0 flex h-12 w-12 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm">
-                            <Database className="h-6 w-6" />
-                        </div>
-                        <div>
-                            <h2 className="text-lg font-bold">Backup Completo (Excel + Base de Datos)</h2>
-                            <p className="text-sm text-white/80 mt-0.5">
-                                Genera los 6 Excel <strong>y guarda una copia del archivo database.sqlite</strong> en la carpeta de Backups. Ideal antes de cambios importantes.
-                            </p>
-                            {lastFullBackup && (
-                                <p className="mt-1.5 text-xs text-yellow-100 flex items-center gap-1">
-                                    <CheckCircle className="h-3.5 w-3.5" />
-                                    Último: {lastFullBackup.count} archivos · {lastFullBackup.dbSizeKB} KB BD · {new Date(lastFullBackup.timestamp).toLocaleString('es-CO')}
+            {!isProduction && (
+                <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 p-6 text-white shadow-xl">
+                    <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
+                    <div className="relative flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                        <div className="flex items-start gap-4">
+                            <div className="shrink-0 flex h-12 w-12 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm">
+                                <Database className="h-6 w-6" />
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-bold">Backup Completo (Excel + Base de Datos)</h2>
+                                <p className="text-sm text-white/80 mt-0.5">
+                                    Genera los 6 Excel <strong>y guarda una copia del archivo database.sqlite</strong> en la carpeta de Backups. Ideal antes de cambios importantes.
                                 </p>
-                            )}
-                            <p className="mt-1 text-xs text-white/60">
-                                📦 Incluye: Tabla_Clientes, Ahorros, Aportes, Préstamos, Estado, Morosidad + <strong>database.sqlite</strong>
-                            </p>
+                                {lastFullBackup && (
+                                    <p className="mt-1.5 text-xs text-yellow-100 flex items-center gap-1">
+                                        <CheckCircle className="h-3.5 w-3.5" />
+                                        Último: {lastFullBackup.count} archivos · {lastFullBackup.dbSizeKB} KB BD · {new Date(lastFullBackup.timestamp).toLocaleString('es-CO')}
+                                    </p>
+                                )}
+                                <p className="mt-1 text-xs text-white/60">
+                                    📦 Incluye: Tabla_Clientes, Ahorros, Aportes, Préstamos, Estado, Morosidad + <strong>database.sqlite</strong>
+                                </p>
+                            </div>
                         </div>
+                        <button
+                            id="btn-backup-completo"
+                            onClick={handleBackupFull}
+                            disabled={backingUpFull || loading}
+                            className="shrink-0 flex items-center gap-2 rounded-xl bg-white text-orange-600 font-semibold px-6 py-3 text-sm shadow-lg hover:bg-orange-50 active:scale-95 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                            {backingUpFull ? (
+                                <><Loader className="h-4 w-4 animate-spin" /> Generando...</>
+                            ) : (
+                                <><Database className="h-4 w-4" /> Backup Completo</>
+                            )}
+                        </button>
                     </div>
-                    <button
-                        id="btn-backup-completo"
-                        onClick={handleBackupFull}
-                        disabled={backingUpFull || loading}
-                        className="shrink-0 flex items-center gap-2 rounded-xl bg-white text-orange-600 font-semibold px-6 py-3 text-sm shadow-lg hover:bg-orange-50 active:scale-95 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                        {backingUpFull ? (
-                            <><Loader className="h-4 w-4 animate-spin" /> Generando...</>
-                        ) : (
-                            <><Database className="h-4 w-4" /> Backup Completo</>
-                        )}
-                    </button>
                 </div>
-            </div>
+            )}
 
             {/* ── Historial de Backups ────────────────────────────────── */}
             {backupHistory.length > 0 && (
