@@ -1547,7 +1547,7 @@ const SavingsSummaryPage = ({ lockedSocio = null, hideControls = false, preloade
                     <PiggyBank className="h-5 w-5 text-white" />
                 </div>
                 <div>
-                    <h1 className="text-xl font-black text-gray-900 leading-none">Resumen de Ahorros</h1>
+                    <h1 className="text-xl font-black text-gray-900 leading-none">Detalle de la Cuenta</h1>
                     <p className="text-[11px] text-gray-400 font-semibold mt-0.5 uppercase tracking-wide">Estado de cuenta individual por socio</p>
                 </div>
             </div>

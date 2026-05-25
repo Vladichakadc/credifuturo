@@ -1541,10 +1541,11 @@ const FinancialChart = ({ stats }) => {
 // ─── Dashboard Home ───────────────────────────────────────────────────────────
 const DashboardHome = () => {
     const { toast, navigate } = useUi();
-    const isAdmin = (() => {
-        try { return (JSON.parse(localStorage.getItem('user') || '{}').role) === 'admin'; }
-        catch { return false; }
+    const user = (() => {
+        try { return JSON.parse(localStorage.getItem('user') || '{}'); }
+        catch { return {}; }
     })();
+    const isAdmin = user.role === 'admin';
     const [statusFilter, setStatusFilter] = useState('Activo');
     const [selectedYears, setSelectedYears] = useState([new Date().getFullYear(), new Date().getFullYear() + 1]);
     const [availableStatuses, setAvailableStatuses] = useState([]);
@@ -2081,7 +2082,9 @@ const DashboardHome = () => {
             {/* Header with Save Button and Filter */}
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-brand-primary">Panel Principal</h1>
+                    <h1 className="text-2xl font-bold text-brand-primary">
+                        Panel Principal {!isAdmin && user.nombre ? `- ${user.nombre} ${user.apellido || ''}`.trim() : ''}
+                    </h1>
                     <div className="flex items-center gap-2 mt-1">
                         <p className="text-gray-500">Resumen general de la actividad financiera.</p>
                         {/* Live indicator */}
@@ -2098,20 +2101,22 @@ const DashboardHome = () => {
 
                 <div className="flex flex-col sm:flex-row gap-3 items-center" data-html2canvas-ignore="true">
                     {/* Status Filter */}
-                    <div className="inline-flex items-center gap-2 bg-gradient-to-r from-emerald-50 to-green-50 px-6 py-3 rounded-xl border-2 border-emerald-200/80 shadow-sm transition-all hover:shadow-lg hover:border-emerald-300">
-                        <Users className="h-4 w-4 text-emerald-600 flex-shrink-0" />
-                        <select
-                            id="status-filter"
-                            value={statusFilter}
-                            onChange={(e) => setStatusFilter(e.target.value)}
-                            className="text-sm font-bold text-emerald-900 bg-transparent border-none focus:ring-0 cursor-pointer outline-none p-0"
-                        >
-                            <option value="Todos">Todos los Socios</option>
-                            {availableStatuses.map(s => (
-                                <option key={s} value={s}>{s}</option>
-                            ))}
-                        </select>
-                    </div>
+                    {isAdmin && (
+                        <div className="inline-flex items-center gap-2 bg-gradient-to-r from-emerald-50 to-green-50 px-6 py-3 rounded-xl border-2 border-emerald-200/80 shadow-sm transition-all hover:shadow-lg hover:border-emerald-300">
+                            <Users className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+                            <select
+                                id="status-filter"
+                                value={statusFilter}
+                                onChange={(e) => setStatusFilter(e.target.value)}
+                                className="text-sm font-bold text-emerald-900 bg-transparent border-none focus:ring-0 cursor-pointer outline-none p-0"
+                            >
+                                <option value="Todos">Todos los Socios</option>
+                                {availableStatuses.map(s => (
+                                    <option key={s} value={s}>{s}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
 
                     {/* Year Multi-Select Filter */}
                     <YearMultiSelect selectedYears={selectedYears} onChange={setSelectedYears} />
