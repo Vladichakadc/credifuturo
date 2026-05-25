@@ -88,6 +88,20 @@ const resolutions = [
         description: 'Se aprueban los préstamos mayores a 12 cuotas (que superen el 31 de diciembre), con el requisito de no retirar los ahorros.',
         approved: true,
         votes: { si: 16, no: 0 }
+    },
+    {
+        id: 13,
+        title: 'Préstamos para Socios Nuevos',
+        description: 'Los socios nuevos podrán solicitar préstamos a partir del mes 3.',
+        approved: true,
+        votes: { si: 14, no: 3 }
+    },
+    {
+        id: 14,
+        title: 'Capital Mínimo en el Fondo',
+        description: 'Siempre debe quedar mínimo el 20% de capital en el fondo.',
+        approved: true,
+        votes: { si: 17, no: 0 }
     }
 ];
 
@@ -113,65 +127,75 @@ const UserResolutionsPage = () => {
                 </p>
             </div>
 
-            {/* List of resolutions */}
-            <div className="grid gap-6">
-                {resolutions.map((res) => (
-                    <div
-                        key={res.id}
-                        className={cn(
-                            "bg-white rounded-xl border shadow-sm overflow-hidden transition-all",
-                            res.approved ? "border-green-200/50" : "border-red-200/50 opacity-90"
-                        )}
-                    >
-                        {/* Card Header */}
-                        <div className={cn(
-                            "px-6 py-4 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-4",
-                            res.approved ? "bg-green-50/50 border-green-100" : "bg-red-50/50 border-red-100"
-                        )}>
-                            <div className="flex items-center gap-3">
-                                {res.approved ? (
-                                    <CheckCircle className="h-5 w-5 text-green-600" />
-                                ) : (
-                                    <XCircle className="h-5 w-5 text-red-500" />
+            {/* Segments of resolutions */}
+            {[
+                { title: 'Aprobaciones 2025', data: resolutions.filter(r => r.id <= 12) },
+                { title: 'Primer informe 2026', data: resolutions.filter(r => r.id > 12) }
+            ].map((section, idx) => (
+                <div key={idx} className={`space-y-4 ${idx > 0 ? 'pt-6' : ''}`}>
+                    <h2 className="text-lg font-bold text-brand-primary border-b-2 border-gray-100 pb-2">
+                        {section.title}
+                    </h2>
+                    <div className="grid gap-6">
+                        {section.data.map((res) => (
+                            <div
+                                key={res.id}
+                                className={cn(
+                                    "bg-white rounded-xl border shadow-sm overflow-hidden transition-all",
+                                    res.approved ? "border-green-200/50" : "border-red-200/50 opacity-90"
                                 )}
-                                <h3 className={cn(
-                                    "font-semibold",
-                                    res.approved ? "text-green-900" : "text-red-900"
+                            >
+                                {/* Card Header */}
+                                <div className={cn(
+                                    "px-6 py-4 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-4",
+                                    res.approved ? "bg-green-50/50 border-green-100" : "bg-red-50/50 border-red-100"
                                 )}>
-                                    {res.title}
-                                </h3>
-                            </div>
+                                    <div className="flex items-center gap-3">
+                                        {res.approved ? (
+                                            <CheckCircle className="h-5 w-5 text-green-600" />
+                                        ) : (
+                                            <XCircle className="h-5 w-5 text-red-500" />
+                                        )}
+                                        <h3 className={cn(
+                                            "font-semibold",
+                                            res.approved ? "text-green-900" : "text-red-900"
+                                        )}>
+                                            {res.title}
+                                        </h3>
+                                    </div>
 
-                            {/* Voting Results Badge */}
-                            <div className="flex items-center gap-3 text-sm">
-                                <span className={cn(
-                                    "px-3 py-1 rounded-full font-medium text-xs",
-                                    res.approved ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
-                                )}>
-                                    {res.approved ? 'Aprobado' : 'Rechazado'}
-                                </span>
-                                <div className="flex items-center gap-2 text-gray-500 text-xs font-medium">
-                                    <span className="text-green-600">Sí: {res.votes.si}</span>
-                                    <span className="text-gray-300">|</span>
-                                    <span className="text-red-500">No: {res.votes.no}</span>
+                                    {/* Voting Results Badge */}
+                                    <div className="flex items-center gap-3 text-sm">
+                                        <span className={cn(
+                                            "px-3 py-1 rounded-full font-medium text-xs",
+                                            res.approved ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                                        )}>
+                                            {res.approved ? 'Aprobado' : 'Rechazado'}
+                                        </span>
+                                        <div className="flex items-center gap-2 text-gray-500 text-xs font-medium">
+                                            <span className="text-green-600">Sí: {res.votes.si}</span>
+                                            <span className="text-gray-300">|</span>
+                                            <span className="text-red-500">No: {res.votes.no}</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Card Body */}
+                                <div className="p-6">
+                                    <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">
+                                        {res.description}
+                                    </div>
+                                    {res.note && (
+                                        <div className="mt-4 text-xs font-medium text-red-600 bg-red-50 p-3 rounded-md border border-red-100">
+                                            Nota: {res.note}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
-                        </div>
-
-                        {/* Card Body */}
-                        <div className="p-6">
-                            <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">
-                                {res.description}
-                            </div>
-                            {res.note && (
-                                <div className="mt-4 text-xs font-medium text-red-600 bg-red-50 p-3 rounded-md border border-red-100">
-                                    Nota: {res.note}
-                                </div>
-                            )}
-                        </div>
+                        ))}
                     </div>
-                ))}
-            </div>
+                </div>
+            ))}
 
             {/* Footer note */}
             <p className="text-xs text-center text-gray-400 pb-4 pt-4">

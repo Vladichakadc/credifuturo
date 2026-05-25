@@ -155,7 +155,8 @@ const UserDashboardLayout = ({ user, onLogout }) => {
             label: 'Préstamos y Pagos',
             children: [
                 { icon: List, label: 'Lista de Préstamos', path: '/dashboard/loans' },
-                { icon: List, label: 'Lista de Pagos', path: '/dashboard/payments' }
+                { icon: List, label: 'Lista de Pagos', path: '/dashboard/payments' },
+                { icon: Scale, label: 'Analizador de Capacidad', path: '/dashboard/loan-capacity' }
             ]
         },
         {

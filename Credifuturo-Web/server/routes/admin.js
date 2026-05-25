@@ -3271,6 +3271,20 @@ router.delete('/informes/:name', async (req, res) => {
 // ENDPOINTS PARA SOCIOS (SOLO LECTURA)
 // ─────────────────────────────────────────────
 
+router.get('/my/loan-capacity', verifyToken, requireFreshPassword, requireRole('user'), async (req, res) => {
+    try {
+        const analysis = await getLoanCapacityAnalysis(req.user.id);
+        res.json(analysis);
+    } catch (err) {
+        console.error('my/loan-capacity error:', err);
+        if (err.message === 'Socio no encontrado') {
+            res.status(404).json({ error: err.message });
+        } else {
+            res.status(500).json({ error: err.message });
+        }
+    }
+});
+
 router.get('/my/profile', verifyToken, requireFreshPassword, requireRole('user'), async (req, res) => {
     try {
         const client = await Client.findByPk(req.user.id, {

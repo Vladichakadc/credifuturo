@@ -31,6 +31,7 @@ import UserAccountDetailsPage from './pages/user/UserAccountDetailsPage';
 import UserStatutesPage from './pages/user/UserStatutesPage';
 import UserResolutionsPage from './pages/user/UserResolutionsPage';
 import UserSavingsSummaryPage from './pages/user/UserSavingsSummaryPage';
+import UserLoanAnalyzerPage from './pages/user/UserLoanAnalyzerPage';
 
 import Navbar from './components/Navbar';
 import { useState, useEffect } from 'react';
@@ -123,6 +124,7 @@ function App() {
                     <Route path="statutes" element={<UserStatutesPage />} />
                     <Route path="resolutions" element={<UserResolutionsPage />} />
                     <Route path="savings/summary" element={<UserSavingsSummaryPage />} />
+                    <Route path="loan-capacity" element={<UserLoanAnalyzerPage />} />
                 </Route>
 
                 <Route path="/" element={<Navigate to={user ? (user.role === 'admin' ? '/admin' : '/dashboard') : '/login'} />} />
