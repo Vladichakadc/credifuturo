@@ -516,175 +516,182 @@ router.get('/clients/:id/active-loan', async (req, res) => {
 });
 
 // GET /clients/:id/loan-capacity — Análisis de capacidad de segundo préstamo
+async function getLoanCapacityAnalysis(clientId) {
+    const { Op } = require('sequelize');
+    const client = await Client.findByPk(clientId, { attributes: { exclude: ['password'] } });
+    if (!client) throw new Error('Socio no encontrado');
+
+    // ── Ahorros ────────────────────────────────────────────────────────────
+    const ahorroTotal = parseFloat(await Saving.sum('amount', { where: { clientId } }) || 0);
+    const aporteInicial = parseFloat(await Saving.sum('amount', { where: { clientId, type: 'Aporte Inicial' } }) || 0);
+    const ahorroMensual = parseFloat(await Saving.sum('amount', { where: { clientId, type: 'Mensual' } }) || 0);
+
+    // ── Todas las cuotas pendientes del socio ──────────────────────────────
+    const cuotasPendientes = await LoanPayment.findAll({
+        where: { clientId, estado: 'Pendiente' },
+        order: [['fechaPagoMax', 'ASC']]
+    });
+
+    // ── Pagos realizados (para excluir del cálculo de mora EP) ─────────────
+    // Doble clave: mesPago Y itemQuantity para evitar falsos positivos por formato.
+    const pagosRealizados = await LoanPayment.findAll({
+        where: { clientId, estado: { [Op.in]: ['Pago', 'Abono'] } },
+        attributes: ['clientId', 'idVm', 'mesPago', 'itemQuantity']
+    });
+    const paidKeySet = new Set();
+    pagosRealizados.forEach(p => {
+        const base = `${p.clientId}|${(p.idVm || '').trim().toLowerCase()}`;
+        paidKeySet.add(`${base}|mes:${(p.mesPago || '').trim().toLowerCase()}`);
+        if (p.itemQuantity != null) paidKeySet.add(`${base}|cuota:${p.itemQuantity}`);
+    });
+
+    // ── Umbral de mora EP: misma lógica que dashboard-stats ───────────────
+    const nowLocal = new Date();
+    const todayThreshold = new Date(nowLocal.getFullYear(), nowLocal.getMonth(), nowLocal.getDate());
+    const monthsLower = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+
+    const safeParseDate = (dateVal, mesRef) => {
+        if (!dateVal) return null;
+        let dateStr = dateVal instanceof Date ? dateVal.toISOString().split('T')[0] : String(dateVal);
+        if (dateStr.includes('T')) dateStr = dateStr.split('T')[0];
+        const parts = dateStr.split('-');
+        if (parts.length !== 3) return new Date(dateStr + 'T00:00:00');
+        const [y, m, d] = parts.map(Number);
+        if (mesRef) {
+            const targetIdx = monthsLower.indexOf(mesRef.toLowerCase().trim()) + 1;
+            if (targetIdx > 0) {
+                if (m === targetIdx) return new Date(y, m - 1, d);
+                if (d === targetIdx) return new Date(y, d - 1, m);
+            }
+        }
+        return new Date(dateStr + 'T00:00:00');
+    };
+
+    // ── Clasificar cuotas: mora EP vs pendiente normal ─────────────────────
+    // Mora EP: pendiente + fechaPagoMax < hoy + sin pago/abono registrado
+    const cuotasMoraEP = [];
+    const cuotasPendientesNormales = [];
+
+    for (const q of cuotasPendientes) {
+        const base2 = `${q.clientId}|${(q.idVm || '').trim().toLowerCase()}`;
+        const keyMes2 = `${base2}|mes:${(q.mesPago || '').trim().toLowerCase()}`;
+        const keyCuota2 = `${base2}|cuota:${q.itemQuantity}`;
+        if (paidKeySet.has(keyMes2) || (q.itemQuantity != null && paidKeySet.has(keyCuota2))) continue;
+
+        const fechaMax = safeParseDate(q.fechaPagoMax, q.mesPago);
+        if (fechaMax && fechaMax < todayThreshold) {
+            cuotasMoraEP.push(q);  // vencida = mora EP
+        } else {
+            cuotasPendientesNormales.push(q);  // no vencida = pendiente normal
+        }
+    }
+
+    // ── Historial completo para scoring crediticio ─────────────────────────
+    const historialPagoTotal = await LoanPayment.count({ where: { clientId, estado: { [Op.in]: ['Pago', 'Abono'] } } });
+    // Mora histórica: cuotas con estado='Mora' (campo directo) + cuotas EP vencidas sin pagar
+    const historialMoraDirecta = await LoanPayment.count({ where: { clientId, estado: 'Mora' } });
+    const historialPendTotal = cuotasPendientes.length; // total pendientes del socio
+
+    // ── Agrupar todas las cuotas activas por idVm ─────────────────────────
+    const todasActivas = [...cuotasMoraEP, ...cuotasPendientesNormales];
+    const porIdVm = {};
+
+    for (const q of todasActivas) {
+        const vm = (q.idVm || '').trim() || `_sin_id_${q.id}`;
+        if (!porIdVm[vm]) {
+            porIdVm[vm] = {
+                idVm: vm,
+                // Primera cuota (más antigua) = saldo real pendiente del préstamo
+                saldoPendiente: parseFloat(q.saldoInicial || 0),
+                cuotasMoraEPCount: 0,
+                cuotasPendientesCount: 0,
+                enMoraEP: false,
+                interesMensual: parseFloat(q.interesMensual || 0) * 100,
+                valorCuotasPendientes: 0,
+                cuotasDetalle: []
+            };
+        }
+        const esMora = cuotasMoraEP.includes(q);
+        if (esMora) {
+            porIdVm[vm].cuotasMoraEPCount++;
+            porIdVm[vm].enMoraEP = true;
+        } else {
+            porIdVm[vm].cuotasPendientesCount++;
+        }
+        porIdVm[vm].valorCuotasPendientes += parseFloat(q.valorCuotaVariable || 0);
+        porIdVm[vm].cuotasDetalle.push({
+            mes: q.mesPago,
+            fecha: q.fechaPagoMax,
+            valor: parseFloat(q.valorCuotaVariable || 0),
+            esMora
+        });
+    }
+
+    // ── Enriquecer con DisbursedLoan ───────────────────────────────────────
+    const idVmsList = Object.keys(porIdVm);
+    const disbursedMap = {};
+    if (idVmsList.length > 0) {
+        const disbursed = await DisbursedLoan.findAll({
+            where: { clientId, idVm: { [Op.in]: idVmsList } }
+        });
+        disbursed.forEach(d => { disbursedMap[(d.idVm || '').trim()] = d; });
+    }
+
+    const detallesPrestamos = idVmsList.map(vm => {
+        const d = disbursedMap[vm];
+        const info = porIdVm[vm];
+        return {
+            idVm: vm,
+            valorPrestado: d ? parseFloat(d.valorPrestado || 0) : 0,
+            cuotas: d ? d.cuotas : null,
+            interesMensual: info.interesMensual,
+            saldoPendiente: info.saldoPendiente,
+            valorCuotasPendientes: Math.round(info.valorCuotasPendientes),
+            cuotasPendientesCount: info.cuotasPendientesCount,
+            cuotasMoraEPCount: info.cuotasMoraEPCount,
+            enMoraEP: info.enMoraEP,
+            fechaPrestamo: d ? d.fechaPrestamo : null,
+            estado: d ? d.estado : 'Vigente',
+            cuotasDetalle: info.cuotasDetalle
+        };
+    });
+
+    const totalDeudaPendiente = detallesPrestamos.reduce((s, l) => s + l.saldoPendiente, 0);
+    const enMoraActual = detallesPrestamos.some(l => l.enMoraEP);
+    const totalCuotasMoraEP = cuotasMoraEP.length;
+    const totalMoraEPValor = cuotasMoraEP.reduce((s, q) => s + parseFloat(q.valorCuotaVariable || 0), 0);
+
+    return {
+        clientId,
+        nombre: `${client.name} ${client.surname1 || ''} ${client.surname2 || ''}`.trim(),
+        cedula: client.cedula,
+        estatus: client.estatus,
+        ahorroTotal,
+        aporteInicial,
+        ahorroMensual,
+        prestamosVigentes: detallesPrestamos,
+        totalPrestamosVigentes: detallesPrestamos.length,
+        totalDeudaPendiente,
+        enMoraActual,
+        totalCuotasMoraEP,
+        totalMoraEPValor: Math.round(totalMoraEPValor),
+        historialMoraTotal: historialMoraDirecta + totalCuotasMoraEP,
+        historialPagoTotal,
+        historialPendTotal
+    };
+}
+
 router.get('/clients/:id/loan-capacity', async (req, res) => {
     try {
-        const { Op } = require('sequelize');
-        const clientId = req.params.id;
-
-        const client = await Client.findByPk(clientId, { attributes: { exclude: ['password'] } });
-        if (!client) return res.status(404).json({ error: 'Socio no encontrado' });
-
-        // ── Ahorros ────────────────────────────────────────────────────────────
-        const ahorroTotal = parseFloat(await Saving.sum('amount', { where: { clientId } }) || 0);
-        const aporteInicial = parseFloat(await Saving.sum('amount', { where: { clientId, type: 'Aporte Inicial' } }) || 0);
-        const ahorroMensual = parseFloat(await Saving.sum('amount', { where: { clientId, type: 'Mensual' } }) || 0);
-
-        // ── Todas las cuotas pendientes del socio ──────────────────────────────
-        const cuotasPendientes = await LoanPayment.findAll({
-            where: { clientId, estado: 'Pendiente' },
-            order: [['fechaPagoMax', 'ASC']]
-        });
-
-        // ── Pagos realizados (para excluir del cálculo de mora EP) ─────────────
-        // Doble clave: mesPago Y itemQuantity para evitar falsos positivos por formato.
-        const pagosRealizados = await LoanPayment.findAll({
-            where: { clientId, estado: { [Op.in]: ['Pago', 'Abono'] } },
-            attributes: ['clientId', 'idVm', 'mesPago', 'itemQuantity']
-        });
-        const paidKeySet = new Set();
-        pagosRealizados.forEach(p => {
-            const base = `${p.clientId}|${(p.idVm || '').trim().toLowerCase()}`;
-            paidKeySet.add(`${base}|mes:${(p.mesPago || '').trim().toLowerCase()}`);
-            if (p.itemQuantity != null) paidKeySet.add(`${base}|cuota:${p.itemQuantity}`);
-        });
-
-        // ── Umbral de mora EP: misma lógica que dashboard-stats ───────────────
-        const nowLocal = new Date();
-        const todayThreshold = new Date(nowLocal.getFullYear(), nowLocal.getMonth(), nowLocal.getDate());
-        const monthsLower = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
-
-        const safeParseDate = (dateVal, mesRef) => {
-            if (!dateVal) return null;
-            let dateStr = dateVal instanceof Date ? dateVal.toISOString().split('T')[0] : String(dateVal);
-            if (dateStr.includes('T')) dateStr = dateStr.split('T')[0];
-            const parts = dateStr.split('-');
-            if (parts.length !== 3) return new Date(dateStr + 'T00:00:00');
-            const [y, m, d] = parts.map(Number);
-            if (mesRef) {
-                const targetIdx = monthsLower.indexOf(mesRef.toLowerCase().trim()) + 1;
-                if (targetIdx > 0) {
-                    if (m === targetIdx) return new Date(y, m - 1, d);
-                    if (d === targetIdx) return new Date(y, d - 1, m);
-                }
-            }
-            return new Date(dateStr + 'T00:00:00');
-        };
-
-        // ── Clasificar cuotas: mora EP vs pendiente normal ─────────────────────
-        // Mora EP: pendiente + fechaPagoMax < hoy + sin pago/abono registrado
-        const cuotasMoraEP = [];
-        const cuotasPendientesNormales = [];
-
-        for (const q of cuotasPendientes) {
-            const base2 = `${q.clientId}|${(q.idVm || '').trim().toLowerCase()}`;
-            const keyMes2 = `${base2}|mes:${(q.mesPago || '').trim().toLowerCase()}`;
-            const keyCuota2 = `${base2}|cuota:${q.itemQuantity}`;
-            if (paidKeySet.has(keyMes2) || (q.itemQuantity != null && paidKeySet.has(keyCuota2))) continue;
-
-            const fechaMax = safeParseDate(q.fechaPagoMax, q.mesPago);
-            if (fechaMax && fechaMax < todayThreshold) {
-                cuotasMoraEP.push(q);  // vencida = mora EP
-            } else {
-                cuotasPendientesNormales.push(q);  // no vencida = pendiente normal
-            }
-        }
-
-        // ── Historial completo para scoring crediticio ─────────────────────────
-        const historialPagoTotal = await LoanPayment.count({ where: { clientId, estado: { [Op.in]: ['Pago', 'Abono'] } } });
-        // Mora histórica: cuotas con estado='Mora' (campo directo) + cuotas EP vencidas sin pagar
-        const historialMoraDirecta = await LoanPayment.count({ where: { clientId, estado: 'Mora' } });
-        const historialPendTotal = cuotasPendientes.length; // total pendientes del socio
-
-        // ── Agrupar todas las cuotas activas por idVm ─────────────────────────
-        const todasActivas = [...cuotasMoraEP, ...cuotasPendientesNormales];
-        const porIdVm = {};
-
-        for (const q of todasActivas) {
-            const vm = (q.idVm || '').trim() || `_sin_id_${q.id}`;
-            if (!porIdVm[vm]) {
-                porIdVm[vm] = {
-                    idVm: vm,
-                    // Primera cuota (más antigua) = saldo real pendiente del préstamo
-                    saldoPendiente: parseFloat(q.saldoInicial || 0),
-                    cuotasMoraEPCount: 0,
-                    cuotasPendientesCount: 0,
-                    enMoraEP: false,
-                    interesMensual: parseFloat(q.interesMensual || 0) * 100,
-                    valorCuotasPendientes: 0,
-                    cuotasDetalle: []
-                };
-            }
-            const esMora = cuotasMoraEP.includes(q);
-            if (esMora) {
-                porIdVm[vm].cuotasMoraEPCount++;
-                porIdVm[vm].enMoraEP = true;
-            } else {
-                porIdVm[vm].cuotasPendientesCount++;
-            }
-            porIdVm[vm].valorCuotasPendientes += parseFloat(q.valorCuotaVariable || 0);
-            porIdVm[vm].cuotasDetalle.push({
-                mes: q.mesPago,
-                fecha: q.fechaPagoMax,
-                valor: parseFloat(q.valorCuotaVariable || 0),
-                esMora
-            });
-        }
-
-        // ── Enriquecer con DisbursedLoan ───────────────────────────────────────
-        const idVmsList = Object.keys(porIdVm);
-        const disbursedMap = {};
-        if (idVmsList.length > 0) {
-            const disbursed = await DisbursedLoan.findAll({
-                where: { clientId, idVm: { [Op.in]: idVmsList } }
-            });
-            disbursed.forEach(d => { disbursedMap[(d.idVm || '').trim()] = d; });
-        }
-
-        const detallesPrestamos = idVmsList.map(vm => {
-            const d = disbursedMap[vm];
-            const info = porIdVm[vm];
-            return {
-                idVm: vm,
-                valorPrestado: d ? parseFloat(d.valorPrestado || 0) : 0,
-                cuotas: d ? d.cuotas : null,
-                interesMensual: info.interesMensual,
-                saldoPendiente: info.saldoPendiente,
-                valorCuotasPendientes: Math.round(info.valorCuotasPendientes),
-                cuotasPendientesCount: info.cuotasPendientesCount,
-                cuotasMoraEPCount: info.cuotasMoraEPCount,
-                enMoraEP: info.enMoraEP,
-                fechaPrestamo: d ? d.fechaPrestamo : null,
-                estado: d ? d.estado : 'Vigente',
-                cuotasDetalle: info.cuotasDetalle
-            };
-        });
-
-        const totalDeudaPendiente = detallesPrestamos.reduce((s, l) => s + l.saldoPendiente, 0);
-        const enMoraActual = detallesPrestamos.some(l => l.enMoraEP);
-        const totalCuotasMoraEP = cuotasMoraEP.length;
-        const totalMoraEPValor = cuotasMoraEP.reduce((s, q) => s + parseFloat(q.valorCuotaVariable || 0), 0);
-
-        res.json({
-            clientId,
-            nombre: `${client.name} ${client.surname1 || ''} ${client.surname2 || ''}`.trim(),
-            cedula: client.cedula,
-            estatus: client.estatus,
-            ahorroTotal,
-            aporteInicial,
-            ahorroMensual,
-            prestamosVigentes: detallesPrestamos,
-            totalPrestamosVigentes: detallesPrestamos.length,
-            totalDeudaPendiente,
-            enMoraActual,
-            totalCuotasMoraEP,
-            totalMoraEPValor: Math.round(totalMoraEPValor),
-            historialMoraTotal: historialMoraDirecta + totalCuotasMoraEP,
-            historialPagoTotal,
-            historialPendTotal
-        });
+        const analysis = await getLoanCapacityAnalysis(req.params.id);
+        res.json(analysis);
     } catch (err) {
         console.error('loan-capacity error:', err);
-        res.status(500).json({ error: err.message });
+        if (err.message === 'Socio no encontrado') {
+            res.status(404).json({ error: err.message });
+        } else {
+            res.status(500).json({ error: err.message });
+        }
     }
 });
 
