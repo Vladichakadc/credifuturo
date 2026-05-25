@@ -1,11 +1,26 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../../config/api';
-import { Search, RefreshCw, Wallet, Inbox, Download } from 'lucide-react';
+import { Search, RefreshCw, Wallet, Inbox, Download, TrendingUp, Hash, Calendar } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Card, CardContent } from '../../components/ui/Card';
 import { useUi } from '../../context/UiContext';
 import * as XLSX from 'xlsx';
 import { formatDate } from '../../utils/excelUtils';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LabelList, Cell } from 'recharts';
+
+const fmtCOP = v => `$${Number(v).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+
+const BAR_COLORS = ['#10b981', '#059669', '#34d399', '#6ee7b7', '#a7f3d0'];
+
+const BarTooltip = ({ active, payload, label }) => {
+    if (!active || !payload?.length) return null;
+    return (
+        <div className="bg-white border border-gray-100 rounded-xl shadow-lg px-4 py-3 text-sm">
+            <p className="font-bold text-gray-700 mb-1">{label}</p>
+            <p className="text-emerald-600 font-semibold">{fmtCOP(payload[0].value)}</p>
+        </div>
+    );
+};
 
 const TABLE_COLUMNS = [
     { key: 'externalId', label: 'Id_AI', align: 'center', minWidth: '80px', highlight: true },
@@ -84,6 +99,20 @@ const UserContributionsListPage = () => {
         );
     }, [data, searchTerm]);
 
+    const stats = useMemo(() => {
+        const totalAmount = data.reduce((acc, s) => acc + parseFloat(s.amount || 0), 0);
+        const yearMap = {};
+        data.forEach(s => {
+            const yr = parseInt(s.year);
+            if (!isNaN(yr)) yearMap[yr] = (yearMap[yr] || 0) + parseFloat(s.amount || 0);
+        });
+        const barData = Object.entries(yearMap)
+            .sort(([a], [b]) => Number(a) - Number(b))
+            .map(([yr, val]) => ({ anio: yr, valor: val }));
+        const years = barData.map(d => d.anio);
+        return { totalAmount, barData, count: data.length, yearRange: years.length > 0 ? `${years[0]} – ${years[years.length - 1]}` : '—' };
+    }, [data]);
+
     const handleExport = () => {
         if (filteredData.length === 0) { toast.error('No hay datos para exportar.'); return; }
         const exportData = filteredData.map(s => ({
@@ -132,6 +161,101 @@ const UserContributionsListPage = () => {
                     <Button variant="ghost" onClick={fetchData}><RefreshCw className="h-4 w-4" /></Button>
                 </div>
             </div>
+
+            {/* Tarjeta inteligente + Gráfico por años */}
+            {data.length > 0 && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    {/* Tarjeta resumen total */}
+                    <div className="lg:col-span-1 flex flex-col gap-4">
+                        <Card className="overflow-hidden border-0 shadow-md" style={{ background: 'linear-gradient(135deg, #064e3b 0%, #065f46 60%, #047857 100%)' }}>
+                            <div className="p-6 relative">
+                                <div className="absolute top-4 right-4 bg-white/10 rounded-xl p-2">
+                                    <Wallet className="h-6 w-6 text-white/80" />
+                                </div>
+                                <p className="text-emerald-200 text-xs font-semibold uppercase tracking-wider mb-1">Capital Aportado</p>
+                                <p className="text-3xl font-bold text-white mb-3 tabular-nums leading-tight">
+                                    {fmtCOP(stats.totalAmount)}
+                                </p>
+                                <div className="h-px bg-white/15 my-3" />
+                                <div className="flex items-center justify-between text-sm">
+                                    <span className="flex items-center gap-1.5 text-emerald-200">
+                                        <Hash className="h-3.5 w-3.5" />
+                                        {stats.count} {stats.count === 1 ? 'aporte' : 'aportes'}
+                                    </span>
+                                    <span className="flex items-center gap-1.5 text-emerald-200">
+                                        <Calendar className="h-3.5 w-3.5" />
+                                        {stats.yearRange}
+                                    </span>
+                                </div>
+                            </div>
+                        </Card>
+
+                        {/* Mini estadísticas por año */}
+                        {stats.barData.length > 1 && (
+                            <Card className="border border-gray-100 shadow-sm">
+                                <div className="px-4 pt-4 pb-2 border-b border-gray-50">
+                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Detalle por Año</p>
+                                </div>
+                                <div className="p-3 space-y-2">
+                                    {stats.barData.map((d, i) => (
+                                        <div key={d.anio} className="flex items-center justify-between text-sm">
+                                            <span className="flex items-center gap-2">
+                                                <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: BAR_COLORS[i % BAR_COLORS.length] }} />
+                                                <span className="text-gray-600 font-medium">{d.anio}</span>
+                                            </span>
+                                            <span className="font-semibold text-gray-800 tabular-nums">{fmtCOP(d.valor)}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </Card>
+                        )}
+                    </div>
+
+                    {/* Gráfico de barras por año */}
+                    <Card className="lg:col-span-2 border border-gray-100 shadow-sm overflow-hidden">
+                        <div className="px-5 pt-5 pb-3 border-b border-gray-50 flex items-center gap-2">
+                            <TrendingUp className="h-4 w-4 text-emerald-500" />
+                            <h3 className="text-sm font-bold text-gray-700">Evolución de Aportes por Año</h3>
+                        </div>
+                        <div className="p-5">
+                            {stats.barData.length === 0 ? (
+                                <div className="h-40 flex items-center justify-center text-gray-400 text-sm">Sin datos suficientes</div>
+                            ) : (
+                                <div style={{ height: stats.barData.length === 1 ? 140 : 200 }}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={stats.barData} margin={{ top: 28, right: 16, left: 8, bottom: 4 }} barSize={stats.barData.length <= 3 ? 48 : 36}>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                                            <XAxis
+                                                dataKey="anio"
+                                                axisLine={false} tickLine={false}
+                                                tick={{ fill: '#6b7280', fontSize: 12, fontWeight: 600 }}
+                                            />
+                                            <YAxis
+                                                axisLine={false} tickLine={false}
+                                                tick={{ fill: '#9ca3af', fontSize: 10 }}
+                                                tickFormatter={v => `$${(v / 1000).toFixed(0)}k`}
+                                                width={52}
+                                            />
+                                            <Tooltip content={<BarTooltip />} cursor={{ fill: '#f0fdf4' }} />
+                                            <Bar dataKey="valor" radius={[6, 6, 0, 0]}>
+                                                {stats.barData.map((_, i) => (
+                                                    <Cell key={i} fill={BAR_COLORS[i % BAR_COLORS.length]} />
+                                                ))}
+                                                <LabelList
+                                                    dataKey="valor"
+                                                    position="top"
+                                                    style={{ fill: '#374151', fontSize: 10, fontWeight: 700 }}
+                                                    formatter={v => fmtCOP(v)}
+                                                />
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            )}
+                        </div>
+                    </Card>
+                </div>
+            )}
 
             {filteredData.length === 0 ? (
                 <Card><CardContent className="p-12 text-center">

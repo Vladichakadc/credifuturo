@@ -1,11 +1,26 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../../config/api';
-import { Search, RefreshCw, CreditCard, AlertTriangle, Inbox, Download, X } from 'lucide-react';
+import { Search, RefreshCw, CreditCard, Inbox, Download, X, Hash, TrendingUp } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Card, CardContent } from '../../components/ui/Card';
 import { useUi } from '../../context/UiContext';
 import * as XLSX from 'xlsx';
 import { formatDate } from '../../utils/excelUtils';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LabelList, Cell } from 'recharts';
+
+const fmtCOP = v => `$${Number(v).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+
+const LOAN_BAR_COLORS = ['#6366f1', '#8b5cf6', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#06b6d4'];
+
+const LoanBarTooltip = ({ active, payload, label }) => {
+    if (!active || !payload?.length) return null;
+    return (
+        <div className="bg-white border border-gray-100 rounded-xl shadow-lg px-4 py-3 text-sm">
+            <p className="font-bold text-gray-700 mb-1">{label}</p>
+            <p className="font-semibold" style={{ color: payload[0]?.fill }}>{fmtCOP(payload[0].value)}</p>
+        </div>
+    );
+};
 
 const TABLE_COLUMNS = [
     { key: 'idVm', label: 'ID Préstamo', align: 'center', minWidth: '100px', highlight: true },
@@ -141,6 +156,15 @@ const UserLoansListPage = () => {
         return result;
     }, [loans, searchTerm, filterEstado, filterAnio]);
 
+    const loanStats = useMemo(() => {
+        const totalPrestado = loans.reduce((acc, l) => acc + parseFloat(l.valorPrestado || 0), 0);
+        const barData = loans
+            .filter(l => l.idVm && parseFloat(l.valorPrestado || 0) > 0)
+            .sort((a, b) => (a.idVm || '').localeCompare(b.idVm || '', undefined, { numeric: true }))
+            .map(l => ({ id: l.idVm, valor: parseFloat(l.valorPrestado || 0), estado: l.estado || '' }));
+        return { totalPrestado, count: loans.length, barData };
+    }, [loans]);
+
     const clearFilters = () => {
         setSearchTerm('');
         setFilterEstado('');
@@ -242,6 +266,97 @@ const UserLoansListPage = () => {
                     )}
                 </div>
             </div>
+
+            {/* Tarjeta total + Gráfico por ID de préstamo */}
+            {loans.length > 0 && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    {/* Tarjeta total */}
+                    <div className="lg:col-span-1 flex flex-col gap-4">
+                        <Card className="overflow-hidden border-0 shadow-md" style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 55%, #4338ca 100%)' }}>
+                            <div className="p-6 relative">
+                                <div className="absolute top-4 right-4 bg-white/10 rounded-xl p-2">
+                                    <CreditCard className="h-6 w-6 text-white/80" />
+                                </div>
+                                <p className="text-indigo-200 text-xs font-semibold uppercase tracking-wider mb-1">Total Desembolsado</p>
+                                <p className="text-3xl font-bold text-white tabular-nums leading-tight">{fmtCOP(loanStats.totalPrestado)}</p>
+                                <div className="h-px bg-white/15 my-3" />
+                                <div className="flex items-center gap-1.5 text-indigo-200 text-sm">
+                                    <Hash className="h-3.5 w-3.5" />
+                                    {loanStats.count} {loanStats.count === 1 ? 'préstamo' : 'préstamos'} en total
+                                </div>
+                            </div>
+                        </Card>
+
+                        {/* Lista rápida por préstamo */}
+                        {loanStats.barData.length > 0 && (
+                            <Card className="border border-gray-100 shadow-sm">
+                                <div className="px-4 pt-4 pb-2 border-b border-gray-50">
+                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Detalle por Préstamo</p>
+                                </div>
+                                <div className="p-3 space-y-2">
+                                    {loanStats.barData.map((d, i) => (
+                                        <div key={d.id} className="flex items-center justify-between text-sm">
+                                            <span className="flex items-center gap-2">
+                                                <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: LOAN_BAR_COLORS[i % LOAN_BAR_COLORS.length] }} />
+                                                <span className="text-gray-600 font-medium">{d.id}</span>
+                                            </span>
+                                            <span className="font-semibold text-gray-800 tabular-nums">{fmtCOP(d.valor)}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </Card>
+                        )}
+                    </div>
+
+                    {/* Gráfico de barras por ID de préstamo */}
+                    <Card className="lg:col-span-2 border border-gray-100 shadow-sm overflow-hidden">
+                        <div className="px-5 pt-5 pb-3 border-b border-gray-50 flex items-center gap-2">
+                            <TrendingUp className="h-4 w-4 text-indigo-500" />
+                            <h3 className="text-sm font-bold text-gray-700">Valor Desembolsado por ID Préstamo</h3>
+                        </div>
+                        <div className="p-5">
+                            {loanStats.barData.length === 0 ? (
+                                <div className="h-40 flex items-center justify-center text-gray-400 text-sm">Sin datos</div>
+                            ) : (
+                                <div style={{ height: loanStats.barData.length <= 2 ? 160 : 220 }}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart
+                                            data={loanStats.barData}
+                                            margin={{ top: 30, right: 16, left: 8, bottom: 4 }}
+                                            barSize={loanStats.barData.length <= 4 ? 44 : 32}
+                                        >
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                                            <XAxis
+                                                dataKey="id"
+                                                axisLine={false} tickLine={false}
+                                                tick={{ fill: '#6b7280', fontSize: 11, fontWeight: 600 }}
+                                            />
+                                            <YAxis
+                                                axisLine={false} tickLine={false}
+                                                tick={{ fill: '#9ca3af', fontSize: 10 }}
+                                                tickFormatter={v => `$${(v / 1000000).toFixed(1)}M`}
+                                                width={56}
+                                            />
+                                            <Tooltip content={<LoanBarTooltip />} cursor={{ fill: '#eef2ff' }} />
+                                            <Bar dataKey="valor" radius={[6, 6, 0, 0]}>
+                                                {loanStats.barData.map((_, i) => (
+                                                    <Cell key={i} fill={LOAN_BAR_COLORS[i % LOAN_BAR_COLORS.length]} />
+                                                ))}
+                                                <LabelList
+                                                    dataKey="valor"
+                                                    position="top"
+                                                    style={{ fill: '#374151', fontSize: 10, fontWeight: 700 }}
+                                                    formatter={v => fmtCOP(v)}
+                                                />
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            )}
+                        </div>
+                    </Card>
+                </div>
+            )}
 
             {filteredLoans.length === 0 ? (
                 <Card><CardContent className="p-12 text-center">

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../../config/api';
-import { Search, RefreshCw, PiggyBank, Inbox, Download, ChevronLeft, ChevronRight, FileDown, Loader2 } from 'lucide-react';
+import { RefreshCw, PiggyBank, Inbox, Download, ChevronLeft, ChevronRight, FileDown, Loader2, CheckCircle2, Clock, AlertTriangle, Hash } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card';
+import { Card, CardContent } from '../../components/ui/Card';
 import { useUi } from '../../context/UiContext';
 import * as XLSX from 'xlsx';
 import { formatDate } from '../../utils/excelUtils';
@@ -11,6 +11,23 @@ import autoTable from 'jspdf-autotable';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList } from 'recharts';
 import html2canvas from 'html2canvas';
 import SavingsListPDF from './SavingsListPDF'; // Nuevo componente para el PDF
+
+const fmtCOP = v => `$${Number(v).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+
+const ACCENT_PALETTE = ['#6366f1', '#0ea5e9', '#8b5cf6', '#f59e0b', '#06b6d4', '#ec4899', '#84cc16'];
+
+const getStatusColor = (status, index) => {
+    const s = (status || '').toLowerCase();
+    if (s.includes('abono') || s.includes('deposito') || s.includes('pagado') || s.includes('activo') || s.includes('vigente'))
+        return { accent: '#10b981', Icon: CheckCircle2 };
+    if (s.includes('descuento') || s.includes('penaliz') || s.includes('mora') || s.includes('multa') || s.includes('sancion'))
+        return { accent: '#f97316', Icon: AlertTriangle };
+    if (s.includes('interes') || s.includes('distribucion') || s.includes('rendimiento') || s.includes('dividendo'))
+        return { accent: '#6366f1', Icon: Hash };
+    if (s.includes('pendiente') || s.includes('proceso'))
+        return { accent: '#f59e0b', Icon: Clock };
+    return { accent: ACCENT_PALETTE[index % ACCENT_PALETTE.length], Icon: Hash };
+};
 
 const TABLE_COLUMNS = [
     { key: 'externalId', label: 'Id_VM', align: 'center', minWidth: '100px', highlight: true },
@@ -31,7 +48,6 @@ const ITEMS_PER_PAGE = 15;
 
 const TypeBadge = ({ value }) => {
     if (!value) return <span className="text-gray-300 text-xs italic">—</span>;
-    const normalized = value.trim();
     return (
         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ring-1 bg-emerald-100 text-emerald-800 ring-emerald-200">
             {value}
@@ -72,7 +88,7 @@ const UserSavingsListPage = () => {
     const [savings, setSavings] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [searchTerm, setSearchTerm] = useState('');
+    const [searchTerm] = useState('');
     const [filterStatus, setFilterStatus] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
@@ -167,18 +183,18 @@ const UserSavingsListPage = () => {
         };
     }, [filteredSavings]);
 
-    const totalsByStatus = useMemo(() => {
-        const totals = {};
-        filteredSavings.forEach(s => {
-            const status = s.status ? s.status.trim() : 'Sin Estado';
-            if (!totals[status]) totals[status] = 0;
-            const ahorrado = parseFloat(s.valorAhorrado || 0);
-            const amount = parseFloat(s.amount || 0);
-            const penalizado = parseFloat(s.valorAPenalizar || 0);
-            totals[status] += ahorrado || amount || penalizado;
+    const statsByStatus = useMemo(() => {
+        const map = {};
+        savings.forEach(s => {
+            const status = (s.status || 'Sin Estado').trim();
+            if (!map[status]) map[status] = { total: 0, count: 0 };
+            map[status].total += parseFloat(s.valorAhorrado || s.amount || 0);
+            map[status].count += 1;
         });
-        return totals;
-    }, [filteredSavings]);
+        return Object.entries(map)
+            .sort(([a], [b]) => a.localeCompare(b, 'es'))
+            .map(([status, d]) => ({ status, ...d }));
+    }, [savings]);
 
     const uniqueStatuses = useMemo(() => {
         const statuses = savings.map(s => (s.status || '').trim()).filter(Boolean);
@@ -261,8 +277,6 @@ const UserSavingsListPage = () => {
                 useCORS: true,
                 allowTaint: true,
             });
-            const headerImgData = headerCanvas.toDataURL('image/png', 1.0);
-
             // ── STEP 4: Build PDF document ────────────────────────────────
             const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
             const PAGE_W = pdf.internal.pageSize.getWidth();  // 210 mm
@@ -460,34 +474,46 @@ const UserSavingsListPage = () => {
                 </div>
             </div>
 
-            {/* Tarjetas Dinámicas de Totales */}
-            <div className="grid gap-4 md:grid-cols-3">
-                <Card className="bg-emerald-50/50 border-emerald-100">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                        <CardTitle className="text-sm font-medium text-emerald-800">Suma Valor Ahorrado</CardTitle>
-                        <PiggyBank className="h-4 w-4 text-emerald-600" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-emerald-900">${summaryStats.totalAhorrado.toLocaleString('es-CO', { minimumFractionDigits: 0 })}</div>
-                        <p className="text-xs text-emerald-600 mt-1">Total global acumulado</p>
-                    </CardContent>
-                </Card>
-                {Object.entries(totalsByStatus).map(([status, total]) => {
-                    if (total <= 0) return null;
-                    return (
-                        <Card key={status} className="bg-blue-50/50 border-blue-100">
-                            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                                <CardTitle className="text-sm font-medium text-blue-800">{status}</CardTitle>
-                                <PiggyBank className="h-4 w-4 text-blue-600" />
-                            </CardHeader>
-                            <CardContent>
-                                <div className="text-2xl font-bold text-blue-900">${total.toLocaleString('es-CO', { minimumFractionDigits: 0 })}</div>
-                                <p className="text-xs text-blue-600 mt-1">Total acumulado en pantalla</p>
-                            </CardContent>
-                        </Card>
-                    );
-                })}
-            </div>
+            {/* Tarjetas por Estado */}
+            {savings.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* Tarjeta total global */}
+                    <Card className="overflow-hidden border-0 shadow-md sm:col-span-2 lg:col-span-1" style={{ background: 'linear-gradient(135deg, #064e3b 0%, #065f46 60%, #047857 100%)' }}>
+                        <div className="p-5 relative">
+                            <div className="absolute top-4 right-4 bg-white/10 rounded-xl p-2">
+                                <PiggyBank className="h-5 w-5 text-white/80" />
+                            </div>
+                            <p className="text-emerald-200 text-xs font-semibold uppercase tracking-wider mb-1">Total Ahorrado</p>
+                            <p className="text-2xl font-bold text-white tabular-nums leading-tight">{fmtCOP(summaryStats.totalAhorrado)}</p>
+                            <div className="h-px bg-white/15 my-3" />
+                            <div className="flex items-center gap-1.5 text-emerald-200 text-sm">
+                                <Hash className="h-3.5 w-3.5" />
+                                {summaryStats.numAportes} {summaryStats.numAportes === 1 ? 'registro' : 'registros'}{filterStatus ? ' (filtrado)' : ''}
+                            </div>
+                        </div>
+                    </Card>
+
+                    {/* Tarjetas por estado */}
+                    {statsByStatus.map(({ status, total, count }, i) => {
+                        const { accent, Icon } = getStatusColor(status, i);
+                        return (
+                            <Card key={status} className="bg-white shadow-sm overflow-hidden" style={{ borderTop: `3px solid ${accent}` }}>
+                                <div className="p-5">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: accent }} />
+                                            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 truncate" title={status}>{status}</span>
+                                        </div>
+                                        <Icon className="h-4 w-4 flex-shrink-0 text-gray-300" />
+                                    </div>
+                                    <p className="text-2xl font-bold tabular-nums text-gray-900">{fmtCOP(total)}</p>
+                                    <p className="text-xs mt-1.5 text-gray-400">{count} {count === 1 ? 'registro' : 'registros'}</p>
+                                </div>
+                            </Card>
+                        );
+                    })}
+                </div>
+            )}
 
             {/* Gráfico de Evolución */}
             <div ref={chartRef} className="bg-white p-6 rounded-xl border border-gray-200/80 shadow-sm">
