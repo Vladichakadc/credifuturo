@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../config/api';
-import { Download, FileText, TrendingUp, Users, DollarSign, AlertTriangle, PiggyBank, Archive, CheckCircle, Loader, Calendar, HardDrive, Clock, FolderOpen, RefreshCw, DatabaseZap } from 'lucide-react';
+import { Download, FileText, TrendingUp, Users, DollarSign, AlertTriangle, PiggyBank, Archive, CheckCircle, Loader, Calendar, HardDrive, Clock, FolderOpen, RefreshCw, Database } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card';
 import { exportToExcel, formatDate } from '../../utils/excelUtils';
@@ -10,9 +10,9 @@ const ReportsPage = () => {
     const { toast } = useUi();
     const [loading, setLoading] = useState(true);
     const [backingUp, setBackingUp] = useState(false);
+    const [backingUpFull, setBackingUpFull] = useState(false);
     const [lastBackup, setLastBackup] = useState(null);
-    const [backingUpCompleto, setBackingUpCompleto] = useState(false);
-    const [lastBackupCompleto, setLastBackupCompleto] = useState(null);
+    const [lastFullBackup, setLastFullBackup] = useState(null);
     const [backupHistory, setBackupHistory] = useState([]);
 
     // Raw Data for exports
@@ -55,28 +55,6 @@ const ReportsPage = () => {
         }
     };
 
-    // --- Backup Completo (Excel + SQLite) ---
-    const handleBackupCompleto = async () => {
-        setBackingUpCompleto(true);
-        try {
-            const res = await api.post('/admin/backup/completo');
-            if (res.data && res.data.ok) {
-                const { folder, files, timestamp, dbSizeBytes } = res.data;
-                const dbMB = dbSizeBytes > 0 ? ` · BD: ${(dbSizeBytes / 1024 / 1024).toFixed(1)} MB` : '';
-                setLastBackupCompleto({ folder, count: files.length, timestamp, dbSizeBytes });
-                toast.success(`✅ Backup completo: ${files.length} archivos (6 Excel + BD SQLite${dbMB})`);
-                fetchBackupHistory();
-            } else {
-                toast.error('Error al generar backup completo: ' + (res.data?.error || 'Error desconocido'));
-            }
-        } catch (err) {
-            console.error('Backup completo error:', err);
-            toast.error('Error al generar backup completo: ' + (err.response?.data?.error || err.message));
-        } finally {
-            setBackingUpCompleto(false);
-        }
-    };
-
     // --- Backup Masivo ---
     const handleBackupAll = async () => {
         setBackingUp(true);
@@ -96,6 +74,28 @@ const ReportsPage = () => {
             toast.error('Error al conectar con el servidor: ' + (err.response?.data?.error || err.message));
         } finally {
             setBackingUp(false);
+        }
+    };
+
+    // --- Backup Completo (Excel + BD) ---
+    const handleBackupFull = async () => {
+        setBackingUpFull(true);
+        try {
+            const res = await api.post('/admin/backup/full');
+            if (res.data && res.data.ok) {
+                const { folder, files, timestamp, dbCopied, dbSizeKB } = res.data;
+                setLastFullBackup({ folder, count: files.length, timestamp, dbCopied, dbSizeKB });
+                const dbMsg = dbCopied ? ` + BD (${dbSizeKB} KB)` : '';
+                toast.success(`✅ Backup completo: ${files.length} archivos${dbMsg} en ${folder}`);
+                fetchBackupHistory();
+            } else {
+                toast.error('Error al generar backup completo: ' + (res.data?.error || 'Error desconocido'));
+            }
+        } catch (err) {
+            console.error('Full backup error:', err);
+            toast.error('Error al generar backup completo: ' + (err.response?.data?.error || err.message));
+        } finally {
+            setBackingUpFull(false);
         }
     };
 
@@ -335,45 +335,6 @@ const ReportsPage = () => {
                 <p className="text-gray-500">Descarga los datos de cada tabla en formato Excel.</p>
             </div>
 
-            {/* ── Backup Completo (Excel + BD) ──────────────────────────── */}
-            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-700 p-6 text-white shadow-xl">
-                <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
-                <div className="relative flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                    <div className="flex items-start gap-4">
-                        <div className="shrink-0 flex h-12 w-12 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm">
-                            <HardDrive className="h-6 w-6" />
-                        </div>
-                        <div>
-                            <h2 className="text-lg font-bold">Backup Completo: Excel + Base de Datos</h2>
-                            <p className="text-sm text-white/80 mt-0.5">
-                                Genera los 6 reportes Excel <strong>y además guarda una copia completa del archivo database.sqlite</strong> en la misma carpeta de backup.
-                            </p>
-                            {lastBackupCompleto && (
-                                <p className="mt-1.5 text-xs text-emerald-200 flex items-center gap-1">
-                                    <CheckCircle className="h-3.5 w-3.5" />
-                                    Último: {lastBackupCompleto.count} archivos · {lastBackupCompleto.dbSizeBytes > 0 ? `BD ${(lastBackupCompleto.dbSizeBytes/1024/1024).toFixed(1)} MB` : ''} · {new Date(lastBackupCompleto.timestamp).toLocaleString('es-CO')}
-                                </p>
-                            )}
-                            <p className="mt-1 text-xs text-white/60">
-                                🛡️ Equivalente al script <code className="bg-white/20 px-1 rounded">backup_produccion_auto.bat</code> — desde la web
-                            </p>
-                        </div>
-                    </div>
-                    <button
-                        id="btn-backup-completo"
-                        onClick={handleBackupCompleto}
-                        disabled={backingUpCompleto || backingUp || loading}
-                        className="shrink-0 flex items-center gap-2 rounded-xl bg-white text-teal-700 font-semibold px-6 py-3 text-sm shadow-lg hover:bg-teal-50 active:scale-95 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                        {backingUpCompleto ? (
-                            <><Loader className="h-4 w-4 animate-spin" /> Guardando...</>
-                        ) : (
-                            <><HardDrive className="h-4 w-4" /> Backup Completo</>
-                        )}
-                    </button>
-                </div>
-            </div>
-
             {/* ── Backup Masivo ─────────────────────────────────────────── */}
             <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-blue-700 p-6 text-white shadow-xl">
                 <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 80% 50%, white 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
@@ -407,6 +368,45 @@ const ReportsPage = () => {
                             <><Loader className="h-4 w-4 animate-spin" /> Generando...</>
                         ) : (
                             <><Archive className="h-4 w-4" /> Respaldar Todo</>
+                        )}
+                    </button>
+                </div>
+            </div>
+
+            {/* ── Backup Completo (Excel + BD) ─────────────────────────── */}
+            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 p-6 text-white shadow-xl">
+                <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
+                <div className="relative flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                    <div className="flex items-start gap-4">
+                        <div className="shrink-0 flex h-12 w-12 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm">
+                            <Database className="h-6 w-6" />
+                        </div>
+                        <div>
+                            <h2 className="text-lg font-bold">Backup Completo (Excel + Base de Datos)</h2>
+                            <p className="text-sm text-white/80 mt-0.5">
+                                Genera los 6 Excel <strong>y guarda una copia del archivo database.sqlite</strong> en la carpeta de Backups. Ideal antes de cambios importantes.
+                            </p>
+                            {lastFullBackup && (
+                                <p className="mt-1.5 text-xs text-yellow-100 flex items-center gap-1">
+                                    <CheckCircle className="h-3.5 w-3.5" />
+                                    Último: {lastFullBackup.count} archivos · {lastFullBackup.dbSizeKB} KB BD · {new Date(lastFullBackup.timestamp).toLocaleString('es-CO')}
+                                </p>
+                            )}
+                            <p className="mt-1 text-xs text-white/60">
+                                📦 Incluye: Tabla_Clientes, Ahorros, Aportes, Préstamos, Estado, Morosidad + <strong>database.sqlite</strong>
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        id="btn-backup-completo"
+                        onClick={handleBackupFull}
+                        disabled={backingUpFull || loading}
+                        className="shrink-0 flex items-center gap-2 rounded-xl bg-white text-orange-600 font-semibold px-6 py-3 text-sm shadow-lg hover:bg-orange-50 active:scale-95 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                        {backingUpFull ? (
+                            <><Loader className="h-4 w-4 animate-spin" /> Generando...</>
+                        ) : (
+                            <><Database className="h-4 w-4" /> Backup Completo</>
                         )}
                     </button>
                 </div>

@@ -3103,48 +3103,45 @@ router.post('/backup/all', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
-// BACKUP COMPLETO: Excel + Copia del archivo SQLite
-// Igual a lo que hace backup_produccion_auto.bat pero desde la web
+// BACKUP COMPLETO: Excel + copia del database.sqlite
 // ─────────────────────────────────────────────
-router.post('/backup/completo', async (req, res) => {
+router.post('/backup/full', async (req, res) => {
     try {
         const BackupService = require('../services/BackupService');
         const fsSync = require('fs');
-        const pathLib = require('path');
+        const pathMod = require('path');
 
-        // 1. Generar los 6 reportes Excel en carpeta con timestamp
+        // 1. Generar los 6 Excel en carpeta con timestamp
         const result = await BackupService.generateAllBackups();
 
-        // 2. Copiar database.sqlite al mismo folder del backup
-        const dbSource = process.env.DATABASE_PATH || pathLib.join(__dirname, '..', 'database.sqlite');
-        const dbDest = pathLib.join(result.folder, 'database.sqlite');
-        let dbSizeBytes = 0;
+        // 2. Copiar el database.sqlite al mismo folder de backup
+        const dbSource = process.env.DATABASE_PATH ||
+            pathMod.join(__dirname, '..', '..', 'database.sqlite');
+        const dbDest = pathMod.join(result.folder, 'database.sqlite');
 
+        let dbSizeBytes = 0;
+        let dbCopied = false;
         if (fsSync.existsSync(dbSource)) {
             fsSync.copyFileSync(dbSource, dbDest);
             dbSizeBytes = fsSync.statSync(dbDest).size;
+            dbCopied = true;
             result.files.push(dbDest);
-            console.log(`[Backup Completo] BD copiada: ${dbDest} (${dbSizeBytes} bytes)`);
-        } else {
-            console.warn(`[Backup Completo] No se encontró la BD en: ${dbSource}`);
         }
 
-        console.log(`[Backup Completo] ${result.files.length} archivos en ${result.folder}`);
+        console.log(`[BackupFull] Completado. ${result.files.length} archivos en ${result.folder} | BD: ${dbCopied ? `${Math.round(dbSizeBytes / 1024)} KB` : 'no encontrada'}`);
         res.json({
             ok: true,
             folder: result.folder,
             files: result.files,
             timestamp: result.timestamp,
-            dbSizeBytes,
-            dbIncluded: dbSizeBytes > 0
+            dbCopied,
+            dbSizeKB: Math.round(dbSizeBytes / 1024)
         });
     } catch (err) {
-        console.error('❌ backup/completo error:', err);
+        console.error('❌ backup/full error:', err);
         res.status(500).json({ ok: false, error: err.message });
     }
 });
-
-
 
 
 // ─────────────────────────────────────────────
