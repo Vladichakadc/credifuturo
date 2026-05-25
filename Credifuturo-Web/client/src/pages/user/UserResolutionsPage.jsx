@@ -129,8 +129,8 @@ const UserResolutionsPage = () => {
 
             {/* Segments of resolutions */}
             {[
-                { title: 'Aprobaciones 2025', data: resolutions.filter(r => r.id <= 12) },
-                { title: 'Primer informe 2026', data: resolutions.filter(r => r.id > 12) }
+                { title: 'Aprobaciones 2025', data: resolutions.filter(r => r.id <= 11) },
+                { title: 'Primer informe 2026', data: resolutions.filter(r => r.id >= 12) }
             ].map((section, idx) => (
                 <div key={idx} className={`space-y-4 ${idx > 0 ? 'pt-6' : ''}`}>
                     <h2 className="text-lg font-bold text-brand-primary border-b-2 border-gray-100 pb-2">
