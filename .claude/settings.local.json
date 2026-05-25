@@ -17,7 +17,8 @@
       "Bash(Select-Object Name, PSIsContainer)",
       "Bash(grep -E \"^d|\\\\.js$\")",
       "Bash(findstr /i \"lucide-react\" \"C:\\\\Credifuturo\\\\Credifuturo-Web\\\\client\\\\package.json\")",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(git push *)"
     ]
   }
 }
