@@ -129,7 +129,7 @@ const UserLoanAnalyzerPage = () => {
                 <h1 className="text-2xl font-bold text-brand-primary flex items-center gap-2">
                     <Scale className="h-6 w-6 text-emerald-600" />
                     Mi Capacidad de Préstamo
-                 {!user?.nombre ? '' : `- ${user.nombre} ${user.apellido || ''}`.trim()}</h1>
+                 {!user?.name ? '' : `- ${user.name} ${user.surname1 || ''} ${user.surname2 || ''}`.trim()}</h1>
                 <p className="text-gray-500 text-sm mt-1">
                     Evaluación financiera personal · Basada en la regla de 3× Ahorro Acumulado
                 </p>

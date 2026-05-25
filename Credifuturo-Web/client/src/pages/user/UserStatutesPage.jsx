@@ -63,7 +63,7 @@ const UserStatutesPage = () => {
                         <Scale className="h-6 w-6 text-brand-primary" />
                     </div>
                     <div>
-                        <h1 className="text-xl font-bold text-gray-900">Estatutos del Fondo Familiar {!user?.nombre ? '' : `- ${user.nombre} ${user.apellido || ''}`.trim()}</h1>
+                        <h1 className="text-xl font-bold text-gray-900">Estatutos del Fondo Familiar {!user?.name ? '' : `- ${user.name} ${user.surname1 || ''} ${user.surname2 || ''}`.trim()}</h1>
                         <div className="flex items-center gap-1.5 mt-1 text-sm text-gray-500">
                             <Calendar className="h-4 w-4" />
                             <span>Estatutos Iniciales — Fecha de Fundación: 01/12/2024</span>

@@ -35,7 +35,7 @@ const SidebarItem = ({ icon: Icon, label, path, isActive, collapsed }) => {
             title={collapsed ? label : undefined}
         >
             <Icon className={cn("h-5 w-5 flex-shrink-0", isActive ? "text-brand-primary" : "text-green-600 group-hover:text-brand-primary")} />
-            {!collapsed && <span className="ml-3 truncate">{label}</span>}
+            {!collapsed && <span className="ml-3 whitespace-normal leading-tight">{label}</span>}
             {isActive && !collapsed && <div className="ml-auto w-1 h-1 rounded-full bg-brand-primary" />}
         </Link>
     );
@@ -60,7 +60,7 @@ const SidebarSubmenu = ({ icon: Icon, label, children, isOpen, onToggle, locatio
                 <Icon className={cn("h-5 w-5 flex-shrink-0", hasActiveChild ? "text-brand-primary" : "text-green-600 group-hover:text-brand-primary")} />
                 {!collapsed && (
                     <>
-                        <span className="ml-3 truncate flex-1">{label}</span>
+                        <span className="ml-3 whitespace-normal leading-tight flex-1">{label}</span>
                         <ChevronDown
                             className={cn(
                                 "h-4 w-4 text-gray-400 transition-transform duration-200 ease-in-out",
@@ -104,7 +104,7 @@ const SidebarSubmenu = ({ icon: Icon, label, children, isOpen, onToggle, locatio
                                             isChildActive ? "text-brand-primary" : "text-gray-400 group-hover:text-gray-600"
                                         )} />
                                     )}
-                                    <span className="truncate">{child.label}</span>
+                                    <span className="whitespace-normal leading-tight">{child.label}</span>
                                     {isChildActive && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-brand-primary" />}
                                 </Link>
                             );

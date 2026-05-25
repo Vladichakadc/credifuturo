@@ -55,7 +55,7 @@ const AccountSummaryPDF = React.forwardRef(({ user, stats, charts, generationDat
                     </div>
                     <div>
                         <div style={{ fontSize: 16, fontWeight: 700, color: '#111827' }}>
-                            {user.name} {user.surname1 || ''} {user.surname2 || ''}
+                            {user.name} {user.surname1 || ''} ${user.surname2 || ''} {user.surname2 || ''}
                         </div>
                         <div style={{ display: 'flex', gap: 16, marginTop: 4 }}>
                             <span style={{ fontSize: 12, color: '#6b7280' }}><strong style={{ color: '#374151' }}>C.C:</strong> {user.cedula}</span>
