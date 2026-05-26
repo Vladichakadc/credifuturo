@@ -4,5 +4,6 @@
         "Credifuturo-Web"
     ],
     "python.testing.unittestEnabled": false,
-    "python.testing.pytestEnabled": true
+    "python.testing.pytestEnabled": true,
+    "kilo-code.new.autoApprove.enabled": false
 }

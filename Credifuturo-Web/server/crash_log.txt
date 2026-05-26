@@ -70,3 +70,21 @@
     at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
     at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
 ---
+[2026-05-26T01:30:13.281Z] user is not defined
+
+    at SavingsSummaryPage (http://localhost:5173/src/pages/admin/SavingsSummaryPage.jsx:2290:31)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Outlet (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4537:26)
+    at div
+    at main
+    at div
+    at DashboardLayout (http://localhost:5173/src/layouts/DashboardLayout.jsx:250:28)
+    at ProtectedRoute (http://localhost:5173/src/App.jsx?t=1779673112055:70:29)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4601:5)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4544:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:5290:5)
+    at App (http://localhost:5173/src/App.jsx?t=1779673112055:63:27)
+    at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
+    at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
+---
