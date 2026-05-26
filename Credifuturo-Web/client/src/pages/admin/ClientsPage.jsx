@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from '../../config/api';
 import { notifyUpdate } from '../../utils/sync';
-import { Save, Search, Trash2, X, AlertCircle, CheckCircle, Download, KeyRound, Bell, RefreshCw } from 'lucide-react';
+import { Save, Search, Trash2, X, AlertCircle, CheckCircle, Download, KeyRound, Bell, RefreshCw, XCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Button } from '../../components/ui/Button';
 import { Input, Label, FormField } from '../../components/ui/Input';
@@ -201,13 +201,14 @@ const ClientsPage = () => {
 
     // ── Solicitudes de recuperación de contraseña ─────────────────────────
     const [resetRequests, setResetRequests] = useState([]);
-    const [showRequests, setShowRequests] = useState(false);
+    const [showDropdown, setShowDropdown] = useState(false);
     const [loadingRequests, setLoadingRequests] = useState(false);
+    const dropdownRef = useRef(null);
 
     const fetchResetRequests = async () => {
         setLoadingRequests(true);
         try {
-            const res = await api.get('/admin/password-reset-requests');
+            const res = await api.get('/admin/password-reset-requests?status=pending');
             setResetRequests(res.data.data || []);
         } catch {
             toast.error('Error al cargar solicitudes de contraseña.');
@@ -219,6 +220,16 @@ const ClientsPage = () => {
     useEffect(() => {
         fetchResetRequests();
     }, []);
+
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+                setShowDropdown(false);
+            }
+        };
+        if (showDropdown) document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [showDropdown]);
 
     // Auto-fill email cuando se escribe nombre/apellido en modo creación
     useEffect(() => {
@@ -235,27 +246,11 @@ const ClientsPage = () => {
     const handleResetPassword = async () => {
         if (!formData.id) return;
         const nombre = `${formData.name} ${formData.surname1 || ''}`.trim();
-        // A07: deje vacío para que el backend genere una contraseña aleatoria
-        // que cumple la política (≥8 chars, mayúscula+minúscula+dígito).
-        const input = window.prompt(
-            `Contraseña temporal para "${nombre}":\n\n` +
-            `• Deje vacío para generar una contraseña aleatoria segura.\n` +
-            `• O escriba una (mín. 8 chars, mayúscula+minúscula+dígito).`,
-            ''
-        );
-        if (input === null) return; // canceló
-
+        if (!window.confirm(`¿Restablecer contraseña de "${nombre}" a la contraseña genérica Coop2025?\n\nEl socio deberá cambiarla en su próximo ingreso.`)) return;
         setLoading(true);
         try {
-            const payload = input.trim() ? { tempPassword: input.trim() } : {};
-            const res = await api.post(`/admin/clients/${formData.id}/reset-password`, payload);
-            if (res.data?.tempPassword) {
-                window.alert(
-                    `Contraseña restablecida.\n\nNueva contraseña temporal: ${res.data.tempPassword}\n\n` +
-                    `Anote este valor y entréguelo al socio.`
-                );
-            }
-            toast.success(res.data.message || 'Contraseña restablecida correctamente.');
+            await api.post(`/admin/clients/${formData.id}/reset-password`, {});
+            toast.success('Contraseña restablecida a Coop2025. El socio deberá cambiarla al ingresar.');
             fetchResetRequests();
         } catch (error) {
             toast.error('Error al resetear contraseña: ' + (error.response?.data?.error || error.message));
@@ -264,24 +259,24 @@ const ClientsPage = () => {
         }
     };
 
-    const handleResolveRequest = async (requestId, clientId) => {
-        const input = window.prompt(
-            '¿Resetear contraseña del socio?\n\n' +
-            '• Deje vacío para generar una contraseña aleatoria segura.\n' +
-            '• O escriba una (mín. 8 chars, mayúscula+minúscula+dígito).',
-            ''
-        );
-        if (input === null) return; // canceló
+    const handleResolveRequest = async (clientId, nombre) => {
+        if (!window.confirm(`¿Restablecer contraseña de "${nombre}" a la contraseña genérica Coop2025?\n\nEl socio deberá cambiarla en su próximo ingreso.`)) return;
         try {
-            const payload = input.trim() ? { tempPassword: input.trim() } : {};
-            const res = await api.post(`/admin/clients/${clientId}/reset-password`, payload);
-            if (res.data?.tempPassword) {
-                window.alert(
-                    `Contraseña restablecida.\n\nNueva contraseña temporal: ${res.data.tempPassword}\n\n` +
-                    `Anote este valor y entréguelo al socio.`
-                );
-            }
-            toast.success('Contraseña restablecida y solicitud resuelta.');
+            await api.post(`/admin/clients/${clientId}/reset-password`, {});
+            toast.success(`Contraseña restablecida a Coop2025. El socio deberá cambiarla al ingresar.`);
+            setShowDropdown(false);
+            fetchResetRequests();
+        } catch (error) {
+            toast.error('Error: ' + (error.response?.data?.error || error.message));
+        }
+    };
+
+    const handleRejectRequest = async (requestId, nombre) => {
+        if (!window.confirm(`¿Rechazar la solicitud de "${nombre}"?`)) return;
+        try {
+            await api.put(`/admin/password-reset-requests/${requestId}/reject`);
+            toast.success('Solicitud rechazada.');
+            setShowDropdown(false);
             fetchResetRequests();
         } catch (error) {
             toast.error('Error: ' + (error.response?.data?.error || error.message));
@@ -332,15 +327,75 @@ const ClientsPage = () => {
                         <RefreshCw className={`mr-2 h-4 w-4 ${bulkUpdating ? 'animate-spin' : ''}`} />
                         {bulkUpdating ? 'Actualizando...' : 'Actualizar Correos'}
                     </Button>
-                    <Button variant="secondary" onClick={() => { setShowRequests(v => !v); if (!showRequests) fetchResetRequests(); }} className="relative">
-                        <Bell className="mr-2 h-4 w-4" />
-                        Solicitudes
-                        {pendingCount > 0 && (
-                            <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
-                                {pendingCount}
-                            </span>
+                    <div className="relative" ref={dropdownRef}>
+                        <Button variant="secondary" onClick={() => { setShowDropdown(v => !v); fetchResetRequests(); }} className="relative">
+                            <Bell className="mr-2 h-4 w-4" />
+                            Solicitudes
+                            {pendingCount > 0 && (
+                                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center animate-pulse">
+                                    {pendingCount}
+                                </span>
+                            )}
+                        </Button>
+                        {showDropdown && (
+                            <div className="absolute right-0 top-full mt-2 w-96 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden">
+                                <div className="flex items-center justify-between px-4 py-3 bg-amber-50 border-b border-amber-100">
+                                    <span className="flex items-center gap-2 text-sm font-semibold text-amber-800">
+                                        <Bell className="w-4 h-4" />
+                                        Solicitudes Pendientes
+                                        {pendingCount > 0 && (
+                                            <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{pendingCount}</span>
+                                        )}
+                                    </span>
+                                    <button onClick={() => setShowDropdown(false)} className="text-gray-400 hover:text-gray-600">
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                </div>
+                                <div className="max-h-80 overflow-y-auto">
+                                    {loadingRequests ? (
+                                        <p className="px-4 py-6 text-sm text-center text-gray-400">Cargando...</p>
+                                    ) : resetRequests.length === 0 ? (
+                                        <div className="px-4 py-8 text-center">
+                                            <CheckCircle className="w-8 h-8 text-green-400 mx-auto mb-2" />
+                                            <p className="text-sm text-gray-500">Sin solicitudes pendientes</p>
+                                        </div>
+                                    ) : (
+                                        <div className="divide-y divide-gray-100">
+                                            {resetRequests.map(r => (
+                                                <div key={r.id} className="px-4 py-3 hover:bg-gray-50">
+                                                    <div className="flex items-start justify-between gap-2">
+                                                        <div className="min-w-0">
+                                                            <p className="text-sm font-semibold text-gray-800 truncate">{r.nombre || '—'}</p>
+                                                            <p className="text-xs text-gray-500">{r.cedula || ''} {r.email ? `· ${r.email}` : ''}</p>
+                                                            <p className="text-[11px] text-gray-400 mt-0.5">
+                                                                {r.createdAt ? new Date(r.createdAt).toLocaleString('es-CO') : ''}
+                                                            </p>
+                                                        </div>
+                                                        <div className="flex flex-col gap-1.5 shrink-0">
+                                                            <button
+                                                                onClick={() => handleResolveRequest(r.clientId, r.nombre)}
+                                                                className="flex items-center gap-1 text-[11px] bg-green-700 hover:bg-green-600 text-white px-2 py-1 rounded-md whitespace-nowrap"
+                                                            >
+                                                                <KeyRound className="w-3 h-3" />
+                                                                Resetear (Coop2025)
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleRejectRequest(r.id, r.nombre)}
+                                                                className="flex items-center gap-1 text-[11px] bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded-md whitespace-nowrap"
+                                                            >
+                                                                <XCircle className="w-3 h-3" />
+                                                                Rechazar
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         )}
-                    </Button>
+                    </div>
                 </div>
             </div>
 
@@ -578,72 +633,6 @@ const ClientsPage = () => {
                 </CardContent>
             </Card>
 
-            {/* Panel solicitudes de recuperación de contraseña */}
-            {showRequests && (
-                <Card className="border border-amber-200 bg-amber-50/40">
-                    <CardHeader className="pb-3">
-                        <CardTitle className="text-base flex items-center gap-2 text-amber-800">
-                            <Bell className="w-4 h-4" />
-                            Solicitudes de Recuperación de Contraseña
-                            {pendingCount > 0 && (
-                                <span className="ml-2 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                                    {pendingCount} pendiente{pendingCount > 1 ? 's' : ''}
-                                </span>
-                            )}
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        {loadingRequests ? (
-                            <p className="text-sm text-gray-500">Cargando...</p>
-                        ) : resetRequests.length === 0 ? (
-                            <p className="text-sm text-gray-500">No hay solicitudes registradas.</p>
-                        ) : (
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-sm">
-                                    <thead>
-                                        <tr className="text-left text-xs text-gray-500 border-b border-amber-200">
-                                            <th className="pb-2 pr-4">Socio</th>
-                                            <th className="pb-2 pr-4">Cédula</th>
-                                            <th className="pb-2 pr-4">Correo</th>
-                                            <th className="pb-2 pr-4">Fecha Solicitud</th>
-                                            <th className="pb-2 pr-4">Estado</th>
-                                            <th className="pb-2">Acción</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {resetRequests.map(r => (
-                                            <tr key={r.id} className="border-b border-amber-100 last:border-0">
-                                                <td className="py-2 pr-4 font-medium">{r.nombre || '—'}</td>
-                                                <td className="py-2 pr-4 text-gray-600">{r.cedula || '—'}</td>
-                                                <td className="py-2 pr-4 text-gray-600">{r.email || '—'}</td>
-                                                <td className="py-2 pr-4 text-gray-500 text-xs">
-                                                    {r.createdAt ? new Date(r.createdAt).toLocaleString('es-CO') : '—'}
-                                                </td>
-                                                <td className="py-2 pr-4">
-                                                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${r.status === 'pending' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                                                        {r.status === 'pending' ? 'Pendiente' : 'Resuelto'}
-                                                    </span>
-                                                </td>
-                                                <td className="py-2">
-                                                    {r.status === 'pending' && (
-                                                        <button
-                                                            onClick={() => handleResolveRequest(r.id, r.clientId)}
-                                                            className="flex items-center gap-1 text-xs bg-green-700 hover:bg-green-600 text-white px-2.5 py-1 rounded-md"
-                                                        >
-                                                            <KeyRound className="w-3 h-3" />
-                                                            Resetear y resolver
-                                                        </button>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
-            )}
         </div>
     );
 };

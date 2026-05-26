@@ -3440,7 +3440,7 @@ router.post('/clients/:id/reset-password', verifyToken, requireRole('admin'), as
             if (policyError) return res.status(400).json({ error: policyError });
             tempPassword = provided;
         } else {
-            tempPassword = generateTempPassword();
+            tempPassword = 'Coop2025';
         }
         const hashed = await bcrypt.hash(tempPassword, 10);
         await client.update({ password: hashed, mustChangePassword: true });
@@ -3484,6 +3484,19 @@ router.put('/password-reset-requests/:id/resolve', verifyToken, requireRole('adm
         const request = await PasswordResetRequest.findByPk(req.params.id);
         if (!request) return res.status(404).json({ error: 'Solicitud no encontrada.' });
         await request.update({ status: 'resolved' });
+        res.json({ ok: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Rechazar una solicitud (admin)
+router.put('/password-reset-requests/:id/reject', verifyToken, requireRole('admin'), async (req, res) => {
+    try {
+        const PasswordResetRequest = require('../models/PasswordResetRequest');
+        const request = await PasswordResetRequest.findByPk(req.params.id);
+        if (!request) return res.status(404).json({ error: 'Solicitud no encontrada.' });
+        await request.update({ status: 'rejected' });
         res.json({ ok: true });
     } catch (err) {
         res.status(500).json({ error: err.message });

@@ -24,7 +24,7 @@ const PasswordResetRequest = sequelize.define('PasswordResetRequest', {
         allowNull: true
     },
     status: {
-        type: DataTypes.ENUM('pending', 'resolved'),
+        type: DataTypes.ENUM('pending', 'resolved', 'rejected'),
         defaultValue: 'pending',
         allowNull: false
     }

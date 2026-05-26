@@ -1033,6 +1033,7 @@ const DefaultDetail = () => (
 // ─── Main SavingsSummaryPage ───────────────────────────────────────────────────
 
 const SavingsSummaryPage = ({ lockedSocio = null, hideControls = false, preloadedData = null }) => {
+    const user = (() => { try { return JSON.parse(localStorage.getItem('user') || '{}'); } catch { return {}; } })();
     const { toast } = useUi();
     const [activeCard, setActiveCard] = useState(null);
     const [loading, setLoading] = useState(false);

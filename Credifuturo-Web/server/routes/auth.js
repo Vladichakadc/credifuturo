@@ -9,6 +9,7 @@ const { verifyToken } = require('../middleware/authMiddleware');
 const { validatePassword } = require('../services/passwordPolicy');
 const { logSecurityEvent, getClientIp } = require('../services/securityLogger');
 const { recordLoginFailure, recordLoginSuccess } = require('../services/bruteForceDetector');
+const { sendResetRequestNotification } = require('../services/EmailService');
 
 // A07 (Identification and Authentication Failures): protección anti fuerza bruta
 const loginLimiter = rateLimit({
@@ -163,6 +164,9 @@ router.post('/request-reset', resetLimiter, async (req, res) => {
                 email: user.email || null,
                 status: 'pending'
             });
+            sendResetRequestNotification(user).catch(err =>
+                console.error('[EmailService] Error enviando notificación de reset:', err.message)
+            );
         }
 
         res.json({ ok: true, message: 'Solicitud registrada. El administrador restablecerá su acceso pronto.' });
