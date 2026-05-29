@@ -328,15 +328,17 @@ const PowerBITooltip = ({ active, payload, label, showLabel = true }) => {
 
 // ─── Gráfico Permanente de Resumen (Power BI Style) ──────────────────────────
 const AccountSummaryChart = ({ stats }) => {
-    const barData = [
-        { name: 'Capital Ahorrado', valor: stats?.totalSavings || 0, color: '#6366f1' },
-        { name: 'Aportes Iniciales', valor: stats?.totalInitialContributions || 0, color: '#f59e0b' },
-        { name: 'Total Ahorrado', valor: stats?.totalAhorradoGeneral || 0, color: '#8A05BE' },
-    ].filter((item) => item.valor > 0);
+    const capital = stats?.totalSavings || 0;
+    const aportes = stats?.totalInitialContributions || 0;
+    const total = stats?.totalAhorradoGeneral || 0;
+
+    // Barra apilada: Capital + Aportes componen el Total Ahorrado.
+    // Evita graficar el total junto a sus propios componentes (doble conteo).
+    const barData = [{ name: 'Total Ahorrado', capital, aportes }];
 
     const pieData = [
-        { name: 'Capital', value: stats?.totalSavings || 0, color: '#6366f1' },
-        { name: 'Aportes', value: stats?.totalInitialContributions || 0, color: '#f59e0b' },
+        { name: 'Capital', value: capital, color: '#6366f1' },
+        { name: 'Aportes', value: aportes, color: '#f59e0b' },
     ].filter(d => d.value > 0);
 
     const fmtShort = (v) => {
@@ -346,26 +348,28 @@ const AccountSummaryChart = ({ stats }) => {
     };
     const fmtFull = (v) => `$${Number(v).toLocaleString('es-CO')}`;
 
-    if (!stats || stats.totalAhorradoGeneral === 0) return null;
+    if (!stats || total === 0) return null;
 
     return (
         <div className="w-full h-full flex gap-2">
             {/* Bar Chart */}
             <div className="flex-1 min-w-0">
                 <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={barData} margin={{ top: 30, right: 10, left: 0, bottom: 8 }} barSize={44} barGap={8}>
+                    <BarChart data={barData} margin={{ top: 30, right: 10, left: 0, bottom: 8 }} barSize={72}>
                         <defs>
                             <linearGradient id="barGrad0" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#818cf8" /><stop offset="100%" stopColor="#6366f1" /></linearGradient>
                             <linearGradient id="barGrad1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#fbbf24" /><stop offset="100%" stopColor="#f59e0b" /></linearGradient>
-                            <linearGradient id="barGrad2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#a855f7" /><stop offset="100%" stopColor="#8A05BE" /></linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                         <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10, fontWeight: 600 }} dy={6} />
-                        <YAxis tickFormatter={fmtShort} axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} width={55} />
+                        <YAxis domain={[0, 'auto']} tickFormatter={fmtShort} axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} width={55} />
                         <RechartsTooltip cursor={{ fill: 'rgba(99,102,241,0.04)', radius: 8 }} content={<PowerBITooltip showLabel={false} />} />
-                        <Bar dataKey="valor" radius={[8, 8, 4, 4]} animationDuration={1200} animationEasing="ease-out"
-                            label={{ position: 'top', fill: '#334155', fontSize: 11, fontWeight: 700, formatter: fmtFull, offset: 8 }}>
-                            {barData.map((_, i) => <Cell key={i} fill={`url(#barGrad${i})`} />)}
+                        <Bar dataKey="capital" name="Capital Ahorrado" stackId="ahorro" fill="url(#barGrad0)" animationDuration={1200} animationEasing="ease-out" />
+                        <Bar dataKey="aportes" name="Aportes Iniciales" stackId="ahorro" fill="url(#barGrad1)" radius={[8, 8, 0, 0]} animationDuration={1200} animationEasing="ease-out">
+                            <LabelList position="top" offset={10} content={(props) => {
+                                const { x = 0, y = 0, width = 0 } = props;
+                                return <text x={x + width / 2} y={y - 8} textAnchor="middle" fill="#334155" fontSize={11} fontWeight={700}>{fmtFull(total)}</text>;
+                            }} />
                         </Bar>
                     </BarChart>
                 </ResponsiveContainer>
