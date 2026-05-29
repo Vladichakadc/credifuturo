@@ -1134,8 +1134,9 @@ const PaymentsPage = () => {
                                     </div>
                                 </div>
                                 <div>
-                                    <Label>10. Fecha de Pago Max</Label>
+                                    <Label htmlFor="payment-fecha-max">10. Fecha de Pago Max</Label>
                                     <input
+                                        id="payment-fecha-max"
                                         type="date"
                                         className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-brand-primary/20 outline-none"
                                         value={paymentForm.fechaPagoMax || ''}
@@ -1359,6 +1360,7 @@ const PaymentsPage = () => {
                                 >
                                     <input
                                         type="file"
+                                        aria-label="Subir soporte de pago"
                                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                                         accept=".jpg,.jpeg,.png,.pdf"
                                         onChange={(e) => {

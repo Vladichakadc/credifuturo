@@ -31,10 +31,18 @@ export const Label = React.forwardRef(({ className, ...props }, ref) => {
 Label.displayName = 'Label';
 
 export const FormField = ({ label, error, children, className }) => {
+    const autoId = React.useId();
+    // Associate the label with its control for accessibility. Only when there's a
+    // single element child; otherwise fall back to an unlabeled-for label (safe no-op).
+    const onlyChild = React.Children.count(children) === 1 && React.isValidElement(children) ? children : null;
+    const controlId = onlyChild ? (onlyChild.props.id || autoId) : undefined;
+    const renderedChild = onlyChild && !onlyChild.props.id
+        ? React.cloneElement(onlyChild, { id: controlId })
+        : children;
     return (
         <div className={cn("space-y-2", className)}>
-            {label && <Label>{label}</Label>}
-            {children}
+            {label && <Label htmlFor={controlId}>{label}</Label>}
+            {renderedChild}
             {error && <p className="text-xs text-state-error font-medium">{error}</p>}
         </div>
     );

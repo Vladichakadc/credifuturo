@@ -195,10 +195,11 @@ const Login = ({ setUser }) => {
                         ) : (
                             <form onSubmit={handleForgotSubmit} className="space-y-3">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    <label htmlFor="forgot-field" className="block text-sm font-medium text-gray-700 mb-1">
                                         Cédula o Correo Electrónico
                                     </label>
                                     <input
+                                        id="forgot-field"
                                         type="text"
                                         value={forgotField}
                                         onChange={(e) => setForgotField(e.target.value)}

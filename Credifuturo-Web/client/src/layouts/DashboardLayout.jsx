@@ -95,6 +95,7 @@ const SidebarSubmenu = ({ icon: Icon, label, children, isOpen, onToggle, locatio
                                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
                                 <input
                                     type="text"
+                                    aria-label="Buscar informe"
                                     value={searchValue}
                                     onChange={(e) => onSearch?.(e.target.value)}
                                     placeholder="Buscar informe..."

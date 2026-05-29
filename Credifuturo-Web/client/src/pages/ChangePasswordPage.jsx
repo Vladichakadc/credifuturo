@@ -112,10 +112,11 @@ export default function ChangePasswordPage({ user, setUser }) {
                 <form onSubmit={handleSubmit} className="space-y-4">
                     {/* Contraseña actual */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña actual</label>
+                        <label htmlFor="currentPassword" className="block text-sm font-medium text-gray-700 mb-1">Contraseña actual</label>
                         <div className="relative">
                             <input
                                 type={showCurrent ? 'text' : 'password'}
+                                id="currentPassword"
                                 name="currentPassword"
                                 value={form.currentPassword}
                                 onChange={handleChange}
@@ -129,10 +130,11 @@ export default function ChangePasswordPage({ user, setUser }) {
 
                     {/* Nueva contraseña */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Nueva contraseña</label>
+                        <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700 mb-1">Nueva contraseña</label>
                         <div className="relative">
                             <input
                                 type={showNew ? 'text' : 'password'}
+                                id="newPassword"
                                 name="newPassword"
                                 value={form.newPassword}
                                 onChange={handleChange}
@@ -158,10 +160,11 @@ export default function ChangePasswordPage({ user, setUser }) {
 
                     {/* Confirmar nueva contraseña */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Confirmar nueva contraseña</label>
+                        <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">Confirmar nueva contraseña</label>
                         <div className="relative">
                             <input
                                 type={showConfirm ? 'text' : 'password'}
+                                id="confirmPassword"
                                 name="confirmPassword"
                                 value={form.confirmPassword}
                                 onChange={handleChange}
