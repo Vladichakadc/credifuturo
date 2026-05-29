@@ -205,6 +205,7 @@ const InitialContributionsPage = () => {
                             <div className="md:col-span-3">
                                 <Label className="text-gray-700 font-semibold mb-1.5 block">Customer (Socio)</Label>
                                 <select
+                                    aria-label="Customer (Socio)"
                                     className="flex h-11 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary outline-none transition-all"
                                     value={form.clientId}
                                     onChange={(e) => setForm({ ...form, clientId: e.target.value })}
@@ -233,6 +234,7 @@ const InitialContributionsPage = () => {
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                             <FormField label="Estado">
                                 <select
+                                    aria-label="Estado"
                                     className="flex h-11 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 outline-none"
                                     value={form.status}
                                     onChange={(e) => setForm({ ...form, status: e.target.value })}
@@ -280,6 +282,7 @@ const InitialContributionsPage = () => {
                             </FormField>
                             <FormField label="Banco">
                                 <select
+                                    aria-label="Banco"
                                     className="flex h-11 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
                                     value={form.banco}
                                     onChange={(e) => setForm({ ...form, banco: e.target.value })}

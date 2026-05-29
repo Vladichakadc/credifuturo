@@ -20,6 +20,7 @@ import YearMultiSelect from '../../components/admin/YearMultiSelect';
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
 const StatCard = ({ title, value, description, icon: Icon, color, onClick, customBg, isDark = false, textColor }) => {
+    const isLoading = value === '...' || value === '…';
     const strValue = String(value ?? '');
     const valueFontClass = strValue.length > 12 ? 'text-base' : strValue.length > 9 ? 'text-xl' : 'text-2xl';
     const valueColorClass = textColor || (isDark ? 'text-white' : 'text-gray-900');
@@ -42,7 +43,11 @@ const StatCard = ({ title, value, description, icon: Icon, color, onClick, custo
                 <CardTitle className={`text-sm font-medium leading-snug ${isDark ? 'text-white/90' : 'text-gray-500'}`}>{title}</CardTitle>
             </CardHeader>
             <CardContent className="relative z-10 text-center pb-5 pr-10">
-                <div className={`${valueFontClass} font-bold leading-tight ${valueColorClass}`}>{value}</div>
+                {isLoading ? (
+                    <div className={`mx-auto h-7 w-24 rounded-md animate-pulse ${isDark ? 'bg-white/25' : 'bg-gray-200/80'}`} />
+                ) : (
+                    <div className={`${valueFontClass} font-bold leading-tight ${valueColorClass}`}>{value}</div>
+                )}
                 <p className={`text-xs mt-1 font-bold ${isDark ? 'text-white/80' : 'text-gray-500'}`}>{description}</p>
             </CardContent>
         </Card>
@@ -2284,6 +2289,7 @@ const DashboardHome = () => {
                             <Users className="h-4 w-4 text-emerald-600 flex-shrink-0" />
                             <select
                                 id="status-filter"
+                                aria-label="Filtrar por estado de socio"
                                 value={statusFilter}
                                 onChange={(e) => setStatusFilter(e.target.value)}
                                 className="text-sm font-bold text-emerald-900 bg-transparent border-none focus:ring-0 cursor-pointer outline-none p-0"

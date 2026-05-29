@@ -746,6 +746,7 @@ const SavingsPage = () => {
                                 <div className="md:col-span-2">
                                     <Label className="text-gray-700 font-semibold">2-4. Cliente (Customer_id, Nombre, Apellido)</Label>
                                     <select
+                                        aria-label="Cliente (Customer_id)"
                                         className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary outline-none"
                                         value={savingForm.clientId}
                                         onChange={(e) => setSavingForm({ ...savingForm, clientId: e.target.value })}
@@ -814,6 +815,7 @@ const SavingsPage = () => {
                             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-blue-50 p-4 rounded-lg border border-blue-100">
                                 <FormField label="5. Estado">
                                     <select
+                                        aria-label="Estado"
                                         className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary outline-none"
                                         value={savingForm.status}
                                         onChange={(e) => setSavingForm({ ...savingForm, status: e.target.value })}
@@ -839,6 +841,7 @@ const SavingsPage = () => {
                                 </FormField>
                                 <FormField label="8. Mes Pago">
                                     <select
+                                        aria-label="Mes de pago"
                                         className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 outline-none"
                                         value={savingForm.month}
                                         onChange={(e) => setSavingForm({ ...savingForm, month: e.target.value })}
@@ -916,6 +919,7 @@ const SavingsPage = () => {
 
                                 <FormField label="20. Tipo de Ahorro">
                                     <select
+                                        aria-label="Tipo de ahorro"
                                         className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 outline-none"
                                         value={savingForm.type}
                                         onChange={(e) => setSavingForm({ ...savingForm, type: e.target.value })}
@@ -930,6 +934,7 @@ const SavingsPage = () => {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <FormField label="17. Banco">
                                     <select
+                                        aria-label="Banco"
                                         className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary outline-none"
                                         value={savingForm.banco}
                                         onChange={(e) => setSavingForm({ ...savingForm, banco: e.target.value })}

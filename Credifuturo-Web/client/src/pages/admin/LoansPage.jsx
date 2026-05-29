@@ -524,6 +524,7 @@ const LoansPage = () => {
                                     <div className="col-span-1">
                                         <Label>2. Customer ID (Socio)</Label>
                                         <select
+                                            aria-label="Customer ID (Socio)"
                                             className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary outline-none"
                                             value={disbursedForm.clientId}
                                             onChange={(e) => setDisbursedForm({ ...disbursedForm, clientId: e.target.value })}
@@ -573,6 +574,7 @@ const LoansPage = () => {
                             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-blue-50 p-4 rounded-lg border border-blue-100">
                                 <FormField label="5. Estado">
                                     <select
+                                        aria-label="Estado del préstamo"
                                         className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm outline-none"
                                         value={disbursedForm.estado}
                                         onChange={(e) => setDisbursedForm({ ...disbursedForm, estado: e.target.value })}
@@ -652,6 +654,7 @@ const LoansPage = () => {
                                 </FormField>
                                 <FormField label="14. Banco Desembolsado">
                                     <select
+                                        aria-label="Banco desembolsado"
                                         className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
                                         value={disbursedForm.banco}
                                         onChange={(e) => setDisbursedForm({ ...disbursedForm, banco: e.target.value })}

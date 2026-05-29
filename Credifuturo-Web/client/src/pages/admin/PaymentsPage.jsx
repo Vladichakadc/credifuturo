@@ -654,6 +654,7 @@ const PaymentsPage = () => {
                         <div className="md:col-span-2">
                             <Label>Buscar por Socio</Label>
                             <select
+                                aria-label="Buscar por socio"
                                 value={searchTerm}
                                 onChange={e => setSearchTerm(e.target.value)}
                                 className="w-full h-9 rounded-md border border-gray-300 bg-white px-3 text-sm focus:ring-2 focus:ring-brand-primary/20 outline-none"
@@ -672,6 +673,7 @@ const PaymentsPage = () => {
                         <div>
                             <Label>Estado</Label>
                             <select
+                                aria-label="Filtrar por estado del pago"
                                 value={filterEstado}
                                 onChange={e => setFilterEstado(e.target.value)}
                                 className="h-9 w-full rounded-md border border-gray-300 bg-white px-3 text-sm focus:ring-2 focus:ring-brand-primary/20 outline-none"
@@ -685,6 +687,7 @@ const PaymentsPage = () => {
                         <div>
                             <Label>Filtrar por Estado Préstamo</Label>
                             <select
+                                aria-label="Filtrar por estado del préstamo"
                                 value={filterEstadoPrestamo}
                                 onChange={e => setFilterEstadoPrestamo(e.target.value)}
                                 className="h-9 w-full rounded-md border border-gray-300 bg-white px-3 text-sm focus:ring-2 focus:ring-brand-primary/20 outline-none"
@@ -872,11 +875,12 @@ const PaymentsPage = () => {
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
                                     <div className="space-y-1">
                                         <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide">Id_EP</label>
-                                        <input type="text" autoFocus placeholder="Ej: P59, P122..." value={selectorSearch} onChange={e => setSelectorSearch(e.target.value)} className={selectorFieldCls} />
+                                        <input type="text" autoFocus aria-label="Buscar pago por Id_EP" placeholder="Ej: P59, P122..." value={selectorSearch} onChange={e => setSelectorSearch(e.target.value)} className={selectorFieldCls} />
                                     </div>
                                     <div className="space-y-1">
                                         <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide">Socio</label>
                                         <select
+                                            aria-label="Socio"
                                             value={selectorClientId}
                                             onChange={e => {
                                                 setSelectorClientId(e.target.value);
@@ -894,7 +898,7 @@ const PaymentsPage = () => {
                                             Id VM (Préstamo)
                                             {selectorClientId && <span className="ml-1 text-indigo-500 font-normal normal-case">— filtrado por socio</span>}
                                         </label>
-                                        <select value={selectorIdVm} onChange={e => setSelectorIdVm(e.target.value)} className={selectorFieldCls}>
+                                        <select aria-label="Préstamo (Id_VM)" value={selectorIdVm} onChange={e => setSelectorIdVm(e.target.value)} className={selectorFieldCls}>
                                             <option value="">— Todos —</option>
                                             {selectorUniqueIdVms.map(v => <option key={v} value={v}>{v}</option>)}
                                         </select>
@@ -905,14 +909,14 @@ const PaymentsPage = () => {
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
                                     <div className="space-y-1">
                                         <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide">Mes de Pago</label>
-                                        <select value={selectorMes} onChange={e => setSelectorMes(e.target.value)} className={selectorFieldCls}>
+                                        <select aria-label="Mes de pago" value={selectorMes} onChange={e => setSelectorMes(e.target.value)} className={selectorFieldCls}>
                                             <option value="">— Todos los meses —</option>
                                             {monthNames.map(m => <option key={m} value={m}>{m}</option>)}
                                         </select>
                                     </div>
                                     <div className="space-y-1">
                                         <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide">Estado</label>
-                                        <select value={selectorEstado} onChange={e => setSelectorEstado(e.target.value)} className={selectorFieldCls}>
+                                        <select aria-label="Estado de la cuota" value={selectorEstado} onChange={e => setSelectorEstado(e.target.value)} className={selectorFieldCls}>
                                             <option value="">— Todos —</option>
                                             <option value="Pendiente">Pendiente</option>
                                             <option value="Pago">Pago</option>
@@ -920,7 +924,7 @@ const PaymentsPage = () => {
                                     </div>
                                     <div className="space-y-1">
                                         <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide"># Cuota</label>
-                                        <input type="number" min="1" placeholder="Ej: 1, 2, 3..." value={selectorCuota} onChange={e => setSelectorCuota(e.target.value)} className={selectorFieldCls} />
+                                        <input type="number" min="1" aria-label="Filtrar por número de cuota" placeholder="Ej: 1, 2, 3..." value={selectorCuota} onChange={e => setSelectorCuota(e.target.value)} className={selectorFieldCls} />
                                     </div>
                                 </div>
 
@@ -995,6 +999,7 @@ const PaymentsPage = () => {
                                 <div>
                                     <Label>1. Id_EP</Label>
                                     <select
+                                        aria-label="Id_EP"
                                         className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-bold text-brand-primary focus:ring-2 focus:ring-brand-primary/20 outline-none"
                                         value={paymentForm.externalId || ''}
                                         onChange={e => {
@@ -1023,6 +1028,7 @@ const PaymentsPage = () => {
                                 <div>
                                     <Label>2. Customer_id</Label>
                                     <select
+                                        aria-label="Customer_id"
                                         className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-brand-primary/20 outline-none"
                                         value={paymentForm.clientId}
                                         onChange={e => {
@@ -1078,6 +1084,7 @@ const PaymentsPage = () => {
                                 <div>
                                     <Label>7. # Cuota a Pagar</Label>
                                     <select
+                                        aria-label="# Cuota a pagar"
                                         className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-brand-primary/20 outline-none"
                                         value={paymentForm.itemQuantity}
                                         onChange={e => setPaymentForm(prev => ({ ...prev, itemQuantity: e.target.value ? parseInt(e.target.value, 10) : '' }))}
@@ -1147,6 +1154,7 @@ const PaymentsPage = () => {
                                 <div>
                                     <Label>11. Mes de Pago</Label>
                                     <select
+                                        aria-label="Mes de pago"
                                         className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-brand-primary/20 outline-none"
                                         value={paymentForm.mesPago}
                                         onChange={e => setPaymentForm(prev => ({ ...prev, mesPago: e.target.value }))}
@@ -1176,6 +1184,7 @@ const PaymentsPage = () => {
                                 <div>
                                     <Label>13. Estado</Label>
                                     <select
+                                        aria-label="Estado de la cuota"
                                         className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
                                         value={paymentForm.estado}
                                         onChange={e => setPaymentForm({ ...paymentForm, estado: e.target.value })}
@@ -1227,6 +1236,7 @@ const PaymentsPage = () => {
                                 <div>
                                     <Label>17. Banco Desembolsado</Label>
                                     <select
+                                        aria-label="Banco desembolsado"
                                         className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-brand-primary/20 outline-none"
                                         value={paymentForm.banco}
                                         onChange={e => setPaymentForm({ ...paymentForm, banco: e.target.value })}
@@ -1256,6 +1266,7 @@ const PaymentsPage = () => {
                                 <div>
                                     <Label>21. Id_VM (Ref. Préstamo)</Label>
                                     <select
+                                        aria-label="Id_VM (Ref. préstamo)"
                                         className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
                                         value={paymentForm.idVm}
                                         onChange={e => {
@@ -1293,6 +1304,7 @@ const PaymentsPage = () => {
                                 <div>
                                     <Label>22. Estado Prestamo</Label>
                                     <select
+                                        aria-label="Estado del préstamo"
                                         className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
                                         value={paymentForm.estadoPrestamo}
                                         onChange={e => setPaymentForm({ ...paymentForm, estadoPrestamo: e.target.value })}

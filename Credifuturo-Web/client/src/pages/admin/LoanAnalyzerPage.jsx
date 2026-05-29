@@ -53,6 +53,7 @@ const SocioSelect = ({ clients, selectedId, onSelect }) => {
                             <Search className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
                             <input
                                 autoFocus
+                                aria-label="Buscar socio por nombre o cédula"
                                 type="text"
                                 placeholder="Buscar por nombre o cédula..."
                                 value={search}

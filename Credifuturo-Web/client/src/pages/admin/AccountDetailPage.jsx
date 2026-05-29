@@ -658,7 +658,8 @@ const AccountDetailPage = () => {
                     <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 shadow-sm">
                         <TrendingUp className="h-4 w-4 text-brand-primary opacity-60" />
                         <span className="text-xs font-bold text-gray-500 uppercase tracking-tighter">Año:</span>
-                        <select 
+                        <select
+                            aria-label="Filtrar por año"
                             value={selectedYear}
                             onChange={(e) => setSelectedYear(e.target.value)}
                             className="text-sm font-bold text-brand-primary bg-transparent border-none focus:ring-0 cursor-pointer outline-none"

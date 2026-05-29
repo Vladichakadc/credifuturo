@@ -282,6 +282,7 @@ const ClientListPage = () => {
                     <div className="flex items-center gap-2 bg-gradient-to-r from-emerald-50 to-green-50 px-4 py-2 rounded-xl border-2 border-emerald-200/80 shadow-sm transition-all hover:shadow-lg hover:border-emerald-300 w-full sm:w-auto">
                         <Users className="h-4 w-4 text-emerald-600" />
                         <select
+                            aria-label="Filtrar por estado de socio"
                             value={statusFilter}
                             onChange={(e) => setStatusFilter(e.target.value)}
                             className="text-sm font-bold text-emerald-900 bg-transparent border-none focus:ring-0 cursor-pointer outline-none p-0"
@@ -299,6 +300,7 @@ const ClientListPage = () => {
                             <Search className="h-4 w-4 text-gray-400" />
                             <input
                                 id="search-clients"
+                                aria-label="Buscar socio"
                                 type="text"
                                 placeholder="Buscar socio..."
                                 className="w-full bg-transparent border-none focus:ring-0 text-sm font-medium text-gray-800 placeholder:text-gray-400 p-0"

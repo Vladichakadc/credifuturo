@@ -453,6 +453,7 @@ const UserSavingsListPage = () => {
 
                     <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border-2 border-gray-200/80 shadow-sm transition-all hover:shadow-lg hover:border-gray-300">
                         <select
+                            aria-label="Filtrar por estado del ahorro"
                             className="text-sm font-medium text-gray-700 bg-transparent border-none focus:ring-0 cursor-pointer outline-none p-0"
                             value={filterStatus}
                             onChange={e => setFilterStatus(e.target.value)}

@@ -406,6 +406,7 @@ const ClientsPage = () => {
                         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
                         <input
                             type="text"
+                            aria-label="Buscar socio por cédula"
                             placeholder="Buscar por Cédula..."
                             className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-primary/50"
                             value={searchCedula}
@@ -498,6 +499,7 @@ const ClientsPage = () => {
                                 <div className="space-y-2">
                                     <Label>Género</Label>
                                     <select
+                                        aria-label="Género"
                                         className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary outline-none"
                                         value={formData.genero}
                                         onChange={(e) => setFormData({ ...formData, genero: e.target.value })}
@@ -545,6 +547,7 @@ const ClientsPage = () => {
                                 <div className="space-y-2">
                                     <Label>Socio Fundador</Label>
                                     <select
+                                        aria-label="Socio Fundador"
                                         className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary outline-none"
                                         value={formData.socioFundador}
                                         onChange={(e) => setFormData({ ...formData, socioFundador: e.target.value })}
@@ -556,6 +559,7 @@ const ClientsPage = () => {
                                 <div className="space-y-2">
                                     <Label>Estatus</Label>
                                     <select
+                                        aria-label="Estatus"
                                         className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary outline-none"
                                         value={formData.estatus}
                                         onChange={(e) => setFormData({ ...formData, estatus: e.target.value })}

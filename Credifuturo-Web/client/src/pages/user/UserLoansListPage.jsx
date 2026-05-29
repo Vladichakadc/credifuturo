@@ -219,6 +219,7 @@ const UserLoansListPage = () => {
                         <div className="relative w-full">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                             <input
+                                aria-label="Buscar en mis préstamos"
                                 type="text"
                                 placeholder="Buscar en mis préstamos..."
                                 className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary outline-none"
@@ -232,6 +233,7 @@ const UserLoansListPage = () => {
                     <div className="min-w-[170px]">
                         <label className="block text-xs font-medium text-gray-500 mb-1">Estado</label>
                         <select
+                            aria-label="Filtrar por estado del préstamo"
                             value={filterEstado}
                             onChange={e => setFilterEstado(e.target.value)}
                             className="w-full py-2 px-3 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary outline-none"
@@ -247,6 +249,7 @@ const UserLoansListPage = () => {
                     <div className="min-w-[140px]">
                         <label className="block text-xs font-medium text-gray-500 mb-1">Año Desembolso</label>
                         <select
+                            aria-label="Filtrar por año de desembolso"
                             value={filterAnio}
                             onChange={e => setFilterAnio(e.target.value)}
                             className="w-full py-2 px-3 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary outline-none"

@@ -9,11 +9,12 @@ import * as XLSX from 'xlsx';
 import { formatDate } from '../../utils/excelUtils';
 import { useSortTable, SortIcon } from '../../utils/useSortTable';
 
-const FilterSelect = ({ icon: Icon, value, onChange, children, width = 'lg:w-44' }) => (
+const FilterSelect = ({ icon: Icon, value, onChange, children, width = 'lg:w-44', ariaLabel }) => (
     <div className={`relative w-full ${width}`}>
         <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border transition-colors ${value ? 'bg-brand-primary/10 border-brand-primary/40' : 'bg-emerald-50 border-emerald-200'}`}>
             <Icon className={`h-4 w-4 flex-shrink-0 ${value ? 'text-brand-primary' : 'text-emerald-600'}`} />
             <select
+                aria-label={ariaLabel}
                 value={value}
                 onChange={onChange}
                 className="flex-1 bg-transparent text-sm font-semibold text-gray-700 appearance-none outline-none cursor-pointer truncate"
@@ -69,6 +70,7 @@ const ClientSelect = ({ clients, value, onChange, width = 'lg:w-56' }) => {
                             <Search className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
                             <input
                                 autoFocus
+                                aria-label="Buscar socio por nombre o cédula"
                                 type="text"
                                 placeholder="Buscar por nombre o cédula..."
                                 value={search}
@@ -732,14 +734,14 @@ const SavingsListPage = () => {
                     />
                 </div>
                 <div className="flex flex-col sm:flex-row items-center gap-2 w-full lg:w-auto flex-wrap">
-                    <FilterSelect icon={Calendar} value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} width="lg:w-32">
+                    <FilterSelect icon={Calendar} value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} width="lg:w-32" ariaLabel="Filtrar por año">
                         <option value="">Año: Todos</option>
                         {uniqueYearsDropdown.map(year => (
                             <option key={year} value={year}>{year}</option>
                         ))}
                     </FilterSelect>
 
-                    <FilterSelect icon={UserCheck} value={statusClientFilter} onChange={(e) => setStatusClientFilter(e.target.value)} width="lg:w-44">
+                    <FilterSelect icon={UserCheck} value={statusClientFilter} onChange={(e) => setStatusClientFilter(e.target.value)} width="lg:w-44" ariaLabel="Filtrar por estatus de socio">
                         <option value="">Estatus: Todos</option>
                         <option value="Activo">Activo</option>
                         <option value="Desactivado">Desactivado</option>
@@ -747,14 +749,14 @@ const SavingsListPage = () => {
 
                     <ClientSelect clients={uniqueClientsDropdown} value={clientFilter} onChange={setClientFilter} width="lg:w-56" />
 
-                    <FilterSelect icon={Activity} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} width="lg:w-44">
+                    <FilterSelect icon={Activity} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} width="lg:w-44" ariaLabel="Filtrar por estado del ahorro">
                         <option value="">Estado: Todos</option>
                         {uniqueStatusDropdown.map(st => (
                             <option key={st} value={st}>{st}</option>
                         ))}
                     </FilterSelect>
 
-                    <FilterSelect icon={AlertCircle} value={filterPenalty} onChange={(e) => setFilterPenalty(e.target.value)} width="lg:w-40">
+                    <FilterSelect icon={AlertCircle} value={filterPenalty} onChange={(e) => setFilterPenalty(e.target.value)} width="lg:w-40" ariaLabel="Filtrar por detrimento">
                         <option value="">Detrimento: Todos</option>
                         <option value="SI">Con Detrimento</option>
                         <option value="NO">Sin Detrimento</option>
