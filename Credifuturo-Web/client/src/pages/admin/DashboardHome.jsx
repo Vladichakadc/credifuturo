@@ -415,15 +415,52 @@ const ComparativeChart = ({ title, historic, current, color, labelHistoric, labe
         ? `Al ritmo actual, cerraría el año en ${fmtCOP(projectedYearEnd)} (+${projectedPctVs2025.toFixed(1)}% vs 2025)`
         : `Al ritmo actual, cerraría el año en ${fmtCOP(projectedYearEnd)} (${projectedPctVs2025.toFixed(1)}% vs 2025)`;
 
+    // ── Estilo Power BI: gradientes por barra, tooltip enriquecido, animación ──
+    const gid = `cmp-${String(color || 'x').replace('#', '')}`;
+    const gradientDefs = (
+        <defs>
+            <linearGradient id={`${gid}-cur`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={color} stopOpacity={1} />
+                <stop offset="100%" stopColor={color} stopOpacity={0.6} />
+            </linearGradient>
+            <linearGradient id={`${gid}-hist`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#cbd5e1" stopOpacity={0.95} />
+                <stop offset="100%" stopColor="#cbd5e1" stopOpacity={0.5} />
+            </linearGradient>
+            <linearGradient id={`${gid}-est`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={color} stopOpacity={0.5} />
+                <stop offset="100%" stopColor={color} stopOpacity={0.18} />
+            </linearGradient>
+        </defs>
+    );
+    const barCells = data.map((d, i) => (
+        <Cell key={i} fill={`url(#${gid}-${i === 0 ? 'hist' : (value2027 !== undefined && i === 2) ? 'est' : 'cur'})`} />
+    ));
+    const CompTooltip = ({ active, payload, label }) => {
+        if (!active || !payload || !payload.length) return null;
+        return (
+            <div className="bg-white/95 backdrop-blur-md rounded-xl shadow-2xl border border-gray-100 overflow-hidden" style={{ minWidth: 160 }}>
+                <div className="px-4 py-2 border-b border-gray-100" style={{ backgroundColor: `${color}14` }}>
+                    <p className="text-[11px] font-black uppercase tracking-widest" style={{ color }}>{label}</p>
+                </div>
+                <div className="px-4 py-2.5">
+                    <p className="text-sm font-black text-gray-900 tabular-nums">{fmtCOP(payload[0].value)}</p>
+                </div>
+            </div>
+        );
+    };
+
     if (compact) {
         return (
             <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={data} margin={{ top: 20, right: 10, left: 10, bottom: 0 }}>
+                    {gradientDefs}
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 900, fill: '#374151' }} />
                     <YAxis hide domain={[0, 'dataMax + 5000000']} />
-                    <Tooltip cursor={{ fill: '#f8fafc' }} formatter={(value) => `$${Number(value).toLocaleString('es-CO')}`} contentStyle={{ fontSize: '11px', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
-                    <Bar dataKey="value" radius={[6, 6, 0, 0]} barSize={value2027 !== undefined ? 40 : 55}>
+                    <Tooltip cursor={{ fill: `${color}12`, radius: 8 }} content={<CompTooltip />} />
+                    <Bar dataKey="value" radius={[6, 6, 0, 0]} barSize={value2027 !== undefined ? 40 : 55} animationDuration={1100} animationEasing="ease-out">
+                        {barCells}
                         <LabelList dataKey="value" position="top" formatter={(v) => fmtCOP(v)} style={{ fontSize: '12px', fontWeight: '900', fill: '#0f172a' }} />
                     </Bar>
                     <Line dataKey="value" type="linear" stroke={isPositive ? '#10b981' : '#ef4444'} strokeWidth={2} strokeDasharray="6 4" dot={{ r: 5, fill: isPositive ? '#10b981' : '#ef4444', strokeWidth: 2, stroke: '#fff' }} activeDot={false} />
@@ -452,6 +489,7 @@ const ComparativeChart = ({ title, historic, current, color, labelHistoric, labe
             <div className="w-full h-64 px-2">
                 <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={data} margin={{ top: 20, right: 10, left: 10, bottom: 0 }}>
+                        {gradientDefs}
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                         <XAxis
                             dataKey="name"
@@ -461,11 +499,11 @@ const ComparativeChart = ({ title, historic, current, color, labelHistoric, labe
                         />
                         <YAxis hide domain={[0, 'dataMax + 5000000']} />
                         <Tooltip
-                            cursor={{ fill: '#f8fafc' }}
-                            formatter={(value) => `$${Number(value).toLocaleString('es-CO')}`}
-                            contentStyle={{ fontSize: '11px', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                            cursor={{ fill: `${color}12`, radius: 8 }}
+                            content={<CompTooltip />}
                         />
-                        <Bar dataKey="value" radius={[6, 6, 0, 0]} barSize={value2027 !== undefined ? 40 : 55}>
+                        <Bar dataKey="value" radius={[6, 6, 0, 0]} barSize={value2027 !== undefined ? 40 : 55} animationDuration={1100} animationEasing="ease-out">
+                            {barCells}
                             <LabelList
                                 dataKey="value"
                                 position="top"
@@ -671,19 +709,59 @@ const SavingsByYearChart = ({ data, title = 'Ahorro de los Socios por Año', com
     const deviationPct = prev && prev.total > 0 ? (deviation / prev.total) * 100 : 0;
     const isPositive = deviation >= 0;
 
+    // Tooltip enriquecido estilo Power BI: año + ambos segmentos con % + total
+    const YearTooltip = ({ active, payload, label }) => {
+        if (!active || !payload || !payload.length) return null;
+        const row = payload[0]?.payload || {};
+        const mensual = row.mensual || 0;
+        const aportes = row.aportes || 0;
+        const totalRow = row.total || (mensual + aportes);
+        const pct = (v) => totalRow > 0 ? Math.round((v / totalRow) * 100) : 0;
+        const line = (color, name, value) => (
+            <div className="flex items-center justify-between gap-5">
+                <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                    <span className="text-xs text-gray-500 font-medium">{name}</span>
+                </div>
+                <span className="text-xs font-bold text-gray-900 tabular-nums">{fmtCOP(value)} <span className="text-[10px] text-gray-400 font-semibold">{pct(value)}%</span></span>
+            </div>
+        );
+        return (
+            <div className="bg-white/95 backdrop-blur-md rounded-xl shadow-2xl border border-gray-100 overflow-hidden" style={{ minWidth: 200 }}>
+                <div className="px-4 py-2 bg-gradient-to-r from-emerald-50 to-amber-50 border-b border-gray-100">
+                    <p className="text-[11px] font-black text-gray-700 uppercase tracking-widest">Año {label}</p>
+                </div>
+                <div className="px-4 py-3 space-y-2">
+                    {line('#10b981', 'Ahorro mensual', mensual)}
+                    {line('#f59e0b', 'Aportes iniciales', aportes)}
+                    <div className="flex items-center justify-between gap-5 pt-1.5 border-t border-gray-100">
+                        <span className="text-[11px] font-black text-gray-700 uppercase tracking-wide">Total</span>
+                        <span className="text-sm font-black text-emerald-700 tabular-nums">{fmtCOP(totalRow)}</span>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     const chart = (
         <ResponsiveContainer width="100%" height="100%">
             <BarChart data={rows} margin={{ top: 24, right: 10, left: 10, bottom: 0 }}>
+                <defs>
+                    <linearGradient id="sbyMensual" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#34d399" />
+                        <stop offset="100%" stopColor="#059669" />
+                    </linearGradient>
+                    <linearGradient id="sbyAportes" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#fbbf24" />
+                        <stop offset="100%" stopColor="#d97706" />
+                    </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="anio" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 900, fill: '#374151' }} />
                 <YAxis hide domain={[0, 'dataMax + 4000000']} />
-                <Tooltip
-                    cursor={{ fill: '#f8fafc' }}
-                    formatter={(value, name) => [fmtCOP(value), name === 'mensual' ? 'Ahorro mensual' : 'Aportes iniciales']}
-                    contentStyle={{ fontSize: '11px', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                />
-                <Bar dataKey="mensual" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} barSize={55} />
-                <Bar dataKey="aportes" stackId="a" fill="#f59e0b" radius={[6, 6, 0, 0]} barSize={55}>
+                <Tooltip cursor={{ fill: 'rgba(16,185,129,0.06)', radius: 8 }} content={<YearTooltip />} />
+                <Bar dataKey="mensual" stackId="a" fill="url(#sbyMensual)" barSize={55} animationDuration={1100} animationEasing="ease-out" />
+                <Bar dataKey="aportes" stackId="a" fill="url(#sbyAportes)" radius={[6, 6, 0, 0]} barSize={55} animationDuration={1100} animationBegin={160} animationEasing="ease-out">
                     <LabelList dataKey="total" position="top" formatter={(v) => fmtCOP(v)} style={{ fontSize: '12px', fontWeight: '900', fill: '#0f172a' }} />
                 </Bar>
             </BarChart>
