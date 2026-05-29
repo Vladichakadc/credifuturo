@@ -25,7 +25,7 @@ npm run preview # Preview production build locally
 ### Quick Start
 Double-click `Credifuturo-Web/iniciar_aplicacion.bat` to start both servers automatically (includes dependency checks). Use `Credifuturo-Web/reparar_instalacion.bat` to reinstall all dependencies if node_modules are corrupted.
 
-No test framework or lint script is configured.
+No test framework is configured. ESLint is installed in the client (no `lint` npm script) — run it with `npx eslint .` from `client/`.
 
 ## Architecture
 
@@ -41,22 +41,26 @@ SQLite3 (Credifuturo-Web/database.sqlite, ~11 MB)
 
 **Database location**: The active DB is `Credifuturo-Web/database.sqlite`. Two other SQLite files exist at the repo root (`database.sqlite`, `DB_Credifuturo.db`) — these are legacy/backup copies and are NOT used by the application.
 
+**Production deployment (Railway)**: In production (`NODE_ENV=production`) the same Express service also serves the built React app from `client/dist` (static + `app.get('*')` catch-all), so it runs as a *single* service, not two. The SQLite file lives on a Railway volume via the `DATABASE_PATH` env var (e.g. `/data/database.sqlite`). `trust proxy` is enabled so rate-limiting sees the real client IP behind Railway's proxy. **Production is the source of truth** — the local DB is disposable; align local to prod, never the reverse without being asked.
+
 ### Backend Structure (`server/`)
 - **`server.js`** — Express entry point; loads middleware, routes, and starts the cron job for daily backups
 - **`config/database.js`** — Sequelize SQLite setup; DB path resolves to `Credifuturo-Web/database.sqlite` via `path.join(__dirname, '..', '..', 'database.sqlite')`; `sequelize.sync()` runs on startup
-- **`models/`** — Six core Sequelize models plus `index.js` (defines associations between models)
-- **`routes/auth.js`** — Login endpoint; issues JWT tokens
+- **`models/`** — Seven Sequelize models. `index.js` wires associations for the six core models; `PasswordResetRequest` is defined standalone (imported directly in `server.js`, not via `index.js`)
+- **`routes/auth.js`** — Login (rate-limited), JWT issuance, `PUT /change-password`, and `POST /request-reset` (creates a `PasswordResetRequest` + emails a notification via `EmailService`)
 - **`routes/admin.js`** — All CRUD operations (members, loans, savings, payments) plus the `/my/*` user-facing endpoints. At ~3,250 lines, this is the bulk of the API.
 - **`routes/user.js`** — Legacy minimal file; active user-dashboard pages call `/api/admin/my/*` instead
 - **`middleware/authMiddleware.js`** — JWT verification; role-checking (admin vs. user)
 - **`services/BackupService.js`** — Exports all tables to dated Excel files; triggered daily at 8 PM Colombia time (`America/Bogota` timezone) by node-cron and on-demand via admin UI. Output: `C:\Credifuturo\Backups\`
 - **`services/DBClient.js`** — Higher-level DB operations service (upsert/transaction helpers); used by import scripts, not by routes directly
 - **`services/DataImportService.js`** — Excel import logic (currently disabled via `ENABLE_EXCEL_SYNC=false` in `.env`)
+- **`services/EmailService.js`** — nodemailer wrapper; sends password-reset-request notifications
+- **`services/passwordPolicy.js` / `securityLogger.js`** — temp-password generation and security-event logging (used by the admin auto-seed and reset flow)
 
 > The `server/` directory also contains 70+ one-off utility/migration scripts from past data-fix operations. These are not part of the live application.
 
-#### Critical: JWT Secret Mismatch
-`authMiddleware.js` hardcodes the secret as `'credifuturo_secret_key_change_me'` and does **not** read `process.env.JWT_SECRET`. The `JWT_SECRET` value in `.env` only affects `routes/auth.js` (token issuance). Any change to JWT signing must be applied to both files.
+#### JWT Secret
+Both `routes/auth.js` (token issuance) and `middleware/authMiddleware.js` (token verification) read the secret from `process.env.JWT_SECRET`. `routes/auth.js` throws at startup if `JWT_SECRET` is undefined. There is no hardcoded fallback secret, so `JWT_SECRET` must be set in `server/.env` (and in the Railway env vars for production) for login and auth to work.
 
 ### Frontend Structure (`client/src/`)
 - **`App.jsx`** — React Router v6 routes; splits into `/admin` (DashboardLayout) and `/dashboard` (UserDashboardLayout) role trees; root `/` redirects by role
@@ -76,25 +80,26 @@ SQLite3 (Credifuturo-Web/database.sqlite, ~11 MB)
 
 > Many `.jsx` files exist flat under `pages/` (e.g., `ClientsPage.jsx`, `DashboardHome.jsx`) — these are earlier versions. The active pages imported by `App.jsx` live in `pages/admin/` and `pages/user/`. `AdminDashboard.jsx` and `UserDashboard.jsx` at the root are accessible via `/admin/legacy` but are fully superseded.
 
-### Data Model (6 Sequelize tables)
+### Data Model (7 Sequelize tables)
 
 | Model | Table | Purpose |
 |-------|-------|---------|
-| `Client` | clients | Socios (members); holds `role` (admin/user), `customerId`, `cedula`, `estatus` |
+| `Client` | clients | Socios (members); holds `role` (admin/user), `customerId`, `cedula`, `estatus`, and the `mustChangePassword` flag |
 | `Saving` | savings | Monthly savings + initial contributions; `type` distinguishes "Mensual" vs "Aporte Inicial" |
 | `Loan` | loans | Loan applications (supplementary to DisbursedLoan; created atomically alongside it) |
 | `DisbursedLoan` | disbursed_loans | Actual disbursed loans; keyed by `idVm`; stores `valorPrestado`, `cuotas`, `interesMensual` |
 | `LoanPayment` | loan_payments | Individual quota rows per loan; `estado` is "Pendiente", "Pago", or "Mora"; `clientId` is denormalized for query performance; linked to `DisbursedLoan` via `idVm` (not a DB FK) |
 | `Soporte` | soportes | Payment proof files stored as **BLOBs in SQLite** (not on disk); accepted types: JPG, PNG, GIF, WEBP, PDF; 10 MB limit |
+| `PasswordResetRequest` | PasswordResetRequests | Member-initiated password-reset requests; `status` is "pending", "resolved", or "rejected"; an admin resolves them from the admin UI |
 
 Relationships: `Client` 1→N `Saving`, `DisbursedLoan`, and `LoanPayment`. `DisbursedLoan` 1→N `LoanPayment` (via `idVm` string match, not a formal FK). Associations are declared in `models/index.js`.
 
 ### Authentication & Authorization
 - Login returns a JWT stored in `localStorage`; all API requests send it as Bearer token via the `api.js` interceptor
-- `authMiddleware.js` decodes the token and attaches `req.user` `{ id, role, name, customerId, email }`; role (`admin` / `user`) gates route access
-- Default admin credentials: `admin@credifuturo.com` / `admin123` (created via `seed-admin.js`)
-- Default member password is `'123'` (hashed) set during import
-- Passwords hashed with bcryptjs
+- `authMiddleware.js` decodes the token and attaches `req.user` `{ id, role, name, customerId, email, mustChangePassword }`; `requireRole('admin')` gates admin routes and `requireFreshPassword` blocks everything except change-password when `mustChangePassword` is true
+- **Admin bootstrap**: on startup, if no admin exists, `server.js` auto-seeds `admin@credifuturo.com` with a **random** temp password printed once to the server console and `mustChangePassword=true`. There is no fixed `admin123` password (the README still shows the old default — it is outdated).
+- Default member password is `'123'` (hashed) set during import; members are expected to change it
+- Passwords hashed with bcryptjs; `/login` and `/request-reset` are rate-limited (express-rate-limit) against brute force
 
 ### Business Identifiers
 Business keys follow a sequential naming convention: `VM_001` (loans/`idVm`), `SOL_001` (applications), `P_001` / `id_ep` (payment quotas). These differ from database auto-increment IDs.
@@ -103,8 +108,13 @@ Business keys follow a sequential naming convention: `VM_001` (loans/`idVm`), `S
 ```
 # server/.env
 PORT=3000
-JWT_SECRET=super_secret_key_credifuturo_2026   # only used in routes/auth.js
-ENABLE_EXCEL_SYNC=false   # toggle for Excel import pipeline
+JWT_SECRET=...                 # REQUIRED — used by both auth.js and authMiddleware.js; server throws if missing
+ENABLE_EXCEL_SYNC=false        # toggle for Excel import pipeline
+NODE_ENV=production            # flips on static React serving, helmet CSP, strict CORS, trust proxy, hidden 5xx errors
+ALLOWED_ORIGINS=https://...    # comma-separated cross-origin allow-list (prod only; same-origin is always allowed)
+DATABASE_PATH=/data/database.sqlite   # overrides the SQLite location (Railway volume)
+SETUP_KEY=...                  # >=32 chars; enables /api/setup/* maintenance endpoints
+ALLOW_SETUP_IN_PRODUCTION=true # additionally required to enable /api/setup/* when NODE_ENV=production
 
 # client/.env
 VITE_API_URL=http://localhost:3000/api   # used in production builds only
@@ -121,6 +131,20 @@ Note: during `npm run dev`, Vite proxies `/api` requests directly to `http://loc
 - **node-cron** — scheduled daily backup trigger
 - **Multer** — file upload handling (memory storage → SQLite BLOB)
 - **Lucide React** — icon set used throughout the UI
+- **helmet + express-rate-limit** — security headers and brute-force rate limiting on the backend
+- **nodemailer** — outbound email for password-reset notifications (`EmailService.js`)
+- **react-markdown + remark-gfm** — render the chart analysis text in the dashboard expand modals
+
+## Security & Operations
+
+The backend has had a deliberate OWASP-oriented hardening pass (code comments reference A02/A04/A05/A07/A09). Keep these intact when editing:
+- **`server.js` middleware stack**: helmet (CSP on in prod), a custom CORS delegate (auto-allows same-origin, otherwise only `ALLOWED_ORIGINS` in prod / a dev allow-list — never reflects arbitrary origins), a 1 MB JSON body limit, and a request logger that **redacts** sensitive body keys (`password`, `tempPassword`, `token`, …) before logging.
+- **Global error handler**: 5xx error messages/stacks are hidden in production (only generic text returned); 4xx messages pass through. Don't leak internals in new 5xx paths.
+- **Maintenance endpoints** (`/api/setup/restore-db`, `/download-db`, `/reset-password`): gated by a `SETUP_KEY` (≥32 chars) sent in the `x-setup-key` header, and additionally require `ALLOW_SETUP_IN_PRODUCTION=true` to mount in production. These are the operational path for syncing/restoring the Railway SQLite DB.
+- **Crash logging**: `POST /api/log-crash` (rate-limited, no auth) appends client-side React crash reports to `server/crash_log.txt`.
+
+### Startup sequence (`server.js` after `sequelize.sync()`)
+`sync()` runs **without `alter`** (to avoid SQLite FK migration issues — schema changes must be applied manually). Then, in order: auto-seed admin if none exists → create performance indexes (`CREATE INDEX IF NOT EXISTS` on Savings, LoanPayments, DisbursedLoans) → `listen()` → register the daily 8 PM `America/Bogota` backup cron. Adding a column requires a manual migration/SQL since `alter` is off.
 
 ## Non-obvious Patterns & Gotchas
 

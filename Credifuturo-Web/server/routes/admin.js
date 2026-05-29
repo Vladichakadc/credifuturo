@@ -2407,7 +2407,7 @@ router.get('/dashboard-stats', async (req, res) => {
         const currentYear = now.getFullYear();
         const nextYear = currentYear + 1;
         const currentMonth = now.getMonth() + 1; // 1-12
-        const { Op } = require('sequelize');
+        const { Op, fn, col } = require('sequelize');
         const { status, years } = req.query;
 
         // Parse year filter (multi-select from frontend: "2026,2027")
@@ -2653,6 +2653,29 @@ router.get('/dashboard-stats', async (req, res) => {
                 required: true
             }]
         }) || 0;
+
+        // ── 3.6 AHORRO POR AÑO (no acumulable) ──
+        // Suma de amount agrupada por año de transacción (year) y tipo, solo socios
+        // activos. Cada año es independiente (NO acumulado): mensual + aportes del año.
+        // Usamos `year` (fecha en que entró el dinero) porque parte limpiamente todos
+        // los registros — los "Aporte Inicial" casi nunca tienen anioAbonado.
+        const ahorroPorAnioRows = await Saving.findAll({
+            attributes: ['year', 'type', [fn('SUM', col('amount')), 'tot']],
+            where: { year: { [Op.ne]: null } },
+            include: [{ model: Client, where: effectiveClientWhere, required: true, attributes: [] }],
+            group: ['year', 'type'],
+            raw: true
+        });
+        const ahorroAnioMap = {};
+        ahorroPorAnioRows.forEach(r => {
+            const y = r.year;
+            if (!ahorroAnioMap[y]) ahorroAnioMap[y] = { anio: y, mensual: 0, aportes: 0, total: 0 };
+            const val = Math.round(parseFloat(r.tot) || 0);
+            if (r.type === 'Aporte Inicial') ahorroAnioMap[y].aportes += val;
+            else ahorroAnioMap[y].mensual += val;
+            ahorroAnioMap[y].total += val;
+        });
+        const ahorroPorAnio = Object.values(ahorroAnioMap).sort((a, b) => a.anio - b.anio);
 
         const totalPenaltyDays = await Saving.sum('diasPenalizacion', {
             where: { year: currentYear },
@@ -2927,6 +2950,7 @@ router.get('/dashboard-stats', async (req, res) => {
             totalInteresesPagados,
             totalInitialContributions: Math.round(totalInitialContributions),
             totalAhorradoGeneral: Math.round(totalSavingsResult + totalInitialContributions),
+            ahorroPorAnio,
             totalPenaltyDays: Math.round(totalPenaltyDays),
             totalPenaltyValue: Math.round(totalPenaltyValue),
             // Rendimiento NU: valor actualizado manualmente desde el extracto de Nubank.

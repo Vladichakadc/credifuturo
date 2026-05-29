@@ -652,6 +652,172 @@ const ComparativeChart = ({ title, historic, current, color, labelHistoric, labe
 };
 
 
+// ─── Gráfica de AHORRO POR AÑO (no acumulable) ───────────────────────────────
+// Cada barra es un año independiente: ahorro mensual + aportes iniciales de ese
+// año (apilados). NO acumula años anteriores. Datos: stats.ahorroPorAnio.
+const SavingsByYearChart = ({ data, title = 'Ahorro de los Socios por Año', compact, onExpand }) => {
+    const fmtCOP = (n) => `$${Number(n || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+    const rows = Array.isArray(data) ? data : [];
+
+    // Cambio del último año vs el anterior
+    const last = rows[rows.length - 1];
+    const prev = rows[rows.length - 2];
+    const deviation = last && prev ? last.total - prev.total : 0;
+    const deviationPct = prev && prev.total > 0 ? (deviation / prev.total) * 100 : 0;
+    const isPositive = deviation >= 0;
+
+    const chart = (
+        <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={rows} margin={{ top: 24, right: 10, left: 10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="anio" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 900, fill: '#374151' }} />
+                <YAxis hide domain={[0, 'dataMax + 4000000']} />
+                <Tooltip
+                    cursor={{ fill: '#f8fafc' }}
+                    formatter={(value, name) => [fmtCOP(value), name === 'mensual' ? 'Ahorro mensual' : 'Aportes iniciales']}
+                    contentStyle={{ fontSize: '11px', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                />
+                <Bar dataKey="mensual" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} barSize={55} />
+                <Bar dataKey="aportes" stackId="a" fill="#f59e0b" radius={[6, 6, 0, 0]} barSize={55}>
+                    <LabelList dataKey="total" position="top" formatter={(v) => fmtCOP(v)} style={{ fontSize: '12px', fontWeight: '900', fill: '#0f172a' }} />
+                </Bar>
+            </BarChart>
+        </ResponsiveContainer>
+    );
+
+    // ── Métricas de análisis (experto finanzas) ──
+    const accumulated = rows.reduce((s, r) => s + (r.total || 0), 0);
+    const mensualPct = last && last.total > 0 ? (last.mensual / last.total) * 100 : 0;
+    const aportesPct = last && last.total > 0 ? (last.aportes / last.total) * 100 : 0;
+    const recurrenteDriven = mensualPct >= 50;
+
+    // Veredicto del "experto en finanzas personales"
+    let verdict;
+    if (!last) {
+        verdict = null;
+    } else if (!prev) {
+        verdict = `Primer año con registros (${last.anio}). A partir del próximo año podremos medir el crecimiento real del ahorro.`;
+    } else if (isPositive && recurrenteDriven) {
+        verdict = `El ahorro de ${last.anio} creció ${deviationPct.toFixed(0)}% frente a ${prev.anio}, y el ${mensualPct.toFixed(0)}% viene del ahorro mensual recurrente — la señal más sana: refleja disciplina y hábito de los socios, no aportes puntuales.`;
+    } else if (isPositive && !recurrenteDriven) {
+        verdict = `El ahorro de ${last.anio} creció ${deviationPct.toFixed(0)}%, pero el ${aportesPct.toFixed(0)}% son aportes iniciales (socios nuevos) más que ahorro mensual constante. Conviene impulsar la constancia mensual para que el crecimiento sea sostenible.`;
+    } else {
+        verdict = `En ${last.anio} se ahorró ${Math.abs(deviationPct).toFixed(0)}% menos que en ${prev.anio}. Vale la pena revisar qué socios bajaron el ritmo o dejaron de aportar.`;
+    }
+
+    if (compact) return chart;
+
+    const cardChrome = (children) => (
+        <div className="flex flex-col bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden ring-1 ring-emerald-200">
+            <div className="px-5 pt-5 pb-2 flex flex-col items-center gap-2 text-center relative">
+                <h4 className="text-sm font-black text-emerald-800 uppercase tracking-widest">{title}</h4>
+                <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded-full border bg-emerald-50 border-emerald-200 text-emerald-700">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1"></span>
+                    No acumulable
+                </span>
+                {onExpand && (
+                    <button onClick={onExpand} className="absolute top-3 right-3 p-1.5 hover:bg-gray-100 rounded-lg transition-colors text-gray-400 hover:text-gray-700" title="Ampliar y analizar">
+                        <Maximize2 className="h-4 w-4" />
+                    </button>
+                )}
+            </div>
+            {children}
+        </div>
+    );
+
+    // Estado vacío: nunca mostrar una tarjeta en blanco
+    if (rows.length === 0) {
+        return cardChrome(
+            <div className="px-5 py-16 flex flex-col items-center justify-center text-center gap-2">
+                <PiggyBank className="h-10 w-10 text-gray-300" />
+                <p className="text-sm font-bold text-gray-500">Sin datos de ahorro por año</p>
+                <p className="text-[11px] text-gray-400 max-w-[16rem]">No se encontraron registros de ahorro. Verifica que el servidor esté actualizado y que existan ahorros cargados.</p>
+            </div>
+        );
+    }
+
+    return cardChrome(
+        <>
+            <div className="w-full h-64 px-2">{chart}</div>
+
+            <div className="px-5 pb-5 pt-3 border-t border-gray-100 bg-gradient-to-b from-gray-50/80 to-white space-y-4">
+                {/* Leyenda de composición */}
+                <div className="flex items-center justify-center gap-4">
+                    <div className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: '#10b981' }} />
+                        <span className="text-[10px] font-bold text-gray-600">Ahorro mensual</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: '#f59e0b' }} />
+                        <span className="text-[10px] font-bold text-gray-600">Aportes iniciales</span>
+                    </div>
+                </div>
+
+                {/* KPIs: crecimiento año-a-año + total acumulado */}
+                <div className="grid grid-cols-2 gap-3">
+                    <div className={`rounded-xl border p-3 text-center ${isPositive ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+                        <p className={`text-[8px] font-black uppercase tracking-widest mb-1 ${isPositive ? 'text-emerald-800' : 'text-red-700'}`}>
+                            {last.anio} vs {prev ? prev.anio : '—'}
+                        </p>
+                        <p className={`text-xl font-black leading-none ${isPositive ? 'text-emerald-700' : 'text-red-700'}`}>
+                            {prev ? `${isPositive ? '+' : ''}${deviationPct.toFixed(1)}%` : '—'} {prev ? (isPositive ? '▲' : '▼') : ''}
+                        </p>
+                        <p className={`text-[11px] font-bold mt-1 ${isPositive ? 'text-emerald-600' : 'text-red-600'}`}>
+                            {prev ? `${isPositive ? '+' : '−'}${fmtCOP(Math.abs(deviation))}` : 'Primer año'}
+                        </p>
+                    </div>
+                    <div className="rounded-xl border border-gray-200 bg-white p-3 text-center">
+                        <p className="text-[8px] font-black uppercase tracking-widest mb-1 text-gray-500">Total acumulado</p>
+                        <p className="text-xl font-black leading-none text-gray-800 font-mono">{fmtCOP(accumulated)}</p>
+                        <p className="text-[11px] font-bold mt-1 text-gray-400">en {rows.length} año{rows.length > 1 ? 's' : ''}</p>
+                    </div>
+                </div>
+
+                {/* Composición del último año: recurrente vs aportes */}
+                <div className="bg-white border border-gray-200 rounded-xl p-3">
+                    <div className="flex items-center justify-between mb-1.5">
+                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Composición {last.anio}</p>
+                        <p className="text-[10px] font-bold text-gray-500">{fmtCOP(last.total)}</p>
+                    </div>
+                    <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-gray-100">
+                        <div style={{ width: `${mensualPct}%`, backgroundColor: '#10b981' }} />
+                        <div style={{ width: `${aportesPct}%`, backgroundColor: '#f59e0b' }} />
+                    </div>
+                    <div className="flex items-center justify-between mt-1.5 text-[10px] font-bold">
+                        <span className="text-emerald-700">Mensual {mensualPct.toFixed(0)}%</span>
+                        <span className="text-amber-600">Aportes {aportesPct.toFixed(0)}%</span>
+                    </div>
+                </div>
+
+                {/* Veredicto del experto */}
+                {verdict && (
+                    <div className={`flex items-start gap-2 p-3 rounded-xl border ${isPositive ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
+                        <ShieldCheck className={`h-4 w-4 flex-shrink-0 mt-0.5 ${isPositive ? 'text-emerald-600' : 'text-amber-600'}`} />
+                        <p className={`text-[11px] font-semibold leading-relaxed ${isPositive ? 'text-emerald-900' : 'text-amber-900'}`}>{verdict}</p>
+                    </div>
+                )}
+
+                {/* Desglose por año (mensual + aportes) */}
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-3">
+                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-2">Ahorrado cada año (mensual + aportes)</p>
+                    <div className="space-y-1.5">
+                        {rows.map((r) => (
+                            <div key={r.anio} className="flex items-center justify-between gap-2 text-[11px]">
+                                <span className="text-gray-700 font-bold w-10">{r.anio}</span>
+                                <span className="text-[9px] text-gray-400 font-mono flex-1 text-right">
+                                    <span className="text-emerald-600">{fmtCOP(r.mensual)}</span>
+                                    {r.aportes > 0 && <span className="text-amber-500"> + {fmtCOP(r.aportes)}</span>}
+                                </span>
+                                <span className="font-black text-emerald-700 font-mono w-28 text-right">{fmtCOP(r.total)}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </>
+    );
+};
+
 
 // ─── NUEVO: COMPONENTE DE GRÁFICA PROFESIONAL ────────────────────────────────────────────────────────
 const FinancialChart = ({ stats }) => {
@@ -1284,17 +1450,9 @@ const FinancialChart = ({ stats }) => {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <ComparativeChart
-                        title="Ahorro Total de los Socios"
-                        historic={33678147}
-                        current={stats.totalAhorradoGeneral || 0}
-                        color="#10b981"
-                        labelHistoric="2025"
-                        labelCurrent="2026"
-                        detail={[
-                            { label: 'Ahorro mensual', value: stats.totalSavings || 0, color: '#10b981' },
-                            { label: 'Aportes iniciales', value: stats.totalInitialContributions || 0, color: '#f59e0b' },
-                        ]}
+                    <SavingsByYearChart
+                        data={stats.ahorroPorAnio}
+                        title="Ahorro de los Socios por Año"
                         onExpand={() => setExpandComp('ahorro')}
                     />
                     <ComparativeChart
@@ -1337,9 +1495,21 @@ const FinancialChart = ({ stats }) => {
 
                 {/* ── Modales de expansión de gráficas comparativas ── */}
                 <ChartExpandModal isOpen={expandComp === 'ahorro'} onClose={() => setExpandComp(null)}
-                    title="Ahorro Total de los Socios — Análisis vs 2025"
-                    analysisResult={analyzeComparativeChart({ title: 'Ahorro Total de los Socios', historic: 33678147, current: stats.totalAhorradoGeneral || 0, progressPct: Math.min(((stats.totalAhorradoGeneral || 0) / 33678147) * 100, 150) })}>
-                    <ComparativeChart compact title="Ahorro Total" historic={33678147} current={stats.totalAhorradoGeneral || 0} color="#10b981" labelHistoric="2025" labelCurrent="2026" />
+                    title="Ahorro de los Socios por Año — Análisis"
+                    analysisResult={(() => {
+                        const arr = stats.ahorroPorAnio || [];
+                        const last = arr[arr.length - 1];
+                        const prev = arr[arr.length - 2];
+                        if (!last) return null;
+                        const hist = prev ? prev.total : 0;
+                        return analyzeComparativeChart({
+                            title: `Ahorro ${last.anio} vs ${prev ? prev.anio : 'año anterior'}`,
+                            historic: hist,
+                            current: last.total,
+                            progressPct: hist > 0 ? Math.min((last.total / hist) * 100, 150) : 100
+                        });
+                    })()}>
+                    <SavingsByYearChart compact data={stats.ahorroPorAnio} />
                 </ChartExpandModal>
                 <ChartExpandModal isOpen={expandComp === 'prestamos'} onClose={() => setExpandComp(null)}
                     title="Préstamos Entregados — Análisis vs 2025"
@@ -1359,9 +1529,15 @@ const FinancialChart = ({ stats }) => {
 
                 {/* ── Análisis Económico Ejecutivo ── */}
                 {(() => {
-                    const ahorroMeta = 33678147;
-                    const ahorroActual = stats.totalAhorradoGeneral || 0;
-                    const ahorroPct = ((ahorroActual / ahorroMeta) * 100).toFixed(1);
+                    // Ahorro por año (no acumulable): comparamos el último año vs el anterior
+                    const ahorroArr = stats.ahorroPorAnio || [];
+                    const ahorroLast = ahorroArr[ahorroArr.length - 1];
+                    const ahorroPrev = ahorroArr[ahorroArr.length - 2];
+                    const ahorroYearActual = ahorroLast ? ahorroLast.anio : new Date().getFullYear();
+                    const ahorroYearPrev = ahorroPrev ? ahorroPrev.anio : ahorroYearActual - 1;
+                    const ahorroMeta = ahorroPrev ? ahorroPrev.total : 0;
+                    const ahorroActual = ahorroLast ? ahorroLast.total : 0;
+                    const ahorroPct = ahorroMeta > 0 ? ((ahorroActual / ahorroMeta) * 100).toFixed(1) : '0.0';
                     const ahorroDiff = ahorroActual - ahorroMeta;
 
                     const prestamoMeta = 29750000;
@@ -1418,12 +1594,12 @@ const FinancialChart = ({ stats }) => {
                                             </span>
                                         </div>
                                         <p className="text-sm font-medium text-gray-800 leading-relaxed">
-                                            En 2025 los socios ahorraron en total <strong className="text-gray-800">${Number(ahorroMeta).toLocaleString('es-CO')}</strong>.
-                                            Este año llevamos <strong className="text-emerald-700">${Number(ahorroActual).toLocaleString('es-CO')}</strong>,
-                                            que es el <strong className={ahorroHealthy ? 'text-emerald-700' : 'text-amber-700'}>{ahorroPct}%</strong> de lo que se logró en 2025.
+                                            En {ahorroYearPrev} los socios ahorraron en total <strong className="text-gray-800">${Number(ahorroMeta).toLocaleString('es-CO')}</strong> (ahorro mensual + aportes de ese año).
+                                            En {ahorroYearActual} llevan <strong className="text-emerald-700">${Number(ahorroActual).toLocaleString('es-CO')}</strong>,
+                                            que es el <strong className={ahorroHealthy ? 'text-emerald-700' : 'text-amber-700'}>{ahorroPct}%</strong> de lo ahorrado en {ahorroYearPrev}.
                                             {ahorroDiff >= 0
-                                                ? <> Vamos <strong className="text-emerald-600">${Number(ahorroDiff).toLocaleString('es-CO')} más</strong> que el año pasado — los socios están cumpliendo con sus aportes y eso hace el fondo más fuerte.</>
-                                                : <> Llevamos <strong className="text-amber-600">${Number(Math.abs(ahorroDiff)).toLocaleString('es-CO')} menos</strong> que el año pasado. Vale la pena revisar si hay socios que bajaron o dejaron de hacer sus aportes.</>
+                                                ? <> Es <strong className="text-emerald-600">${Number(ahorroDiff).toLocaleString('es-CO')} más</strong> que el año pasado — los socios están cumpliendo con sus aportes y eso hace el fondo más fuerte.</>
+                                                : <> Es <strong className="text-amber-600">${Number(Math.abs(ahorroDiff)).toLocaleString('es-CO')} menos</strong> que el año pasado. Vale la pena revisar si hay socios que bajaron o dejaron de hacer sus aportes.</>
                                             }
                                         </p>
                                     </div>
@@ -1567,6 +1743,7 @@ const DashboardHome = () => {
         totalInteresesPagados: 0,
         totalInitialContributions: 0,
         totalAhorradoGeneral: 0,
+        ahorroPorAnio: [],
         totalPenaltyDays: 0,
         totalPenaltyValue: 0,
         rentabilidadCajaNU: 0,
@@ -1633,6 +1810,7 @@ const DashboardHome = () => {
                     totalInteresesPagados: res.data.totalInteresesPagados || 0,
                     totalInitialContributions: res.data.totalInitialContributions || 0,
                     totalAhorradoGeneral: res.data.totalAhorradoGeneral || 0,
+                    ahorroPorAnio: res.data.ahorroPorAnio || [],
                     totalPenaltyDays: res.data.totalPenaltyDays || 0,
                     totalPenaltyValue: res.data.totalPenaltyValue || 0,
                     rentabilidadCajaNU: res.data.rentabilidadCajaNU || 0,
