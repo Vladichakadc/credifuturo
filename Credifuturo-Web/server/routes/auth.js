@@ -164,10 +164,11 @@ router.post('/request-reset', resetLimiter, async (req, res) => {
                 email: user.email || null,
                 status: 'pending'
             });
-            sendResetRequestNotification(user).catch(err =>
-                console.error('[EmailService] Error enviando notificación de reset:', err.message)
-            );
         }
+        // Notificar siempre, exista o no una solicitud pendiente (resetLimiter evita abuso)
+        sendResetRequestNotification(user).catch(err =>
+            console.error('[EmailService] Error enviando notificación de reset:', err.message)
+        );
 
         res.json({ ok: true, message: 'Solicitud registrada. El administrador restablecerá su acceso pronto.' });
     } catch (err) {
