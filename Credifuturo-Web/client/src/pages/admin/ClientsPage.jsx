@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../../config/api';
 import { notifyUpdate } from '../../utils/sync';
-import { Save, Search, Trash2, X, AlertCircle, CheckCircle, Download, KeyRound, Bell, RefreshCw, XCircle } from 'lucide-react';
+import { Save, Search, Trash2, X, AlertCircle, CheckCircle, Download, KeyRound, Bell, RefreshCw, XCircle, FileText, User, MapPin } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Button } from '../../components/ui/Button';
 import { Input, Label, FormField } from '../../components/ui/Input';
@@ -127,7 +127,11 @@ const ClientsPage = () => {
         try {
             if (isEditing) {
                 // UPDATE (PUT)
-                await api.put(`/admin/clients/${formData.id}`, formData);
+                const payload = { ...formData };
+                delete payload.password;
+                delete payload.id;
+                
+                await api.put(`/admin/clients/${formData.id}`, payload);
                 toast.success('Socio actualizado exitosamente.');
             } else {
                 // CREATE (POST)
@@ -438,9 +442,11 @@ const ClientsPage = () => {
                             </div>
                         )}
 
-                        {/* Sección 1: Identificación */}
                         <div className="space-y-4">
-                            <h3 className="text-sm font-semibold text-brand-primary uppercase tracking-wider border-b border-gray-100 pb-1">Identificación</h3>
+                            <h3 className="text-sm font-semibold text-brand-primary uppercase tracking-wider border-b border-gray-100 pb-2 flex items-center gap-2">
+                                <FileText className="w-4 h-4" />
+                                Identificación
+                            </h3>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <FormField label="Customer ID (Auto-gen.)">
                                     <Input
@@ -470,9 +476,11 @@ const ClientsPage = () => {
                             </div>
                         </div>
 
-                        {/* Sección 2: Datos Personales */}
                         <div className="space-y-4">
-                            <h3 className="text-sm font-semibold text-brand-primary uppercase tracking-wider border-b border-gray-100 pb-1">Datos Personales</h3>
+                            <h3 className="text-sm font-semibold text-brand-primary uppercase tracking-wider border-b border-gray-100 pb-2 flex items-center gap-2">
+                                <User className="w-4 h-4" />
+                                Datos Personales
+                            </h3>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <FormField label="Nombres *">
                                     <Input
@@ -526,9 +534,11 @@ const ClientsPage = () => {
                             </div>
                         </div>
 
-                        {/* Sección 3: Ubicación y Perfil */}
                         <div className="space-y-4">
-                            <h3 className="text-sm font-semibold text-brand-primary uppercase tracking-wider border-b border-gray-100 pb-1">Ubicación y Perfil</h3>
+                            <h3 className="text-sm font-semibold text-brand-primary uppercase tracking-wider border-b border-gray-100 pb-2 flex items-center gap-2">
+                                <MapPin className="w-4 h-4" />
+                                Ubicación y Perfil
+                            </h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <FormField label="País">
                                     <Input
