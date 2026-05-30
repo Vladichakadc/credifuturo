@@ -480,6 +480,50 @@ const LoansPage = () => {
             </div>
 
 
+            {/* ── Mini-KPI Bar ─────────────────────────────────────────────────── */}
+            {!loading && disbursedLoans.length > 0 && (() => {
+                const activos = disbursedLoans.filter(l => l.estado === 'Activo' || l.estado === 'Pendiente');
+                const cancelados = disbursedLoans.filter(l => l.estado === 'Cancelado');
+                const totalCapital = disbursedLoans.reduce((s, l) => s + parseFloat(l.valorPrestado || 0), 0);
+                const prestamoProm = totalCapital / disbursedLoans.length;
+                const tasaCancelacion = disbursedLoans.length > 0 ? (cancelados.length / disbursedLoans.length) * 100 : 0;
+
+                const kpis = [
+                    {
+                        label: 'Préstamo Promedio',
+                        value: `$${Math.round(prestamoProm).toLocaleString('es-CO')}`,
+                        sub: `${disbursedLoans.length} préstamos en portafolio`,
+                        color: 'border-l-blue-400', icon: '💵',
+                    },
+                    {
+                        label: 'Préstamos Activos',
+                        value: activos.length,
+                        sub: `${(activos.length / disbursedLoans.length * 100).toFixed(0)}% del portafolio`,
+                        color: 'border-l-emerald-400', icon: '📋',
+                    },
+                    {
+                        label: 'Tasa de Cancelación',
+                        value: `${tasaCancelacion.toFixed(0)}%`,
+                        sub: `${cancelados.length} préstamos saldados`,
+                        color: tasaCancelacion >= 30 ? 'border-l-emerald-400' : 'border-l-amber-400', icon: '✓',
+                    },
+                ];
+                return (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {kpis.map((k, i) => (
+                            <div key={i} className={`bg-white rounded-xl border border-gray-100 border-l-4 ${k.color} p-4 flex items-center gap-3 shadow-sm`}>
+                                <span className="text-2xl flex-shrink-0">{k.icon}</span>
+                                <div>
+                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{k.label}</p>
+                                    <p className="text-xl font-black text-gray-900 font-mono leading-tight">{k.value}</p>
+                                    <p className="text-[10px] text-gray-500 font-medium">{k.sub}</p>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                );
+            })()}
+
             <Card>
                 <CardContent className="p-0">
                     <DataTable

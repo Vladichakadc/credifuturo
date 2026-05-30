@@ -2931,7 +2931,35 @@ router.get('/dashboard-stats', async (req, res) => {
             }
         });
 
-        // ── 9. ACTIVIDAD RECIENTE (Top 3 Ahorros y Top 3 Pagos > 0) ──
+        // ── 9. VENCIMIENTOS PRÓXIMOS 30 DÍAS ────────────────────────────────
+        const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const in30 = new Date(today0.getTime() + 30 * 24 * 60 * 60 * 1000);
+        const proximasRaw = await LoanPayment.findAll({
+            where: {
+                estado: 'Pendiente',
+                fechaPagoMax: { [Op.gte]: today0.toISOString().split('T')[0], [Op.lte]: in30.toISOString().split('T')[0] }
+            },
+            attributes: ['valorCuotaVariable', 'fechaPagoMax', 'clientId'],
+            include: [{ model: Client, where: { estatus: 'Activo' }, required: true, attributes: [] }]
+        });
+        const proximosVencimientos30d = {
+            count: proximasRaw.length,
+            monto: Math.round(proximasRaw.reduce((s, p) => s + parseFloat(p.valorCuotaVariable || 0), 0)),
+            socios: new Set(proximasRaw.map(p => p.clientId)).size
+        };
+
+        // ── 10. SOCIOS AL DÍA CON AHORROS ESTE MES ─────────────────────────
+        const mesActual = now.getMonth() + 1;
+        const anioActual = now.getFullYear();
+        const ahorrosMesActual = await Saving.findAll({
+            where: { mesAbonado: mesActual, anioAbonado: anioActual, status: { [Op.like]: '%Abono%' } },
+            attributes: ['clientId'],
+            include: [{ model: Client, where: { estatus: 'Activo' }, required: true, attributes: [] }]
+        });
+        const sociosAlDiaMesSet = new Set(ahorrosMesActual.map(s => s.clientId));
+        const sociosAlDiaMes = { count: sociosAlDiaMesSet.size, total: activeClientsCount };
+
+        // ── 11. ACTIVIDAD RECIENTE (Top 3 Ahorros y Top 3 Pagos > 0) ──
         const [rawSavings, rawPayments] = await Promise.all([
             Saving.findAll({
                 where: { amount: { [Op.gt]: 0 } },
@@ -2999,6 +3027,8 @@ router.get('/dashboard-stats', async (req, res) => {
             detallePenalidad,
             recentSavings,
             recentPayments,
+            proximosVencimientos30d,
+            sociosAlDiaMes,
             timestamp: now.toISOString()
         });
 

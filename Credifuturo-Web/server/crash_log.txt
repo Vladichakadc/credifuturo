@@ -88,3 +88,28 @@
     at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
     at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
 ---
+[2026-05-30T14:16:09.003Z] prestamoModerate is not defined
+
+    at FinancialChart (http://localhost:5173/src/pages/admin/DashboardHome.jsx?t=1780150568312:2197:27)
+    at div
+    at _c7 (http://localhost:5173/src/components/ui/Card.jsx:82:54)
+    at div
+    at _c (http://localhost:5173/src/components/ui/Card.jsx:19:46)
+    at div
+    at div
+    at DashboardHome (http://localhost:5173/src/pages/admin/DashboardHome.jsx?t=1780150568312:4556:31)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Outlet (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4537:26)
+    at div
+    at main
+    at div
+    at DashboardLayout (http://localhost:5173/src/layouts/DashboardLayout.jsx:251:28)
+    at ProtectedRoute (http://localhost:5173/src/App.jsx:71:29)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4601:5)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4544:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:5290:5)
+    at App (http://localhost:5173/src/App.jsx:64:27)
+    at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
+    at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
+---

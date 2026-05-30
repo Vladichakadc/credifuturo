@@ -1018,255 +1018,242 @@ const FinancialChart = ({ stats }) => {
 
     return (
         <div className="flex flex-col w-full">
-            {/* KPIs — Rediseño ejecutivo */}
-            <div className="grid grid-cols-1 md:grid-cols-3 border-b border-gray-100">
-                {/* KPI 1: Capital Total */}
-                <div className="bg-gradient-to-br from-emerald-50 to-white p-6 flex flex-col gap-4 border-b md:border-b-0 md:border-r border-gray-100">
-                    <div className="flex items-start justify-between">
-                        <div>
-                            <p className="text-[10px] font-black text-gray-900 uppercase tracking-widest">Capital Total</p>
-                            <p className="text-[30px] font-black text-gray-900 font-mono leading-none mt-1">
-                                ${Number(total).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
-                            </p>
-                        </div>
-                        <div className="bg-emerald-100 p-3 rounded-2xl flex-shrink-0">
-                            <DollarSign className="h-5 w-5 text-emerald-600" />
-                        </div>
-                    </div>
-
-                    {/* Barra segmentada */}
-                    <div>
-                        <div className="flex h-2.5 rounded-full overflow-hidden gap-0.5">
-                            <div className="bg-purple-500 rounded-l-full transition-all" style={{ width: `${total > 0 ? (disponible / total) * 100 : 0}%` }} />
-                            <div className="bg-blue-500 rounded-r-full transition-all" style={{ width: `${total > 0 ? (prestadoVigente / total) * 100 : 0}%` }} />
-                        </div>
-                        <div className="flex items-center gap-3 mt-2">
-                            <span className="flex items-center gap-1 text-[10px] font-bold text-purple-600"><span className="w-2 h-2 rounded-full bg-purple-500 inline-block" />Disponible</span>
-                            <span className="flex items-center gap-1 text-[10px] font-bold text-blue-600"><span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />Al Día</span>
-                        </div>
-                    </div>
-
-                    {/* ¿Cómo se calcula? */}
-                    <div className="bg-gray-50 border border-gray-200 rounded-xl p-3">
-                        <p className="text-[9px] font-black text-gray-700 uppercase tracking-widest mb-2.5">¿Cómo se calcula?</p>
-                        <div className="space-y-1.5 text-[11px]">
-                            {[
-                                { label: 'Saldo en Banco', value: stats.saldoEnBanco || 0, color: '#10b981', bgClass: 'bg-emerald-100', textClass: 'text-emerald-700' },
-                                { label: 'Rentabilidad NU', value: stats.rentabilidadCajaNU || 0, color: '#8b5cf6', bgClass: 'bg-purple-100', textClass: 'text-purple-700' },
-                                { label: 'Cartera al Día', value: prestadoVigente, color: '#3b82f6', bgClass: 'bg-blue-100', textClass: 'text-blue-700' },
-                            ].map((item) => (
-                                <div key={item.label} className="flex items-center justify-between gap-2">
-                                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
-                                        <span className="text-gray-600 font-bold">{item.label}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2 ml-auto">
-                                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${item.bgClass} ${item.textClass}`}>
-                                            {total > 0 ? ((item.value / total) * 100).toFixed(1) : '0.0'}%
-                                        </span>
-                                        <span className="font-black text-gray-800 font-mono">${Number(item.value).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span>
-                                    </div>
-                                </div>
-                            ))}
-                            <div className="border-t border-gray-300 pt-1.5 mt-1.5 flex items-center justify-between">
-                                <span className="font-black text-gray-800 uppercase tracking-wide text-[11px]">Total</span>
-                                <span className="font-black text-emerald-700 font-mono text-[12px]">${Number(total).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span>
+            {/* ── VEREDICTO EJECUTIVO ──────────────────────────────────────────── */}
+            {(() => {
+                const _aArr = stats.ahorroPorAnio || [];
+                const _aLast = _aArr[_aArr.length - 1];
+                const _aPrev = _aArr[_aArr.length - 2];
+                const _aActual = _aLast ? _aLast.total : 0;
+                const _aMeta = _aPrev ? _aPrev.total : 0;
+                const _aOk = _aMeta > 0 ? (_aActual / _aMeta) >= 0.85 : true;
+                const _score = [_aOk, parseFloat(riskIndex) <= 5, parseFloat(liquidity) >= 30, total >= 36126201 * 0.85, achievement >= 80].filter(Boolean).length;
+                const _v = _score >= 4
+                    ? { from: 'from-emerald-600', to: 'to-emerald-800', icon: '✓', title: 'Fondo Saludable', desc: 'Los indicadores clave están en zona positiva. El fondo opera con normalidad.', badgeTxt: 'ESTADO NORMAL' }
+                    : _score >= 3
+                    ? { from: 'from-amber-500', to: 'to-amber-700', icon: '▲', title: 'Requiere Revisión', desc: 'Algunos indicadores están fuera del rango óptimo. Revisar cartera y liquidez.', badgeTxt: 'ATENCIÓN' }
+                    : { from: 'from-red-600', to: 'to-red-800', icon: '⚠', title: 'Alerta Operativa', desc: 'Múltiples indicadores requieren atención inmediata. Convocar revisión del comité.', badgeTxt: 'CRÍTICO' };
+                return (
+                    <div className={`bg-gradient-to-r ${_v.from} ${_v.to} px-6 py-4 flex items-center justify-between gap-4`}>
+                        <div className="flex items-center gap-4">
+                            <div className="bg-white/15 rounded-full w-10 h-10 flex items-center justify-center flex-shrink-0">
+                                <span className="text-xl font-black text-white">{_v.icon}</span>
                             </div>
+                            <div>
+                                <h3 className="text-lg font-black text-white leading-none">{_v.title}</h3>
+                                <p className="text-sm text-white/75 font-medium mt-0.5">{_v.desc}</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-3 flex-shrink-0">
+                            <span className="text-[9px] font-black px-3 py-1 rounded-full bg-white/20 text-white">{_v.badgeTxt}</span>
+                            <div className="text-right">
+                                <p className="text-[9px] text-white/50 font-bold uppercase tracking-wide">Actualizado</p>
+                                <p className="text-[11px] font-black text-white">{new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
+            {/* ── KPIs EJECUTIVOS — 5 métricas con delta vs 2025 ────────────────── */}
+            <div className="grid grid-cols-2 md:grid-cols-5 border-b border-gray-100">
+                {/* KPI 1: Capital Total */}
+                <div className="bg-gradient-to-br from-emerald-50 to-white p-5 flex flex-col gap-3 border-b md:border-b-0 border-r border-gray-100">
+                    <div className="flex items-center justify-between">
+                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Capital Total</p>
+                        <div className="bg-emerald-100 p-1.5 rounded-xl"><DollarSign className="h-3.5 w-3.5 text-emerald-600" /></div>
+                    </div>
+                    <p className="text-[22px] font-black text-gray-900 font-mono leading-none">
+                        ${Number(total).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                    </p>
+                    {(() => {
+                        const ref = 36126201;
+                        const pct = ((total / ref) * 100 - 100).toFixed(1);
+                        const up = total >= ref;
+                        return <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full self-start ${up ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{up ? '▲' : '▼'} {Math.abs(pct)}% vs 2025</span>;
+                    })()}
+                    <div>
+                        <div className="flex h-1.5 rounded-full overflow-hidden gap-px">
+                            <div className="bg-purple-500 rounded-l-full" style={{ width: `${total > 0 ? (disponible / total) * 100 : 0}%` }} />
+                            <div className="bg-blue-500 rounded-r-full flex-1" />
+                        </div>
+                        <div className="flex items-center gap-2 mt-1.5 text-[8px] font-bold">
+                            <span className="text-purple-600">● Disponible</span>
+                            <span className="text-blue-600">● Cartera</span>
                         </div>
                     </div>
                 </div>
 
-                {/* KPI 2: Índice de Riesgo */}
-                <div className={`p-6 flex flex-col gap-4 border-b md:border-b-0 md:border-r border-gray-100 ${parseFloat(riskIndex) > 5 ? 'bg-gradient-to-br from-red-50 to-white' : 'bg-gradient-to-br from-blue-50 to-white'}`}>
-                    <div className="flex items-start justify-between">
-                        <div>
-                            <p className="text-[10px] font-black text-gray-900 uppercase tracking-widest">Índice de Riesgo</p>
-                            <p className="text-[38px] font-black font-mono leading-none mt-1 text-gray-900">
-                                {riskIndex}<span className="text-xl font-bold text-gray-400 ml-0.5">%</span>
-                            </p>
-                        </div>
-                        <div className={`p-3 rounded-2xl flex-shrink-0 ${parseFloat(riskIndex) > 5 ? 'bg-red-100' : 'bg-blue-100'}`}>
-                            {parseFloat(riskIndex) > 5 ? <AlertTriangle className="h-5 w-5 text-red-600" /> : <ShieldCheck className="h-5 w-5 text-blue-600" />}
+                {/* KPI 2: Liquidez */}
+                <div className={`p-5 flex flex-col gap-3 border-b md:border-b-0 border-r border-gray-100 ${parseFloat(liquidity) >= 30 ? 'bg-gradient-to-br from-purple-50 to-white' : 'bg-gradient-to-br from-amber-50 to-white'}`}>
+                    <div className="flex items-center justify-between">
+                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Liquidez</p>
+                        <div className={`p-1.5 rounded-xl ${parseFloat(liquidity) >= 30 ? 'bg-purple-100' : 'bg-amber-100'}`}>
+                            <ActivitySquare className={`h-3.5 w-3.5 ${parseFloat(liquidity) >= 30 ? 'text-purple-600' : 'text-amber-600'}`} />
                         </div>
                     </div>
-
-                    {/* Gauge de zonas */}
+                    <p className="text-[26px] font-black text-gray-900 font-mono leading-none">
+                        {liquidity}<span className="text-sm font-bold text-gray-400 ml-0.5">%</span>
+                    </p>
+                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full self-start ${parseFloat(liquidity) >= 50 ? 'bg-emerald-100 text-emerald-700' : parseFloat(liquidity) >= 30 ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
+                        {parseFloat(liquidity) >= 50 ? '● Óptima' : parseFloat(liquidity) >= 30 ? '● Saludable' : '▲ Ajustada'}
+                    </span>
                     <div>
-                        <div className="relative flex h-3 rounded-full overflow-hidden">
+                        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full ${parseFloat(liquidity) >= 30 ? 'bg-purple-500' : 'bg-amber-500'}`} style={{ width: `${liquidity}%` }} />
+                        </div>
+                        <p className="text-[8px] text-gray-400 font-bold mt-1">${Number(disponible).toLocaleString('es-CO')} disponibles</p>
+                    </div>
+                </div>
+
+                {/* KPI 3: Mora en Cartera */}
+                <div className={`p-5 flex flex-col gap-3 border-b md:border-b-0 border-r border-gray-100 ${parseFloat(riskIndex) > 5 ? 'bg-gradient-to-br from-red-50 to-white' : 'bg-gradient-to-br from-blue-50 to-white'}`}>
+                    <div className="flex items-center justify-between">
+                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Mora Cartera</p>
+                        <div className={`p-1.5 rounded-xl ${parseFloat(riskIndex) > 5 ? 'bg-red-100' : 'bg-blue-100'}`}>
+                            {parseFloat(riskIndex) > 5 ? <AlertTriangle className="h-3.5 w-3.5 text-red-600" /> : <ShieldCheck className="h-3.5 w-3.5 text-blue-600" />}
+                        </div>
+                    </div>
+                    <p className="text-[26px] font-black text-gray-900 font-mono leading-none">
+                        {riskIndex}<span className="text-sm font-bold text-gray-400 ml-0.5">%</span>
+                    </p>
+                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full self-start ${parseFloat(riskIndex) <= 3 ? 'bg-emerald-100 text-emerald-700' : parseFloat(riskIndex) <= 5 ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
+                        {parseFloat(riskIndex) <= 3 ? '● Bajo' : parseFloat(riskIndex) <= 5 ? '● Aceptable' : '⚠ Atención'}
+                    </span>
+                    <div>
+                        <div className="relative flex h-1.5 rounded-full overflow-hidden">
                             <div className="bg-emerald-400 w-[33%]" />
                             <div className="bg-amber-400 w-[17%]" />
                             <div className="bg-red-400 flex-1" />
-                            <div
-                                className="absolute top-0 bottom-0 w-1 bg-gray-900 rounded-full shadow-md"
-                                style={{ left: `${Math.min(parseFloat(riskIndex) * 2, 98)}%` }}
-                            />
+                            <div className="absolute top-0 bottom-0 w-0.5 bg-gray-900 rounded-full" style={{ left: `${Math.min(parseFloat(riskIndex) * 2, 98)}%` }} />
                         </div>
-                        <div className="flex justify-between text-[9px] font-bold mt-1">
-                            <span className="text-emerald-600">Sano (0–5%)</span>
-                            <span className="text-amber-600">Alerta</span>
-                            <span className="text-red-600">Crítico (&gt;10%)</span>
-                        </div>
-                    </div>
-
-                    <p className="text-[10px] text-gray-500 leading-snug">
-                        Del total administrado, el <strong>{riskIndex}%</strong> corresponde a cuotas vencidas o en cobro.
-                    </p>
-
-                    <div className="mt-auto">
-                        <span className={`inline-flex items-center gap-1.5 text-[11px] font-black px-3 py-1.5 rounded-full ${parseFloat(riskIndex) > 5 ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
-                            {parseFloat(riskIndex) > 5 ? '⚠️ Requiere atención' : '✓ Cartera sana'}
-                        </span>
+                        <p className="text-[8px] text-gray-400 font-bold mt-1">${Number(mora).toLocaleString('es-CO')} en mora</p>
                     </div>
                 </div>
 
-                {/* KPI 3: Liquidez — Panel Unificado */}
-                <div className="bg-gradient-to-br from-purple-50 to-white p-6 flex flex-col gap-4">
-                    {/* Encabezado */}
-                    <div className="flex items-start justify-between">
-                        <div>
-                            <p className="text-[10px] font-black text-gray-900 uppercase tracking-widest">Liquidez del Fondo</p>
-                            <p className="text-[38px] font-black font-mono leading-none mt-1 text-gray-900">
-                                {liquidity}<span className="text-xl font-bold text-gray-400 ml-0.5">%</span>
-                            </p>
-                            <p className="text-[10px] text-gray-500 font-bold mt-0.5">del capital está disponible ahora mismo</p>
-                        </div>
-                        <div className="bg-purple-100 p-3 rounded-2xl flex-shrink-0">
-                            <ActivitySquare className="h-5 w-5 text-purple-600" />
+                {/* KPI 4: Ganancia YTD */}
+                <div className={`p-5 flex flex-col gap-3 border-b md:border-b-0 border-r border-gray-100 bg-gradient-to-br ${achievement >= 100 ? 'from-emerald-50' : achievement >= 80 ? 'from-amber-50' : 'from-red-50'} to-white`}>
+                    <div className="flex items-center justify-between">
+                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Ganancia {new Date().getFullYear()}</p>
+                        <div className={`p-1.5 rounded-xl ${achievement >= 80 ? 'bg-emerald-100' : 'bg-amber-100'}`}>
+                            <TrendingUp className={`h-3.5 w-3.5 ${achievement >= 80 ? 'text-emerald-600' : 'text-amber-600'}`} />
                         </div>
                     </div>
-
-                    {/* Barras: Disponible y Colocado */}
-                    <div className="space-y-2.5">
-                        {[
-                            { label: 'Libre (disponible)', pct: total > 0 ? (disponible / total) * 100 : 0, bar: 'bg-purple-500', text: 'text-purple-700', value: disponible },
-                            { label: 'En préstamos activos', pct: total > 0 ? (prestadoVigente / total) * 100 : 0, bar: 'bg-blue-400', text: 'text-blue-600', value: prestadoVigente },
-                        ].map(bar => (
-                            <div key={bar.label}>
-                                <div className="flex justify-between text-[10px] font-bold mb-1">
-                                    <span className="text-gray-600">{bar.label}</span>
-                                    <span className={bar.text}>{bar.pct.toFixed(1)}%</span>
-                                </div>
-                                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                                    <div className={`h-full rounded-full transition-all duration-700 ${bar.bar}`} style={{ width: `${bar.pct}%` }} />
-                                </div>
-                                <p className="text-[9px] text-gray-400 font-bold mt-0.5">${Number(bar.value).toLocaleString('es-CO')}</p>
-                            </div>
-                        ))}
+                    <p className="text-[19px] font-black text-gray-900 font-mono leading-none">
+                        ${Math.round(rentabilidadActual).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                    </p>
+                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full self-start ${growthBgClass} ${growthTextClass}`}>
+                        {growthValue > 0 ? '▲' : '▼'} {Math.abs(growthValue).toFixed(1)}% vs 2025
+                    </span>
+                    <div>
+                        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full ${achievement >= 100 ? 'bg-emerald-500' : achievement >= 80 ? 'bg-amber-500' : 'bg-red-500'}`}
+                                style={{ width: `${Math.min(achievement, 100)}%` }} />
+                        </div>
+                        <p className="text-[8px] text-gray-400 font-bold mt-1">{achievement.toFixed(0)}% de meta anual</p>
                     </div>
+                </div>
 
-                    {/* Badge de estado */}
+                {/* KPI 5: Proyección Dic */}
+                <div className="bg-gradient-to-br from-slate-50 to-white p-5 flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Proyección Dic</p>
+                        <div className="bg-slate-100 p-1.5 rounded-xl"><BarChart3 className="h-3.5 w-3.5 text-slate-600" /></div>
+                    </div>
+                    <p className="text-[19px] font-black text-gray-900 font-mono leading-none">
+                        ${Math.round(proyeccionTotal).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                    </p>
                     {(() => {
-                        const liq = parseFloat(liquidity);
-                        const s = liq >= 50
-                            ? { bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-800', badge: 'bg-emerald-100 text-emerald-700', label: '● Óptima', msg: `¡El fondo está muy bien! Hay $${Number(disponible).toLocaleString('es-CO')} libres para nuevos préstamos sin ningún problema.` }
-                            : liq >= 30
-                            ? { bg: 'bg-blue-50 border-blue-200', text: 'text-blue-800', badge: 'bg-blue-100 text-blue-700', label: '● Saludable', msg: `La liquidez está en un nivel adecuado. Se puede seguir aprobando préstamos con normalidad.` }
-                            : { bg: 'bg-amber-50 border-amber-200', text: 'text-amber-800', badge: 'bg-amber-100 text-amber-700', label: '▲ Baja', msg: `La liquidez está ajustada. Conviene cobrar las cuotas pendientes antes de aprobar más préstamos.` };
-                        return (
-                            <div className={`rounded-xl p-3 border ${s.bg}`}>
-                                <div className="flex items-center justify-between mb-1">
-                                    <span className="text-[9px] font-black text-gray-700 uppercase tracking-widest">¿Cómo estamos?</span>
-                                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${s.badge}`}>{s.label}</span>
-                                </div>
-                                <p className={`text-[10px] font-bold leading-relaxed ${s.text}`}>{s.msg}</p>
-                            </div>
-                        );
+                        const pct = ((proyeccionTotal / rentabilidad2025) * 100 - 100).toFixed(1);
+                        const up = proyeccionTotal >= rentabilidad2025;
+                        return <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full self-start ${up ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{up ? '▲' : '▼'} {Math.abs(pct)}% vs 2025</span>;
                     })()}
+                    <div>
+                        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="bg-slate-500 h-full rounded-full" style={{ width: `${Math.min((proyeccionTotal / rentabilidad2025) * 100, 100)}%` }} />
+                        </div>
+                        <p className="text-[8px] text-gray-400 font-bold mt-1">Meta: ${Number(rentabilidad2025).toLocaleString('es-CO')}</p>
+                    </div>
                 </div>
             </div>
 
             {/* Gráficos — 3 columnas */}
             <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-gray-100 border-b border-gray-100">
 
-                {/* Chart 2: Barras — Origen de los fondos */}
-                <div className="p-6 flex flex-col">
-                    <div className="mb-3">
-                        <h3 className="text-[12px] font-black text-gray-800">¿De dónde viene el dinero?</h3>
-                        {(() => {
-                            const tf = (stats.totalInitialContributions || 0) + Math.max(0, (stats.totalSavings || 0) - (stats.totalPenaltyValue || 0));
-                            const ahorroPct = tf > 0 ? ((Math.max(0, (stats.totalSavings || 0) - (stats.totalPenaltyValue || 0)) / tf) * 100).toFixed(0) : 0;
-                            const aportePct = tf > 0 ? (((stats.totalInitialContributions || 0) / tf) * 100).toFixed(0) : 0;
-                            return (
-                                <p className="text-[10px] text-gray-400 mt-0.5">
-                                    {ahorroPct >= 60
-                                        ? `El ahorro mensual es el motor del fondo — financia el ${ahorroPct}% del capital. Los aportes iniciales aportan el ${aportePct}% restante como base patrimonial fija.`
-                                        : ahorroPct >= 40
-                                            ? `Fondeo equilibrado entre ahorros (${ahorroPct}%) y aportes (${aportePct}%). Estimular el ahorro mensual incrementaría la capacidad prestable del fondo.`
-                                            : `Los aportes iniciales dominan el fondeo (${aportePct}%). Fortalecer el hábito de ahorro mensual haría al fondo menos dependiente del capital inicial.`
-                                    }
+                {/* Chart 2: Capital del Fondo — composición patrimonial */}
+                {(() => {
+                    const aportes = stats.totalInitialContributions || 0;
+                    const ahorros = Math.max(0, (stats.totalSavings || 0) - (stats.totalPenaltyValue || 0));
+                    const tf = aportes + ahorros;
+                    const ahorroPct = tf > 0 ? ((ahorros / tf) * 100) : 0;
+                    const aportePct = tf > 0 ? ((aportes / tf) * 100) : 0;
+
+                    const diagnostico = ahorroPct >= 60
+                        ? { signal: '✓ Fondeo sano', color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-100', txt: `El ahorro recurrente (${ahorroPct.toFixed(0)}%) sostiene el capital — la base más robusta para una cooperativa. Cada peso de ahorro mensual adicional se traduce directamente en mayor cupo crediticio para los socios.` }
+                        : ahorroPct >= 40
+                        ? { signal: '● Fondeo mixto', color: 'text-blue-700', bg: 'bg-blue-50 border-blue-100', txt: `Balance entre ahorros (${ahorroPct.toFixed(0)}%) y aportes (${aportePct.toFixed(0)}%). Incrementar el ahorro mensual ampliaría la capacidad prestable de forma sostenible.` }
+                        : { signal: '▲ Revisar fondeo', color: 'text-amber-700', bg: 'bg-amber-50 border-amber-100', txt: `Los aportes dominan (${aportePct.toFixed(0)}%). Fortalecer el ahorro mensual es la palanca de crecimiento más importante — convierte el fondo de capitalización puntual a acumulación continua.` };
+
+                    return (
+                        <div className="p-6 flex flex-col gap-4">
+                            {/* Encabezado */}
+                            <div>
+                                <h3 className="text-[12px] font-black text-gray-800">Capital del Fondo</h3>
+                                <p className="text-[10px] text-gray-400 mt-0.5">Composición del patrimonio · socios activos</p>
+                            </div>
+
+                            {/* Patrimonio total centrado */}
+                            <div className="text-center py-2">
+                                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Patrimonio Total</p>
+                                <p className="text-[26px] font-black text-gray-900 font-mono leading-none">
+                                    ${Number(tf).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
                                 </p>
-                            );
-                        })()}
-                    </div>
+                            </div>
 
-                    <div className="flex-1 min-h-[180px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart
-                                data={[
-                                    { name: 'Aportes', value: stats.totalInitialContributions || 0, fill: '#f59e0b' },
-                                    { name: 'Ahorros', value: Math.max(0, (stats.totalSavings || 0) - (stats.totalPenaltyValue || 0)), fill: '#10b981' }
-                                ]}
-                                layout="vertical"
-                                margin={{ top: 0, right: 60, left: 10, bottom: 0 }}
-                            >
-                                <CartesianGrid strokeDasharray="3 3" horizontal={false} vertical={true} stroke="#f3f4f6" />
-                                <XAxis type="number" hide />
-                                <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 11, fontWeight: 700 }} width={65} />
-                                <Tooltip
-                                    cursor={{ fill: '#f9fafb' }}
-                                    content={({ active, payload }) => {
-                                        if (active && payload && payload.length) {
-                                            const d = payload[0].payload;
-                                            const tf = (stats.totalInitialContributions || 0) + Math.max(0, (stats.totalSavings || 0) - (stats.totalPenaltyValue || 0));
-                                            const pct = tf > 0 ? ((d.value / tf) * 100).toFixed(1) : 0;
-                                            return (
-                                                <div className="bg-white p-2 border border-gray-100 shadow-lg rounded-lg">
-                                                    <p className="text-xs font-bold text-gray-700">{d.name}</p>
-                                                    <p className="text-xs font-mono font-black" style={{ color: d.fill }}>${Number(d.value).toLocaleString('es-CO')}</p>
-                                                    <p className="text-[10px] text-gray-400">{pct}% del fondeo</p>
-                                                </div>
-                                            );
-                                        }
-                                        return null;
-                                    }}
-                                />
-                                <Bar dataKey="value" radius={[0, 6, 6, 0]} barSize={34}>
-                                    <LabelList
-                                        dataKey="value"
-                                        position="right"
-                                        style={{ fill: '#374151', fontSize: 10, fontWeight: 700 }}
-                                        formatter={(v) => {
-                                            const tf = (stats.totalInitialContributions || 0) + Math.max(0, (stats.totalSavings || 0) - (stats.totalPenaltyValue || 0));
-                                            return tf > 0 ? `${((v / tf) * 100).toFixed(0)}%` : '';
-                                        }}
-                                    />
-                                    {[
-                                        { fill: '#f59e0b' },
-                                        { fill: '#10b981' }
-                                    ].map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={entry.fill} />
-                                    ))}
-                                </Bar>
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
+                            {/* Barra de composición apilada */}
+                            <div>
+                                <div className="flex h-7 rounded-full overflow-hidden shadow-inner">
+                                    <div className="bg-amber-400 flex items-center justify-center transition-all"
+                                        style={{ width: `${aportePct}%` }}>
+                                        {aportePct >= 15 && <span className="text-[9px] font-black text-white">{aportePct.toFixed(0)}%</span>}
+                                    </div>
+                                    <div className="bg-emerald-500 flex items-center justify-center flex-1 transition-all">
+                                        <span className="text-[9px] font-black text-white">{ahorroPct.toFixed(0)}%</span>
+                                    </div>
+                                </div>
+                                <div className="flex justify-between mt-2 text-[9px] font-bold">
+                                    <span className="flex items-center gap-1 text-amber-600"><span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />Base Patrimonial</span>
+                                    <span className="flex items-center gap-1 text-emerald-600">Ahorro Recurrente<span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /></span>
+                                </div>
+                            </div>
 
-                    {/* Pills de resumen */}
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                        <div className="bg-amber-50 border border-amber-100 rounded-lg p-2 text-center">
-                            <p className="text-[9px] font-black text-amber-600 uppercase tracking-wider">Aportes</p>
-                            <p className="text-[12px] font-black text-amber-800">${Number(stats.totalInitialContributions || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</p>
+                            {/* Stat cards */}
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
+                                    <p className="text-[9px] font-black text-amber-600 uppercase tracking-wider">Aportes Iniciales</p>
+                                    <p className="text-[13px] font-black text-amber-800 font-mono mt-0.5">${Number(aportes).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</p>
+                                    <p className="text-[9px] text-amber-600/70 mt-0.5">{aportePct.toFixed(0)}% del capital</p>
+                                </div>
+                                <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3">
+                                    <p className="text-[9px] font-black text-emerald-600 uppercase tracking-wider">Ahorros Mensuales</p>
+                                    <p className="text-[13px] font-black text-emerald-800 font-mono mt-0.5">${Number(ahorros).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</p>
+                                    <p className="text-[9px] text-emerald-600/70 mt-0.5">{ahorroPct.toFixed(0)}% del capital</p>
+                                </div>
+                            </div>
+
+                            {/* Diagnóstico condensado */}
+                            <div className={`rounded-xl px-3 py-2.5 border mt-auto ${diagnostico.bg}`}>
+                                <div className="flex items-center gap-1.5 mb-1">
+                                    <span className={`text-[9px] font-black uppercase tracking-widest ${diagnostico.color}`}>{diagnostico.signal}</span>
+                                </div>
+                                <p className={`text-[10px] leading-relaxed ${diagnostico.color.replace('700', '600')}`}>{diagnostico.txt}</p>
+                            </div>
                         </div>
-                        <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-2 text-center">
-                            <p className="text-[9px] font-black text-emerald-600 uppercase tracking-wider">Ahorros</p>
-                            <p className="text-[12px] font-black text-emerald-800">${Math.max(0, (stats.totalSavings || 0) - (stats.totalPenaltyValue || 0)).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</p>
-                        </div>
-                    </div>
-                </div>
+                    );
+                })()}
 
 
-                {/* Chart 3: Rentabilidad — col-span-2 con donut a la derecha */}
-                <div className="lg:col-span-2 p-6 flex flex-col">
+                {/* Chart 3: Rentabilidad — col-span-2, nuevo layout: titular → donut izq + cards der */}
+                <div className="lg:col-span-2 flex flex-col">
                     {(() => {
                         const rentSources = [
                             { label: 'Intereses de préstamos', value: stats.totalInteresesPagados || 0, hex: '#3b82f6', bg: 'bg-blue-50', border: 'border-blue-100', text: 'text-blue-700', bar: 'bg-blue-400' },
@@ -1275,108 +1262,61 @@ const FinancialChart = ({ stats }) => {
                         ];
                         const totalRent = rentSources.reduce((s, x) => s + x.value, 0);
                         const sorted = [...rentSources].sort((a, b) => b.value - a.value);
+                        const topPct = totalRent > 0 ? ((sorted[0].value / totalRent) * 100).toFixed(0) : 0;
+                        const secondPct = totalRent > 0 ? ((sorted[1].value / totalRent) * 100).toFixed(0) : 0;
+
+                        const analysisTexts = {
+                            'Intereses de préstamos': <>La <strong>cartera crediticia</strong> lidera los ingresos con el {topPct}% — la estructura más sana para una cooperativa. Esta concentración es deseable pero concentra el riesgo: <strong>una caída en colocación o aumento de mora impacta el flujo directamente</strong>. El rendimiento NU ({secondPct}%) complementa como buffer. <strong>Acción clave:</strong> mora &lt;5%, sostener colocación y explorar instrumentos complementarios.</>,
+                            'Rendimiento cuenta NU': <><strong className="text-amber-700">Señal de alerta:</strong> el NU lidera ({topPct}%) sobre la cartera ({secondPct}%). En una cooperativa sana el NU es complementario (15–25%), no estructural. Capital estacionado pierde la diferencia de 12–20 puntos entre tasa activa y rendimiento NU. <strong>Acción prioritaria:</strong> revisar política de aprobación y fijar meta mensual de colocación.</>,
+                            'Cobros por mora': <><strong className="text-red-700">Alerta crítica:</strong> mora lidera ingresos ({topPct}%). Las penalidades no son sostenibles — erosionan la confianza y ocultan deterioro patrimonial. <strong>Plan urgente:</strong> auditar cartera vencida, cobro preventivo 15 días antes del vencimiento y revisar criterios de aprobación.</>,
+                        };
 
                         return (
                             <>
-                            <div className="flex gap-6 h-full">
-                                {/* Columna izquierda: título + banner + tarjetas + total */}
-                                <div className="w-1/2 flex flex-col">
-                                    <div className="mb-3 flex items-start justify-between gap-2">
-                                        <div>
-                                            <h3 className="text-[12px] font-black text-gray-800">¿Cuánto está ganando el fondo?</h3>
-                                            <p className="text-[10px] text-gray-400 mt-0.5">Fuentes de ingresos acumuladas en lo que va del año</p>
-                                        </div>
-                                        <button onClick={() => setExpandDonut(true)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors text-gray-400 hover:text-gray-700 flex-shrink-0" title="Ampliar y analizar">
-                                            <Maximize2 className="h-4 w-4" />
-                                        </button>
-                                    </div>
-
-                                    {/* Tarjetas ordenadas de mayor a menor */}
-                                    <div className="flex-1 space-y-2">
-                                        {sorted.map((item, idx) => {
-                                            const pct = totalRent > 0 ? (item.value / totalRent) * 100 : 0;
-                                            return (
-                                                <div key={item.label} className={`${item.bg} rounded-xl p-3`}
-                                                    style={{ border: `${idx === 0 ? 2 : 1}px solid ${item.hex}${idx === 0 ? '70' : '30'}` }}>
-                                                    <div className="flex items-center justify-between mb-1.5">
-                                                        <div className="flex items-center gap-1.5">
-                                                            {idx === 0 && (
-                                                                <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: item.hex }}>
-                                                                    #1
-                                                                </span>
-                                                            )}
-                                                            <span className={`text-[10px] font-black ${item.text} uppercase tracking-wide`}>{item.label}</span>
-                                                        </div>
-                                                        <span className={`text-[12px] font-black ${item.text} font-mono`}>
-                                                            ${Number(item.value).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
-                                                        </span>
-                                                    </div>
-                                                    <div className="h-1.5 bg-white/60 rounded-full overflow-hidden">
-                                                        <div className={`h-full rounded-full ${item.bar}`} style={{ width: `${pct}%` }} />
-                                                    </div>
-                                                    <p className={`text-[9px] font-bold mt-1 ${item.text} opacity-70`}>{pct.toFixed(0)}% del total</p>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-
-                                    {/* Panel total */}
-                                    <div className="mt-3 flex-1 bg-emerald-50 border border-emerald-100 rounded-xl p-5 flex flex-col items-center justify-center shadow-sm relative overflow-hidden">
-                                        <div className="relative z-10 text-center">
-                                            <p className="text-[13px] font-black text-emerald-700 uppercase tracking-wide mb-2">
-                                                Ganancia Total a corte {new Date().toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                                            </p>
-                                            <p className="text-[32px] font-black text-emerald-800 font-mono leading-none">
-                                                ${Math.round(totalRent).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
-                                            </p>
-                                        </div>
-                                        <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                                            <img src={logo} alt="Credifuturo" className="h-12 w-12 object-contain rounded-full border border-emerald-200 shadow-sm relative z-10" />
-                                        </div>
-                                    </div>
-
-                                    {/* Análisis condensado */}
-                                    {(() => {
-                                        const topPct = totalRent > 0 ? ((sorted[0].value / totalRent) * 100).toFixed(0) : 0;
-                                        const secondPct = totalRent > 0 ? ((sorted[1].value / totalRent) * 100).toFixed(0) : 0;
-                                        const texts = {
-                                            'Intereses de préstamos': <>La <strong>cartera de préstamos</strong> es el motor del fondo ({topPct}% del ingreso) — señal de operación <strong>sana y activa</strong>. Se recomienda mantener la <strong>mora controlada</strong> y diversificar hacia instrumentos financieros para no depender únicamente del crédito.</>,
-                                            'Rendimiento cuenta NU': <>El fondo <strong>genera más por depósito que por crédito</strong> ({topPct}% vs {secondPct}%), lo que indica <strong>subutilización del capital</strong>. Se recomienda aumentar la <strong>colocación de préstamos</strong>; el rendimiento NU debe ser complementario, no la fuente dominante.</>,
-                                            'Cobros por mora': <><strong>Alerta:</strong> los ingresos por mora lideran ({topPct}%), lo que indica <strong>estrés en la cartera</strong>. Se recomienda revisar criterios de crédito, implementar <strong>cobro preventivo</strong> y reducir esta fuente — no es sostenible ni saludable para el fondo.</>,
-                                        };
-                                        return (
-                                            <div className="mt-2 rounded-xl px-4 py-3 bg-gray-50 border border-gray-100">
-                                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Análisis</p>
-                                                <p className="text-[13px] text-gray-600 leading-relaxed">
-                                                    {texts[sorted[0].label] || texts['Intereses de préstamos']}
-                                                </p>
-                                            </div>
-                                        );
-                                    })()}
+                            {/* HOOK: Titular ganancia total */}
+                            <div className="px-6 pt-5 pb-4 border-b border-gray-100 flex items-center justify-between gap-4">
+                                <div>
+                                    <h3 className="text-[12px] font-black text-gray-800">¿Cuánto está ganando el fondo?</h3>
+                                    <p className="text-[10px] text-gray-400 mt-0.5">Ingresos acumulados al {new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
                                 </div>
+                                <div className="flex items-center gap-3">
+                                    <div className="text-right">
+                                        <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Ganancia Total</p>
+                                        <p className="text-[26px] font-black text-emerald-700 font-mono leading-none">
+                                            ${Math.round(totalRent).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                                        </p>
+                                    </div>
+                                    <button onClick={() => setExpandDonut(true)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors text-gray-400 hover:text-gray-700 flex-shrink-0" title="Ampliar y analizar">
+                                        <Maximize2 className="h-4 w-4" />
+                                    </button>
+                                </div>
+                            </div>
 
-                                {/* Columna derecha: donut grande centrado */}
-                                <div className="w-1/2 flex flex-col items-center justify-center">
-                                    <div className="relative w-full" style={{ height: 420 }}>
+                            {/* BODY: Donut izquierda + fuentes derecha */}
+                            <div className="flex flex-col md:flex-row flex-1">
+                                {/* Donut — LEFT (visual principal) */}
+                                <div className="md:w-[45%] flex items-center justify-center p-4 border-b md:border-b-0 md:border-r border-gray-100">
+                                    <div className="relative w-full" style={{ height: 260 }}>
                                         <ResponsiveContainer width="100%" height="100%">
-                                            <PieChart margin={{ top: 8, right: 52, bottom: 8, left: 52 }}>
+                                            <PieChart margin={{ top: 8, right: 40, bottom: 8, left: 40 }}>
                                                 <Pie
                                                     data={rentSources}
                                                     cx="50%" cy="50%"
-                                                    innerRadius="42%" outerRadius="68%"
+                                                    innerRadius="44%" outerRadius="70%"
                                                     dataKey="value" nameKey="label"
                                                     startAngle={90} endAngle={-270} paddingAngle={3}
                                                     label={({ cx, cy, midAngle, outerRadius, payload, percent }) => {
                                                         const RADIAN = Math.PI / 180;
-                                                        const r = outerRadius + 20;
+                                                        const r = outerRadius + 18;
                                                         const x = cx + r * Math.cos(-midAngle * RADIAN);
                                                         const y = cy + r * Math.sin(-midAngle * RADIAN);
                                                         const anchor = x > cx ? 'start' : 'end';
                                                         const shortNames = { 'Intereses de préstamos': 'Intereses', 'Rendimiento cuenta NU': 'Cta. NU', 'Cobros por mora': 'Mora' };
+                                                        if (percent < 0.04) return null;
                                                         return (
                                                             <g>
-                                                                <text x={x} y={y - 7} textAnchor={anchor} fill={payload.hex} fontSize={13} fontWeight="800">{shortNames[payload.label]}</text>
-                                                                <text x={x} y={y + 9} textAnchor={anchor} fill="#6b7280" fontSize={12} fontWeight="700">{(percent * 100).toFixed(0)}%</text>
+                                                                <text x={x} y={y - 6} textAnchor={anchor} fill={payload.hex} fontSize={12} fontWeight="800">{shortNames[payload.label]}</text>
+                                                                <text x={x} y={y + 8} textAnchor={anchor} fill="#6b7280" fontSize={11} fontWeight="700">{(percent * 100).toFixed(0)}%</text>
                                                             </g>
                                                         );
                                                     }}
@@ -1394,7 +1334,7 @@ const FinancialChart = ({ stats }) => {
                                                             <div className="bg-white p-2 border border-gray-100 shadow-lg rounded-lg text-xs">
                                                                 <p className="font-bold text-gray-700">{d.payload.label}</p>
                                                                 <p className="font-mono font-black" style={{ color: d.payload.hex }}>${Number(d.value).toLocaleString('es-CO')}</p>
-                                                                <p className="text-gray-400">{pct}%</p>
+                                                                <p className="text-gray-400">{pct}% del total</p>
                                                             </div>
                                                         );
                                                     }
@@ -1402,15 +1342,53 @@ const FinancialChart = ({ stats }) => {
                                                 }} />
                                             </PieChart>
                                         </ResponsiveContainer>
-                                        {/* Centro del donut */}
                                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                                            <span className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Total</span>
-                                            <span className="text-[20px] font-black text-gray-900 font-mono leading-tight">${Math.round(totalRent).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span>
-                                            <span className="text-[10px] text-gray-400 font-bold mt-0.5">en {new Date().getFullYear()}</span>
+                                            <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Total</span>
+                                            <span className="text-[17px] font-black text-gray-900 font-mono leading-tight">${Math.round(totalRent).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span>
+                                            <span className="text-[9px] text-gray-400 font-bold">{new Date().getFullYear()}</span>
                                         </div>
                                     </div>
                                 </div>
+
+                                {/* Fuentes + análisis — RIGHT */}
+                                <div className="md:w-[55%] p-5 flex flex-col gap-3">
+                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Desglose por Fuente</p>
+
+                                    {/* Source bars — compactos */}
+                                    <div className="space-y-2">
+                                        {sorted.map((item, idx) => {
+                                            const pct = totalRent > 0 ? (item.value / totalRent) * 100 : 0;
+                                            return (
+                                                <div key={item.label} className={`rounded-xl p-2.5 ${item.bg}`}
+                                                    style={{ border: `${idx === 0 ? 2 : 1}px solid ${item.hex}${idx === 0 ? '50' : '25'}` }}>
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <div className="flex items-center gap-1.5">
+                                                            {idx === 0 && <span className="text-[7px] font-black px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: item.hex }}>#1</span>}
+                                                            <span className={`text-[9px] font-black ${item.text} uppercase tracking-wide`}>{item.label}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className={`text-[8px] font-bold ${item.text} opacity-70`}>{pct.toFixed(0)}%</span>
+                                                            <span className={`text-[11px] font-black ${item.text} font-mono`}>${Number(item.value).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="h-1 bg-white/60 rounded-full overflow-hidden">
+                                                        <div className={`h-full rounded-full ${item.bar}`} style={{ width: `${pct}%` }} />
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* Análisis del experto */}
+                                    <div className="rounded-xl px-3 py-2.5 bg-gray-50 border border-gray-100 mt-auto">
+                                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Análisis del Experto</p>
+                                        <p className="text-[11px] text-gray-600 leading-relaxed">
+                                            {analysisTexts[sorted[0].label] || analysisTexts['Intereses de préstamos']}
+                                        </p>
+                                    </div>
+                                </div>
                             </div>
+
                             <ChartExpandModal
                                 isOpen={expandDonut}
                                 onClose={() => setExpandDonut(false)}
@@ -1628,9 +1606,8 @@ const FinancialChart = ({ stats }) => {
                     <ComparativeChart compact title="Ganancias por Intereses" historic={1206913} current={stats.totalInteresesPagados || 0} color="#8b5cf6" labelHistoric="2025" labelCurrent="2026" />
                 </ChartExpandModal>
 
-                {/* ── Análisis Económico Ejecutivo ── */}
+                {/* ── Diagnóstico Financiero — 3 Insight Cards ─────────────────── */}
                 {(() => {
-                    // Ahorro por año (no acumulable): comparamos el último año vs el anterior
                     const ahorroArr = stats.ahorroPorAnio || [];
                     const ahorroLast = ahorroArr[ahorroArr.length - 1];
                     const ahorroPrev = ahorroArr[ahorroArr.length - 2];
@@ -1640,159 +1617,193 @@ const FinancialChart = ({ stats }) => {
                     const ahorroActual = ahorroLast ? ahorroLast.total : 0;
                     const ahorroPct = ahorroMeta > 0 ? ((ahorroActual / ahorroMeta) * 100).toFixed(1) : '0.0';
                     const ahorroDiff = ahorroActual - ahorroMeta;
+                    const ahorroHealthy = parseFloat(ahorroPct) >= 95;
 
                     const prestamoMeta = 29750000;
                     const prestamoActual = stats.totalPrestamos || 0;
                     const prestamoPct = ((prestamoActual / prestamoMeta) * 100).toFixed(1);
 
-                    const fondoMeta = 36126201;
-                    const fondoActual = total;
-                    const fondoPct = ((fondoActual / fondoMeta) * 100).toFixed(1);
-
-                    // Intereses Recaudados
                     const interesesMeta = 1206913;
                     const interesesActual = stats.totalInteresesPagados || 0;
-                    const interesesPct = ((interesesActual / interesesMeta) * 100).toFixed(1);
-                    const interesesDiff = interesesActual - interesesMeta;
 
                     const today = new Date();
                     const dayOfYear = Math.ceil((today - new Date(today.getFullYear(), 0, 1)) / (1000 * 60 * 60 * 24));
                     const pctYearElapsed = ((dayOfYear / 365) * 100).toFixed(0);
 
-                    // Ritmo proporcional de intereses (pace vs año)
                     const interesesPaceTarget = interesesMeta * (dayOfYear / 365);
                     const interesesAheadOfPace = interesesActual >= interesesPaceTarget;
-                    const interesesPacePct = ((interesesActual / interesesPaceTarget) * 100).toFixed(1);
-
-                    // Diagnósticos dinámicos
-                    const ahorroHealthy = ahorroPct >= 95;
-                    const prestamoModerate = prestamoPct <= 50;
-                    const fondoOnTrack = fondoPct >= 85;
-                    const interesesHealthy = interesesPct >= (pctYearElapsed * 0.9);
+                    const interesesPacePct = interesesPaceTarget > 0 ? ((interesesActual / interesesPaceTarget) * 100).toFixed(1) : '0.0';
 
                     return (
                         <div className="mt-6 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden" data-pdf-section="true">
-                            {/* Header del análisis */}
-                            <div className="px-6 py-5 bg-gradient-to-r from-brand-primary to-emerald-800 flex items-center gap-4">
-                                <div className="bg-white/20 p-2.5 rounded-full backdrop-blur-sm flex-shrink-0">
-                                    <ShieldCheck className="h-6 w-6 text-white" />
+                            {/* Header */}
+                            <div className="px-6 py-4 bg-gradient-to-r from-brand-primary to-emerald-800 flex items-center gap-3">
+                                <div className="bg-white/20 p-2 rounded-full backdrop-blur-sm flex-shrink-0">
+                                    <ShieldCheck className="h-5 w-5 text-white" />
                                 </div>
                                 <div>
-                                    <h4 className="text-xl font-black text-white tracking-wide">¿Qué nos dicen los números?</h4>
-                                    <p className="text-sm text-emerald-200 font-semibold mt-0.5">Resumen del fondo al {today.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })} — llevamos el {pctYearElapsed}% del año</p>
+                                    <h4 className="text-base font-black text-white">Diagnóstico Financiero — ¿Qué nos dicen los números?</h4>
+                                    <p className="text-xs text-emerald-200 font-semibold mt-0.5">Análisis al {today.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })} · Llevamos el {pctYearElapsed}% del año</p>
                                 </div>
                             </div>
 
-                            <div className="p-6 space-y-5">
-                                {/* 1. Ahorro */}
-                                <div className="flex items-start gap-4">
-                                    <div className={`flex-shrink-0 mt-1 w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-black ${ahorroHealthy ? 'bg-emerald-500' : 'bg-amber-500'}`}>1</div>
-                                    <div className="flex-1">
-                                        <div className="flex items-center gap-2 mb-1">
-                                            <h5 className="text-base font-black text-gray-900">¿Están ahorrando los socios?</h5>
-                                            <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full ${ahorroHealthy ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                                                {ahorroHealthy ? '● Bien' : '● Revisar'}
-                                            </span>
+                            {/* 3 Insight Cards */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-gray-100">
+
+                                {/* Card 1: Ahorros */}
+                                <div className={`p-5 flex flex-col gap-3 ${ahorroHealthy ? '' : 'bg-amber-50/40'}`}>
+                                    <div className="flex items-start gap-2">
+                                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-black flex-shrink-0 mt-0.5 ${ahorroHealthy ? 'bg-emerald-500' : 'bg-amber-500'}`}>
+                                            {ahorroHealthy ? '✓' : '!'}
                                         </div>
-                                        <p className="text-sm font-medium text-gray-800 leading-relaxed">
-                                            En {ahorroYearPrev} los socios ahorraron en total <strong className="text-gray-800">${Number(ahorroMeta).toLocaleString('es-CO')}</strong> (ahorro mensual + aportes de ese año).
-                                            En {ahorroYearActual} llevan <strong className="text-emerald-700">${Number(ahorroActual).toLocaleString('es-CO')}</strong>,
-                                            que es el <strong className={ahorroHealthy ? 'text-emerald-700' : 'text-amber-700'}>{ahorroPct}%</strong> de lo ahorrado en {ahorroYearPrev}.
-                                            {ahorroDiff >= 0
-                                                ? <> Es <strong className="text-emerald-600">${Number(ahorroDiff).toLocaleString('es-CO')} más</strong> que el año pasado — los socios están cumpliendo con sus aportes y eso hace el fondo más fuerte.</>
-                                                : <> Es <strong className="text-amber-600">${Number(Math.abs(ahorroDiff)).toLocaleString('es-CO')} menos</strong> que el año pasado. Vale la pena revisar si hay socios que bajaron o dejaron de hacer sus aportes.</>
-                                            }
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div className="border-t border-dashed border-gray-200"></div>
-
-                                {/* 2. Préstamos */}
-                                <div className="flex items-start gap-4">
-                                    <div className={`flex-shrink-0 mt-1 w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-black ${prestamoModerate ? 'bg-blue-500' : 'bg-emerald-500'}`}>2</div>
-                                    <div className="flex-1">
-                                        <div className="flex items-center gap-2 mb-1">
-                                            <h5 className="text-base font-black text-gray-900">¿Cuánto hemos prestado?</h5>
-                                            <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full ${prestamoModerate ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                                                {prestamoModerate ? '● Ritmo Normal' : '● Ritmo Alto'}
-                                            </span>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Módulo 1 · Ahorro</p>
+                                            <h5 className="text-sm font-black text-gray-900 leading-snug">¿Están ahorrando los socios?</h5>
                                         </div>
-                                        <p className="text-sm font-medium text-gray-800 leading-relaxed">
-                                            En 2025 se entregaron <strong className="text-gray-800">${Number(prestamoMeta).toLocaleString('es-CO')}</strong> en préstamos.
-                                            Este año llevamos <strong className="text-blue-700">${Number(prestamoActual).toLocaleString('es-CO')}</strong> —
-                                            el <strong className="text-blue-700">{prestamoPct}%</strong> de lo del año pasado.
-                                            {prestamoModerate
-                                                ? <> Con el {pctYearElapsed}% del año cumplido, el ritmo es {prestamoPct > (pctYearElapsed * 100) ? 'un poco más alto' : 'similar'} al de 2025. Esto es positivo: el fondo tiene liquidez disponible para seguir aprobando préstamos en lo que queda del año sin arriesgar el dinero de los socios.</>
-                                                : <> El ritmo de préstamos este año es más alto que en 2025. Hay que estar atentos a que los socios estén pagando a tiempo para no comprometer la liquidez del fondo.</>
-                                            }
-                                        </p>
+                                        <span className={`text-[8px] font-black px-2 py-0.5 rounded-full flex-shrink-0 ${ahorroHealthy ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                            {ahorroHealthy ? 'BIEN' : 'REVISAR'}
+                                        </span>
                                     </div>
-                                </div>
-
-                                <div className="border-t border-dashed border-gray-200"></div>
-
-                                {/* 3. Patrimonio */}
-                                <div className="flex items-start gap-4">
-                                    <div className={`flex-shrink-0 mt-1 w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-black ${fondoOnTrack ? 'bg-amber-500' : 'bg-red-500'}`}>3</div>
-                                    <div className="flex-1">
-                                        <div className="flex items-center gap-2 mb-1">
-                                            <h5 className="text-base font-black text-gray-900">¿Cuánto vale el fondo hoy?</h5>
-                                            <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full ${fondoOnTrack ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
-                                                {fondoOnTrack ? '● En Crecimiento' : '● Verificar'}
-                                            </span>
-                                        </div>
-                                        <p className="text-sm font-medium text-gray-800 leading-relaxed">
-                                            Al cierre de 2025 el fondo valía <strong className="text-gray-800">${Number(fondoMeta).toLocaleString('es-CO')}</strong> sumando ahorros mensuales y aportes iniciales.
-                                            Hoy el patrimonio (ahorros + aportes) llega a <strong className={fondoOnTrack ? 'text-amber-700' : 'text-red-700'}>${Number(fondoActual).toLocaleString('es-CO')}</strong>, el <strong className={fondoOnTrack ? 'text-amber-700' : 'text-red-700'}>{fondoPct}%</strong> de ese valor.
-                                            {fondoOnTrack
-                                                ? <> El fondo va bien. Sumando los intereses que nos pagan los préstamos y los rendimientos de la cuenta NU, esperamos cerrar 2026 con más dinero que el año pasado.</>
-                                                : <> Todavía estamos por debajo del total de 2025. Conviene revisar si hubo retiros grandes, y asegurarse de que los rendimientos de los préstamos e intereses compensen la diferencia antes de diciembre.</>
-                                            }
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div className="border-t border-dashed border-gray-200"></div>
-
-                                {/* 4. Intereses */}
-                                <div className="flex items-start gap-4">
-                                    <div className={`flex-shrink-0 mt-1 w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-black ${interesesHealthy ? 'bg-purple-500' : 'bg-amber-500'}`}>4</div>
-                                    <div className="flex-1">
-                                        <div className="flex items-center gap-2 mb-1">
-                                            <h5 className="text-base font-black text-gray-900">¿Cuánto ganamos por los préstamos?</h5>
-                                            <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full ${interesesHealthy ? 'bg-purple-100 text-purple-700' : 'bg-amber-100 text-amber-700'}`}>
-                                                {interesesHealthy ? '● Buena Ganancia' : '● Revisar Ingresos'}
-                                            </span>
-                                        </div>
-                                        <p className="text-sm font-medium text-gray-800 leading-relaxed">
-                                            En 2025 el fondo recibió <strong className="text-gray-800">${Number(interesesMeta).toLocaleString('es-CO')}</strong> en intereses de los préstamos.
-                                            Este año llevamos <strong className="text-purple-700">${Number(interesesActual).toLocaleString('es-CO')}</strong> —
-                                            el <strong className={interesesHealthy ? 'text-purple-700' : 'text-amber-700'}>{interesesPct}%</strong> de lo del año pasado.
-                                            {interesesDiff >= 0
-                                                ? <> Estamos ganando <strong className="text-emerald-600">${Number(interesesDiff).toLocaleString('es-CO')} más</strong> que en 2025. Esto significa que hay más préstamos activos pagando intereses, lo cual es bueno para el crecimiento del fondo.</>
-                                                : (interesesAheadOfPace
-                                                    ? <> Aunque aún no llegamos al total de 2025, el ritmo es bueno para esta época del año ({interesesPacePct}% de lo esperado). Si seguimos así, vamos a acercarnos al cierre de 2025.</>
-                                                    : <> Estamos recibiendo menos intereses que el año pasado y el ritmo también es más lento. Conviene revisar qué préstamos están atrasados o si las tasas están generando los ingresos esperados.</>
-                                                )
-                                            }
-                                        </p>
-                                    </div>
-                                </div>
-
-                                {/* Resumen final */}
-                                <div className="mt-4 p-5 bg-gradient-to-r from-brand-primary/5 to-slate-100 rounded-xl border border-brand-primary/20">
-                                    <div className="flex items-center gap-2 mb-3">
-                                        <ActivitySquare className="h-5 w-5 text-brand-primary" />
-                                        <h5 className="text-sm font-black text-brand-primary uppercase tracking-wider">En resumen</h5>
-                                    </div>
-                                    <p className="text-sm text-gray-800 leading-relaxed font-medium">
-                                        {ahorroHealthy && fondoOnTrack
-                                            ? <>El fondo <strong className="text-brand-primary">Credifuturo</strong> va bien al {today.toLocaleDateString('es-CO', { day: 'numeric', month: 'long' })}. Los socios están ahorrando más que el año pasado, los préstamos se están entregando a buen ritmo y el dinero del fondo sigue creciendo. {interesesHealthy ? <>Los intereses que recibimos de los préstamos también van bien, lo cual ayuda a fortalecer el fondo.</> : <>Los ingresos por intereses de préstamos están un poco más bajos que el año pasado — vale la pena revisarlos.</>} La recomendación es seguir aprobando préstamos con cuidado, asegurándose de que los socios estén al día con sus pagos, para cerrar 2026 mejor que 2025.</>
-                                            : <>El fondo <strong className="text-brand-primary">Credifuturo</strong> tiene algunas señales que merecen atención al {today.toLocaleDateString('es-CO', { day: 'numeric', month: 'long' })}. Se recomienda reunirse con el equipo directivo para revisar: (1) por qué algunos indicadores están por debajo del año pasado, (2) si hay préstamos que no se están pagando a tiempo, (3) si los ingresos por intereses son suficientes, y (4) qué acciones tomar para cerrar el año de la mejor manera posible.</>
-                                        }
+                                    <p className="text-[11px] text-gray-600 leading-relaxed">
+                                        En {ahorroYearPrev} los socios ahorraron <strong>${Number(ahorroMeta).toLocaleString('es-CO')}</strong>. Este año llevan <strong className={ahorroHealthy ? 'text-emerald-700' : 'text-amber-700'}>${Number(ahorroActual).toLocaleString('es-CO')}</strong> ({ahorroPct}% del año anterior).
+                                        {ahorroDiff >= 0 ? ` Hay $${Number(ahorroDiff).toLocaleString('es-CO')} más que el año pasado.` : ` Hay $${Number(Math.abs(ahorroDiff)).toLocaleString('es-CO')} menos que el año pasado.`}
                                     </p>
+                                    <div className={`rounded-lg p-3 mt-auto border ${ahorroHealthy ? 'bg-emerald-50 border-emerald-100' : 'bg-amber-50 border-amber-100'}`}>
+                                        <p className="text-[9px] font-black uppercase tracking-wider mb-1 text-gray-500">Recomendación</p>
+                                        <p className="text-[10px] font-semibold text-gray-700 leading-snug">
+                                            {ahorroHealthy
+                                                ? 'Mantener el ritmo. Reconocer públicamente a los socios cumplidos para sostener el hábito de ahorro.'
+                                                : 'Identificar socios con aportes pendientes y hacer seguimiento personalizado antes del cierre de mes.'}
+                                        </p>
+                                    </div>
                                 </div>
+
+                                {/* Card 2: Crédito y Cartera */}
+                                <div className={`p-5 flex flex-col gap-3 ${parseFloat(riskIndex) > 5 ? 'bg-red-50/30' : ''}`}>
+                                    <div className="flex items-start gap-2">
+                                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-black flex-shrink-0 mt-0.5 ${parseFloat(riskIndex) <= 5 ? 'bg-blue-500' : 'bg-red-500'}`}>
+                                            {parseFloat(riskIndex) <= 5 ? '✓' : '!'}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Módulo 2 · Crédito</p>
+                                            <h5 className="text-sm font-black text-gray-900 leading-snug">¿Cómo está la cartera?</h5>
+                                        </div>
+                                        <span className={`text-[8px] font-black px-2 py-0.5 rounded-full flex-shrink-0 ${parseFloat(riskIndex) <= 3 ? 'bg-emerald-100 text-emerald-700' : parseFloat(riskIndex) <= 5 ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
+                                            {parseFloat(riskIndex) <= 3 ? 'BAJO RIESGO' : parseFloat(riskIndex) <= 5 ? 'NORMAL' : 'ATENCIÓN'}
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] text-gray-600 leading-relaxed">
+                                        Préstamos entregados: <strong className="text-blue-700">${Number(prestamoActual).toLocaleString('es-CO')}</strong> ({prestamoPct}% del nivel 2025).
+                                        Mora actual: <strong className={parseFloat(riskIndex) > 5 ? 'text-red-700' : 'text-blue-700'}>{riskIndex}%</strong> del capital (<strong>${Number(mora).toLocaleString('es-CO')}</strong> en cuotas vencidas).
+                                    </p>
+                                    <div className={`rounded-lg p-3 mt-auto border ${parseFloat(riskIndex) <= 5 ? 'bg-blue-50 border-blue-100' : 'bg-red-50 border-red-100'}`}>
+                                        <p className="text-[9px] font-black uppercase tracking-wider mb-1 text-gray-500">Recomendación</p>
+                                        <p className="text-[10px] font-semibold text-gray-700 leading-snug">
+                                            {parseFloat(riskIndex) <= 3
+                                                ? 'Cartera saludable. Evaluar aprobación de nuevos préstamos — la liquidez lo permite.'
+                                                : parseFloat(riskIndex) <= 5
+                                                ? 'Mora aceptable. Activar recordatorios preventivos para cuotas próximas a vencer.'
+                                                : 'Mora elevada. Priorizar gestión de cobro. Pausar nuevos préstamos hasta reducir el índice.'}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Card 3: Rentabilidad */}
+                                <div className={`p-5 flex flex-col gap-3 ${achievement < 80 ? 'bg-red-50/30' : ''}`}>
+                                    <div className="flex items-start gap-2">
+                                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-black flex-shrink-0 mt-0.5 ${achievement >= 100 ? 'bg-emerald-500' : achievement >= 80 ? 'bg-amber-500' : 'bg-red-500'}`}>
+                                            {achievement >= 80 ? '✓' : '!'}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Módulo 3 · Rentabilidad</p>
+                                            <h5 className="text-sm font-black text-gray-900 leading-snug">¿Está ganando el fondo?</h5>
+                                        </div>
+                                        <span className={`text-[8px] font-black px-2 py-0.5 rounded-full flex-shrink-0 ${achievement >= 100 ? 'bg-emerald-100 text-emerald-700' : achievement >= 80 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                                            {achievement >= 100 ? 'META' : achievement >= 80 ? 'EN CURSO' : 'REVISAR'}
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] text-gray-600 leading-relaxed">
+                                        Ganancia acumulada: <strong className={achievement >= 80 ? 'text-emerald-700' : 'text-amber-700'}>${Math.round(rentabilidadActual).toLocaleString('es-CO')}</strong> ({achievement.toFixed(0)}% de meta).
+                                        {interesesAheadOfPace
+                                            ? ` Ritmo de intereses positivo (${interesesPacePct}% del esperado).`
+                                            : ` Ritmo de intereses por debajo de lo esperado.`}
+                                        Proyección dic: <strong>${Math.round(proyeccionTotal).toLocaleString('es-CO')}</strong>.
+                                    </p>
+                                    <div className={`rounded-lg p-3 mt-auto border ${achievement >= 100 ? 'bg-emerald-50 border-emerald-100' : achievement >= 80 ? 'bg-amber-50 border-amber-100' : 'bg-red-50 border-red-100'}`}>
+                                        <p className="text-[9px] font-black uppercase tracking-wider mb-1 text-gray-500">Recomendación</p>
+                                        <p className="text-[10px] font-semibold text-gray-700 leading-snug">
+                                            {achievement >= 100
+                                                ? 'Meta superada. Evaluar distribución del excedente o incremento del fondo de reserva.'
+                                                : achievement >= 80
+                                                ? `Ritmo adecuado para el ${pctYearElapsed}% del año. Mantener colocación y controlar mora.`
+                                                : 'Revisar cuotas atrasadas y nivel de colocación para recuperar el ritmo de ingresos.'}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Acciones Prioritarias */}
+                            <div className="mx-5 mb-4 mt-4 rounded-xl border border-gray-100 overflow-hidden">
+                                <div className="bg-gray-50 px-4 py-2.5 flex items-center gap-2 border-b border-gray-100">
+                                    <Activity className="h-4 w-4 text-brand-primary" />
+                                    <h5 className="text-[10px] font-black text-gray-700 uppercase tracking-wider">Acciones Prioritarias</h5>
+                                </div>
+                                <div className="divide-y divide-gray-50">
+                                    {[
+                                        {
+                                            severity: parseFloat(riskIndex) > 5 ? 'high' : parseFloat(riskIndex) > 3 ? 'medium' : 'low',
+                                            icon: '💳',
+                                            title: 'Gestión de Cartera en Mora',
+                                            action: parseFloat(riskIndex) > 5
+                                                ? `Mora de ${riskIndex}% requiere atención urgente. Contactar socios deudores. Monto: $${Number(mora).toLocaleString('es-CO')}.`
+                                                : `Mora en ${riskIndex}% — nivel aceptable. Activar recordatorios a socios con cuotas próximas a vencer.`
+                                        },
+                                        {
+                                            severity: parseFloat(liquidity) < 30 ? 'high' : parseFloat(liquidity) < 50 ? 'medium' : 'low',
+                                            icon: '💰',
+                                            title: 'Gestión de Liquidez',
+                                            action: parseFloat(liquidity) >= 50
+                                                ? `Liquidez óptima (${liquidity}%). $${Number(disponible).toLocaleString('es-CO')} disponibles — evaluar nuevos préstamos.`
+                                                : parseFloat(liquidity) >= 30
+                                                ? `Liquidez saludable (${liquidity}%). Continuar aprobando préstamos con normalidad.`
+                                                : `Liquidez ajustada (${liquidity}%). Priorizar cobro antes de aprobar nuevos créditos.`
+                                        },
+                                        {
+                                            severity: achievement < 80 ? 'high' : achievement < 100 ? 'medium' : 'low',
+                                            icon: '📈',
+                                            title: 'Cumplimiento de Meta de Rentabilidad',
+                                            action: achievement >= 100
+                                                ? `Meta anual superada (${achievement.toFixed(0)}%). Evaluar distribución de excedentes.`
+                                                : `Se lleva el ${achievement.toFixed(0)}% de la meta con el ${pctYearElapsed}% del año. Mantener ritmo para alcanzar $${Number(rentabilidad2025).toLocaleString('es-CO')}.`
+                                        },
+                                    ].map((item, i) => (
+                                        <div key={i} className="flex items-start gap-3 px-4 py-3">
+                                            <div className={`w-1 self-stretch rounded-full flex-shrink-0 ${item.severity === 'high' ? 'bg-red-500' : item.severity === 'medium' ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+                                            <span className="text-base flex-shrink-0 mt-0.5">{item.icon}</span>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-[10px] font-black text-gray-800">{item.title}</p>
+                                                <p className="text-[10px] text-gray-500 font-medium leading-snug mt-0.5">{item.action}</p>
+                                            </div>
+                                            <span className={`text-[8px] font-black px-2 py-0.5 rounded-full self-start flex-shrink-0 ${item.severity === 'high' ? 'bg-red-100 text-red-700' : item.severity === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                                {item.severity === 'high' ? 'URGENTE' : item.severity === 'medium' ? 'ESTA SEMANA' : 'EN ORDEN'}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* En Resumen */}
+                            <div className="mx-5 mb-5 p-4 bg-gradient-to-r from-brand-primary/5 to-slate-100 rounded-xl border border-brand-primary/20">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <ActivitySquare className="h-4 w-4 text-brand-primary" />
+                                    <h5 className="text-[10px] font-black text-brand-primary uppercase tracking-wider">En Resumen</h5>
+                                </div>
+                                <p className="text-[11px] text-gray-700 leading-relaxed font-medium">
+                                    {ahorroHealthy && parseFloat(riskIndex) <= 5 && achievement >= 80
+                                        ? <>El fondo <strong className="text-brand-primary">Credifuturo</strong> está operando bien al {today.toLocaleDateString('es-CO', { day: 'numeric', month: 'long' })}. Los socios ahorran, la mora es controlada y los ingresos van en la dirección correcta. La recomendación es mantener el ritmo de colocación y hacer seguimiento a socios con cuotas atrasadas para cerrar 2026 mejor que 2025.</>
+                                        : <>El fondo <strong className="text-brand-primary">Credifuturo</strong> tiene señales que requieren atención al {today.toLocaleDateString('es-CO', { day: 'numeric', month: 'long' })}. Revisar los indicadores marcados y ejecutar las acciones prioritarias listadas arriba para retomar el ritmo esperado y cerrar el año en positivo.</>
+                                    }
+                                </p>
                             </div>
                         </div>
                     );
@@ -1857,7 +1868,9 @@ const DashboardHome = () => {
         detalleMoraEP: [],
         detallePenalidad: [],
         recentSavings: [],
-        recentPayments: []
+        recentPayments: [],
+        proximosVencimientos30d: { count: 0, monto: 0, socios: 0 },
+        sociosAlDiaMes: { count: 0, total: 0 }
     });
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -1926,6 +1939,8 @@ const DashboardHome = () => {
                     detallePenalidad: res.data.detallePenalidad || [],
                     recentSavings: res.data.recentSavings || [],
                     recentPayments: res.data.recentPayments || [],
+                    proximosVencimientos30d: res.data.proximosVencimientos30d || { count: 0, monto: 0, socios: 0 },
+                    sociosAlDiaMes: res.data.sociosAlDiaMes || { count: 0, total: 0 },
                     timestamp: res.data.timestamp
                 });
             }
@@ -2453,11 +2468,11 @@ const DashboardHome = () => {
                 </h2>
                 <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                     <StatCard
-                        title="Total Socios"
+                        title="Socios del Fondo"
                         value={loading ? '...' : (stats?.clientsCount || 0)}
                         description={
                             statusFilter === 'Todos'
-                                ? `${stats?.activeClientsCount || 0} Activos, ${stats?.inactiveClientsCount || 0} Inactivos`
+                                ? `${stats?.activeClientsCount || 0} activos · ${stats?.inactiveClientsCount || 0} inactivos`
                                 : `Socios ${statusFilter}`
                         }
                         icon={Users}
@@ -2465,42 +2480,42 @@ const DashboardHome = () => {
                         onClick={() => handleCardClick('/admin/clients/list')}
                     />
                     <StatCard
-                        title="Capital Ahorrado"
+                        title="Ahorros Mensuales"
                         value={loading ? '...' : `$${Number(stats?.totalSavings || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
-                        description="Abonos de socios activos"
+                        description="Abonos acumulados · socios activos"
                         icon={PiggyBank}
                         color="text-green-500"
                         onClick={() => handleCardClick('/admin/savings/list', { type: 'Mensual' })}
                     />
                     <StatCard
-                        title="Total Aportes Iniciales"
+                        title="Base Patrimonial"
                         value={loading ? '...' : `$${Number(stats?.totalInitialContributions || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
-                        description="Aportes de socios Activos"
+                        description="Capital inicial de socios activos"
                         icon={Database}
                         color="text-amber-500"
                         onClick={() => handleCardClick('/admin/contributions/initial-list')}
                     />
                     <StatCard
-                        title="Total Ahorrado"
+                        title="Patrimonio de Socios"
                         value={loading ? '...' : `$${Number(stats?.totalAhorradoGeneral || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
-                        description="Aportes + Abonos de activos"
+                        description="Ahorros + aportes consolidados"
                         icon={PiggyBank}
                         color="text-emerald-700"
                         onClick={() => handleCardClick('/admin/savings/list')}
                     />
                     <StatCard
-                        title="Días de Penalización"
+                        title="Días en Retraso"
                         value={loading ? '...' : (stats?.totalPenaltyDays || 0)}
-                        description="Acumulado (Año actual)"
+                        description="Mora en ahorros · año en curso"
                         icon={AlertCircle}
                         color="text-rose-500"
                         textColor={stats?.totalPenaltyDays > 0 ? 'text-rose-600' : 'text-gray-900'}
                         onClick={() => handleCardClick('/admin/savings/list', { status: 'Penalizacion' })}
                     />
                     <StatCard
-                        title="Valor Penalizado"
+                        title="Recargos por Mora"
                         value={loading ? '...' : `$${Number(stats?.totalPenaltyValue || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
-                        description="Total recargos (Año actual)"
+                        description="Cobros por retraso · año actual"
                         icon={DollarSign}
                         color="text-amber-500"
                         onClick={() => setShowPenaltyModal(true)}
@@ -2517,33 +2532,33 @@ const DashboardHome = () => {
                 {/* Fila 1: flujo de capital */}
                 <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 mb-4">
                     <StatCard
-                        title="Total Valor Prestado"
+                        title="Capital Desembolsado"
                         value={loading ? '...' : `$${Number(stats?.totalPrestamos || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
-                        description={`${stats?.totalPrestamosCount || 0} préstamos desembolsados`}
+                        description={`${stats?.totalPrestamosCount || 0} préstamos entregados`}
                         icon={DollarSign}
                         color="text-emerald-500"
                         onClick={() => handleCardClick('/admin/disbursed-loans/list')}
                     />
                     <StatCard
-                        title="Cartera Activa"
+                        title="Cartera al Día"
                         value={loading ? '...' : `$${Number(stats?.carteraDia || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
-                        description={`${stats?.carteraDiaCount || 0} cuotas al día`}
+                        description={`${stats?.carteraDiaCount || 0} cuotas vigentes`}
                         icon={TrendingUp}
                         color="text-emerald-600"
                         onClick={() => handleCardClick('/admin/payments/list', { estadoPrestamo: 'Activo' })}
                     />
                     <StatCard
-                        title="Total Cuotas Pagadas"
+                        title="Cuotas Recaudadas"
                         value={loading ? '...' : `$${Number(stats?.totalCuotasPagadas || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
-                        description={`${stats?.recaudoCuotasCount || 0} cuotas recaudadas`}
+                        description={`${stats?.recaudoCuotasCount || 0} pagos completados`}
                         icon={CheckCircle}
                         color="text-blue-600"
                         onClick={() => handleCardClick('/admin/payments/list')}
                     />
                     <StatCard
-                        title="Cartera en Mora"
+                        title="Mora de Cartera"
                         value={loading ? '...' : `$${Number(stats?.moraCarteraEP || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
-                        description="Cuotas con fecha vencida"
+                        description="Cuotas con vencimiento superado"
                         icon={AlertTriangle}
                         color="text-red-500"
                         customBg="linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)"
@@ -2553,32 +2568,32 @@ const DashboardHome = () => {
                 {/* Fila 2: flujo de intereses */}
                 <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
                     <StatCard
-                        title="Total Préstamos + Intereses"
+                        title="Cartera Total"
                         value={loading ? '...' : `$${Number(stats?.totalPrestamosMasIntereses || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
-                        description="Capital + intereses acumulados"
+                        description="Capital + intereses del portafolio"
                         icon={Activity}
                         color="text-rose-500"
                     />
                     <StatCard
-                        title="Intereses Esperados"
+                        title="Intereses Proyectados"
                         value={loading ? '...' : `$${Number(stats?.totalIntereses || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
-                        description="Total intereses agendados"
+                        description="Intereses agendados del portafolio"
                         icon={BarChart3}
                         color="text-purple-500"
                         onClick={() => handleCardClick('/admin/payments/list')}
                     />
                     <StatCard
-                        title="Intereses Recaudados"
+                        title="Intereses Cobrados"
                         value={loading ? '...' : `$${Number(stats?.totalInteresesPagados || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
-                        description="Intereses cobrados"
+                        description="Ingreso por cartera crediticia"
                         icon={TrendingUp}
                         color="text-brand-primary"
                         onClick={() => handleCardClick('/admin/payments/list', { estado: 'Pago' })}
                     />
                     <StatCard
-                        title="Intereses por Cobrar"
+                        title="Intereses Pendientes"
                         value={loading ? '...' : `$${Math.max(0, (stats?.totalIntereses || 0) - (stats?.totalInteresesPagados || 0)).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
-                        description="Intereses pendientes de cobro"
+                        description="Por recaudar al cierre del año"
                         icon={Clock}
                         color="text-indigo-500"
                         customBg="linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%)"
@@ -2594,31 +2609,169 @@ const DashboardHome = () => {
                 </h2>
                 <div className="grid gap-4 grid-cols-1 md:grid-cols-3">
                     <StatCard
-                        title="Saldo en Banco"
+                        title="Caja Disponible"
                         value={loading ? '...' : `$${Number(stats?.saldoEnBanco || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
-                        description="Total Ahorrado - Prestado + Pagado"
+                        description="Balance líquido del fondo"
                         icon={nuLogo}
                         customBg="linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)"
                         isDark={false}
                     />
                     <StatCard
-                        title="Rentabilidad Caja NU"
+                        title="Rendimiento Cuenta NU"
                         value={loading ? '...' : `$${Number(stats?.rentabilidadCajaNU || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
-                        description="Rendimientos generados"
+                        description="Intereses generados por depósitos"
                         icon={nuLogo}
                         customBg="linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)"
                         isDark={false}
                     />
                     <StatCard
-                        title="Saldo Banco + Rentabilidad Caja NU"
+                        title="Disponible Total"
                         value={loading ? '...' : `$${Number((stats?.saldoEnBanco || 0) + (stats?.rentabilidadCajaNU || 0)).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
-                        description="Balance total consolidado"
+                        description="Caja + rendimientos consolidados"
                         icon={nuLogo}
                         customBg="linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)"
                         isDark={false}
                     />
                 </div>
             </div>
+
+            {/* --- SECCIÓN 4: INDICADORES DE RIESGO Y RENDIMIENTO --- */}
+            {(() => {
+                const disponible = (stats?.saldoEnBanco || 0) + (stats?.rentabilidadCajaNU || 0);
+                const carteraTotal = (stats?.carteraDia || 0) + (stats?.moraCarteraEP || 0);
+                const mora = stats?.moraCarteraEP || 0;
+                const sociosMora = stats?.sociosMoraCount || 0;
+                const totalSocios = stats?.activeClientsCount || 1;
+
+                // Índice de Mora: % de la cartera que está vencida
+                const indiceMora = carteraTotal > 0 ? (mora / carteraTotal) * 100 : 0;
+                const moraColor = indiceMora <= 3 ? 'from-emerald-50' : indiceMora <= 5 ? 'from-amber-50' : 'from-red-50';
+                const moraText = indiceMora <= 3 ? 'text-emerald-700' : indiceMora <= 5 ? 'text-amber-700' : 'text-red-700';
+                const moraBadge = indiceMora <= 3 ? 'bg-emerald-100 text-emerald-700' : indiceMora <= 5 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700';
+                const moraBadgeLabel = indiceMora <= 3 ? '● Bajo' : indiceMora <= 5 ? '▲ Moderado' : '⚠ Alto';
+
+                // Cobertura de Mora: cuántas veces el efectivo cubre la mora
+                const cobertura = mora > 0 ? disponible / mora : null;
+                const coberturaColor = cobertura === null ? 'from-emerald-50' : cobertura >= 5 ? 'from-emerald-50' : cobertura >= 2 ? 'from-amber-50' : 'from-red-50';
+                const coberturaText = cobertura === null ? 'text-emerald-700' : cobertura >= 5 ? 'text-emerald-700' : cobertura >= 2 ? 'text-amber-700' : 'text-red-700';
+                const coberturaBadge = cobertura === null ? 'bg-emerald-100 text-emerald-700' : cobertura >= 5 ? 'bg-emerald-100 text-emerald-700' : cobertura >= 2 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700';
+                const coberturaBadgeLabel = cobertura === null ? '✓ Sin mora' : cobertura >= 5 ? '✓ Sólida' : cobertura >= 2 ? '● Adecuada' : '⚠ Débil';
+
+                // Socios en Mora: count y % del total
+                const sociosMoraPct = totalSocios > 0 ? (sociosMora / totalSocios) * 100 : 0;
+                const sociosMoraColor = sociosMora === 0 ? 'from-emerald-50' : sociosMoraPct <= 10 ? 'from-amber-50' : 'from-red-50';
+                const sociosMoraText = sociosMora === 0 ? 'text-emerald-700' : sociosMoraPct <= 10 ? 'text-amber-700' : 'text-red-700';
+                const sociosMoraBadge = sociosMora === 0 ? 'bg-emerald-100 text-emerald-700' : sociosMoraPct <= 10 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700';
+                const sociosMoraBadgeLabel = sociosMora === 0 ? '✓ Ninguno' : `${sociosMoraPct.toFixed(0)}% del total`;
+
+                // Retorno del Capital: rentabilidad total / patrimonio activos
+                const rentabilidadTotal = (stats?.totalInteresesPagados || 0) + (stats?.rentabilidadCajaNU || 0) + (stats?.totalPenaltyValue || 0);
+                const patrimonio = stats?.totalAhorradoGeneral || 1;
+                const retornoCapital = (rentabilidadTotal / patrimonio) * 100;
+                const retornoColor = retornoCapital >= 5 ? 'from-emerald-50' : retornoCapital >= 2 ? 'from-amber-50' : 'from-gray-50';
+                const retornoText = retornoCapital >= 5 ? 'text-emerald-700' : retornoCapital >= 2 ? 'text-amber-700' : 'text-gray-600';
+                const retornoBadge = retornoCapital >= 5 ? 'bg-emerald-100 text-emerald-700' : retornoCapital >= 2 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600';
+                const retornoBadgeLabel = retornoCapital >= 5 ? '▲ Saludable' : retornoCapital >= 2 ? '● Moderado' : '▼ Revisar';
+
+                return (
+                    <div className="mb-8">
+                        <h2 className="text-lg font-bold text-brand-primary mb-4 flex items-center gap-2">
+                            <ShieldCheck className="w-5 h-5 text-rose-600" /> Indicadores de Riesgo y Rendimiento
+                        </h2>
+                        <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+
+                            {/* Índice de Mora */}
+                            <div className={`bg-gradient-to-br ${moraColor} to-white rounded-xl border border-gray-100 p-5 flex flex-col gap-3 shadow-sm`}>
+                                <div className="flex items-center justify-between">
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Índice de Mora</p>
+                                    <AlertTriangle className={`h-4 w-4 ${moraText}`} />
+                                </div>
+                                <p className={`text-[28px] font-black font-mono leading-none ${loading ? 'text-gray-300' : moraText}`}>
+                                    {loading ? '...' : `${indiceMora.toFixed(1)}%`}
+                                </p>
+                                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full self-start ${moraBadge}`}>{moraBadgeLabel}</span>
+                                <div>
+                                    <div className="relative flex h-1.5 rounded-full overflow-hidden">
+                                        <div className="bg-emerald-400 w-[30%]" />
+                                        <div className="bg-amber-400 w-[20%]" />
+                                        <div className="bg-red-400 flex-1" />
+                                        <div className="absolute top-0 bottom-0 w-0.5 bg-gray-900 rounded-full" style={{ left: `${Math.min(indiceMora * 4, 98)}%` }} />
+                                    </div>
+                                    <p className="text-[8px] text-gray-400 font-bold mt-1">
+                                        {loading ? '' : `$${Number(mora).toLocaleString('es-CO')} de $${Number(carteraTotal).toLocaleString('es-CO')} cartera`}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Socios en Mora */}
+                            <div className={`bg-gradient-to-br ${sociosMoraColor} to-white rounded-xl border border-gray-100 p-5 flex flex-col gap-3 shadow-sm`}>
+                                <div className="flex items-center justify-between">
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Socios en Mora</p>
+                                    <Users className={`h-4 w-4 ${sociosMoraText}`} />
+                                </div>
+                                <div className="flex items-end gap-1.5">
+                                    <p className={`text-[28px] font-black font-mono leading-none ${loading ? 'text-gray-300' : sociosMoraText}`}>
+                                        {loading ? '...' : sociosMora}
+                                    </p>
+                                    {!loading && <p className="text-[13px] font-bold text-gray-400 mb-0.5">de {totalSocios}</p>}
+                                </div>
+                                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full self-start ${sociosMoraBadge}`}>{sociosMoraBadgeLabel}</span>
+                                <div>
+                                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                        <div className={`h-full rounded-full ${sociosMora === 0 ? 'bg-emerald-400' : sociosMoraPct <= 10 ? 'bg-amber-400' : 'bg-red-400'}`}
+                                            style={{ width: `${Math.min(sociosMoraPct, 100)}%` }} />
+                                    </div>
+                                    <p className="text-[8px] text-gray-400 font-bold mt-1">
+                                        {loading ? '' : sociosMora === 0 ? 'Todos al día con sus pagos' : `${sociosMoraPct.toFixed(0)}% de socios activos`}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Cobertura de Mora */}
+                            <div className={`bg-gradient-to-br ${coberturaColor} to-white rounded-xl border border-gray-100 p-5 flex flex-col gap-3 shadow-sm`}>
+                                <div className="flex items-center justify-between">
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Cobertura de Mora</p>
+                                    <ShieldCheck className={`h-4 w-4 ${coberturaText}`} />
+                                </div>
+                                <p className={`text-[28px] font-black font-mono leading-none ${loading ? 'text-gray-300' : coberturaText}`}>
+                                    {loading ? '...' : cobertura === null ? '∞' : `${cobertura.toFixed(1)}×`}
+                                </p>
+                                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full self-start ${coberturaBadge}`}>{coberturaBadgeLabel}</span>
+                                <div>
+                                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                        <div className={`h-full rounded-full ${coberturaText.includes('emerald') ? 'bg-emerald-400' : coberturaText.includes('amber') ? 'bg-amber-400' : 'bg-red-400'}`}
+                                            style={{ width: `${cobertura === null ? 100 : Math.min((cobertura / 10) * 100, 100)}%` }} />
+                                    </div>
+                                    <p className="text-[8px] text-gray-400 font-bold mt-1">
+                                        {loading ? '' : cobertura === null ? 'Sin deuda vencida que cubrir' : `$${Number(disponible).toLocaleString('es-CO')} caja / $${Number(mora).toLocaleString('es-CO')} mora`}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Retorno del Capital */}
+                            <div className={`bg-gradient-to-br ${retornoColor} to-white rounded-xl border border-gray-100 p-5 flex flex-col gap-3 shadow-sm`}>
+                                <div className="flex items-center justify-between">
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Retorno del Capital</p>
+                                    <TrendingUp className={`h-4 w-4 ${retornoText}`} />
+                                </div>
+                                <p className={`text-[28px] font-black font-mono leading-none ${loading ? 'text-gray-300' : retornoText}`}>
+                                    {loading ? '...' : `${retornoCapital.toFixed(1)}%`}
+                                </p>
+                                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full self-start ${retornoBadge}`}>{retornoBadgeLabel}</span>
+                                <div>
+                                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                        <div className={`h-full rounded-full ${retornoCapital >= 5 ? 'bg-emerald-400' : retornoCapital >= 2 ? 'bg-amber-400' : 'bg-gray-300'}`}
+                                            style={{ width: `${Math.min(retornoCapital * 10, 100)}%` }} />
+                                    </div>
+                                    <p className="text-[8px] text-gray-400 font-bold mt-1">
+                                        {loading ? '' : `$${Number(rentabilidadTotal).toLocaleString('es-CO')} ganancia / $${Number(patrimonio).toLocaleString('es-CO')} patrimonio`}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
 
             {/* Charts Row */}
             <div className="w-full">

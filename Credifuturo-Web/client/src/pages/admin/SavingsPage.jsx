@@ -629,6 +629,77 @@ const SavingsPage = () => {
                 </div>
             </div>
 
+            {/* ── Mini-KPI Bar ─────────────────────────────────────────────────── */}
+            {!loading && savings.length > 0 && (() => {
+                const currentYear = new Date().getFullYear();
+                const prevYear = currentYear - 1;
+
+                const abonosSoloMensuales = savings.filter(s => s.type !== 'Aporte Inicial');
+
+                // Ahorro promedio por socio activo (año actual, neto)
+                const porSocioMap = {};
+                abonosSoloMensuales.filter(s => (s.anioAbonado || s.year) === currentYear).forEach(s => {
+                    const id = s.clientId || s.client_id;
+                    porSocioMap[id] = (porSocioMap[id] || 0) + parseFloat(s.valorAhorrado || 0);
+                });
+                const sociosConAhorro = Object.values(porSocioMap);
+                const ahorroPromedio = sociosConAhorro.length > 0
+                    ? sociosConAhorro.reduce((a, b) => a + b, 0) / sociosConAhorro.length : 0;
+
+                // Crecimiento interanual
+                const totalActual = abonosSoloMensuales
+                    .filter(s => (s.anioAbonado || s.year) === currentYear)
+                    .reduce((s, r) => s + parseFloat(r.valorAhorrado || 0), 0);
+                const totalAnterior = abonosSoloMensuales
+                    .filter(s => (s.anioAbonado || s.year) === prevYear)
+                    .reduce((s, r) => s + parseFloat(r.valorAhorrado || 0), 0);
+                const crecimiento = totalAnterior > 0 ? ((totalActual - totalAnterior) / totalAnterior) * 100 : null;
+
+                // Penalidades del año actual
+                const penalidades = savings
+                    .filter(s => (s.anioAbonado || s.year) === currentYear && s.valorAPenalizar > 0)
+                    .reduce((s, r) => s + parseFloat(r.valorAPenalizar || 0), 0);
+                const sociosConPenalidad = new Set(
+                    savings.filter(s => (s.anioAbonado || s.year) === currentYear && s.valorAPenalizar > 0).map(s => s.clientId)
+                ).size;
+
+                const kpis = [
+                    {
+                        label: 'Ahorro Promedio / Socio',
+                        value: `$${Math.round(ahorroPromedio).toLocaleString('es-CO')}`,
+                        sub: `${sociosConAhorro.length} socios con ahorros en ${currentYear}`,
+                        color: 'border-l-emerald-400', icon: '👤',
+                    },
+                    {
+                        label: `Crecimiento vs ${prevYear}`,
+                        value: crecimiento === null ? 'N/A' : `${crecimiento >= 0 ? '+' : ''}${crecimiento.toFixed(1)}%`,
+                        sub: crecimiento === null ? 'Sin datos del año anterior' : crecimiento >= 0 ? `▲ Más que en ${prevYear}` : `▼ Menos que en ${prevYear}`,
+                        color: crecimiento === null ? 'border-l-gray-300' : crecimiento >= 0 ? 'border-l-emerald-400' : 'border-l-red-400',
+                        icon: crecimiento === null ? '📊' : crecimiento >= 0 ? '📈' : '📉',
+                    },
+                    {
+                        label: `Penalidades ${currentYear}`,
+                        value: penalidades > 0 ? `$${Math.round(penalidades).toLocaleString('es-CO')}` : '$0',
+                        sub: penalidades > 0 ? `${sociosConPenalidad} socio(s) con retraso` : 'Sin recargos por mora este año',
+                        color: penalidades > 0 ? 'border-l-amber-400' : 'border-l-emerald-400', icon: penalidades > 0 ? '⚠️' : '✓',
+                    },
+                ];
+                return (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {kpis.map((k, i) => (
+                            <div key={i} className={`bg-white rounded-xl border border-gray-100 border-l-4 ${k.color} p-4 flex items-center gap-3 shadow-sm`}>
+                                <span className="text-2xl flex-shrink-0">{k.icon}</span>
+                                <div>
+                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{k.label}</p>
+                                    <p className="text-xl font-black text-gray-900 font-mono leading-tight">{k.value}</p>
+                                    <p className="text-[10px] text-gray-500 font-medium">{k.sub}</p>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                );
+            })()}
+
             {/* ——— PARTE D: Filter Bar ——— */}
             <Card>
                 <CardContent className="p-4">

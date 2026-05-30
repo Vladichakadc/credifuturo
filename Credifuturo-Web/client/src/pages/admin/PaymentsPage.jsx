@@ -633,6 +633,71 @@ const PaymentsPage = () => {
     // ── Render ────────────────────────────────────────────────────────────────
     return (
         <div className="space-y-6">
+            {/* ── Mini-KPI Bar ────────────────────────────────────────────────── */}
+            {!loading && payments.length > 0 && (() => {
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const in30 = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+                const safeParse = (d) => {
+                    if (!d) return null;
+                    const s = String(d).split('T')[0];
+                    const [y, m, dd] = s.split('-').map(Number);
+                    return (y && m && dd) ? new Date(y, m - 1, dd) : null;
+                };
+
+                const pagadas = payments.filter(p => p.estado === 'Pago');
+                const pendientes = payments.filter(p => p.estado === 'Pendiente');
+                const enMora = payments.filter(p => p.estado === 'Mora');
+                const tasaRecuperacion = payments.length > 0 ? (pagadas.length / payments.length) * 100 : 0;
+
+                const proximas = pendientes.filter(p => {
+                    const f = safeParse(p.fechaPagoMax);
+                    return f && f >= today && f <= in30;
+                });
+                const montoProximas = proximas.reduce((s, p) => s + parseFloat(p.valorCuotaVariable || 0), 0);
+
+                const montoMora = enMora.reduce((s, p) => s + parseFloat(p.valorCuotaVariable || 0), 0);
+
+                const kpis = [
+                    {
+                        label: 'Tasa de Recuperación',
+                        value: `${tasaRecuperacion.toFixed(0)}%`,
+                        sub: `${pagadas.length} de ${payments.length} cuotas cobradas`,
+                        color: tasaRecuperacion >= 70 ? 'border-l-emerald-400' : tasaRecuperacion >= 50 ? 'border-l-amber-400' : 'border-l-red-400',
+                        icon: '✓',
+                    },
+                    {
+                        label: 'Vencen en 30 Días',
+                        value: proximas.length,
+                        sub: `$${Math.round(montoProximas).toLocaleString('es-CO')} por cobrar`,
+                        color: proximas.length > 0 ? 'border-l-amber-400' : 'border-l-emerald-400',
+                        icon: '📅',
+                    },
+                    {
+                        label: 'Cuotas en Mora',
+                        value: enMora.length,
+                        sub: enMora.length > 0 ? `$${Math.round(montoMora).toLocaleString('es-CO')} vencidos` : 'Sin cuotas vencidas',
+                        color: enMora.length === 0 ? 'border-l-emerald-400' : 'border-l-red-400',
+                        icon: enMora.length === 0 ? '✓' : '⚠️',
+                    },
+                ];
+                return (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {kpis.map((k, i) => (
+                            <div key={i} className={`bg-white rounded-xl border border-gray-100 border-l-4 ${k.color} p-4 flex items-center gap-3 shadow-sm`}>
+                                <span className="text-2xl flex-shrink-0">{k.icon}</span>
+                                <div>
+                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{k.label}</p>
+                                    <p className="text-xl font-black text-gray-900 font-mono leading-tight">{k.value}</p>
+                                    <p className="text-[10px] text-gray-500 font-medium">{k.sub}</p>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                );
+            })()}
+
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between pb-3">
                     <CardTitle className="text-xl font-bold text-brand-primary flex items-center gap-2">
