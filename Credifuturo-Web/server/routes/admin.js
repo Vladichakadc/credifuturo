@@ -2656,13 +2656,24 @@ router.get('/dashboard-stats', async (req, res) => {
 
         // ── 3.6 AHORRO POR AÑO (no acumulable) ──
         // Suma de amount agrupada por año de transacción (year) y tipo, solo socios
-        // activos. Cada año es independiente (NO acumulado): mensual + aportes del año.
+        // activos y solo registros con status='Abono' (excluye distribuciones de
+        // intereses, devoluciones, descuentos por penalización, etc.).
+        // Cada año es independiente (NO acumulado): mensual + aportes del año.
         // Usamos `year` (fecha en que entró el dinero) porque parte limpiamente todos
         // los registros — los "Aporte Inicial" casi nunca tienen anioAbonado.
         const ahorroPorAnioRows = await Saving.findAll({
             attributes: ['year', 'type', [fn('SUM', col('amount')), 'tot']],
-            where: { year: { [Op.ne]: null } },
-            include: [{ model: Client, where: effectiveClientWhere, required: true, attributes: [] }],
+            where: {
+                year: { [Op.ne]: null },
+                [Op.or]: [
+                    { status: 'Abono' },
+                    { type: 'Aporte Inicial' }
+                ]
+            },
+            include: [{
+                model: Client,
+                attributes: []
+            }],
             group: ['year', 'type'],
             raw: true
         });

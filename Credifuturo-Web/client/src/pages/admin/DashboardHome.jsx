@@ -760,7 +760,21 @@ const SavingsByYearChart = ({ data, title = 'Ahorro de los Socios por Año', com
                 <XAxis dataKey="anio" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 900, fill: '#374151' }} />
                 <YAxis hide domain={[0, 'dataMax + 4000000']} />
                 <Tooltip cursor={{ fill: 'rgba(16,185,129,0.06)', radius: 8 }} content={<YearTooltip />} />
-                <Bar dataKey="mensual" stackId="a" fill="url(#sbyMensual)" barSize={55} animationDuration={1100} animationEasing="ease-out" />
+                <Bar dataKey="mensual" stackId="a" fill="url(#sbyMensual)" barSize={55} animationDuration={1100} animationEasing="ease-out">
+                    <LabelList
+                        dataKey="total"
+                        position="top"
+                        content={({ x, y, width, value, index }) => {
+                            const row = rows[index];
+                            if (!row || row.aportes > 0) return null;
+                            return (
+                                <text x={x + width / 2} y={y - 8} textAnchor="middle" fontSize={12} fontWeight="900" fill="#0f172a">
+                                    {fmtCOP(row.total)}
+                                </text>
+                            );
+                        }}
+                    />
+                </Bar>
                 <Bar dataKey="aportes" stackId="a" fill="url(#sbyAportes)" radius={[6, 6, 0, 0]} barSize={55} animationDuration={1100} animationBegin={160} animationEasing="ease-out">
                     <LabelList dataKey="total" position="top" formatter={(v) => fmtCOP(v)} style={{ fontSize: '12px', fontWeight: '900', fill: '#0f172a' }} />
                 </Bar>
