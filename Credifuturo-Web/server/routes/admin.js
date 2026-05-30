@@ -382,39 +382,6 @@ router.delete('/clients/:id', async (req, res) => {
     }
 });
 
-// Migración masiva: reasigna correos @credifuturo.com a todos los socios
-router.post('/clients/bulk-update-emails', verifyToken, requireRole('admin'), async (_req, res) => {
-    try {
-        const clients = await Client.findAll({ order: [['id', 'ASC']] });
-        let updated = 0;
-        const errors = [];
-
-        for (const client of clients) {
-            try {
-                const newEmail = await generateUniqueEmail(client.name, client.surname1, client.id);
-                if (!newEmail) {
-                    errors.push({ id: client.id, reason: 'Nombre/apellido vacíos' });
-                    continue;
-                }
-                await client.update({ email: newEmail });
-                updated++;
-            } catch (err) {
-                errors.push({ id: client.id, reason: err.message });
-            }
-        }
-
-        res.json({
-            ok: true,
-            updated,
-            total: clients.length,
-            errors: errors.length > 0 ? errors : undefined,
-            message: `${updated} de ${clients.length} socios actualizados.`
-        });
-    } catch (err) {
-        res.status(500).json({ ok: false, error: err.message });
-    }
-});
-
 router.get('/clients/search', async (req, res) => {
     try {
         const { query } = req.query;

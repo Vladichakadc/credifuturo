@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../../config/api';
 import { notifyUpdate } from '../../utils/sync';
-import { Save, Search, Trash2, X, AlertCircle, CheckCircle, Download, KeyRound, Bell, RefreshCw, XCircle, FileText, User, MapPin } from 'lucide-react';
+import { Save, Search, Trash2, X, AlertCircle, CheckCircle, Download, KeyRound, Bell, XCircle, FileText, User, MapPin } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Button } from '../../components/ui/Button';
 import { Input, Label, FormField } from '../../components/ui/Input';
@@ -23,7 +23,6 @@ const ClientsPage = () => {
     const [loading, setLoading] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [emailManuallySet, setEmailManuallySet] = useState(false);
-    const [bulkUpdating, setBulkUpdating] = useState(false);
     const [clients, setClients] = useState([]); // For export purposes
 
     // Search State
@@ -189,20 +188,6 @@ const ClientsPage = () => {
         toast.success('Reporte de Socios descargado: Tabla_Clientes.xlsx');
     };
 
-    const handleBulkUpdateEmails = async () => {
-        if (!window.confirm('¿Actualizar los correos de TODOS los socios al formato nombre.apellido@credifuturo.com?\nEsta acción sobreescribirá los correos actuales.')) return;
-        setBulkUpdating(true);
-        try {
-            const res = await api.post('/admin/clients/bulk-update-emails');
-            toast.success(res.data.message || 'Correos actualizados.');
-            fetchClients();
-        } catch (error) {
-            toast.error('Error: ' + (error.response?.data?.error || error.message));
-        } finally {
-            setBulkUpdating(false);
-        }
-    };
-
     // ── Solicitudes de recuperación de contraseña ─────────────────────────
     const [resetRequests, setResetRequests] = useState([]);
     const [showDropdown, setShowDropdown] = useState(false);
@@ -326,10 +311,6 @@ const ClientsPage = () => {
                 <div className="flex gap-2">
                     <Button variant="secondary" onClick={handleExport}>
                         <Download className="mr-2 h-4 w-4" /> Exportar Excel
-                    </Button>
-                    <Button variant="secondary" onClick={handleBulkUpdateEmails} disabled={bulkUpdating}>
-                        <RefreshCw className={`mr-2 h-4 w-4 ${bulkUpdating ? 'animate-spin' : ''}`} />
-                        {bulkUpdating ? 'Actualizando...' : 'Actualizar Correos'}
                     </Button>
                     <div className="relative" ref={dropdownRef}>
                         <Button variant="secondary" onClick={() => { setShowDropdown(v => !v); fetchResetRequests(); }} className="relative">

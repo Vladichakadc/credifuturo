@@ -26,9 +26,9 @@ Si al iniciar ves errores como "Cannot find module express" o "'vite' no se reco
 
 ## Acceso
 
-*   **Administrador**:
-    *   Correo: `admin@credifuturo.com`
-    *   Contraseña: `admin123`
+El login se realiza con **cédula** y contraseña.
+
+*   **Administrador**: la cédula del administrador se asigna como cualquier socio en la base de datos. En el primer arranque (si no existe ningún admin) el sistema crea uno con una contraseña temporal aleatoria que se imprime una sola vez en la consola del servidor; ese admin queda marcado con `mustChangePassword=true` para forzar el cambio en el primer ingreso.
 
 ## Solución Manual
 

@@ -95,11 +95,13 @@ Both `routes/auth.js` (token issuance) and `middleware/authMiddleware.js` (token
 Relationships: `Client` 1→N `Saving`, `DisbursedLoan`, and `LoanPayment`. `DisbursedLoan` 1→N `LoanPayment` (via `idVm` string match, not a formal FK). Associations are declared in `models/index.js`.
 
 ### Authentication & Authorization
-- Login returns a JWT stored in `localStorage`; all API requests send it as Bearer token via the `api.js` interceptor
-- `authMiddleware.js` decodes the token and attaches `req.user` `{ id, role, name, customerId, email, mustChangePassword }`; `requireRole('admin')` gates admin routes and `requireFreshPassword` blocks everything except change-password when `mustChangePassword` is true
-- **Admin bootstrap**: on startup, if no admin exists, `server.js` auto-seeds `admin@credifuturo.com` with a **random** temp password printed once to the server console and `mustChangePassword=true`. There is no fixed `admin123` password (the README still shows the old default — it is outdated).
-- Default member password is `'123'` (hashed) set during import; members are expected to change it
-- Passwords hashed with bcryptjs; `/login` and `/request-reset` are rate-limited (express-rate-limit) against brute force
+- **Credential is `cedula` + password** (not email). `routes/auth.js` `POST /login` reads `{ cedula, password }` and looks up `Client.findOne({ where: { cedula: cedula.trim() } })`. Email remains stored on the Client record but is no longer used to authenticate. The "Olvidé mi contraseña" flow (`POST /request-reset`) still accepts either cédula OR email — that's the recovery path, not the login path.
+- Login returns a JWT stored in `localStorage`; all API requests send it as Bearer token via the `api.js` interceptor. JWT payload: `{ id, role, name, customerId, cedula, email, mustChangePassword }`.
+- `authMiddleware.js` decodes the token and attaches the payload above to `req.user`; `requireRole('admin')` gates admin routes and `requireFreshPassword` blocks everything except change-password when `mustChangePassword` is true.
+- **Brute-force detector** (`services/bruteForceDetector.js`) keys on `cedula` (5 fails / 10 min triggers an alert), in addition to the IP-based rate limiter (10 / 15 min).
+- **Admin bootstrap**: on startup, if no admin exists, `server.js` auto-seeds an admin record with a **random** temp password printed once to the server console and `mustChangePassword=true`. The seed sets `email='admin@credifuturo.com'` but, since login is by cédula, an admin record with a real cédula must exist for production use (the current prod admin is `cedula=14297227`).
+- Default member password is `'123'` (hashed) set during import; members are expected to change it.
+- Passwords hashed with bcryptjs; `/login` and `/request-reset` are rate-limited (express-rate-limit) against brute force.
 
 ### Business Identifiers
 Business keys follow a sequential naming convention: `VM_001` (loans/`idVm`), `SOL_001` (applications), `P_001` / `id_ep` (payment quotas). These differ from database auto-increment IDs.

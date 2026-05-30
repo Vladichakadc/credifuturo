@@ -5,10 +5,10 @@ import logo from '../assets/logo.jpg';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '../components/ui/Card';
 import { Input, Label } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
-import { Lock, Mail, AlertCircle, X, Eye, EyeOff } from 'lucide-react';
+import { Lock, Fingerprint, AlertCircle, X, Eye, EyeOff } from 'lucide-react';
 
 const Login = ({ setUser }) => {
-    const [email, setEmail] = useState('');
+    const [cedula, setCedula] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
@@ -28,7 +28,7 @@ const Login = ({ setUser }) => {
         setIsLoading(true);
 
         try {
-            const res = await api.post('/auth/login', { email, password });
+            const res = await api.post('/auth/login', { cedula: cedula.trim(), password });
             localStorage.setItem('token', res.data.token);
             localStorage.setItem('user', JSON.stringify(res.data.user));
             setUser(res.data.user);
@@ -41,7 +41,7 @@ const Login = ({ setUser }) => {
                 navigate('/dashboard');
             }
         } catch (err) {
-            setError(err.response?.data?.message || 'Credenciales inválidas. Verifique su correo y contraseña.');
+            setError(err.response?.data?.message || 'Credenciales inválidas. Verifique su cédula y contraseña.');
         } finally {
             setIsLoading(false);
         }
@@ -94,17 +94,19 @@ const Login = ({ setUser }) => {
                             </div>
                         )}
                         <div className="space-y-2">
-                            <Label htmlFor="email">Correo Electrónico</Label>
+                            <Label htmlFor="cedula">Cédula</Label>
                             <div className="relative">
-                                <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                                <Fingerprint className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
                                 <Input
-                                    id="email"
-                                    type="email"
-                                    placeholder="usuario@credifuturo.com"
+                                    id="cedula"
+                                    type="text"
+                                    inputMode="numeric"
+                                    autoComplete="username"
+                                    placeholder="Ej: 12345678"
                                     className="pl-9"
                                     required
-                                    value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
+                                    value={cedula}
+                                    onChange={(e) => setCedula(e.target.value)}
                                     disabled={isLoading}
                                 />
                             </div>

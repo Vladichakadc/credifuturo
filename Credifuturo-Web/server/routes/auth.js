@@ -37,36 +37,40 @@ if (!JWT_SECRET) {
 
 // Login
 router.post('/login', loginLimiter, async (req, res) => {
-    const { email, password } = req.body;
+    const { cedula, password } = req.body;
     const ip = getClientIp(req);
+    const cedulaTrim = typeof cedula === 'string' ? cedula.trim() : '';
     try {
-        const user = await Client.findOne({ where: { email } });
+        if (!cedulaTrim || !password) {
+            return res.status(400).json({ message: 'Ingrese su cédula y contraseña.' });
+        }
+        const user = await Client.findOne({ where: { cedula: cedulaTrim } });
         if (!user) {
-            logSecurityEvent('LOGIN_FAIL_USER_NOT_FOUND', { email, ip });
-            recordLoginFailure({ email, ip, reason: 'USER_NOT_FOUND' });
+            logSecurityEvent('LOGIN_FAIL_USER_NOT_FOUND', { cedula: cedulaTrim, ip });
+            recordLoginFailure({ cedula: cedulaTrim, ip, reason: 'USER_NOT_FOUND' });
             return res.status(401).json({ message: 'Credenciales inválidas' });
         }
 
         if (user.estatus === 'Desactivado') {
-            logSecurityEvent('LOGIN_FAIL_DEACTIVATED', { userId: user.id, email, ip });
-            recordLoginFailure({ email, ip, reason: 'DEACTIVATED' });
+            logSecurityEvent('LOGIN_FAIL_DEACTIVATED', { userId: user.id, cedula: cedulaTrim, ip });
+            recordLoginFailure({ cedula: cedulaTrim, ip, reason: 'DEACTIVATED' });
             return res.status(403).json({ message: 'Usuario desactivado. No tiene acceso al sistema.' });
         }
 
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
-            logSecurityEvent('LOGIN_FAIL_BAD_PASSWORD', { userId: user.id, email, ip });
-            recordLoginFailure({ email, ip, reason: 'BAD_PASSWORD' });
+            logSecurityEvent('LOGIN_FAIL_BAD_PASSWORD', { userId: user.id, cedula: cedulaTrim, ip });
+            recordLoginFailure({ cedula: cedulaTrim, ip, reason: 'BAD_PASSWORD' });
             return res.status(401).json({ message: 'Credenciales inválidas' });
         }
 
         const role = user.role;
         const mustChangePassword = !!user.mustChangePassword;
-        logSecurityEvent('LOGIN_SUCCESS', { userId: user.id, email, role, ip, mustChangePassword });
-        recordLoginSuccess({ email, ip });
+        logSecurityEvent('LOGIN_SUCCESS', { userId: user.id, cedula: user.cedula, role, ip, mustChangePassword });
+        recordLoginSuccess({ cedula: user.cedula, ip });
 
         const token = jwt.sign(
-            { id: user.id, role, name: user.name, customerId: user.customerId, email: user.email, mustChangePassword },
+            { id: user.id, role, name: user.name, customerId: user.customerId, cedula: user.cedula, email: user.email, mustChangePassword },
             JWT_SECRET,
             { expiresIn: '8h' }
         );
@@ -118,7 +122,7 @@ router.put('/change-password', verifyToken, async (req, res) => {
 
         // Emit new token with mustChangePassword = false
         const newToken = jwt.sign(
-            { id: user.id, role: user.role, name: user.name, customerId: user.customerId, email: user.email, mustChangePassword: false },
+            { id: user.id, role: user.role, name: user.name, customerId: user.customerId, cedula: user.cedula, email: user.email, mustChangePassword: false },
             JWT_SECRET,
             { expiresIn: '8h' }
         );
