@@ -310,12 +310,16 @@ const RankingModal = ({ onClose }) => {
     const [ranking, setRanking] = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
+    const [devolucionTotal, setDevolucionTotal] = useState(0);
 
     useEffect(() => {
         const fetchRanking = async () => {
             try {
                 const res = await api.get('/admin/savings/ranking');
-                if (res.data.ok && Array.isArray(res.data.data)) setRanking(res.data.data);
+                if (res.data.ok && Array.isArray(res.data.data)) {
+                    setRanking(res.data.data);
+                    setDevolucionTotal(res.data.totalDevolucionIntereses || 0);
+                }
             } catch (err) {
                 console.error('Error fetching ranking:', err.message);
             } finally {
@@ -354,7 +358,8 @@ const RankingModal = ({ onClose }) => {
     const getInitials = (name) => name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase();
     const fmt = (v) => `$${Number(v).toLocaleString('es-CO')}`;
 
-    const total = ranking.reduce((sum, r) => sum + Number(r.totalNetSavings), 0);
+    const totalBruto = ranking.reduce((sum, r) => sum + Number(r.totalNetSavings), 0);
+    const total = totalBruto - devolucionTotal;
 
     const maxVal = ranking.length > 0 ? Number(ranking[0].totalNetSavings) : 1;
 
@@ -441,19 +446,32 @@ const RankingModal = ({ onClose }) => {
 
                             {/* KPI Cards — 2 tarjetas + análisis comportamiento */}
                             <div className="grid grid-cols-2 gap-3">
-                                {[
-                                    { icon: '👥', label: 'Socios activos', value: ranking.length, sub: 'con ahorro registrado', bg: 'bg-green-50' },
-                                    { icon: '💰', label: 'Total acumulado', value: fmt(total), sub: 'fondo total ahorros', bg: 'bg-blue-50' },
-                                ].map(kpi => (
-                                    <div key={kpi.label} className="bg-white border border-gray-100 rounded-xl p-4 flex items-center gap-3 shadow-sm">
-                                        <div className={`w-10 h-10 ${kpi.bg} rounded-xl flex items-center justify-center text-lg flex-shrink-0`}>{kpi.icon}</div>
-                                        <div className="min-w-0">
-                                            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{kpi.label}</div>
-                                            <div className="text-base font-black text-gray-900 leading-tight truncate">{kpi.value}</div>
-                                            <div className="text-[10px] text-gray-400">{kpi.sub}</div>
-                                        </div>
+                                {/* Socios activos */}
+                                <div className="bg-white border border-gray-100 rounded-xl p-4 flex items-center gap-3 shadow-sm">
+                                    <div className="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center text-lg flex-shrink-0">👥</div>
+                                    <div className="min-w-0">
+                                        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Socios activos</div>
+                                        <div className="text-base font-black text-gray-900 leading-tight">{ranking.length}</div>
+                                        <div className="text-[10px] text-gray-400">con ahorro registrado</div>
                                     </div>
-                                ))}
+                                </div>
+
+                                {/* Total acumulado (neto = bruto − devolución intereses) */}
+                                <div className="bg-white border border-blue-100 rounded-xl p-4 flex items-start gap-3 shadow-sm">
+                                    <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-lg flex-shrink-0">💰</div>
+                                    <div className="min-w-0 flex-1">
+                                        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Total acumulado</div>
+                                        <div className="text-base font-black text-blue-700 leading-tight">{fmt(total)}</div>
+                                        <div className="text-[10px] text-gray-400">fondo neto de ahorros</div>
+                                        {devolucionTotal > 0 && (
+                                            <div className="mt-1 flex items-center gap-1">
+                                                <span className="text-[9px] text-purple-500 font-semibold">
+                                                    − {fmt(devolucionTotal)} devolución intereses
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
 
                             {/* Panel de análisis profundo */}

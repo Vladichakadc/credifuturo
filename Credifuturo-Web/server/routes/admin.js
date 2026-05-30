@@ -928,7 +928,15 @@ router.get('/savings/ranking', async (req, res) => {
             };
         }).filter(Boolean).sort((a, b) => b.totalNetSavings - a.totalNetSavings);
 
-        res.json({ ok: true, data });
+        const devolucionSum = await Saving.sum('amount', {
+            where: {
+                clientId: { [Sequelize.Op.in]: clients.map(c => c.id) },
+                status: { [Sequelize.Op.like]: '%Devolucion Total Intereses%' }
+            }
+        }) || 0;
+        const totalDevolucionIntereses = Math.round(parseFloat(devolucionSum));
+
+        res.json({ ok: true, data, totalDevolucionIntereses });
     } catch (err) {
         console.error('Error en /savings/ranking:', err);
         res.status(500).json({ ok: false, error: err.message });
@@ -2688,6 +2696,17 @@ router.get('/dashboard-stats', async (req, res) => {
         });
         const ahorroPorAnio = Object.values(ahorroAnioMap).sort((a, b) => a.anio - b.anio);
 
+        // Total neto real del fondo: suma de TODOS los movimientos (incluyendo
+        // devoluciones negativas y descuentos) solo para socios Activos.
+        const totalNetoActivosResult = await Saving.sum('amount', {
+            include: [{
+                model: Client,
+                where: { estatus: 'Activo' },
+                required: true
+            }]
+        }) || 0;
+        const totalNetoActivos = Math.round(totalNetoActivosResult);
+
         const totalPenaltyDays = await Saving.sum('diasPenalizacion', {
             where: { year: currentYear },
             include: [{
@@ -2961,6 +2980,7 @@ router.get('/dashboard-stats', async (req, res) => {
             totalInteresesPagados,
             totalInitialContributions: Math.round(totalInitialContributions),
             totalAhorradoGeneral: Math.round(totalSavingsResult + totalInitialContributions),
+            totalNetoActivos,
             ahorroPorAnio,
             totalPenaltyDays: Math.round(totalPenaltyDays),
             totalPenaltyValue: Math.round(totalPenaltyValue),

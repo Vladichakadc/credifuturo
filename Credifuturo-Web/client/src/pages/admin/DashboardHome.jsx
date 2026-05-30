@@ -698,7 +698,7 @@ const ComparativeChart = ({ title, historic, current, color, labelHistoric, labe
 // ─── Gráfica de AHORRO POR AÑO (no acumulable) ───────────────────────────────
 // Cada barra es un año independiente: ahorro mensual + aportes iniciales de ese
 // año (apilados). NO acumula años anteriores. Datos: stats.ahorroPorAnio.
-const SavingsByYearChart = ({ data, title = 'Ahorro de los Socios por Año', compact, onExpand }) => {
+const SavingsByYearChart = ({ data, title = 'Ahorro de los Socios por Año', compact, onExpand, totalNetoActivos }) => {
     const fmtCOP = (n) => `$${Number(n || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
     const rows = Array.isArray(data) ? data : [];
 
@@ -783,7 +783,10 @@ const SavingsByYearChart = ({ data, title = 'Ahorro de los Socios por Año', com
     );
 
     // ── Métricas de análisis (experto finanzas) ──
-    const accumulated = rows.reduce((s, r) => s + (r.total || 0), 0);
+    // totalNetoActivos = SUM(amount) de todos los movimientos de socios Activos
+    // (incluye Abono, Aportes, Distribucion, Devolucion negativa, Descuentos).
+    // Es el valor neto real del fondo; sustituye la suma bruta de barras.
+    const accumulated = totalNetoActivos > 0 ? totalNetoActivos : rows.reduce((s, r) => s + (r.total || 0), 0);
     const mensualPct = last && last.total > 0 ? (last.mensual / last.total) * 100 : 0;
     const aportesPct = last && last.total > 0 ? (last.aportes / last.total) * 100 : 0;
     const recurrenteDriven = mensualPct >= 50;
@@ -1550,6 +1553,7 @@ const FinancialChart = ({ stats }) => {
                     <SavingsByYearChart
                         data={stats.ahorroPorAnio}
                         title="Ahorro de los Socios por Año"
+                        totalNetoActivos={stats.totalNetoActivos}
                         onExpand={() => setExpandComp('ahorro')}
                     />
                     <ComparativeChart
@@ -1606,7 +1610,7 @@ const FinancialChart = ({ stats }) => {
                             progressPct: hist > 0 ? Math.min((last.total / hist) * 100, 150) : 100
                         });
                     })()}>
-                    <SavingsByYearChart compact data={stats.ahorroPorAnio} />
+                    <SavingsByYearChart compact data={stats.ahorroPorAnio} totalNetoActivos={stats.totalNetoActivos} />
                 </ChartExpandModal>
                 <ChartExpandModal isOpen={expandComp === 'prestamos'} onClose={() => setExpandComp(null)}
                     title="Préstamos Entregados — Análisis vs 2025"
@@ -1840,6 +1844,7 @@ const DashboardHome = () => {
         totalInteresesPagados: 0,
         totalInitialContributions: 0,
         totalAhorradoGeneral: 0,
+        totalNetoActivos: 0,
         ahorroPorAnio: [],
         totalPenaltyDays: 0,
         totalPenaltyValue: 0,
@@ -1907,6 +1912,7 @@ const DashboardHome = () => {
                     totalInteresesPagados: res.data.totalInteresesPagados || 0,
                     totalInitialContributions: res.data.totalInitialContributions || 0,
                     totalAhorradoGeneral: res.data.totalAhorradoGeneral || 0,
+                    totalNetoActivos: res.data.totalNetoActivos || 0,
                     ahorroPorAnio: res.data.ahorroPorAnio || [],
                     totalPenaltyDays: res.data.totalPenaltyDays || 0,
                     totalPenaltyValue: res.data.totalPenaltyValue || 0,
