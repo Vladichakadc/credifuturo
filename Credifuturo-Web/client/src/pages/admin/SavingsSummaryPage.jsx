@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import api from '../../config/api';
 import {
     Users, DollarSign, PiggyBank, BarChart3, CheckCircle, CreditCard,
@@ -860,16 +860,16 @@ const PowerBITooltip = ({ active, payload, label, showLabel = true }) => {
 };
 
 const AccountSummaryChart = ({ stats }) => {
-    const barData = [
-        { name: 'Capital Ahorrado', valor: stats?.totalSavings || 0, color: '#6366f1' },
-        { name: 'Aportes Iniciales', valor: stats?.totalInitialContributions || 0, color: '#f59e0b' },
-        { name: 'Total Ahorrado', valor: stats?.totalAhorradoGeneral || 0, color: '#8A05BE' },
-    ].filter((item) => item.valor > 0);
+    const barData = useMemo(() => [
+        { name: 'Capital Ahorrado', valor: stats?.totalSavings || 0 },
+        { name: 'Aportes Iniciales', valor: stats?.totalInitialContributions || 0 },
+        { name: 'Total Ahorrado', valor: stats?.totalAhorradoGeneral || 0 },
+    ].filter((item) => item.valor > 0), [stats]);
 
-    const pieData = [
+    const pieData = useMemo(() => [
         { name: 'Capital', value: stats?.totalSavings || 0, color: '#6366f1' },
         { name: 'Aportes', value: stats?.totalInitialContributions || 0, color: '#f59e0b' },
-    ].filter(d => d.value > 0);
+    ].filter(d => d.value > 0), [stats]);
 
     const fmtShort = (v) => {
         if (v >= 1000000) return `$${(v / 1000000).toFixed(1)}M`;
@@ -878,45 +878,73 @@ const AccountSummaryChart = ({ stats }) => {
     };
     const fmtFull = (v) => `$${Number(v).toLocaleString('es-CO')}`;
 
+    const renderPieLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
+        if (percent < 0.07) return null;
+        const RADIAN = Math.PI / 180;
+        const r = innerRadius + (outerRadius - innerRadius) * 0.5;
+        const x = cx + r * Math.cos(-midAngle * RADIAN);
+        const y = cy + r * Math.sin(-midAngle * RADIAN);
+        return (
+            <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central"
+                fontSize={12} fontWeight={800} style={{ pointerEvents: 'none' }}>
+                {`${Math.round(percent * 100)}%`}
+            </text>
+        );
+    };
+
     if (!stats || stats.totalAhorradoGeneral === 0) return null;
 
     return (
         <div className="w-full h-full flex gap-2">
             <div className="flex-1 min-w-0">
                 <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={barData} margin={{ top: 30, right: 10, left: 0, bottom: 8 }} barSize={44} barGap={8}>
+                    <BarChart data={barData} margin={{ top: 36, right: 10, left: 0, bottom: 8 }} barSize={48} barGap={8}>
                         <defs>
-                            <linearGradient id="sBarGrad0" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#818cf8" /><stop offset="100%" stopColor="#6366f1" /></linearGradient>
-                            <linearGradient id="sBarGrad1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#fbbf24" /><stop offset="100%" stopColor="#f59e0b" /></linearGradient>
-                            <linearGradient id="sBarGrad2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#a855f7" /><stop offset="100%" stopColor="#8A05BE" /></linearGradient>
+                            <linearGradient id="sBarGrad0" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#818cf8" /><stop offset="100%" stopColor="#4f46e5" />
+                            </linearGradient>
+                            <linearGradient id="sBarGrad1" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#fcd34d" /><stop offset="100%" stopColor="#d97706" />
+                            </linearGradient>
+                            <linearGradient id="sBarGrad2" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#c084fc" /><stop offset="100%" stopColor="#7e22ce" />
+                            </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10, fontWeight: 600 }} dy={6} />
-                        <YAxis tickFormatter={fmtShort} axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} width={55} />
-                        <RechartsTooltip cursor={{ fill: 'rgba(99,102,241,0.04)', radius: 8 }} content={<PowerBITooltip showLabel={false} />} />
-                        <Bar dataKey="valor" radius={[8, 8, 4, 4]} isAnimationActive={false}
-                            label={{ position: 'top', fill: '#334155', fontSize: 11, fontWeight: 700, formatter: fmtFull, offset: 8 }}>
+                        <XAxis dataKey="name" axisLine={false} tickLine={false}
+                            tick={{ fill: '#64748b', fontSize: 10, fontWeight: 600 }} dy={6} />
+                        <YAxis tickFormatter={fmtShort} axisLine={false} tickLine={false}
+                            tick={{ fill: '#94a3b8', fontSize: 10 }} width={55} />
+                        <RechartsTooltip cursor={{ fill: 'rgba(99,102,241,0.04)', radius: 8 }}
+                            content={<PowerBITooltip showLabel={false} />} />
+                        <Bar dataKey="valor" radius={[10, 10, 3, 3]} isAnimationActive={false}
+                            label={{ position: 'top', fill: '#1e293b', fontSize: 11, fontWeight: 800,
+                                formatter: fmtFull, offset: 10 }}>
                             {barData.map((_, i) => <Cell key={i} fill={`url(#sBarGrad${i})`} />)}
                         </Bar>
                     </BarChart>
                 </ResponsiveContainer>
             </div>
             {pieData.length > 1 && (
-                <div className="w-[140px] shrink-0 flex flex-col items-center justify-center">
-                    <ResponsiveContainer width="100%" height={140}>
+                <div className="w-[170px] shrink-0 flex flex-col items-center justify-center gap-2">
+                    <ResponsiveContainer width="100%" height={160}>
                         <PieChart>
-                            <Pie data={pieData} cx="50%" cy="50%" innerRadius={36} outerRadius={56} paddingAngle={4} dataKey="value" isAnimationActive={false} stroke="none">
+                            <Pie data={pieData} cx="50%" cy="50%" innerRadius={44} outerRadius={68}
+                                paddingAngle={3} dataKey="value" isAnimationActive={false} stroke="none"
+                                labelLine={false} label={renderPieLabel}>
                                 {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                             </Pie>
                             <RechartsTooltip content={<PowerBITooltip showLabel={false} />} />
                         </PieChart>
                     </ResponsiveContainer>
-                    <div className="flex flex-col gap-1 mt-1">
-                        {pieData.map((d, i) => (
-                            <div key={i} className="flex items-center gap-1.5">
-                                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
-                                <span className="text-[9px] text-gray-500 font-semibold">{d.name}</span>
-                                <span className="text-[9px] text-gray-800 font-bold tabular-nums">{Math.round((d.value / (stats?.totalAhorradoGeneral || 1)) * 100)}%</span>
+                    <div className="flex flex-col gap-2 w-full px-3">
+                        {pieData.map((d) => (
+                            <div key={d.name} className="flex items-center gap-2">
+                                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                                <span className="text-[11px] text-gray-500 font-semibold flex-1">{d.name}</span>
+                                <span className="text-[11px] text-gray-800 font-bold tabular-nums">
+                                    {Math.round((d.value / (stats?.totalAhorradoGeneral || 1)) * 100)}%
+                                </span>
                             </div>
                         ))}
                     </div>
@@ -934,8 +962,8 @@ const MonthlySavingsTrendChart = ({ data, availableYears, selectedYear }) => {
     const mainYear   = sortedYears[sortedYears.length - 1];
     const otherYears = sortedYears.slice(0, -1);
 
-    const MAIN_COLOR   = '#1e40af';
-    const OTHER_COLORS = ['#94a3b8', '#60a5fa', '#a5b4fc'];
+    const MAIN_COLOR   = '#2563eb';
+    const OTHER_COLORS = ['#cbd5e1', '#93c5fd', '#a5b4fc'];
 
     const fmtLabel = (v) => {
         if (!v || v === 0) return '';
@@ -943,60 +971,101 @@ const MonthlySavingsTrendChart = ({ data, availableYears, selectedYear }) => {
         if (v >= 1000)    return `$${(v / 1000).toFixed(0)}k`;
         return `$${v}`;
     };
+    const fmtTick = (v) => {
+        if (!v || v === 0) return '$0';
+        if (v >= 1000000) return `$${(v / 1000000).toFixed(1)}M`;
+        return `$${(v / 1000).toFixed(0)}k`;
+    };
 
     // Convierte 0 → null para que el spline no extrapole por debajo de cero
-    const processedData = showMultiple
+    const processedData = useMemo(() => showMultiple
         ? data.map(d => {
             const row = { name: d.name };
             sortedYears.forEach(yr => { row[yr] = d[yr] > 0 ? d[yr] : null; });
             return row;
           })
-        : data;
+        : data,
+    [data, showMultiple, sortedYears]);
 
     const avgOf = (key) => {
-        const vals = data.map(d => d[key] || 0).filter(v => v > 0);
+        const vals = (data || []).map(d => d[key] || 0).filter(v => v > 0);
         return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
     };
     const avgValue = showMultiple ? avgOf(mainYear) : avgOf('monto');
 
+    // Índice del máximo y del último valor con dato para labels selectivos
+    const dataKey = showMultiple ? mainYear : 'monto';
+    const { maxIdx, lastIdx } = useMemo(() => {
+        let maxIdx = -1, lastIdx = -1, maxVal = -Infinity;
+        processedData.forEach((d, i) => {
+            const v = d[dataKey] || 0;
+            if (v > maxVal) { maxVal = v; maxIdx = i; }
+            if (v > 0) lastIdx = i;
+        });
+        return { maxIdx, lastIdx };
+    }, [processedData, dataKey]);
+
+    const customDot = (props, isMain) => {
+        const { cx, cy, index, value } = props;
+        if (!value || value === 0) return null;
+        const isSpecial = index === maxIdx || index === lastIdx;
+        return (
+            <circle key={`dot-${index}`} cx={cx} cy={cy}
+                r={isSpecial ? 5 : 3.5}
+                fill={isMain ? MAIN_COLOR : OTHER_COLORS[0]}
+                stroke="#fff" strokeWidth={isSpecial ? 2 : 1.5} />
+        );
+    };
+
+    const customLabel = (props) => {
+        const { x, y, index, value } = props;
+        if (!value || value === 0) return null;
+        if (index !== maxIdx && index !== lastIdx) return null;
+        if (maxIdx === lastIdx && index !== maxIdx) return null;
+        return (
+            <text key={`lbl-${index}`} x={x} y={y - 10} textAnchor="middle"
+                fill={MAIN_COLOR} fontSize={10} fontWeight={800}>
+                {fmtLabel(value)}
+            </text>
+        );
+    };
+
     return (
         <div className="w-full h-full pb-2">
             <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={processedData} margin={{ top: 38, right: 48, left: 5, bottom: 5 }}>
+                <AreaChart data={processedData} margin={{ top: 32, right: 48, left: 5, bottom: 5 }}>
                     <defs>
                         <linearGradient id="pbGradMain" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%"  stopColor={MAIN_COLOR} stopOpacity={0.22} />
-                            <stop offset="90%" stopColor={MAIN_COLOR} stopOpacity={0.02} />
+                            <stop offset="0%"  stopColor={MAIN_COLOR} stopOpacity={0.28} />
+                            <stop offset="85%" stopColor={MAIN_COLOR} stopOpacity={0.03} />
                         </linearGradient>
                         {otherYears.map((yr, i) => (
                             <linearGradient key={yr} id={`pbGrad${yr}`} x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%"  stopColor={OTHER_COLORS[i] || '#94a3b8'} stopOpacity={0.15} />
-                                <stop offset="90%" stopColor={OTHER_COLORS[i] || '#94a3b8'} stopOpacity={0.02} />
+                                <stop offset="0%"  stopColor={OTHER_COLORS[i] || '#94a3b8'} stopOpacity={0.18} />
+                                <stop offset="85%" stopColor={OTHER_COLORS[i] || '#94a3b8'} stopOpacity={0.02} />
                             </linearGradient>
                         ))}
                     </defs>
 
-                    <CartesianGrid strokeDasharray="0" vertical={false} stroke="#e8edf2" strokeWidth={1} />
+                    <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#e2e8f0" strokeWidth={1} />
 
                     <XAxis dataKey="name" axisLine={false} tickLine={false}
                         tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 500 }}
                         interval={0} padding={{ left: 12, right: 12 }} />
 
-                    {/* domain=[0,'auto'] + allowDataOverflow=false evitan que el eje baje de cero */}
                     <YAxis axisLine={false} tickLine={false}
                         tick={{ fill: '#94a3b8', fontSize: 10 }}
-                        tickFormatter={(v) => v > 0 ? `$${(v / 1000).toFixed(0)}k` : '0'}
+                        tickFormatter={fmtTick}
                         domain={[0, 'auto']}
                         allowDataOverflow={false}
                         width={50} />
 
                     <RechartsTooltip content={<PowerBITooltip />} />
 
-                    {/* Línea de promedio — etiqueta en la derecha para no solapar labels de datos */}
                     {avgValue > 0 && (
-                        <ReferenceLine y={avgValue} stroke="#94a3b8" strokeDasharray="7 4" strokeWidth={1.5}
+                        <ReferenceLine y={avgValue} stroke="#94a3b8" strokeDasharray="6 4" strokeWidth={1.5}
                             label={{ value: `Prom: ${fmtLabel(avgValue)}`, position: 'insideTopRight',
-                                fill: '#64748b', fontSize: 10, fontWeight: 700, dx: -4, dy: -14 }} />
+                                fill: '#64748b', fontSize: 10, fontWeight: 700, dx: -4, dy: -12 }} />
                     )}
 
                     {showMultiple ? (
@@ -1013,28 +1082,23 @@ const MonthlySavingsTrendChart = ({ data, availableYears, selectedYear }) => {
                             <Area type="monotone" dataKey={mainYear} name={`Año ${mainYear}`}
                                 stroke={MAIN_COLOR} strokeWidth={2.5}
                                 fill="url(#pbGradMain)" fillOpacity={1}
-                                dot={false}
+                                dot={(props) => customDot(props, true)}
                                 connectNulls={false} baseValue={0}
-                                activeDot={{ r: 5, fill: MAIN_COLOR, stroke: '#fff', strokeWidth: 2 }}
+                                activeDot={{ r: 6, fill: MAIN_COLOR, stroke: '#fff', strokeWidth: 2 }}
                                 isAnimationActive={false}
-                            >
-                                <LabelList dataKey={mainYear} position="top" offset={8}
-                                    style={{ fill: MAIN_COLOR, fontSize: 9, fontWeight: 700 }}
-                                    formatter={fmtLabel} />
-                            </Area>
+                                label={customLabel}
+                            />
                         </>
                     ) : (
                         <Area type="monotone" dataKey="monto" name="Ahorro Mensual"
                             stroke={MAIN_COLOR} strokeWidth={2.5}
                             fill="url(#pbGradMain)" fillOpacity={1}
-                            dot={false} baseValue={0}
-                            activeDot={{ r: 5, fill: MAIN_COLOR, stroke: '#fff', strokeWidth: 2 }}
+                            dot={(props) => customDot(props, true)}
+                            baseValue={0}
+                            activeDot={{ r: 6, fill: MAIN_COLOR, stroke: '#fff', strokeWidth: 2 }}
                             isAnimationActive={false}
-                        >
-                            <LabelList dataKey="monto" position="top" offset={8}
-                                style={{ fill: MAIN_COLOR, fontSize: 9, fontWeight: 700 }}
-                                formatter={fmtLabel} />
-                        </Area>
+                            label={customLabel}
+                        />
                     )}
                 </AreaChart>
             </ResponsiveContainer>

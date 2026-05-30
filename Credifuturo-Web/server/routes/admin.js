@@ -555,9 +555,31 @@ async function getLoanCapacityAnalysis(clientId) {
 
     // ── Historial completo para scoring crediticio ─────────────────────────
     const historialPagoTotal = await LoanPayment.count({ where: { clientId, estado: { [Op.in]: ['Pago', 'Abono'] } } });
-    // Mora histórica: cuotas con estado='Mora' (campo directo) + cuotas EP vencidas sin pagar
+    // Mora histórica directa (legacy: cuotas con estado='Mora'; en la BD actual nadie usa ese estado)
     const historialMoraDirecta = await LoanPayment.count({ where: { clientId, estado: 'Mora' } });
     const historialPendTotal = cuotasPendientes.length; // total pendientes del socio
+
+    // ── Mora histórica real (P1.1): pagos tardíos ─────────────────────────
+    // Una cuota se pagó tarde si updatedAt > fecha_pago_max. Excluimos cuotas
+    // cargadas en la migración masiva del 12-mar-2026 (createdAt ≤ ese día) porque
+    // no tenemos fecha real de pago — solo la fecha en que se cargó el dato heredado.
+    // Solo cuentan cuotas creadas nativamente en el sistema (post-migración).
+    const MIGRATION_CUTOFF = new Date('2026-03-13T00:00:00');
+    const pagosCompletados = await LoanPayment.findAll({
+        where: { clientId, estado: { [Op.in]: ['Pago', 'Abono'] } },
+        attributes: ['fechaPagoMax', 'mesPago', 'createdAt', 'updatedAt']
+    });
+    let pagosTardios = 0;
+    let pagosEvaluables = 0;
+    for (const p of pagosCompletados) {
+        const limite = safeParseDate(p.fechaPagoMax, p.mesPago);
+        const real = p.updatedAt ? new Date(p.updatedAt) : null;
+        const creado = p.createdAt ? new Date(p.createdAt) : null;
+        if (!limite || !real || !creado) continue;
+        if (creado < MIGRATION_CUTOFF) continue; // saltar migrados
+        pagosEvaluables++;
+        if (real > limite) pagosTardios++;
+    }
 
     // ── Agrupar todas las cuotas activas por idVm ─────────────────────────
     const todasActivas = [...cuotasMoraEP, ...cuotasPendientesNormales];
@@ -604,13 +626,40 @@ async function getLoanCapacityAnalysis(clientId) {
         disbursed.forEach(d => { disbursedMap[(d.idVm || '').trim()] = d; });
     }
 
+    // ── Última cuota por préstamo (para regla "cruza fin de año" del Primer Informe 2026) ──
+    // La fecha más tardía de fechaPagoMax entre TODAS las cuotas (pagadas+pendientes+mora) representa el fin del préstamo.
+    const finPorIdVm = {};
+    if (idVmsList.length > 0) {
+        const todasCuotas = await LoanPayment.findAll({
+            where: { clientId, idVm: { [Op.in]: idVmsList } },
+            attributes: ['idVm', 'fechaPagoMax', 'mesPago']
+        });
+        for (const q of todasCuotas) {
+            const vm = (q.idVm || '').trim();
+            const f = safeParseDate(q.fechaPagoMax, q.mesPago);
+            if (!f) continue;
+            if (!finPorIdVm[vm] || f > finPorIdVm[vm]) finPorIdVm[vm] = f;
+        }
+    }
+
+    // Regla Primer Informe 2026: préstamos cuya última cuota supera el 31-dic del año en curso
+    // requieren compromiso de no retirar ahorros mientras esté vigente.
+    const yearActual = nowLocal.getFullYear();
+    const finDeAnio = new Date(yearActual, 11, 31, 23, 59, 59);
+
     const detallesPrestamos = idVmsList.map(vm => {
         const d = disbursedMap[vm];
         const info = porIdVm[vm];
+        const fechaUltimaCuota = finPorIdVm[vm] || null;
+        const cuotasTotales = d ? d.cuotas : null;
+        const cruzaFinDeAnio = !!(fechaUltimaCuota && fechaUltimaCuota > finDeAnio);
+        // El compromiso aplica a préstamos largos (>12 cuotas) que además crucen el 31-dic.
+        // El paréntesis del informe aclara qué se entiende por "mayores a 12 cuotas".
+        const aplicaCompromisoNoRetiro = cruzaFinDeAnio && (cuotasTotales == null || cuotasTotales > 12);
         return {
             idVm: vm,
             valorPrestado: d ? parseFloat(d.valorPrestado || 0) : 0,
-            cuotas: d ? d.cuotas : null,
+            cuotas: cuotasTotales,
             interesMensual: info.interesMensual,
             saldoPendiente: info.saldoPendiente,
             valorCuotasPendientes: Math.round(info.valorCuotasPendientes),
@@ -618,6 +667,9 @@ async function getLoanCapacityAnalysis(clientId) {
             cuotasMoraEPCount: info.cuotasMoraEPCount,
             enMoraEP: info.enMoraEP,
             fechaPrestamo: d ? d.fechaPrestamo : null,
+            fechaUltimaCuota: fechaUltimaCuota ? fechaUltimaCuota.toISOString().split('T')[0] : null,
+            cruzaFinDeAnio,
+            aplicaCompromisoNoRetiro,
             estado: d ? d.estado : 'Vigente',
             cuotasDetalle: info.cuotasDetalle
         };
@@ -627,24 +679,52 @@ async function getLoanCapacityAnalysis(clientId) {
     const enMoraActual = detallesPrestamos.some(l => l.enMoraEP);
     const totalCuotasMoraEP = cuotasMoraEP.length;
     const totalMoraEPValor = cuotasMoraEP.reduce((s, q) => s + parseFloat(q.valorCuotaVariable || 0), 0);
+    const tieneCompromisoNoRetiroAhorros = detallesPrestamos.some(l => l.aplicaCompromisoNoRetiro);
+
+    // ── P1.3: préstamos liquidados (estado='Cancelado' en la convención del fondo) ─
+    const prestamosLiquidados = await DisbursedLoan.count({ where: { clientId, estado: 'Cancelado' } });
+
+    // ── P1.4: antigüedad como socio ──────────────────────────────────────────
+    let mesesComoSocio = null;
+    if (client.fechaIngreso) {
+        const ing = new Date(client.fechaIngreso);
+        if (!isNaN(ing)) {
+            const diff = nowLocal - ing;
+            mesesComoSocio = Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24 * 30.44)));
+        }
+    }
 
     return {
         clientId,
         nombre: `${client.name} ${client.surname1 || ''} ${client.surname2 || ''}`.trim(),
         cedula: client.cedula,
         estatus: client.estatus,
+        fechaIngreso: client.fechaIngreso || null,
+        mesesComoSocio,
         ahorroTotal,
         aporteInicial,
         ahorroMensual,
         prestamosVigentes: detallesPrestamos,
         totalPrestamosVigentes: detallesPrestamos.length,
+        prestamosLiquidados,
         totalDeudaPendiente,
         enMoraActual,
         totalCuotasMoraEP,
         totalMoraEPValor: Math.round(totalMoraEPValor),
         historialMoraTotal: historialMoraDirecta + totalCuotasMoraEP,
+        // P1.1: nuevo campo - cuotas pagadas después de la fecha límite (excluyendo datos heredados)
+        pagosTardios,
+        pagosEvaluables,
         historialPagoTotal,
-        historialPendTotal
+        historialPendTotal,
+        tieneCompromisoNoRetiroAhorros,
+        yearActual,
+        // Resolución vigente del fondo (mostrada al socio y al admin)
+        resolucionVigente: {
+            titulo: 'Primer Informe 2026',
+            regla: 'Se aprueban los préstamos mayores a 12 cuotas (que superen el 31 de diciembre), con el requisito de no retirar los ahorros mientras el préstamo esté vigente.',
+            anioReferencia: yearActual
+        }
     };
 }
 
@@ -1391,6 +1471,44 @@ router.get('/disbursed-loans', async (req, res) => {
         res.json(disbursedLoans);
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /disbursed-loans/orphans - Préstamos sin clientId asignado (datos huérfanos)
+router.get('/disbursed-loans/orphans', verifyToken, requireRole('admin'), async (_req, res) => {
+    try {
+        const orphans = await DisbursedLoan.findAll({
+            where: { clientId: null },
+            order: [['id', 'ASC']]
+        });
+        res.json({ ok: true, total: orphans.length, data: orphans });
+    } catch (err) {
+        console.error('orphans error:', err);
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
+// PUT /disbursed-loans/:id/assign - Asignar un préstamo huérfano a un socio
+router.put('/disbursed-loans/:id/assign', verifyToken, requireRole('admin'), async (req, res) => {
+    try {
+        const { clientId } = req.body;
+        if (!clientId) return res.status(400).json({ ok: false, error: 'clientId requerido' });
+        const loan = await DisbursedLoan.findByPk(req.params.id);
+        if (!loan) return res.status(404).json({ ok: false, error: 'Préstamo no encontrado' });
+        const client = await Client.findByPk(clientId);
+        if (!client) return res.status(404).json({ ok: false, error: 'Socio no encontrado' });
+        await loan.update({ clientId });
+        // También actualizar las cuotas asociadas (si el préstamo tiene idVm conocido)
+        if (loan.idVm) {
+            await LoanPayment.update(
+                { clientId },
+                { where: { idVm: loan.idVm, clientId: null } }
+            );
+        }
+        res.json({ ok: true, message: `Préstamo asignado a ${client.name} ${client.surname1 || ''}.` });
+    } catch (err) {
+        console.error('assign orphan error:', err);
+        res.status(500).json({ ok: false, error: err.message });
     }
 });
 

@@ -1,5 +1,6 @@
 import React from 'react';
-import { Scale, CheckCircle, XCircle, AlertCircle, AlertTriangle, PiggyBank, CreditCard, Award, TrendingUp } from 'lucide-react';
+import { Scale, CheckCircle, XCircle, AlertCircle, AlertTriangle, PiggyBank, CreditCard, Award, TrendingUp, Lock, FileText, Gauge, Clock, History } from 'lucide-react';
+import { calcVerdict, colorMap, kpiDescriptions } from '../../utils/loanCapacity';
 
 const LoanCapacityWidget = ({ analysis, loading }) => {
     if (loading) {
@@ -13,88 +14,7 @@ const LoanCapacityWidget = ({ analysis, loading }) => {
 
     if (!analysis) return null;
 
-    const calcVerdict = (a) => {
-        if (!a) return null;
-        const FACTOR_MAX = 3;
-        const montoMaxSinVotacion = a.ahorroTotal * FACTOR_MAX;
-        const capacidadDisponible = montoMaxSinVotacion - a.totalDeudaPendiente;
-        const tasaApalancamiento  = a.ahorroTotal > 0 ? (a.totalDeudaPendiente / a.ahorroTotal) * 100 : 0;
-        const totalCuotas         = a.historialPagoTotal + a.historialMoraTotal + a.historialPendTotal;
-        const tasaMora            = totalCuotas > 0 ? (a.historialMoraTotal / totalCuotas) * 100 : 0;
-        const totalMoraEP         = a.totalCuotasMoraEP || 0;
-
-        const riesgos = [];
-        const positivos = [];
-
-        if (a.enMoraActual)
-            riesgos.push(`Tiene ${totalMoraEP} cuota(s) vencidas sin pagar (Mora EP) — valor: $${(a.totalMoraEPValor || 0).toLocaleString('es-CO')}`);
-        else
-            positivos.push('Sin cuotas vencidas (Mora EP) en préstamos vigentes');
-
-        if (a.historialMoraTotal > 0)
-            riesgos.push(`Historial con ${a.historialMoraTotal} cuota(s) en mora registrada(s)`);
-        else
-            positivos.push('Historial crediticio limpio — 0 moras registradas');
-
-        if (tasaApalancamiento > 200)
-            riesgos.push(`Apalancamiento crítico: deuda equivale al ${tasaApalancamiento.toFixed(0)}% del ahorro`);
-        else if (tasaApalancamiento > 100)
-            riesgos.push(`Apalancamiento elevado: deuda equivale al ${tasaApalancamiento.toFixed(0)}% del ahorro`);
-        else if (tasaApalancamiento > 0)
-            positivos.push(`Apalancamiento saludable: ${tasaApalancamiento.toFixed(0)}% deuda/ahorro`);
-        else
-            positivos.push('Sin deuda pendiente registrada');
-
-        if (a.ahorroTotal === 0)
-            riesgos.push('Sin ahorro acumulado — no se puede calcular capacidad');
-        else if (a.ahorroTotal < 500000)
-            riesgos.push(`Ahorro bajo ($${a.ahorroTotal.toLocaleString('es-CO')}) — limita capacidad de endeudamiento`);
-        else
-            positivos.push(`Ahorro acumulado: $${a.ahorroTotal.toLocaleString('es-CO')} (aportes + mensual)`);
-
-        if (capacidadDisponible > 0)
-            positivos.push(`Margen disponible sin votación: $${Math.round(capacidadDisponible).toLocaleString('es-CO')}`);
-        else
-            riesgos.push('No hay capacidad adicional sin votación del fondo');
-
-        let verdict, color, icon, mensaje, recomendacion;
-        if (a.ahorroTotal === 0) {
-            verdict = 'NO VIABLE';
-            color   = 'red';   icon = 'X';
-            mensaje = 'El socio no tiene ahorro acumulado registrado. La política del fondo exige ahorro base para calcular el límite de endeudamiento.';
-            recomendacion = 'Rechazar solicitud. Invitar al socio a regularizar sus aportes antes de presentar una nueva solicitud.';
-        } else if (a.enMoraActual) {
-            verdict = 'NO VIABLE — MORA EP ACTIVA';
-            color   = 'red';   icon = 'X';
-            mensaje = `El socio tiene ${totalMoraEP} cuota(s) vencida(s) sin pagar por $${(a.totalMoraEPValor || 0).toLocaleString('es-CO')}. La fecha límite de pago ya venció. Ningún reglamento de fondo solidario autoriza nuevos desembolsos con mora vigente.`;
-            recomendacion = 'Rechazar solicitud. Exigir paz y salvo total antes de cualquier nuevo trámite. Las cuotas en mora deben quedar en estado "Pago" para reconsiderar.';
-        } else if (capacidadDisponible <= 0) {
-            verdict = 'REQUIERE VOTACIÓN DEL FONDO';
-            color   = 'amber'; icon = 'vote';
-            mensaje = `La deuda pendiente ($${Math.round(a.totalDeudaPendiente).toLocaleString('es-CO')}) supera el límite de 3× el ahorro ($${Math.round(montoMaxSinVotacion).toLocaleString('es-CO')}). Cualquier nuevo préstamo excede el techo sin votación.`;
-            recomendacion = 'Someter a votación del fondo. El monto solicitado no puede exceder la capacidad de pago histórica demostrada. Se recomienda análisis caso a caso con todos los asociados.';
-        } else if (a.historialMoraTotal > 2 || tasaMora > 20) {
-            verdict = 'VIABLE CON RESTRICCIONES';
-            color   = 'yellow'; icon = 'warn';
-            mensaje = `El socio califica por ahorro (max sin votación: $${Math.round(montoMaxSinVotacion).toLocaleString('es-CO')}), pero su historial registra mora en ${tasaMora.toFixed(0)}% de las cuotas. Se recomienda precaución.`;
-            recomendacion = `Puede aprobarse hasta $${Math.round(Math.min(capacidadDisponible, montoMaxSinVotacion * 0.5)).toLocaleString('es-CO')} (50% del techo) como medida de mitigación. Exigir garantía adicional o codeudor.`;
-        } else {
-            verdict = 'VIABLE SIN VOTACIÓN';
-            color   = 'green'; icon = 'check';
-            mensaje = `El socio cumple todos los requisitos. Puede solicitar hasta $${Math.round(capacidadDisponible).toLocaleString('es-CO')} sin necesidad de votación del fondo (techo 3×: $${Math.round(montoMaxSinVotacion).toLocaleString('es-CO')}).`;
-            recomendacion = `Aprobar hasta $${Math.round(capacidadDisponible).toLocaleString('es-CO')} sin votación. Para montos superiores hasta $${Math.round(montoMaxSinVotacion).toLocaleString('es-CO')}, también es viable pero requiere votación del fondo.`;
-        }
-
-        return { verdict, color, icon, mensaje, recomendacion, montoMaxSinVotacion, capacidadDisponible, tasaApalancamiento, tasaMora, totalMoraEP, riesgos, positivos };
-    };
-
-    const v = calcVerdict(analysis);
-    const colorMap = {
-        green:  { bg: 'bg-emerald-50', border: 'border-emerald-300', text: 'text-emerald-800', badge: 'bg-emerald-600' },
-        yellow: { bg: 'bg-yellow-50',  border: 'border-yellow-300',  text: 'text-yellow-800',  badge: 'bg-yellow-500' },
-        amber:  { bg: 'bg-amber-50',   border: 'border-amber-300',   text: 'text-amber-800',   badge: 'bg-amber-500'  },
-        red:    { bg: 'bg-red-50',     border: 'border-red-300',     text: 'text-red-800',     badge: 'bg-red-600'    },
-    };
+    const v = calcVerdict(analysis, { audience: 'admin' });
     const c = v ? (colorMap[v.color] || colorMap.green) : null;
 
     return (
@@ -110,6 +30,109 @@ const LoanCapacityWidget = ({ analysis, loading }) => {
             </div>
 
             <div className="p-5 space-y-5">
+                {v.score && (
+                    <div className="bg-gradient-to-br from-gray-50 to-white rounded-2xl border-2 border-gray-200 p-4">
+                        <div className="flex items-start justify-between gap-4 mb-3">
+                            <div className="flex items-center gap-2.5">
+                                <div className="bg-brand-primary rounded-xl p-2">
+                                    <Gauge className="h-4 w-4 text-white" />
+                                </div>
+                                <div>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Score crediticio</p>
+                                    <p className="text-sm font-bold text-gray-800">Salud financiera consolidada del socio</p>
+                                </div>
+                            </div>
+                            <div className="text-right">
+                                <p className={`text-4xl font-black leading-none ${colorMap[v.score.color].text}`}>{v.score.score}</p>
+                                <p className={`text-[10px] font-black uppercase tracking-widest ${colorMap[v.score.color].text}`}>{v.score.nivel}</p>
+                                <p className="text-[9px] text-gray-400">de 100</p>
+                            </div>
+                        </div>
+                        <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden mb-3">
+                            <div className={`h-2 rounded-full transition-all duration-700 ${colorMap[v.score.color].badge}`} style={{ width: `${v.score.score}%` }} />
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            {v.score.componentes.map((comp) => {
+                                const pct = comp.max > 0 ? (comp.pts / comp.max) * 100 : 0;
+                                return (
+                                    <div key={comp.key} className="bg-white rounded-lg border border-gray-100 p-3">
+                                        <div className="flex items-start justify-between gap-2 mb-1">
+                                            <div className="min-w-0">
+                                                <p className="text-[10px] uppercase tracking-wide text-gray-500 font-bold leading-tight">{comp.label}</p>
+                                                <p className="text-[10px] text-gray-400 leading-tight mt-0.5">{comp.hint}</p>
+                                            </div>
+                                            <p className="text-sm font-bold text-gray-800 whitespace-nowrap">{comp.pts}<span className="text-[10px] font-normal text-gray-400"> / {comp.max}</span></p>
+                                        </div>
+                                        <div className="w-full bg-gray-100 rounded-full h-1 my-1.5 overflow-hidden">
+                                            <div className={`h-1 rounded-full ${pct >= 75 ? 'bg-emerald-500' : pct >= 50 ? 'bg-yellow-500' : pct >= 25 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${pct}%` }} />
+                                        </div>
+                                        <p className="text-[10px] text-gray-600 leading-snug">{comp.detalle}</p>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    <div className="rounded-lg border border-gray-100 bg-white p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                            <Clock className="h-4 w-4 text-blue-500 shrink-0" />
+                            <p className="text-[10px] uppercase tracking-wide text-gray-500 font-bold">Antigüedad como socio</p>
+                        </div>
+                        <p className="text-sm font-bold text-gray-800">
+                            {analysis.mesesComoSocio != null ? `${analysis.mesesComoSocio} meses` : '—'}
+                        </p>
+                        <p className="text-[10px] text-gray-500 leading-tight mt-0.5">
+                            Permanencia desde el ingreso al fondo. Aporta puntaje en el componente de lealtad (satura a 24 meses).
+                        </p>
+                    </div>
+                    <div className="rounded-lg border border-gray-100 bg-white p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                            <History className="h-4 w-4 text-emerald-500 shrink-0" />
+                            <p className="text-[10px] uppercase tracking-wide text-gray-500 font-bold">Créditos saldados</p>
+                        </div>
+                        <p className="text-sm font-bold text-gray-800">{analysis.prestamosLiquidados || 0}</p>
+                        <p className="text-[10px] text-gray-500 leading-tight mt-0.5">
+                            Préstamos cancelados a satisfacción. Evidencia capacidad de pago histórica (satura a 3).
+                        </p>
+                    </div>
+                    <div className={`rounded-lg border p-3 ${analysis.pagosTardios > 0 ? 'bg-orange-50 border-orange-200' : 'border-gray-100 bg-white'}`}>
+                        <div className="flex items-center gap-2 mb-1">
+                            <AlertTriangle className={`h-4 w-4 shrink-0 ${analysis.pagosTardios > 0 ? 'text-orange-500' : 'text-gray-300'}`} />
+                            <p className="text-[10px] uppercase tracking-wide text-gray-500 font-bold">Cuotas liquidadas en mora</p>
+                        </div>
+                        <p className={`text-sm font-bold ${analysis.pagosTardios > 0 ? 'text-orange-700' : 'text-gray-800'}`}>
+                            {analysis.pagosEvaluables > 0 ? `${analysis.pagosTardios} de ${analysis.pagosEvaluables}` : '— sin datos'}
+                        </p>
+                        <p className="text-[10px] text-gray-500 leading-tight mt-0.5">
+                            {analysis.pagosEvaluables > 0
+                                ? 'Pagos liquidados después de la fecha límite. Excluye cuotas heredadas de la migración inicial.'
+                                : 'Indicador en construcción — se activa con pagos registrados nativamente en el sistema.'}
+                        </p>
+                    </div>
+                </div>
+                {analysis.resolucionVigente && (
+                    <div className={`rounded-xl border-2 p-3 flex items-start gap-3 ${analysis.tieneCompromisoNoRetiroAhorros ? 'bg-amber-50 border-amber-300' : 'bg-blue-50 border-blue-200'}`}>
+                        <div className={`rounded-lg p-2 ${analysis.tieneCompromisoNoRetiroAhorros ? 'bg-amber-500' : 'bg-blue-500'}`}>
+                            {analysis.tieneCompromisoNoRetiroAhorros
+                                ? <Lock className="h-4 w-4 text-white" />
+                                : <FileText className="h-4 w-4 text-white" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className={`text-[10px] font-black uppercase tracking-widest ${analysis.tieneCompromisoNoRetiroAhorros ? 'text-amber-700' : 'text-blue-700'}`}>
+                                Resolución vigente · {analysis.resolucionVigente.titulo}
+                            </p>
+                            <p className={`text-xs leading-relaxed mt-1 ${analysis.tieneCompromisoNoRetiroAhorros ? 'text-amber-800' : 'text-blue-800'}`}>
+                                {analysis.resolucionVigente.regla}
+                            </p>
+                            {analysis.tieneCompromisoNoRetiroAhorros && (
+                                <p className="text-xs font-semibold text-amber-900 mt-1.5 bg-amber-100 inline-block px-2 py-0.5 rounded">
+                                    ⚠ Aplica: el socio tiene préstamo que cruza el 31-dic-{analysis.yearActual}
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                )}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-100">
                         <div className="flex items-center gap-1.5 mb-1">
@@ -117,7 +140,8 @@ const LoanCapacityWidget = ({ analysis, loading }) => {
                             <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Ahorro Acumulado</span>
                         </div>
                         <p className="text-base font-black text-emerald-600">${Math.round(analysis.ahorroTotal).toLocaleString('es-CO')}</p>
-                        <p className="text-[9px] text-emerald-500 mt-0.5">Aportes + Mensual</p>
+                        <p className="text-[9px] text-emerald-500 mt-0.5">Aportes iniciales + ahorros mensuales</p>
+                        <p className="text-[9px] text-gray-500 mt-1 leading-tight">{kpiDescriptions.ahorro}</p>
                     </div>
                     <div className={`rounded-xl p-3 border ${analysis.enMoraActual ? 'bg-red-50 border-red-200' : analysis.totalDeudaPendiente > 0 ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-gray-100'}`}>
                         <div className="flex items-center gap-1.5 mb-1">
@@ -132,16 +156,18 @@ const LoanCapacityWidget = ({ analysis, loading }) => {
                                 ? `⚠ ${analysis.totalCuotasMoraEP} vencida(s) · $${(analysis.totalMoraEPValor || 0).toLocaleString('es-CO')}`
                                 : analysis.totalPrestamosVigentes > 0
                                     ? `${analysis.prestamosVigentes.reduce((s, l) => s + l.cuotasPendientesCount, 0)} cuota(s) por vencer`
-                                    : 'Sin préstamos activos'}
+                                    : 'Sin obligaciones vigentes'}
                         </p>
+                        <p className="text-[9px] text-gray-500 mt-1 leading-tight">{kpiDescriptions.deuda}</p>
                     </div>
                     <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
                         <div className="flex items-center gap-1.5 mb-1">
                             <Award className="h-3.5 w-3.5 text-blue-600" />
-                            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Máximo Sin Votación</span>
+                            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Cupo Máximo</span>
                         </div>
                         <p className="text-base font-black text-blue-600">${Math.round(v.montoMaxSinVotacion).toLocaleString('es-CO')}</p>
-                        <p className="text-[9px] text-blue-400 mt-0.5">3 × Ahorro Acumulado</p>
+                        <p className="text-[9px] text-blue-400 mt-0.5">Regla 3× ahorro · aprobación directa</p>
+                        <p className="text-[9px] text-gray-500 mt-1 leading-tight">{kpiDescriptions.maximo}</p>
                     </div>
                     <div className={`rounded-xl p-3 border ${v.capacidadDisponible > 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
                         <div className="flex items-center gap-1.5 mb-1">
@@ -152,8 +178,9 @@ const LoanCapacityWidget = ({ analysis, loading }) => {
                             ${Math.max(0, Math.round(v.capacidadDisponible)).toLocaleString('es-CO')}
                         </p>
                         <p className={`text-[9px] mt-0.5 ${v.capacidadDisponible > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                            {v.capacidadDisponible > 0 ? 'Sin necesidad de votación' : 'Requiere votación del fondo'}
+                            {v.capacidadDisponible > 0 ? 'Cupo libre para aprobación directa' : 'Cupo agotado · requiere asamblea'}
                         </p>
+                        <p className="text-[9px] text-gray-500 mt-1 leading-tight">{kpiDescriptions.capacidadDisponible}</p>
                     </div>
                 </div>
 
@@ -161,13 +188,13 @@ const LoanCapacityWidget = ({ analysis, loading }) => {
                     <div className="flex justify-between items-center mb-1.5">
                         <span className="text-xs font-semibold text-gray-600">Nivel de Apalancamiento (Deuda / Ahorro)</span>
                         <span className={`text-xs font-black ${v.tasaApalancamiento > 200 ? 'text-red-600' : v.tasaApalancamiento > 100 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                            {v.tasaApalancamiento.toFixed(1)}%
+                            {v.tasaApalancamiento === 0 ? 'Sin apalancamiento' : `${v.tasaApalancamiento.toFixed(1)}%`}
                         </span>
                     </div>
                     <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
                         <div
-                            className={`h-2.5 rounded-full transition-all duration-700 ${v.tasaApalancamiento > 200 ? 'bg-red-500' : v.tasaApalancamiento > 100 ? 'bg-amber-400' : 'bg-emerald-500'}`}
-                            style={{ width: `${Math.min(100, v.tasaApalancamiento / 3)}%` }}
+                            className={`h-2.5 rounded-full transition-all duration-700 ${v.tasaApalancamiento === 0 ? 'bg-emerald-200' : v.tasaApalancamiento > 200 ? 'bg-red-500' : v.tasaApalancamiento > 100 ? 'bg-amber-400' : 'bg-emerald-500'}`}
+                            style={{ width: `${v.tasaApalancamiento === 0 ? 100 : Math.min(100, v.tasaApalancamiento / 3)}%` }}
                         />
                     </div>
                     <div className="flex justify-between mt-0.5">
@@ -176,6 +203,9 @@ const LoanCapacityWidget = ({ analysis, loading }) => {
                         <span className="text-[9px] text-gray-400">200% (2×)</span>
                         <span className="text-[9px] text-gray-400">300% (3× límite)</span>
                     </div>
+                    {v.tasaApalancamiento === 0 && (
+                        <p className="text-[10px] text-emerald-600 mt-1 italic">Perfil libre de deuda — capacidad máxima disponible.</p>
+                    )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -200,6 +230,7 @@ const LoanCapacityWidget = ({ analysis, loading }) => {
                             {v.icon === 'X'     && <XCircle className="h-5 w-5 text-white" />}
                             {v.icon === 'warn'  && <AlertCircle className="h-5 w-5 text-white" />}
                             {v.icon === 'vote'  && <Scale className="h-5 w-5 text-white" />}
+                            {v.icon === 'lock'  && <Lock className="h-5 w-5 text-white" />}
                         </div>
                         <div>
                             <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Veredicto Financiero</p>

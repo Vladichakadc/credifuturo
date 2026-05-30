@@ -19,6 +19,7 @@ import InformesViewerPage from './pages/admin/InformesViewerPage';
 import AccountDetailPage from './pages/admin/AccountDetailPage';
 import SavingsSummaryPage from './pages/admin/SavingsSummaryPage';
 import LoanAnalyzerPage from './pages/admin/LoanAnalyzerPage';
+import OrphanLoansPage from './pages/admin/OrphanLoansPage';
 
 // User Pages
 import UserDashboardLayout from './layouts/UserDashboardLayout';
@@ -88,6 +89,7 @@ function App() {
                     <Route path="loans" element={<LoansPage />} />
                     <Route path="loans/list" element={<LoansListPage />} />
                     <Route path="loans/analyzer" element={<LoanAnalyzerPage />} />
+                    <Route path="loans/orphans" element={<OrphanLoansPage />} />
                     <Route path="savings" element={<SavingsPage />} />
                     <Route path="savings/list" element={<SavingsListPage />} />
                     <Route path="savings/summary" element={<SavingsSummaryPage />} />
