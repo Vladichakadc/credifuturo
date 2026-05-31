@@ -352,7 +352,8 @@ function pickFields(body, allowed) {
 const ALLOWED_CLIENT_FIELDS = [
     'cedula', 'name', 'surname1', 'surname2', 'email',
     'genero', 'pais', 'ciudad', 'tipoCliente', 'socioFundador',
-    'referido', 'cargo', 'fechaIngreso', 'fechaBaja', 'estatus'
+    'referido', 'cargo', 'fechaIngreso', 'fechaBaja', 'estatus',
+    'porcentajePrestamo'
 ];
 
 const ALLOWED_DISBURSED_LOAN_FIELDS = [
