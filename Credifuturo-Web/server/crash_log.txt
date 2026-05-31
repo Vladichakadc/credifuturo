@@ -233,3 +233,71 @@
     at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
     at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
 ---
+[2026-05-31T18:30:34.540Z] comportamientoPts is not defined
+
+    at LoanCapacityWidget (http://localhost:5173/src/components/admin/LoanCapacityWidget.jsx?t=1780252234221:22:31)
+    at div
+    at SavingsSummaryPage (http://localhost:5173/src/pages/admin/SavingsSummaryPage.jsx?t=1780233724071:2472:31)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Outlet (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4537:26)
+    at div
+    at main
+    at div
+    at DashboardLayout (http://localhost:5173/src/layouts/DashboardLayout.jsx:252:28)
+    at ProtectedRoute (http://localhost:5173/src/App.jsx?t=1780233724071:72:29)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4601:5)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4544:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:5290:5)
+    at App (http://localhost:5173/src/App.jsx?t=1780233724071:65:27)
+    at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
+    at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
+---
+[2026-05-31T18:52:45.578Z] Banknote is not defined
+
+    at DashboardLayout (http://localhost:5173/src/layouts/DashboardLayout.jsx?t=1780253565377:252:28)
+    at ProtectedRoute (http://localhost:5173/src/App.jsx?t=1780253558682:73:29)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4601:5)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4544:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:5290:5)
+    at App (http://localhost:5173/src/App.jsx?t=1780253558682:66:27)
+    at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
+    at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
+---
+[2026-05-31T18:56:43.330Z] data.map is not a function
+
+    at DevolucionesAhorrosPage (http://localhost:5173/src/pages/admin/DevolucionesAhorrosPage.jsx:165:21)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Outlet (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4537:26)
+    at div
+    at main
+    at div
+    at DashboardLayout (http://localhost:5173/src/layouts/DashboardLayout.jsx:253:28)
+    at ProtectedRoute (http://localhost:5173/src/App.jsx:73:29)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4601:5)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4544:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:5290:5)
+    at App (http://localhost:5173/src/App.jsx:66:27)
+    at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
+    at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
+---
+[2026-05-31T18:56:54.039Z] data.map is not a function
+
+    at DevolucionesAhorrosPage (http://localhost:5173/src/pages/admin/DevolucionesAhorrosPage.jsx:165:21)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Outlet (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4537:26)
+    at div
+    at main
+    at div
+    at DashboardLayout (http://localhost:5173/src/layouts/DashboardLayout.jsx:253:28)
+    at ProtectedRoute (http://localhost:5173/src/App.jsx:73:29)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4601:5)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4544:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:5290:5)
+    at App (http://localhost:5173/src/App.jsx:66:27)
+    at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
+    at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
+---

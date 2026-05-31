@@ -286,6 +286,11 @@ sequelize.sync().then(async () => {
         console.warn('[SEED] No se pudo verificar/crear admin:', e.message);
     }
 
+    // Migración: columna porcentajePrestamo en clients (seguro si ya existe)
+    await sequelize.query(
+        'ALTER TABLE clients ADD COLUMN porcentajePrestamo REAL DEFAULT NULL'
+    ).catch(() => { /* ya existe — ok */ });
+
     // Crear índices sobre tablas existentes (IF NOT EXISTS — seguro en re-arranques)
     const indexStatements = [
         'CREATE INDEX IF NOT EXISTS idx_savings_year_month   ON Savings(anioAbonado, mesAbonado)',

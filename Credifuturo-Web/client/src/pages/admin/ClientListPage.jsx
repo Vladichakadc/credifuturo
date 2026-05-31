@@ -29,6 +29,7 @@ const TABLE_COLUMNS = [
     { key: 'fechaIngreso', label: 'Fecha Ingreso', align: 'center', minWidth: '120px', isDate: true },
     { key: 'fechaBaja', label: 'Fecha Baja', align: 'center', minWidth: '120px', isDate: true },
     { key: 'estatus', label: 'Estatus', align: 'center', minWidth: '110px', isBadge: true },
+    { key: 'porcentajeEfectivo', label: '% Préstamos', align: 'center', minWidth: '120px', isPercentage: true },
 ];
 
 const ITEMS_PER_PAGE = 20;
@@ -69,10 +70,32 @@ const FundadorBadge = ({ value }) => {
 };
 
 // ——— Cell Renderer ———
-const CellValue = ({ column, value }) => {
+const CellValue = ({ column, value, row = {} }) => {
     if (column.isBadge) return <StatusBadge value={value} />;
     if (column.key === 'socioFundador') return <FundadorBadge value={value} />;
     if (column.isDate) return <span className="tabular-nums text-gray-700">{formatDate(value)}</span>;
+
+    // Columna % Préstamos: muestra la tasa efectiva con badge de fuente
+    if (column.isPercentage) {
+        if (value === null || value === undefined) {
+            return <span className="text-gray-300 text-xs italic">—</span>;
+        }
+        const fuente = row.porcentajeFuente;
+        return (
+            <div className="flex flex-col items-center gap-0.5">
+                <span className="font-mono font-bold text-sm" style={{ color: '#166534' }}>
+                    {Number(value).toFixed(2)}%
+                </span>
+                {fuente === 'loan' && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 font-bold leading-none">préstamo</span>
+                )}
+                {fuente === 'manual' && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 font-bold leading-none">manual</span>
+                )}
+            </div>
+        );
+    }
+
     if (value === null || value === undefined || value === '') {
         return <span className="text-gray-300 text-xs italic">—</span>;
     }
@@ -370,7 +393,7 @@ const ClientListPage = () => {
                                         <tr key={client.customerId || client.id} className={`transition-colors duration-150 ${rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/70'} hover:bg-emerald-50`}>
                                             {TABLE_COLUMNS.map(col => (
                                                 <td key={col.key} style={{ textAlign: col.align, minWidth: col.minWidth }} className={col.key === 'customerId' ? 'font-mono text-xs' : ''}>
-                                                    <CellValue column={col} value={client[col.key]} />
+                                                    <CellValue column={col} value={client[col.key]} row={client} />
                                                 </td>
                                             ))}
                                         </tr>

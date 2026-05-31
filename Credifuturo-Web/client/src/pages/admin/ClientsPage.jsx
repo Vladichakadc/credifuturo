@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../../config/api';
 import { notifyUpdate } from '../../utils/sync';
-import { Save, Search, Trash2, X, AlertCircle, CheckCircle, Download, KeyRound, Bell, XCircle, FileText, User, MapPin } from 'lucide-react';
+import { Save, Search, Trash2, X, AlertCircle, CheckCircle, Download, KeyRound, Bell, XCircle, FileText, User, MapPin, Percent } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Button } from '../../components/ui/Button';
 import { Input, Label, FormField } from '../../components/ui/Input';
@@ -48,8 +48,12 @@ const ClientsPage = () => {
         cargo: '',
         fechaIngreso: new Date().toISOString().split('T')[0],
         fechaBaja: '',
-        estatus: 'Activo'
+        estatus: 'Activo',
+        porcentajePrestamo: '' // Tasa mensual manual (decimal: 0.015 = 1.5%); auto-calculada desde préstamos si existen
     };
+
+    // Estado para mostrar si el % viene de un préstamo activo (en modo edición)
+    const [porcentajeDesdePrestamo, setPorcentajeDesdePrestamo] = useState(null);
 
     const [formData, setFormData] = useState(initialFormState);
 
@@ -81,6 +85,23 @@ const ClientsPage = () => {
             const res = await api.get(`/admin/clients/cedula/${searchCedula}`);
             const client = res.data;
 
+            // Verificar si tiene préstamo activo este año para mostrar tasa auto-calculada
+            setPorcentajeDesdePrestamo(null);
+            try {
+                const anio = new Date().getFullYear();
+                const loanRes = await api.get(`/admin/disbursed-loans/list`);
+                const loans = (loanRes.data?.data || loanRes.data || []);
+                const activoEsteAnio = loans.find(l =>
+                    String(l.clientId) === String(client.id) &&
+                    Number(l.anioDesembolso) === anio &&
+                    ['Activo', 'Vigente', 'Pendiente'].includes(l.estado)
+                );
+                if (activoEsteAnio?.interesMensual) {
+                    const pct = parseFloat(activoEsteAnio.interesMensual) * 100;
+                    setPorcentajeDesdePrestamo(pct);
+                }
+            } catch { /* sin préstamos — mostrar campo manual */ }
+
             // Populate form with existing data
             setFormData({
                 ...client,
@@ -90,7 +111,10 @@ const ClientsPage = () => {
                 referido: client.referido || '',
                 cargo: client.cargo || '',
                 ciudad: client.ciudad || '',
-                fechaBaja: client.fechaBaja || ''
+                fechaBaja: client.fechaBaja || '',
+                porcentajePrestamo: client.porcentajePrestamo != null
+                    ? String(parseFloat((client.porcentajePrestamo * 100).toFixed(4)))
+                    : ''
             });
             setIsEditing(true);
             toast.success('Socio encontrado. Modo edición activado.');
@@ -112,6 +136,7 @@ const ClientsPage = () => {
         setIsEditing(false);
         setSearchCedula('');
         setEmailManuallySet(false);
+        setPorcentajeDesdePrestamo(null);
     };
 
     const handleSubmit = async (e) => {
@@ -124,17 +149,21 @@ const ClientsPage = () => {
 
         setLoading(true);
         try {
+            // Convertir % a decimal para almacenar (1.5 → 0.015)
+            const pctRaw = parseFloat(formData.porcentajePrestamo);
+            const porcentajeDecimal = !isNaN(pctRaw) && pctRaw > 0 ? pctRaw / 100 : null;
+
             if (isEditing) {
                 // UPDATE (PUT)
-                const payload = { ...formData };
+                const payload = { ...formData, porcentajePrestamo: porcentajeDecimal };
                 delete payload.password;
                 delete payload.id;
-                
+
                 await api.put(`/admin/clients/${formData.id}`, payload);
                 toast.success('Socio actualizado exitosamente.');
             } else {
                 // CREATE (POST)
-                const res = await api.post('/admin/clients', formData);
+                const res = await api.post('/admin/clients', { ...formData, porcentajePrestamo: porcentajeDecimal });
                 toast.success('Socio registrado exitosamente.');
                 // A07: si el backend generó una contraseña temporal, mostrarla
                 // UNA SOLA VEZ al admin para que se la comunique al socio.
@@ -574,6 +603,53 @@ const ClientsPage = () => {
                                     />
                                 </FormField>
                             </div>
+                        </div>
+
+                        {/* % Préstamos */}
+                        <div className="space-y-4">
+                            <h3 className="text-sm font-semibold text-brand-primary uppercase tracking-wider border-b border-gray-100 pb-2 flex items-center gap-2">
+                                <Percent className="w-4 h-4" />
+                                Crédito
+                            </h3>
+                            {porcentajeDesdePrestamo !== null ? (
+                                /* El socio tiene préstamo activo este año — mostrar tasa automática */
+                                <div className="flex items-center gap-3 p-3 rounded-xl bg-blue-50 border border-blue-200">
+                                    <Percent className="h-5 w-5 text-blue-500 flex-shrink-0" />
+                                    <div className="flex-1">
+                                        <p className="text-xs font-black text-blue-700 uppercase tracking-wider">% Préstamos — Auto-calculado</p>
+                                        <p className="text-lg font-black text-blue-800 font-mono mt-0.5">
+                                            {Number(porcentajeDesdePrestamo).toFixed(2)}% mensual
+                                        </p>
+                                        <p className="text-[11px] text-blue-600 mt-0.5">
+                                            Tomado del préstamo activo de {new Date().getFullYear()}. Edita el préstamo para cambiar la tasa.
+                                        </p>
+                                    </div>
+                                </div>
+                            ) : (
+                                /* Sin préstamo este año — campo editable */
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <FormField label="% Interés Mensual Préstamos">
+                                        <div className="relative">
+                                            <Input
+                                                type="number"
+                                                step="0.01"
+                                                min="0"
+                                                max="100"
+                                                value={formData.porcentajePrestamo}
+                                                onChange={(e) => setFormData({ ...formData, porcentajePrestamo: e.target.value })}
+                                                placeholder="Ej: 1.5"
+                                                className="pr-8"
+                                            />
+                                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">%</span>
+                                        </div>
+                                        <p className="text-[11px] text-gray-400 mt-1">
+                                            {isEditing
+                                                ? 'Este socio no tiene préstamos activos en el año actual. Ingrese la tasa manualmente.'
+                                                : 'Opcional. Si el socio solicita un préstamo, la tasa se tomará del préstamo registrado.'}
+                                        </p>
+                                    </FormField>
+                                </div>
+                            )}
                         </div>
 
                         {/* Action Buttons */}

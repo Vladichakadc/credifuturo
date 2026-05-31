@@ -61,6 +61,14 @@ const Client = sequelize.define('Client', {
         type: DataTypes.BOOLEAN,
         defaultValue: true,
         allowNull: false
+    },
+    // Tasa de interés mensual asignada manualmente al socio (decimal: 0.015 = 1.5%).
+    // Si el socio tiene préstamos activos este año, el dashboard usa el interesMensual
+    // del préstamo en lugar de este valor. Solo aplica cuando no hay préstamos registrados.
+    porcentajePrestamo: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        defaultValue: null
     }
 });
 

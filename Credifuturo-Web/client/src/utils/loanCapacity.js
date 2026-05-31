@@ -14,6 +14,10 @@ export const kpiDescriptions = {
     capacidadDisponible: 'Margen de crédito aún disponible sin requerir votación: cupo máximo menos la deuda vigente. Si es negativo, cualquier nuevo desembolso debe someterse a asamblea.'
 };
 
+// Techo de referencia para el componente "Constancia de ahorro" (monto promedio mensual saludable).
+// Definido en $200.000 — alcanzar o superar este nivel otorga el máximo del subcomponente de monto.
+const TECHO_AHORRO_PROMEDIO = 200_000;
+
 // Explicación dinámica de cada componente del score, contextualizada con los datos del socio.
 function explicarComponente(key, a, scoreData) {
     const fmt = (n) => Math.round(n).toLocaleString('es-CO');
@@ -24,33 +28,65 @@ function explicarComponente(key, a, scoreData) {
         const pctOcupado = (a.totalDeudaPendiente / techo) * 100;
         return `La deuda actual ($${fmt(a.totalDeudaPendiente)}) ocupa el ${pctOcupado.toFixed(0)}% del cupo máximo ($${fmt(techo)}). Queda ${(100 - pctOcupado).toFixed(0)}% de capacidad disponible.`;
     }
-    if (key === 'comportamiento') {
-        if (scoreData.cuotasConResultado === 0) return 'Sin cuotas con resultado conocido aún. Puntaje provisional completo hasta que existan datos de pago en el sistema.';
+    if (key === 'cumplimiento') {
+        // Unifica comportamiento histórico (mora pasada) + cartera al día (mora EP actual)
+        if (a.enMoraActual) {
+            const totalEP = a.totalCuotasMoraEP || 0;
+            return `Mora EP vigente con ${totalEP} cuota(s) sin pagar — el componente se anula automáticamente. Regularice los pagos para recuperar puntaje.`;
+        }
+        if (scoreData.cuotasConResultado === 0) return 'Cartera al día y sin cuotas históricas resueltas aún. Puntaje provisional completo hasta que existan datos de pago.';
         const pct = scoreData.tasaMoraReal;
-        return `${scoreData.moraReal} cuota(s) con incumplimiento sobre ${scoreData.cuotasConResultado} resueltas (${pct.toFixed(0)}% de mora). Se penaliza linealmente hasta 30% donde el puntaje cae a cero.`;
+        if (pct === 0) return `Cumplimiento perfecto: ${scoreData.cuotasConResultado} cuota(s) resuelta(s) sin mora ni atrasos. Cartera al día. Puntaje máximo.`;
+        return `${scoreData.moraReal} de ${scoreData.cuotasConResultado} cuota(s) con incumplimiento (${pct.toFixed(0)}% de mora histórica) — cartera al día. Se penaliza linealmente hasta 30% donde el puntaje cae a cero.`;
     }
     if (key === 'antiguedad') {
         const m = a.mesesComoSocio || 0;
         if (m === 0) return 'Sin tiempo registrado como socio. El puntaje escala linealmente hasta alcanzar el máximo a los 24 meses.';
-        if (m < 24) return `${m} de 24 meses completados (${Math.round((m/24)*100)}% del máximo). Puntaje crece 0.5 pts por mes hasta llegar a 12 pts.`;
-        return `${m} meses como socio — antigüedad consolidada. Puntaje máximo de 12 pts alcanzado.`;
+        if (m < 24) return `${m} de 24 meses completados (${Math.round((m/24)*100)}% del máximo). Puntaje crece ~0.42 pts por mes hasta llegar a 10 pts.`;
+        return `${m} meses como socio — antigüedad consolidada. Puntaje máximo de 10 pts alcanzado.`;
     }
     if (key === 'lealtad') {
         const liq = a.prestamosLiquidados || 0;
-        if (liq === 0) return 'Sin créditos saldados aún. Cada préstamo cancelado a satisfacción aporta 2.67 pts (máximo 8 pts con 3 créditos).';
-        if (liq < 3) return `${liq} de 3 crédito(s) saldado(s) a satisfacción. ${3 - liq} crédito(s) más para alcanzar el puntaje máximo de 8 pts.`;
-        return `${liq} créditos cancelados — track record sólido. Puntaje máximo de 8 pts alcanzado.`;
+        const vAlDia = (a.prestamosVigentes || []).filter(l => !l.enMoraEP).length;
+        const partes = [];
+
+        if (liq === 0) {
+            partes.push('Sin créditos saldados aún (0 / 3 para puntaje máximo en este sub-ítem · 6 pts).');
+        } else if (liq < 3) {
+            partes.push(`${liq} crédito(s) cancelado(s) a satisfacción — ${3 - liq} más para el máximo de 6 pts en este sub-ítem.`);
+        } else {
+            partes.push(`${liq} créditos cancelados — track record sólido. Sub-ítem liquidados al máximo (6 pts).`);
+        }
+
+        if (vAlDia > 0) {
+            partes.push(`+2 pts bonus: tiene ${vAlDia} crédito(s) vigente(s) pagándose al día, lo que demuestra compromiso activo con el fondo.`);
+        } else if ((a.totalPrestamosVigentes || 0) > 0) {
+            partes.push(`⚠ Crédito(s) vigente(s) con mora activa — el bonus de 2 pts por compromiso activo no aplica.`);
+        } else {
+            partes.push(`Sin créditos vigentes actualmente (el bonus de +2 pts se activa al tener un crédito vigente y al día).`);
+        }
+
+        return partes.join(' ');
     }
-    if (key === 'compromiso') {
-        return a.enMoraActual
-            ? 'Cuota(s) vencida(s) sin pagar. Este componente se anula automáticamente mientras exista mora EP activa.'
-            : 'Cartera al día — ninguna cuota vencida sin pagar. Componente al máximo.';
+    if (key === 'constancia') {
+        const meses = a.mesesConAhorroMensual || 0;
+        const esperados = a.mesesComoSocio || 0;
+        const prom = a.promedioAhorroMensual || 0;
+        if (meses === 0) return 'Sin aportes mensuales registrados aún. Comience aportando con regularidad para escalar este componente (hasta 12 pts).';
+        const cobertura = esperados > 0 ? Math.min(100, (meses / esperados) * 100) : 100;
+        const pctMonto = Math.min(100, (prom / TECHO_AHORRO_PROMEDIO) * 100);
+        return `${meses} mes(es) con aporte de ${esperados} esperados (${cobertura.toFixed(0)}% de regularidad) · Aporte promedio $${fmt(prom)} (${pctMonto.toFixed(0)}% del referente $${fmt(TECHO_AHORRO_PROMEDIO)}). Premia a quien ahorra constante y con monto significativo.`;
     }
     if (key === 'penalizaciones') {
         const pen = a.totalAhorrosConPenalizacion || 0;
-        if (pen === 0) return 'Sin penalizaciones por atraso en el pago de ahorros este año. No se restan puntos del total.';
+        const meses = a.mesesConAhorroMensual || 0;
+        if (pen === 0) return 'Sin penalizaciones por atraso en todo el historial del fondo. Disciplina perfecta en los pagos de ahorro — no se restan puntos.';
         const dias = a.totalDiasPenalizacionAhorro || 0;
-        return `${pen} pago(s) de ahorro con penalidad por mora este año (${dias} días de atraso acumulados). Se restan 2 puntos por cada evento.`;
+        const ratio = meses > 0 ? ((pen / meses) * 100).toFixed(1) : '—';
+        const desc = meses > 0
+            ? `(${ratio}% de los meses ahorrados)`
+            : '';
+        return `${pen} aporte(s) con mora en toda la historia del fondo ${desc}. ${dias} día(s) de atraso acumulados. Penalización proporcional: socios más antiguos con la misma tasa son tratados igual que los recientes.`;
     }
     return '';
 }
@@ -60,51 +96,75 @@ function explicarComponente(key, a, scoreData) {
 export function calcScore(a) {
     if (!a) return null;
 
-    // P1.2 — Tasa mora corregida: solo sobre cuotas con resultado conocido
-    // (pagadas + mora histórica + pagos tardíos + mora EP actual). Excluye pendientes futuras.
+    // Tasa mora real: solo sobre cuotas con resultado conocido (pagadas + mora histórica + tardías).
+    // No incluye pendientes futuras (no son juzgables aún).
     const moraReal = (a.historialMoraTotal || 0) + (a.pagosTardios || 0);
     const cuotasConResultado = (a.historialPagoTotal || 0) + moraReal;
     const tasaMoraReal = cuotasConResultado > 0 ? (moraReal / cuotasConResultado) * 100 : 0;
 
-    // ── Componente 1: Capacidad financiera (40 pts) ──────────────────────
+    // ── Componente 1: Capacidad financiera (35 pts) ──────────────────────
     // 100% si está libre de deuda; 0% si la deuda iguala o supera el techo 3×.
     const techo3x = (a.ahorroTotal || 0) * FACTOR_MAX;
     const capacidadDisponible = techo3x - (a.totalDeudaPendiente || 0);
     let capacidadPts = 0;
     if (a.ahorroTotal > 0) {
         const ratio = Math.max(0, Math.min(1, capacidadDisponible / techo3x));
-        capacidadPts = ratio * 40;
+        capacidadPts = ratio * 35;
     }
 
-    // ── Componente 2: Comportamiento crediticio (30 pts) ─────────────────
-    // Penaliza la tasa mora real. Sin cuotas con resultado → puntaje completo (sin negativo).
-    let comportamientoPts;
-    if (cuotasConResultado === 0) {
-        comportamientoPts = 30;
+    // ── Componente 2: Cumplimiento crediticio (35 pts) ───────────────────
+    // Unifica comportamiento histórico (mora pasada) + cartera al día (mora EP actual).
+    // Si tiene mora EP activa → 0 pts (es bloqueante).
+    // Si no, escala con la tasa mora histórica real.
+    let cumplimientoPts;
+    if (a.enMoraActual) {
+        cumplimientoPts = 0;
+    } else if (cuotasConResultado === 0) {
+        cumplimientoPts = 35;
     } else if (tasaMoraReal >= 30) {
-        comportamientoPts = 0;
+        cumplimientoPts = 0;
     } else {
-        comportamientoPts = 30 * (1 - tasaMoraReal / 30);
+        cumplimientoPts = 35 * (1 - tasaMoraReal / 30);
     }
 
-    // ── Componentes 3 y 4: Antigüedad (12 pts) y Lealtad (8 pts) ────────
-    // Antigüedad: escala linealmente 0→12 pts en 24 meses de permanencia.
-    // Lealtad: 2.67 pts por cada préstamo cancelado, máximo 3 créditos (8 pts).
+    // ── Componentes 3 y 4: Antigüedad (10 pts) y Lealtad (8 pts) ────────
+    // Antigüedad: escala linealmente 0→10 pts en 24 meses de permanencia.
+    // Lealtad (8 pts):
+    //   - 6 pts por créditos liquidados: escala lineal, satura a 3 cancelados (2 pts c/u).
+    //   - 2 pts bonus si tiene al menos 1 crédito vigente pagándose al día (sin mora EP):
+    //     reconoce el compromiso activo, no solo el historial pasado.
     const meses = a.mesesComoSocio || 0;
-    const antiguedadPts = Math.min(meses / 24, 1) * 12;
-    const liquidadosPts = Math.min((a.prestamosLiquidados || 0) / 3, 1) * 8;
+    const antiguedadPts = Math.min(meses / 24, 1) * 10;
+    const vigentesAlDia = (a.prestamosVigentes || []).filter(l => !l.enMoraEP).length;
+    const liquidadosPts = Math.min((a.prestamosLiquidados || 0) / 3, 1) * 6
+        + (vigentesAlDia > 0 ? 2 : 0);
 
-    // ── Componente 5: Compromiso actual (10 pts) ─────────────────────────
-    // 0 si tiene mora EP activa; 10 si no.
-    const compromisoPts = a.enMoraActual ? 0 : 10;
+    // ── Componente 5: Constancia de ahorro (12 pts) ──────────────────────
+    // Reconoce al socio que ahorra con regularidad Y con monto significativo.
+    //  - 6 pts por regularidad: % de meses con aporte vs meses como socio.
+    //  - 6 pts por monto: promedio mensual escalado contra un referente ($200.000).
+    // Premia a quien más ahorra: ahorrar todos los meses Y con monto alto → 12 pts.
+    const mesesConAhorro = a.mesesConAhorroMensual || 0;
+    const promedio = a.promedioAhorroMensual || 0;
+    const regularidadRatio = meses > 0 ? Math.min(mesesConAhorro / meses, 1) : (mesesConAhorro > 0 ? 1 : 0);
+    const montoRatio = Math.min(promedio / TECHO_AHORRO_PROMEDIO, 1);
+    const constanciaPts = (regularidadRatio * 6) + (montoRatio * 6);
 
-    // ── Componente 6 (Castigo): Penalizaciones por Ahorro (Puntos Negativos) ─
-    // Se restan 2 puntos por cada aporte mensual pagado con penalización.
+    // ── Castigo: Penalizaciones por Ahorro (historial completo) ──────────
+    // Se usa el RATIO penalizaciones/meses-ahorrados para ser equitativo entre
+    // socios con distinta antigüedad. Un socio de 5 años con 3 penalizaciones
+    // en 60 meses (5%) es mejor que uno de 1 año con 3 en 12 meses (25%).
+    // Escala: 0% → 0 pts, ≥50% → −15 pts (cap). Sin datos → sin castigo.
     const cantPenalizaciones = a.totalAhorrosConPenalizacion || 0;
-    const penalizacionesPts = -(cantPenalizaciones * 2);
+    const mesesParaRatio = mesesConAhorro || 1;
+    const ratioPenalizacion = cantPenalizaciones / mesesParaRatio;
+    const penalizacionesPts = mesesConAhorro > 0
+        ? -Math.min(15, Math.round(ratioPenalizacion * 30))
+        : 0;
 
-    let score = Math.round(capacidadPts + comportamientoPts + antiguedadPts + liquidadosPts + compromisoPts + penalizacionesPts);
+    let score = Math.round(capacidadPts + cumplimientoPts + antiguedadPts + liquidadosPts + constanciaPts + penalizacionesPts);
     if (score < 0) score = 0;
+    if (score > 100) score = 100;
 
     let nivel, color;
     if (score >= 80)      { nivel = 'EXCELENTE'; color = 'green'; }
@@ -118,12 +178,12 @@ export function calcScore(a) {
         tasaMoraReal, moraReal, cuotasConResultado
     };
     scoreData.componentes = [
-        { key: 'capacidad',      label: 'Capacidad financiera',   pts: Math.round(capacidadPts * 10) / 10,   max: 40, hint: 'Margen entre tu deuda actual y el cupo máximo (regla 3×).', detalle: explicarComponente('capacidad', a, scoreData) },
-        { key: 'comportamiento', label: 'Comportamiento de pago', pts: Math.round(comportamientoPts * 10) / 10, max: 30, hint: 'Cumplimiento sobre cuotas con resultado conocido.', detalle: explicarComponente('comportamiento', a, scoreData) },
-        { key: 'antiguedad',     label: 'Antigüedad como socio',  pts: Math.round(antiguedadPts * 10) / 10,  max: 12, hint: 'Meses de permanencia continua en el fondo. Máximo a los 24 meses.', detalle: explicarComponente('antiguedad', a, scoreData) },
+        { key: 'capacidad',      label: 'Capacidad financiera',   pts: Math.round(capacidadPts * 10) / 10,   max: 35, hint: 'Margen entre tu deuda actual y el cupo máximo (regla 3×).', detalle: explicarComponente('capacidad', a, scoreData) },
+        { key: 'cumplimiento',   label: 'Cumplimiento crediticio',pts: Math.round(cumplimientoPts * 10) / 10, max: 35, hint: 'Historial de pagos + cartera al día (sin mora EP vigente).', detalle: explicarComponente('cumplimiento', a, scoreData) },
+        { key: 'antiguedad',     label: 'Antigüedad como socio',  pts: Math.round(antiguedadPts * 10) / 10,  max: 10, hint: 'Meses de permanencia continua en el fondo. Máximo a los 24 meses.', detalle: explicarComponente('antiguedad', a, scoreData) },
         { key: 'lealtad',        label: 'Lealtad crediticia',     pts: Math.round(liquidadosPts * 10) / 10,  max: 8,  hint: 'Créditos cancelados a satisfacción. Máximo con 3 créditos saldados.', detalle: explicarComponente('lealtad', a, scoreData) },
-        { key: 'compromiso',     label: 'Cartera al día',         pts: compromisoPts,                        max: 10, hint: 'Ausencia de mora EP vigente en este momento.', detalle: explicarComponente('compromiso', a, scoreData) },
-        { key: 'penalizaciones', label: 'Penalizaciones Ahorro',  pts: penalizacionesPts,                    max: 0,  hint: 'Se restan 2 pts por cada ahorro mensual pagado con atraso.', detalle: explicarComponente('penalizaciones', a, scoreData) },
+        { key: 'constancia',     label: 'Constancia de ahorro',   pts: Math.round(constanciaPts * 10) / 10,  max: 12, hint: 'Regularidad + monto promedio de tus aportes mensuales. Premia al que más ahorra.', detalle: explicarComponente('constancia', a, scoreData) },
+        { key: 'penalizaciones', label: 'Penalizaciones Ahorro',  pts: penalizacionesPts,                    max: 0,  hint: 'Se restan 2 pts por cada ahorro mensual pagado con atraso en el año en curso.', detalle: explicarComponente('penalizaciones', a, scoreData) },
     ];
     return scoreData;
 }

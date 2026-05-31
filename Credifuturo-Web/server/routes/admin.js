@@ -193,6 +193,37 @@ router.get('/clients/list', async (req, res) => {
             return normalized;
         });
 
+        // Calcular % Préstamos efectivo: préstamo activo del año actual tiene prioridad
+        // sobre el valor manual almacenado en el socio.
+        const DisbursedLoan = require('../models/DisbursedLoan');
+        const anioActual = new Date().getFullYear();
+        const prestamosActivos = await DisbursedLoan.findAll({
+            where: { anioDesembolso: anioActual, estado: { [require('sequelize').Op.in]: ['Activo', 'Vigente', 'Pendiente'] } },
+            attributes: ['clientId', 'interesMensual']
+        });
+        // Mapa clientId → interesMensual del préstamo más reciente del año
+        const loanRateMap = {};
+        prestamosActivos.forEach(l => {
+            if (l.clientId && !loanRateMap[l.clientId]) {
+                loanRateMap[l.clientId] = parseFloat(l.interesMensual || 0);
+            }
+        });
+
+        normalizedData.forEach(client => {
+            const loanRate = loanRateMap[client.id];
+            if (loanRate !== undefined && loanRate > 0) {
+                // Convertir decimal a porcentaje (0.015 → 1.5)
+                client.porcentajeEfectivo = parseFloat((loanRate * 100).toFixed(4));
+                client.porcentajeFuente = 'loan';
+            } else if (client.porcentajePrestamo !== null && client.porcentajePrestamo !== undefined) {
+                client.porcentajeEfectivo = parseFloat((client.porcentajePrestamo * 100).toFixed(4));
+                client.porcentajeFuente = 'manual';
+            } else {
+                client.porcentajeEfectivo = null;
+                client.porcentajeFuente = null;
+            }
+        });
+
         res.json({
             ok: true,
             data: normalizedData,
@@ -707,45 +738,35 @@ async function getLoanCapacityAnalysis(clientId) {
         }
     }
 
-    // ── P1.5: Penalizaciones por Ahorro (Score Negativo) ─────────────────────
-    // Se cuentan únicamente las penalizaciones del año en curso. Puede estar en anioAbonado o en year.
-    const totalAhorrosConPenalizacion = await Saving.count({ 
-        where: { 
-            clientId, 
-            penalizacion: 'SI', 
-            [Op.or]: [{ anioAbonado: yearActual }, { year: yearActual }]
-        } 
+    // ── Penalizaciones por Ahorro: historial completo (todos los años) ───────
+    // Se usa el ratio penalizaciones/meses para que sea justo entre socios
+    // con distinta antigüedad — un socio de 5 años no es penalizado por tener
+    // más datos que uno de 1 año.
+    const totalAhorrosConPenalizacion = await Saving.count({
+        where: { clientId, penalizacion: 'SI' }
     });
-    const totalDiasPenalizacionAhorro = parseInt(await Saving.sum('diasPenalizacion', { 
-        where: { 
-            clientId, 
-            [Op.or]: [{ anioAbonado: yearActual }, { year: yearActual }]
-        } 
+    const totalDiasPenalizacionAhorro = parseInt(await Saving.sum('diasPenalizacion', {
+        where: { clientId }
     }) || 0);
 
-    // DEBUG DUMP
-    try {
-        const fs = require('fs');
-        const path = require('path');
-        const allSavings = await Saving.findAll({ where: { clientId } });
-        const allPenalties = allSavings.filter(s => s.penalizacion === 'SI');
-        
-        const debugData = {
-            clientId,
-            name: client.name,
-            surname: client.surname1,
-            yearActual,
-            totalAhorrosConPenalizacion,
-            totalDiasPenalizacionAhorro,
-            penalties: allPenalties.map(s => ({
-                id: s.id, date: s.date, anioAbonado: s.anioAbonado, year: s.year, penalizacion: s.penalizacion, dias: s.diasPenalizacion
-            }))
-        };
-        fs.writeFileSync(path.join('C:\\Users\\vladi\\.gemini\\antigravity-ide\\brain\\ec58d6e9-3ec6-4997-8cd7-9c03091bb3c1\\scratch', `debug_${clientId}.json`), JSON.stringify(debugData, null, 2));
-    } catch (e) {
-        console.error("Debug write error", e);
+    // ── Constancia de ahorro: meses con aporte mensual + valor promedio ─────
+    // Reconoce al socio que ahorra con regularidad y con monto significativo.
+    const ahorrosMensuales = await Saving.findAll({
+        where: { clientId, type: 'Mensual' },
+        attributes: ['anioAbonado', 'mesAbonado', 'valorAhorrado', 'amount']
+    });
+    const periodosUnicos = new Set();
+    let sumaValorAhorradoMensual = 0;
+    for (const a of ahorrosMensuales) {
+        if (a.anioAbonado && a.mesAbonado) {
+            periodosUnicos.add(`${a.anioAbonado}-${String(a.mesAbonado).trim().toLowerCase()}`);
+        }
+        sumaValorAhorradoMensual += parseFloat(a.valorAhorrado || a.amount || 0);
     }
-
+    const mesesConAhorroMensual = periodosUnicos.size;
+    const promedioAhorroMensual = mesesConAhorroMensual > 0
+        ? sumaValorAhorradoMensual / mesesConAhorroMensual
+        : 0;
 
     return {
         clientId,
@@ -773,6 +794,8 @@ async function getLoanCapacityAnalysis(clientId) {
         tieneCompromisoNoRetiroAhorros,
         totalAhorrosConPenalizacion,
         totalDiasPenalizacionAhorro,
+        mesesConAhorroMensual,
+        promedioAhorroMensual,
         yearActual,
         // Resolución vigente del fondo (mostrada al socio y al admin)
         resolucionVigente: {
@@ -885,9 +908,9 @@ router.get('/savings/list', async (req, res) => {
             whereClause.year = parseInt(year);
         }
 
-        // Filtro estado
+        // Filtro estado: usa LIKE para tolerar espacios sobrantes en los datos heredados
         if (status && status.trim()) {
-            whereClause.status = status.trim();
+            whereClause.status = { [Op.like]: `%${status.trim()}%` };
         }
 
         const savings = await Saving.findAll({

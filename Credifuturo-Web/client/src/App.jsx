@@ -18,6 +18,7 @@ import InitialContributionsPage from './pages/admin/InitialContributionsPage'; /
 import InformesViewerPage from './pages/admin/InformesViewerPage';
 import AccountDetailPage from './pages/admin/AccountDetailPage';
 import SavingsSummaryPage from './pages/admin/SavingsSummaryPage';
+import DevolucionesAhorrosPage from './pages/admin/DevolucionesAhorrosPage';
 import LoanAnalyzerPage from './pages/admin/LoanAnalyzerPage';
 import OrphanLoansPage from './pages/admin/OrphanLoansPage';
 
@@ -93,6 +94,7 @@ function App() {
                     <Route path="savings" element={<SavingsPage />} />
                     <Route path="savings/list" element={<SavingsListPage />} />
                     <Route path="savings/summary" element={<SavingsSummaryPage />} />
+                    <Route path="savings/devoluciones" element={<DevolucionesAhorrosPage />} />
                     {/* Aportes Module */}
                     <Route path="initial-contributions/list" element={<InitialContributionsListPage />} />
                     <Route path="initial-contributions/new" element={<InitialContributionsPage />} />
