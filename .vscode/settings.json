@@ -5,5 +5,6 @@
     ],
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,
-    "kilo-code.new.autoApprove.enabled": false
+    "kilo-code.new.autoApprove.enabled": false,
+    "google.cloud.project": "positive-leaf-493801-j3"
 }
