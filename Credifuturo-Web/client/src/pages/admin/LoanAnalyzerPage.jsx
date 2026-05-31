@@ -2,11 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSortTable, SortIcon } from '../../utils/useSortTable';
 import api from '../../config/api';
 import {
-    Scale, ChevronDown, Loader2, PiggyBank, CreditCard,
+    Scale, Loader2, PiggyBank, CreditCard,
     Award, TrendingUp, TrendingDown, CheckCircle, XCircle,
-    AlertCircle, AlertTriangle, Users, Search, X
+    AlertCircle, AlertTriangle, Lock, FileText, Calendar,
+    Gauge, Clock, History, Users, Search, ChevronDown, X
 } from 'lucide-react';
 import { useUi } from '../../context/UiContext';
+import { calcVerdict, colorMap, kpiDescriptions } from '../../utils/loanCapacity';
 
 const SocioSelect = ({ clients, selectedId, onSelect }) => {
     const [open, setOpen] = useState(false);
@@ -112,127 +114,57 @@ const LoanAnalyzerPage = () => {
         useSortTable(analysis?.prestamosVigentes || []);
 
     useEffect(() => {
-        api.get('/admin/clients/list')
-            .then(res => {
-                if (res.data?.ok && Array.isArray(res.data.data)) {
-                    setClients(res.data.data.filter(c => c.estatus === 'Activo'));
-                }
-            })
-            .catch(() => {});
-    }, []);
+        const fetchClients = async () => {
+            try {
+                const res = await api.get('/admin/socios');
+                setClients(res.data.filter(c => c.role !== 'admin' && c.role !== 'root'));
+            } catch (err) {
+                console.error(err);
+                toast.error('Error al cargar socios.');
+            }
+        };
+        fetchClients();
+    }, [toast]);
 
-    const handleSelect = async (id) => {
-        setSelectedId(id);
-        if (!id) { setAnalysis(null); return; }
-        setLoadingAnalysis(true);
-        try {
-            const res = await api.get(`/admin/clients/${id}/loan-capacity`);
-            setAnalysis(res.data);
-        } catch {
-            toast.error('Error al cargar análisis del socio.');
+    useEffect(() => {
+        if (!selectedId) {
             setAnalysis(null);
-        } finally {
-            setLoadingAnalysis(false);
+            return;
         }
-    };
+        const fetchAnalysis = async () => {
+            setLoadingAnalysis(true);
+            try {
+                const res = await api.get(`/admin/socios/${selectedId}/loan-capacity`);
+                setAnalysis(res.data);
+            } catch (err) {
+                console.error(err);
+                toast.error('Error al cargar análisis de capacidad.');
+            } finally {
+                setLoadingAnalysis(false);
+            }
+        };
+        fetchAnalysis();
+    }, [selectedId, toast]);
 
-
-    // ── Lógica financiera experta ──────────────────────────────────────────────
-    const calcVerdict = (a) => {
-        if (!a) return null;
-        const FACTOR_MAX = 3;
-        const montoMaxSinVotacion = a.ahorroTotal * FACTOR_MAX;
-        const capacidadDisponible = montoMaxSinVotacion - a.totalDeudaPendiente;
-        const tasaApalancamiento  = a.ahorroTotal > 0 ? (a.totalDeudaPendiente / a.ahorroTotal) * 100 : 0;
-        const totalCuotas         = a.historialPagoTotal + a.historialMoraTotal + a.historialPendTotal;
-        const tasaMora            = totalCuotas > 0 ? (a.historialMoraTotal / totalCuotas) * 100 : 0;
-        const totalMoraEP         = a.totalCuotasMoraEP || 0;
-
-        const riesgos = [];
-        const positivos = [];
-
-        if (a.enMoraActual)
-            riesgos.push(`Tiene ${totalMoraEP} cuota(s) vencidas sin pagar (Mora EP) — valor: $${(a.totalMoraEPValor || 0).toLocaleString('es-CO')}`);
-        else
-            positivos.push('Sin cuotas vencidas (Mora EP) en préstamos vigentes');
-
-        if (a.historialMoraTotal > 0)
-            riesgos.push(`Historial con ${a.historialMoraTotal} cuota(s) en mora registrada(s)`);
-        else
-            positivos.push('Historial crediticio limpio — 0 moras registradas');
-
-        if (tasaApalancamiento > 200)
-            riesgos.push(`Apalancamiento crítico: deuda equivale al ${tasaApalancamiento.toFixed(0)}% del ahorro`);
-        else if (tasaApalancamiento > 100)
-            riesgos.push(`Apalancamiento elevado: deuda equivale al ${tasaApalancamiento.toFixed(0)}% del ahorro`);
-        else if (tasaApalancamiento > 0)
-            positivos.push(`Apalancamiento saludable: ${tasaApalancamiento.toFixed(0)}% deuda/ahorro`);
-        else
-            positivos.push('Sin deuda pendiente registrada');
-
-        if (a.ahorroTotal === 0)
-            riesgos.push('Sin ahorro acumulado — no se puede calcular capacidad');
-        else if (a.ahorroTotal < 500000)
-            riesgos.push(`Ahorro bajo ($${a.ahorroTotal.toLocaleString('es-CO')}) — limita capacidad de endeudamiento`);
-        else
-            positivos.push(`Ahorro acumulado: $${a.ahorroTotal.toLocaleString('es-CO')} (aportes + mensual)`);
-
-        if (capacidadDisponible > 0)
-            positivos.push(`Margen disponible sin votación: $${Math.round(capacidadDisponible).toLocaleString('es-CO')}`);
-        else
-            riesgos.push('No hay capacidad adicional sin votación del fondo');
-
-        let verdict, color, icon, mensaje, recomendacion;
-        if (a.ahorroTotal === 0) {
-            verdict = 'NO VIABLE';
-            color   = 'red';   icon = 'X';
-            mensaje = 'El socio no tiene ahorro acumulado registrado. La política del fondo exige ahorro base para calcular el límite de endeudamiento.';
-            recomendacion = 'Rechazar solicitud. Invitar al socio a regularizar sus aportes antes de presentar una nueva solicitud.';
-        } else if (a.enMoraActual) {
-            verdict = 'NO VIABLE — MORA EP ACTIVA';
-            color   = 'red';   icon = 'X';
-            mensaje = `El socio tiene ${totalMoraEP} cuota(s) vencida(s) sin pagar por $${(a.totalMoraEPValor || 0).toLocaleString('es-CO')}. La fecha límite de pago ya venció. Ningún reglamento de fondo solidario autoriza nuevos desembolsos con mora vigente.`;
-            recomendacion = 'Rechazar solicitud. Exigir paz y salvo total antes de cualquier nuevo trámite. Las cuotas en mora deben quedar en estado "Pago" para reconsiderar.';
-        } else if (capacidadDisponible <= 0) {
-            verdict = 'REQUIERE VOTACIÓN DEL FONDO';
-            color   = 'amber'; icon = 'vote';
-            mensaje = `La deuda pendiente ($${Math.round(a.totalDeudaPendiente).toLocaleString('es-CO')}) supera el límite de 3× el ahorro ($${Math.round(montoMaxSinVotacion).toLocaleString('es-CO')}). Cualquier nuevo préstamo excede el techo sin votación.`;
-            recomendacion = 'Someter a votación del fondo. El monto solicitado no puede exceder la capacidad de pago histórica demostrada. Se recomienda análisis caso a caso con todos los asociados.';
-        } else if (a.historialMoraTotal > 2 || tasaMora > 20) {
-            verdict = 'VIABLE CON RESTRICCIONES';
-            color   = 'yellow'; icon = 'warn';
-            mensaje = `El socio califica por ahorro (max sin votación: $${Math.round(montoMaxSinVotacion).toLocaleString('es-CO')}), pero su historial registra mora en ${tasaMora.toFixed(0)}% de las cuotas. Se recomienda precaución.`;
-            recomendacion = `Puede aprobarse hasta $${Math.round(Math.min(capacidadDisponible, montoMaxSinVotacion * 0.5)).toLocaleString('es-CO')} (50% del techo) como medida de mitigación. Exigir garantía adicional o codeudor.`;
-        } else {
-            verdict = 'VIABLE SIN VOTACIÓN';
-            color   = 'green'; icon = 'check';
-            mensaje = `El socio cumple todos los requisitos. Puede solicitar hasta $${Math.round(capacidadDisponible).toLocaleString('es-CO')} sin necesidad de votación del fondo (techo 3×: $${Math.round(montoMaxSinVotacion).toLocaleString('es-CO')}).`;
-            recomendacion = `Aprobar hasta $${Math.round(capacidadDisponible).toLocaleString('es-CO')} sin votación. Para montos superiores hasta $${Math.round(montoMaxSinVotacion).toLocaleString('es-CO')}, también es viable pero requiere votación del fondo.`;
-        }
-
-        return { verdict, color, icon, mensaje, recomendacion, montoMaxSinVotacion, capacidadDisponible, tasaApalancamiento, tasaMora, totalMoraEP, riesgos, positivos };
-    };
-
-    const v = calcVerdict(analysis);
-    const colorMap = {
-        green:  { bg: 'bg-emerald-50', border: 'border-emerald-300', text: 'text-emerald-800', badge: 'bg-emerald-600' },
-        yellow: { bg: 'bg-yellow-50',  border: 'border-yellow-300',  text: 'text-yellow-800',  badge: 'bg-yellow-500' },
-        amber:  { bg: 'bg-amber-50',   border: 'border-amber-300',   text: 'text-amber-800',   badge: 'bg-amber-500'  },
-        red:    { bg: 'bg-red-50',     border: 'border-red-300',     text: 'text-red-800',     badge: 'bg-red-600'    },
-    };
+    const v = calcVerdict(analysis, { audience: 'admin' });
     const c = v ? (colorMap[v.color] || colorMap.green) : null;
 
     return (
         <div className="space-y-6">
             {/* Page header */}
-            <div>
-                <h1 className="text-2xl font-bold text-brand-primary flex items-center gap-2">
-                    <Scale className="h-6 w-6 text-emerald-600" />
-                    Analizador de Capacidad de Préstamo
-                </h1>
-                <p className="text-gray-500 text-sm mt-1">
-                    Evaluación financiera experta · Regla 3× Ahorro Acumulado · Sin mínimo requerido
-                </p>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold text-brand-primary flex items-center gap-2">
+                        <Scale className="h-6 w-6 text-emerald-600" />
+                        Analizador de Capacidad de Préstamo
+                    </h1>
+                    <p className="text-gray-500 text-sm mt-1">
+                        Evaluación financiera experta · Regla 3× Ahorro Acumulado · Sin mínimo requerido
+                    </p>
+                </div>
+                <div className="w-full md:w-80">
+                    <SocioSelect clients={clients} selectedId={selectedId} onSelect={setSelectedId} />
+                </div>
             </div>
 
             {/* Main card */}
@@ -249,8 +181,14 @@ const LoanAnalyzerPage = () => {
                 </div>
 
                 <div className="p-5 space-y-5">
-                    {/* Selector */}
-                    <SocioSelect clients={clients} selectedId={selectedId} onSelect={handleSelect} />
+                    {/* Empty state (no user selected) */}
+                    {!selectedId && !loadingAnalysis && (
+                        <div className="text-center py-12 text-gray-400">
+                            <TrendingDown className="h-12 w-12 mx-auto mb-3 opacity-25" />
+                            <p className="text-sm font-medium">Selecciona un socio para ver el análisis de capacidad</p>
+                            <p className="text-xs mt-1">Basado en regla de 3× el ahorro acumulado</p>
+                        </div>
+                    )}
 
                     {/* Loading */}
                     {loadingAnalysis && (
@@ -261,22 +199,76 @@ const LoanAnalyzerPage = () => {
                     )}
 
                     {/* Analysis result */}
-                    {analysis && v && !loadingAnalysis && (
+                    {selectedId && analysis && v && !loadingAnalysis && (
                         <div className="space-y-4">
-                            {/* Member header */}
-                            <div className="flex items-center gap-3 px-4 py-3 bg-gray-50 rounded-xl border border-gray-100">
-                                <div className="w-10 h-10 rounded-full bg-brand-primary flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-                                    {analysis.nombre?.charAt(0) ?? '?'}
+                            {/* Score Crediticio 0-100 */}
+                            {v.score && (
+                                <div className="bg-gradient-to-br from-gray-50 to-white rounded-2xl border-2 border-gray-200 p-4">
+                                    <div className="flex items-start justify-between gap-4 mb-3">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="bg-brand-primary rounded-xl p-2">
+                                                <Gauge className="h-4 w-4 text-white" />
+                                            </div>
+                                            <div>
+                                                <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Score crediticio</p>
+                                                <p className="text-sm font-bold text-gray-800">Salud financiera consolidada del socio</p>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className={`text-4xl font-black leading-none ${colorMap[v.score.color].text}`}>{v.score.score}</p>
+                                            <p className={`text-[10px] font-black uppercase tracking-widest ${colorMap[v.score.color].text}`}>{v.score.nivel}</p>
+                                            <p className="text-[9px] text-gray-400">de 100</p>
+                                        </div>
+                                    </div>
+                                    <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden mb-3">
+                                        <div className={`h-2 rounded-full transition-all duration-700 ${colorMap[v.score.color].badge}`} style={{ width: `${v.score.score}%` }} />
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                        {v.score.componentes.map((comp) => {
+                                            const pct = comp.max > 0 ? (comp.pts / comp.max) * 100 : 0;
+                                            return (
+                                                <div key={comp.key} className="bg-white rounded-lg border border-gray-100 p-3">
+                                                    <div className="flex items-start justify-between gap-2 mb-1">
+                                                        <div className="min-w-0">
+                                                            <p className="text-[10px] uppercase tracking-wide text-gray-500 font-bold leading-tight">{comp.label}</p>
+                                                            <p className="text-[10px] text-gray-400 leading-tight mt-0.5">{comp.hint}</p>
+                                                        </div>
+                                                        <p className="text-sm font-bold text-gray-800 whitespace-nowrap">{comp.pts}<span className="text-[10px] font-normal text-gray-400"> / {comp.max}</span></p>
+                                                    </div>
+                                                    <div className="w-full bg-gray-100 rounded-full h-1 my-1.5 overflow-hidden">
+                                                        <div className={`h-1 rounded-full ${pct >= 75 ? 'bg-emerald-500' : pct >= 50 ? 'bg-yellow-500' : pct >= 25 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${pct}%` }} />
+                                                    </div>
+                                                    <p className="text-[10px] text-gray-600 leading-snug">{comp.detalle}</p>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="font-bold text-gray-900 text-sm truncate">{analysis.nombre}</p>
-                                    <p className="text-xs text-gray-500">CC {analysis.cedula ?? 'N/A'} · Estado: <span className="font-semibold text-emerald-600">{analysis.estatus ?? '—'}</span></p>
+                            )}
+
+                            {/* Resolución vigente del fondo */}
+                            {analysis.resolucionVigente && (
+                                <div className={`rounded-xl border-2 p-3 flex items-start gap-3 ${analysis.tieneCompromisoNoRetiroAhorros ? 'bg-amber-50 border-amber-300' : 'bg-blue-50 border-blue-200'}`}>
+                                    <div className={`rounded-lg p-2 ${analysis.tieneCompromisoNoRetiroAhorros ? 'bg-amber-500' : 'bg-blue-500'}`}>
+                                        {analysis.tieneCompromisoNoRetiroAhorros
+                                            ? <Lock className="h-4 w-4 text-white" />
+                                            : <FileText className="h-4 w-4 text-white" />}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className={`text-[10px] font-black uppercase tracking-widest ${analysis.tieneCompromisoNoRetiroAhorros ? 'text-amber-700' : 'text-blue-700'}`}>
+                                            Resolución vigente · {analysis.resolucionVigente.titulo}
+                                        </p>
+                                        <p className={`text-xs leading-relaxed mt-1 ${analysis.tieneCompromisoNoRetiroAhorros ? 'text-amber-800' : 'text-blue-800'}`}>
+                                            {analysis.resolucionVigente.regla}
+                                        </p>
+                                        {analysis.tieneCompromisoNoRetiroAhorros && (
+                                            <p className="text-xs font-semibold text-amber-900 mt-1.5 bg-amber-100 inline-block px-2 py-0.5 rounded">
+                                                ⚠ Aplica a este socio: tiene un préstamo que cruza el 31-dic-{analysis.yearActual}
+                                            </p>
+                                        )}
+                                    </div>
                                 </div>
-                                <div className="text-right flex-shrink-0">
-                                    <p className="text-[10px] text-gray-400 uppercase font-semibold">Préstamos con cuotas activas</p>
-                                    <p className="text-lg font-black text-brand-primary">{analysis.totalPrestamosVigentes}</p>
-                                </div>
-                            </div>
+                            )}
 
                             {/* Key metrics grid */}
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -286,7 +278,8 @@ const LoanAnalyzerPage = () => {
                                         <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Ahorro Acumulado</span>
                                     </div>
                                     <p className="text-base font-black text-emerald-600">${Math.round(analysis.ahorroTotal).toLocaleString('es-CO')}</p>
-                                    <p className="text-[9px] text-emerald-500 mt-0.5">Aportes + Mensual</p>
+                                    <p className="text-[9px] text-emerald-500 mt-0.5">Aportes iniciales + ahorros mensuales</p>
+                                    <p className="text-[9px] text-gray-500 mt-1 leading-tight">{kpiDescriptions.ahorro}</p>
                                 </div>
                                 <div className={`rounded-xl p-3 border border-white ${analysis.enMoraActual ? 'bg-red-50 border-red-200' : analysis.totalDeudaPendiente > 0 ? 'bg-orange-50' : 'bg-gray-50'}`}>
                                     <div className="flex items-center gap-1.5 mb-1">
@@ -301,16 +294,18 @@ const LoanAnalyzerPage = () => {
                                             ? `⚠ ${analysis.totalCuotasMoraEP} vencida(s) · $${(analysis.totalMoraEPValor || 0).toLocaleString('es-CO')}`
                                             : analysis.totalPrestamosVigentes > 0
                                                 ? `${analysis.prestamosVigentes.reduce((s, l) => s + l.cuotasPendientesCount, 0)} cuota(s) por vencer`
-                                                : 'Sin préstamos activos'}
+                                                : 'Sin obligaciones vigentes'}
                                     </p>
+                                    <p className="text-[9px] text-gray-500 mt-1 leading-tight">{kpiDescriptions.deuda}</p>
                                 </div>
                                 <div className="bg-blue-50 rounded-xl p-3 border border-white">
                                     <div className="flex items-center gap-1.5 mb-1">
                                         <Award className="h-3.5 w-3.5 text-blue-600" />
-                                        <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Máximo Sin Votación</span>
+                                        <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Cupo Máximo</span>
                                     </div>
                                     <p className="text-base font-black text-blue-600">${Math.round(v.montoMaxSinVotacion).toLocaleString('es-CO')}</p>
-                                    <p className="text-[9px] text-blue-400 mt-0.5">3 × Ahorro Acumulado</p>
+                                    <p className="text-[9px] text-blue-400 mt-0.5">Regla 3× ahorro · aprobación directa</p>
+                                    <p className="text-[9px] text-gray-500 mt-1 leading-tight">{kpiDescriptions.maximo}</p>
                                 </div>
                                 <div className={`rounded-xl p-3 border border-white ${v.capacidadDisponible > 0 ? 'bg-emerald-50' : 'bg-red-50'}`}>
                                     <div className="flex items-center gap-1.5 mb-1">
@@ -321,7 +316,48 @@ const LoanAnalyzerPage = () => {
                                         ${Math.max(0, Math.round(v.capacidadDisponible)).toLocaleString('es-CO')}
                                     </p>
                                     <p className={`text-[9px] mt-0.5 ${v.capacidadDisponible > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                        {v.capacidadDisponible > 0 ? 'Sin necesidad de votación' : 'Requiere votación del fondo'}
+                                        {v.capacidadDisponible > 0 ? 'Cupo libre para aprobación directa' : 'Cupo agotado · requiere asamblea'}
+                                    </p>
+                                    <p className="text-[9px] text-gray-500 mt-1 leading-tight">{kpiDescriptions.capacidadDisponible}</p>
+                                </div>
+                            </div>
+
+                            {/* Métricas secundarias: antigüedad, liquidados, atrasos */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                <div className="rounded-lg border border-gray-100 bg-white p-3">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <Clock className="h-4 w-4 text-blue-500 shrink-0" />
+                                        <p className="text-[10px] uppercase tracking-wide text-gray-500 font-bold">Antigüedad como socio</p>
+                                    </div>
+                                    <p className="text-sm font-bold text-gray-800">
+                                        {analysis.mesesComoSocio != null ? `${analysis.mesesComoSocio} meses` : '—'}
+                                    </p>
+                                    <p className="text-[10px] text-gray-500 leading-tight mt-0.5">
+                                        Permanencia desde el ingreso al fondo. Aporta puntaje en el componente de lealtad; alcanza el máximo a los 24 meses.
+                                    </p>
+                                </div>
+                                <div className="rounded-lg border border-gray-100 bg-white p-3">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <History className="h-4 w-4 text-emerald-500 shrink-0" />
+                                        <p className="text-[10px] uppercase tracking-wide text-gray-500 font-bold">Créditos saldados</p>
+                                    </div>
+                                    <p className="text-sm font-bold text-gray-800">{analysis.prestamosLiquidados || 0}</p>
+                                    <p className="text-[10px] text-gray-500 leading-tight mt-0.5">
+                                        Préstamos cancelados a satisfacción. Evidencia capacidad de pago histórica; alcanza el máximo con 3 créditos.
+                                    </p>
+                                </div>
+                                <div className={`rounded-lg border p-3 ${analysis.pagosTardios > 0 ? 'bg-orange-50 border-orange-200' : 'border-gray-100 bg-white'}`}>
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <AlertTriangle className={`h-4 w-4 shrink-0 ${analysis.pagosTardios > 0 ? 'text-orange-500' : 'text-gray-300'}`} />
+                                        <p className="text-[10px] uppercase tracking-wide text-gray-500 font-bold">Cuotas liquidadas en mora</p>
+                                    </div>
+                                    <p className={`text-sm font-bold ${analysis.pagosTardios > 0 ? 'text-orange-700' : 'text-gray-800'}`}>
+                                        {analysis.pagosEvaluables > 0 ? `${analysis.pagosTardios} de ${analysis.pagosEvaluables}` : '— sin datos'}
+                                    </p>
+                                    <p className="text-[10px] text-gray-500 leading-tight mt-0.5">
+                                        {analysis.pagosEvaluables > 0
+                                            ? 'Pagos liquidados después de la fecha límite. Excluye cuotas heredadas de la migración inicial.'
+                                            : 'Indicador en construcción — se activa con pagos registrados nativamente en el sistema.'}
                                     </p>
                                 </div>
                             </div>
@@ -331,13 +367,13 @@ const LoanAnalyzerPage = () => {
                                 <div className="flex justify-between items-center mb-1.5">
                                     <span className="text-xs font-semibold text-gray-600">Nivel de Apalancamiento (Deuda / Ahorro)</span>
                                     <span className={`text-xs font-black ${v.tasaApalancamiento > 200 ? 'text-red-600' : v.tasaApalancamiento > 100 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                                        {v.tasaApalancamiento.toFixed(1)}%
+                                        {v.tasaApalancamiento === 0 ? 'Sin apalancamiento' : `${v.tasaApalancamiento.toFixed(1)}%`}
                                     </span>
                                 </div>
                                 <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
                                     <div
-                                        className={`h-2.5 rounded-full transition-all duration-700 ${v.tasaApalancamiento > 200 ? 'bg-red-500' : v.tasaApalancamiento > 100 ? 'bg-amber-400' : 'bg-emerald-500'}`}
-                                        style={{ width: `${Math.min(100, v.tasaApalancamiento / 3)}%` }}
+                                        className={`h-2.5 rounded-full transition-all duration-700 ${v.tasaApalancamiento === 0 ? 'bg-emerald-200' : v.tasaApalancamiento > 200 ? 'bg-red-500' : v.tasaApalancamiento > 100 ? 'bg-amber-400' : 'bg-emerald-500'}`}
+                                        style={{ width: `${v.tasaApalancamiento === 0 ? 100 : Math.min(100, v.tasaApalancamiento / 3)}%` }}
                                     />
                                 </div>
                                 <div className="flex justify-between mt-0.5">
@@ -346,6 +382,9 @@ const LoanAnalyzerPage = () => {
                                     <span className="text-[9px] text-gray-400">200% (2×)</span>
                                     <span className="text-[9px] text-gray-400">300% (3× límite)</span>
                                 </div>
+                                {v.tasaApalancamiento === 0 && (
+                                    <p className="text-[10px] text-emerald-600 mt-1 italic">Perfil libre de deuda — capacidad máxima disponible.</p>
+                                )}
                             </div>
 
                             {/* Risk factors */}
@@ -364,93 +403,6 @@ const LoanAnalyzerPage = () => {
                                 ))}
                             </div>
 
-                            {/* Loans table */}
-                            {analysis.prestamosVigentes.length > 0 && (
-                                <div>
-                                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Detalle de Préstamos con Cuotas Pendientes</p>
-                                    <div className="overflow-hidden rounded-xl border border-gray-100">
-                                        <table className="w-full text-xs">
-                                            <thead>
-                                                <tr className="bg-gray-100 text-gray-500 uppercase text-[10px] font-bold">
-                                                    {[
-                                                        { key: 'idVm',                 label: 'ID',               cls: 'text-left' },
-                                                        { key: 'valorPrestado',        label: 'Val. Prestado',    cls: 'text-right' },
-                                                        { key: 'saldoPendiente',       label: 'Saldo Pendiente',  cls: 'text-right' },
-                                                        { key: 'valorCuotasPendientes',label: 'Val. Cuotas Pend.',cls: 'text-right' },
-                                                        { key: 'cuotasPendientesCount',label: 'Cuotas',           cls: 'text-center' },
-                                                        { key: 'interesMensual',       label: 'Interés',          cls: 'text-center' },
-                                                        { key: 'enMoraEP',             label: 'Estado',           cls: 'text-center' },
-                                                    ].map(col => (
-                                                        <th key={col.key} className={`px-3 py-2 cursor-pointer select-none hover:bg-gray-200 transition-colors ${col.cls}`} onClick={() => handleVigentesSort(col.key)}>
-                                                            <span className="inline-flex items-center gap-1">{col.label}<SortIcon colKey={col.key} sortConfig={vigentesSort} /></span>
-                                                        </th>
-                                                    ))}
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {sortedVigentes.map((loan, i) => (
-                                                    <tr key={i} className={`border-t border-gray-100 ${loan.enMoraEP ? 'bg-red-50' : i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
-                                                        <td className="px-3 py-2.5 font-bold text-gray-700">{loan.idVm}</td>
-                                                        <td className="px-3 py-2.5 text-right text-gray-600">
-                                                            {loan.valorPrestado > 0 ? `$${Math.round(loan.valorPrestado).toLocaleString('es-CO')}` : '—'}
-                                                        </td>
-                                                        <td className="px-3 py-2.5 text-right font-bold">
-                                                            <span className={loan.enMoraEP ? 'text-red-600' : 'text-gray-800'}>
-                                                                ${Math.round(loan.saldoPendiente).toLocaleString('es-CO')}
-                                                            </span>
-                                                            <div className="text-[9px] font-normal text-gray-400">Balance real</div>
-                                                        </td>
-                                                        <td className="px-3 py-2.5 text-right font-semibold text-amber-700">
-                                                            ${Math.round(loan.valorCuotasPendientes).toLocaleString('es-CO')}
-                                                            <div className="text-[9px] font-normal text-gray-400">Suma cuotas</div>
-                                                        </td>
-                                                        <td className="px-3 py-2.5 text-center">
-                                                            <span className="font-semibold text-gray-700">
-                                                                {loan.cuotasPendientesCount + loan.cuotasMoraEPCount}
-                                                            </span>
-                                                            {loan.cuotas && <span className="text-gray-400"> / {loan.cuotas}</span>}
-                                                            {loan.cuotasMoraEPCount > 0 && (
-                                                                <div className="text-[9px] text-red-500 font-bold">{loan.cuotasMoraEPCount} vencida(s)</div>
-                                                            )}
-                                                        </td>
-                                                        <td className="px-3 py-2.5 text-center text-gray-600">
-                                                            {loan.interesMensual > 0 ? `${loan.interesMensual.toFixed(2)}% m` : '—'}
-                                                        </td>
-                                                        <td className="px-3 py-2.5 text-center">
-                                                            <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${loan.enMoraEP ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
-                                                                {loan.enMoraEP ? `Mora EP ×${loan.cuotasMoraEPCount}` : 'Al día'}
-                                                            </span>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                            <tfoot>
-                                                <tr className="bg-gray-100 font-bold text-gray-700 border-t-2 border-gray-200">
-                                                    <td className="px-3 py-2 text-[10px] uppercase">Total</td>
-                                                    <td className="px-3 py-2 text-right">—</td>
-                                                    <td className="px-3 py-2 text-right text-red-700">
-                                                        ${Math.round(analysis.totalDeudaPendiente).toLocaleString('es-CO')}
-                                                    </td>
-                                                    <td className="px-3 py-2 text-right text-amber-700">
-                                                        ${Math.round(analysis.prestamosVigentes.reduce((s, l) => s + l.valorCuotasPendientes, 0)).toLocaleString('es-CO')}
-                                                    </td>
-                                                    <td className="px-3 py-2 text-center">
-                                                        {analysis.prestamosVigentes.reduce((s, l) => s + l.cuotasPendientesCount + l.cuotasMoraEPCount, 0)}
-                                                        {analysis.totalCuotasMoraEP > 0 && (
-                                                            <div className="text-[9px] text-red-600 font-bold">{analysis.totalCuotasMoraEP} en mora</div>
-                                                        )}
-                                                    </td>
-                                                    <td colSpan={2}></td>
-                                                </tr>
-                                            </tfoot>
-                                        </table>
-                                    </div>
-                                    <p className="text-[9px] text-gray-400 mt-1.5 italic">
-                                        * Saldo Pendiente = balance real (saldo inicial próxima cuota). Val. Cuotas Pend. = suma cuotas × intereses por pagar.
-                                    </p>
-                                </div>
-                            )}
-
                             {/* Verdict box */}
                             <div className={`${c.bg} border-2 ${c.border} rounded-xl p-4`}>
                                 <div className="flex items-center gap-3 mb-3">
@@ -459,6 +411,7 @@ const LoanAnalyzerPage = () => {
                                         {v.icon === 'X'     && <XCircle className="h-5 w-5 text-white" />}
                                         {v.icon === 'warn'  && <AlertCircle className="h-5 w-5 text-white" />}
                                         {v.icon === 'vote'  && <Scale className="h-5 w-5 text-white" />}
+                                        {v.icon === 'lock'  && <Lock className="h-5 w-5 text-white" />}
                                     </div>
                                     <div>
                                         <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Veredicto Financiero</p>
@@ -509,14 +462,115 @@ const LoanAnalyzerPage = () => {
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    )}
-
-                    {!selectedId && !loadingAnalysis && (
-                        <div className="text-center py-12 text-gray-400">
-                            <TrendingDown className="h-12 w-12 mx-auto mb-3 opacity-25" />
-                            <p className="text-sm font-medium">Selecciona un socio para ver el análisis de capacidad</p>
-                            <p className="text-xs mt-1">Basado en regla de 3× el ahorro acumulado</p>
+                            
+                            {/* Loans table */}
+                            <div className="mt-6 mb-6">
+                                <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Detalle de Préstamos con Cuotas Pendientes</p>
+                                {analysis.prestamosVigentes?.length > 0 ? (
+                                    <>
+                                        <div className="overflow-hidden rounded-xl border border-gray-100">
+                                            <table className="w-full text-xs">
+                                                <thead>
+                                                    <tr className="bg-gray-100 text-gray-500 uppercase text-[10px] font-bold">
+                                                        {[
+                                                            { key: 'idVm',                 label: 'ID',               cls: 'text-left' },
+                                                            { key: 'valorPrestado',        label: 'Val. Prestado',    cls: 'text-right' },
+                                                            { key: 'saldoPendiente',       label: 'Saldo Pendiente',  cls: 'text-right' },
+                                                            { key: 'valorCuotasPendientes',label: 'Val. Cuotas Pend.',cls: 'text-right' },
+                                                            { key: 'cuotasPendientesCount',label: 'Cuotas',           cls: 'text-center' },
+                                                            { key: 'fechaUltimaCuota',     label: 'Fin estimado',     cls: 'text-center' },
+                                                            { key: 'interesMensual',       label: 'Interés',          cls: 'text-center' },
+                                                            { key: 'enMoraEP',             label: 'Estado',           cls: 'text-center' },
+                                                        ].map(col => (
+                                                            <th key={col.key} className={`px-3 py-2 cursor-pointer select-none hover:bg-gray-200 transition-colors ${col.cls}`} onClick={() => handleVigentesSort(col.key)}>
+                                                                <span className="inline-flex items-center gap-1">{col.label}<SortIcon colKey={col.key} sortConfig={vigentesSort} /></span>
+                                                            </th>
+                                                        ))}
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {sortedVigentes.map((loan, i) => (
+                                                        <tr key={i} className={`border-t border-gray-100 ${loan.enMoraEP ? 'bg-red-50' : i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                                                            <td className="px-3 py-2.5 font-bold text-gray-700">{loan.idVm}</td>
+                                                            <td className="px-3 py-2.5 text-right text-gray-600">
+                                                                {loan.valorPrestado > 0 ? `$${Math.round(loan.valorPrestado).toLocaleString('es-CO')}` : '—'}
+                                                            </td>
+                                                            <td className="px-3 py-2.5 text-right font-bold">
+                                                                <span className={loan.enMoraEP ? 'text-red-600' : 'text-gray-800'}>
+                                                                    ${Math.round(loan.saldoPendiente).toLocaleString('es-CO')}
+                                                                </span>
+                                                                <div className="text-[9px] font-normal text-gray-400">Balance real</div>
+                                                            </td>
+                                                            <td className="px-3 py-2.5 text-right font-semibold text-amber-700">
+                                                                ${Math.round(loan.valorCuotasPendientes).toLocaleString('es-CO')}
+                                                                <div className="text-[9px] font-normal text-gray-400">Suma cuotas</div>
+                                                            </td>
+                                                            <td className="px-3 py-2.5 text-center">
+                                                                <span className="font-semibold text-gray-700">
+                                                                    {loan.cuotasPendientesCount + loan.cuotasMoraEPCount}
+                                                                </span>
+                                                                {loan.cuotas && <span className="text-gray-400"> / {loan.cuotas}</span>}
+                                                                {loan.cuotasMoraEPCount > 0 && (
+                                                                    <div className="text-[9px] text-red-500 font-bold">{loan.cuotasMoraEPCount} vencida(s)</div>
+                                                                )}
+                                                            </td>
+                                                            <td className="px-3 py-2.5 text-center">
+                                                                {loan.fechaUltimaCuota ? (
+                                                                    <div className="inline-flex flex-col items-center">
+                                                                        <span className={`inline-flex items-center gap-1 text-[11px] ${loan.cruzaFinDeAnio ? 'text-amber-700 font-semibold' : 'text-gray-600'}`}>
+                                                                            <Calendar className="h-3 w-3" />
+                                                                            {loan.fechaUltimaCuota}
+                                                                        </span>
+                                                                        {loan.aplicaCompromisoNoRetiro && (
+                                                                            <span className="text-[9px] mt-0.5 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold inline-flex items-center gap-0.5">
+                                                                                <Lock className="h-2.5 w-2.5" /> No retirar ahorros
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                ) : '—'}
+                                                            </td>
+                                                            <td className="px-3 py-2.5 text-center text-gray-600">
+                                                                {loan.interesMensual > 0 ? `${loan.interesMensual.toFixed(2)}% m` : '—'}
+                                                            </td>
+                                                            <td className="px-3 py-2.5 text-center">
+                                                                <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${loan.enMoraEP ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                                    {loan.enMoraEP ? `Mora EP ×${loan.cuotasMoraEPCount}` : 'Al día'}
+                                                                </span>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                                <tfoot>
+                                                    <tr className="bg-gray-100 font-bold text-gray-700 border-t-2 border-gray-200">
+                                                        <td className="px-3 py-2 text-[10px] uppercase">Total</td>
+                                                        <td className="px-3 py-2 text-right">—</td>
+                                                        <td className="px-3 py-2 text-right text-red-700">
+                                                            ${Math.round(analysis.totalDeudaPendiente).toLocaleString('es-CO')}
+                                                        </td>
+                                                        <td className="px-3 py-2 text-right text-amber-700">
+                                                            ${Math.round(analysis.prestamosVigentes.reduce((s, l) => s + l.valorCuotasPendientes, 0)).toLocaleString('es-CO')}
+                                                        </td>
+                                                        <td className="px-3 py-2 text-center">
+                                                            {analysis.prestamosVigentes.reduce((s, l) => s + l.cuotasPendientesCount + l.cuotasMoraEPCount, 0)}
+                                                            {analysis.totalCuotasMoraEP > 0 && (
+                                                                <div className="text-[9px] text-red-600 font-bold">{analysis.totalCuotasMoraEP} en mora</div>
+                                                            )}
+                                                        </td>
+                                                        <td colSpan={3}></td>
+                                                    </tr>
+                                                </tfoot>
+                                            </table>
+                                        </div>
+                                        <p className="text-[9px] text-gray-400 mt-1.5 italic">
+                                            * Saldo Pendiente = balance real (saldo inicial próxima cuota). Val. Cuotas Pend. = suma cuotas × intereses por pagar.
+                                        </p>
+                                    </>
+                                ) : (
+                                    <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 text-center mt-2">
+                                        <p className="text-sm font-medium text-gray-500">No hay préstamos con cuotas pendientes en este momento.</p>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     )}
                 </div>

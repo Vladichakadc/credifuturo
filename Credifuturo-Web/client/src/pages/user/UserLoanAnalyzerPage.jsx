@@ -340,112 +340,117 @@ const UserLoanAnalyzerPage = () => {
                                         </p>
                                     </div>
                                 </div>
-                            </div>
-                            
-                            {/* Loans table */}
-                            {analysis.prestamosVigentes.length > 0 && (
-                                <div className="mt-6">
+                                
+                                {/* Loans table */}
+                                <div className="mt-6 mb-6">
                                     <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Detalle de Préstamos con Cuotas Pendientes</p>
-                                    <div className="overflow-hidden rounded-xl border border-gray-100">
-                                        <table className="w-full text-xs">
-                                            <thead>
-                                                <tr className="bg-gray-100 text-gray-500 uppercase text-[10px] font-bold">
-                                                    {[
-                                                        { key: 'idVm',                 label: 'ID',               cls: 'text-left' },
-                                                        { key: 'valorPrestado',        label: 'Val. Prestado',    cls: 'text-right' },
-                                                        { key: 'saldoPendiente',       label: 'Saldo Pendiente',  cls: 'text-right' },
-                                                        { key: 'valorCuotasPendientes',label: 'Val. Cuotas Pend.',cls: 'text-right' },
-                                                        { key: 'cuotasPendientesCount',label: 'Cuotas',           cls: 'text-center' },
-                                                        { key: 'fechaUltimaCuota',     label: 'Fin estimado',     cls: 'text-center' },
-                                                        { key: 'interesMensual',       label: 'Interés',          cls: 'text-center' },
-                                                        { key: 'enMoraEP',             label: 'Estado',           cls: 'text-center' },
-                                                    ].map(col => (
-                                                        <th key={col.key} className={`px-3 py-2 cursor-pointer select-none hover:bg-gray-200 transition-colors ${col.cls}`} onClick={() => handleVigentesSort(col.key)}>
-                                                            <span className="inline-flex items-center gap-1">{col.label}<SortIcon colKey={col.key} sortConfig={vigentesSort} /></span>
-                                                        </th>
-                                                    ))}
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {sortedVigentes.map((loan, i) => (
-                                                    <tr key={i} className={`border-t border-gray-100 ${loan.enMoraEP ? 'bg-red-50' : i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
-                                                        <td className="px-3 py-2.5 font-bold text-gray-700">{loan.idVm}</td>
-                                                        <td className="px-3 py-2.5 text-right text-gray-600">
-                                                            {loan.valorPrestado > 0 ? `$${Math.round(loan.valorPrestado).toLocaleString('es-CO')}` : '—'}
-                                                        </td>
-                                                        <td className="px-3 py-2.5 text-right font-bold">
-                                                            <span className={loan.enMoraEP ? 'text-red-600' : 'text-gray-800'}>
-                                                                ${Math.round(loan.saldoPendiente).toLocaleString('es-CO')}
-                                                            </span>
-                                                            <div className="text-[9px] font-normal text-gray-400">Balance real</div>
-                                                        </td>
-                                                        <td className="px-3 py-2.5 text-right font-semibold text-amber-700">
-                                                            ${Math.round(loan.valorCuotasPendientes).toLocaleString('es-CO')}
-                                                            <div className="text-[9px] font-normal text-gray-400">Suma cuotas</div>
-                                                        </td>
-                                                        <td className="px-3 py-2.5 text-center">
-                                                            <span className="font-semibold text-gray-700">
-                                                                {loan.cuotasPendientesCount + loan.cuotasMoraEPCount}
-                                                            </span>
-                                                            {loan.cuotas && <span className="text-gray-400"> / {loan.cuotas}</span>}
-                                                            {loan.cuotasMoraEPCount > 0 && (
-                                                                <div className="text-[9px] text-red-500 font-bold">{loan.cuotasMoraEPCount} vencida(s)</div>
-                                                            )}
-                                                        </td>
-                                                        <td className="px-3 py-2.5 text-center">
-                                                            {loan.fechaUltimaCuota ? (
-                                                                <div className="inline-flex flex-col items-center">
-                                                                    <span className={`inline-flex items-center gap-1 text-[11px] ${loan.cruzaFinDeAnio ? 'text-amber-700 font-semibold' : 'text-gray-600'}`}>
-                                                                        <Calendar className="h-3 w-3" />
-                                                                        {loan.fechaUltimaCuota}
+                                    {analysis.prestamosVigentes?.length > 0 ? (
+                                        <>
+                                            <div className="overflow-hidden rounded-xl border border-gray-100">
+                                                <table className="w-full text-xs">
+                                                    <thead>
+                                                        <tr className="bg-gray-100 text-gray-500 uppercase text-[10px] font-bold">
+                                                            {[
+                                                                { key: 'idVm',                 label: 'ID',               cls: 'text-left' },
+                                                                { key: 'valorPrestado',        label: 'Val. Prestado',    cls: 'text-right' },
+                                                                { key: 'saldoPendiente',       label: 'Saldo Pendiente',  cls: 'text-right' },
+                                                                { key: 'valorCuotasPendientes',label: 'Val. Cuotas Pend.',cls: 'text-right' },
+                                                                { key: 'cuotasPendientesCount',label: 'Cuotas',           cls: 'text-center' },
+                                                                { key: 'fechaUltimaCuota',     label: 'Fin estimado',     cls: 'text-center' },
+                                                                { key: 'interesMensual',       label: 'Interés',          cls: 'text-center' },
+                                                                { key: 'enMoraEP',             label: 'Estado',           cls: 'text-center' },
+                                                            ].map(col => (
+                                                                <th key={col.key} className={`px-3 py-2 cursor-pointer select-none hover:bg-gray-200 transition-colors ${col.cls}`} onClick={() => handleVigentesSort(col.key)}>
+                                                                    <span className="inline-flex items-center gap-1">{col.label}<SortIcon colKey={col.key} sortConfig={vigentesSort} /></span>
+                                                                </th>
+                                                            ))}
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {sortedVigentes.map((loan, i) => (
+                                                            <tr key={i} className={`border-t border-gray-100 ${loan.enMoraEP ? 'bg-red-50' : i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                                                                <td className="px-3 py-2.5 font-bold text-gray-700">{loan.idVm}</td>
+                                                                <td className="px-3 py-2.5 text-right text-gray-600">
+                                                                    {loan.valorPrestado > 0 ? `$${Math.round(loan.valorPrestado).toLocaleString('es-CO')}` : '—'}
+                                                                </td>
+                                                                <td className="px-3 py-2.5 text-right font-bold">
+                                                                    <span className={loan.enMoraEP ? 'text-red-600' : 'text-gray-800'}>
+                                                                        ${Math.round(loan.saldoPendiente).toLocaleString('es-CO')}
                                                                     </span>
-                                                                    {loan.aplicaCompromisoNoRetiro && (
-                                                                        <span className="text-[9px] mt-0.5 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold inline-flex items-center gap-0.5">
-                                                                            <Lock className="h-2.5 w-2.5" /> No retirar ahorros
-                                                                        </span>
+                                                                    <div className="text-[9px] font-normal text-gray-400">Balance real</div>
+                                                                </td>
+                                                                <td className="px-3 py-2.5 text-right font-semibold text-amber-700">
+                                                                    ${Math.round(loan.valorCuotasPendientes).toLocaleString('es-CO')}
+                                                                    <div className="text-[9px] font-normal text-gray-400">Suma cuotas</div>
+                                                                </td>
+                                                                <td className="px-3 py-2.5 text-center">
+                                                                    <span className="font-semibold text-gray-700">
+                                                                        {loan.cuotasPendientesCount + loan.cuotasMoraEPCount}
+                                                                    </span>
+                                                                    {loan.cuotas && <span className="text-gray-400"> / {loan.cuotas}</span>}
+                                                                    {loan.cuotasMoraEPCount > 0 && (
+                                                                        <div className="text-[9px] text-red-500 font-bold">{loan.cuotasMoraEPCount} vencida(s)</div>
                                                                     )}
-                                                                </div>
-                                                            ) : '—'}
-                                                        </td>
-                                                        <td className="px-3 py-2.5 text-center text-gray-600">
-                                                            {loan.interesMensual > 0 ? `${loan.interesMensual.toFixed(2)}% m` : '—'}
-                                                        </td>
-                                                        <td className="px-3 py-2.5 text-center">
-                                                            <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${loan.enMoraEP ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
-                                                                {loan.enMoraEP ? `Mora EP ×${loan.cuotasMoraEPCount}` : 'Al día'}
-                                                            </span>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                            <tfoot>
-                                                <tr className="bg-gray-100 font-bold text-gray-700 border-t-2 border-gray-200">
-                                                    <td className="px-3 py-2 text-[10px] uppercase">Total</td>
-                                                    <td className="px-3 py-2 text-right">—</td>
-                                                    <td className="px-3 py-2 text-right text-red-700">
-                                                        ${Math.round(analysis.totalDeudaPendiente).toLocaleString('es-CO')}
-                                                    </td>
-                                                    <td className="px-3 py-2 text-right text-amber-700">
-                                                        ${Math.round(analysis.prestamosVigentes.reduce((s, l) => s + l.valorCuotasPendientes, 0)).toLocaleString('es-CO')}
-                                                    </td>
-                                                    <td className="px-3 py-2 text-center">
-                                                        {analysis.prestamosVigentes.reduce((s, l) => s + l.cuotasPendientesCount + l.cuotasMoraEPCount, 0)}
-                                                        {analysis.totalCuotasMoraEP > 0 && (
-                                                            <div className="text-[9px] text-red-600 font-bold">{analysis.totalCuotasMoraEP} en mora</div>
-                                                        )}
-                                                    </td>
-                                                    <td colSpan={3}></td>
-                                                </tr>
-                                            </tfoot>
-                                        </table>
-                                    </div>
-                                    <p className="text-[9px] text-gray-400 mt-1.5 italic">
-                                        * Saldo Pendiente = balance real (saldo inicial próxima cuota). Val. Cuotas Pend. = suma cuotas × intereses por pagar.
-                                    </p>
+                                                                </td>
+                                                                <td className="px-3 py-2.5 text-center">
+                                                                    {loan.fechaUltimaCuota ? (
+                                                                        <div className="inline-flex flex-col items-center">
+                                                                            <span className={`inline-flex items-center gap-1 text-[11px] ${loan.cruzaFinDeAnio ? 'text-amber-700 font-semibold' : 'text-gray-600'}`}>
+                                                                                <Calendar className="h-3 w-3" />
+                                                                                {loan.fechaUltimaCuota}
+                                                                            </span>
+                                                                            {loan.aplicaCompromisoNoRetiro && (
+                                                                                <span className="text-[9px] mt-0.5 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold inline-flex items-center gap-0.5">
+                                                                                    <Lock className="h-2.5 w-2.5" /> No retirar ahorros
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                    ) : '—'}
+                                                                </td>
+                                                                <td className="px-3 py-2.5 text-center text-gray-600">
+                                                                    {loan.interesMensual > 0 ? `${loan.interesMensual.toFixed(2)}% m` : '—'}
+                                                                </td>
+                                                                <td className="px-3 py-2.5 text-center">
+                                                                    <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${loan.enMoraEP ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                                        {loan.enMoraEP ? `Mora EP ×${loan.cuotasMoraEPCount}` : 'Al día'}
+                                                                    </span>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                    <tfoot>
+                                                        <tr className="bg-gray-100 font-bold text-gray-700 border-t-2 border-gray-200">
+                                                            <td className="px-3 py-2 text-[10px] uppercase">Total</td>
+                                                            <td className="px-3 py-2 text-right">—</td>
+                                                            <td className="px-3 py-2 text-right text-red-700">
+                                                                ${Math.round(analysis.totalDeudaPendiente).toLocaleString('es-CO')}
+                                                            </td>
+                                                            <td className="px-3 py-2 text-right text-amber-700">
+                                                                ${Math.round(analysis.prestamosVigentes.reduce((s, l) => s + l.valorCuotasPendientes, 0)).toLocaleString('es-CO')}
+                                                            </td>
+                                                            <td className="px-3 py-2 text-center">
+                                                                {analysis.prestamosVigentes.reduce((s, l) => s + l.cuotasPendientesCount + l.cuotasMoraEPCount, 0)}
+                                                                {analysis.totalCuotasMoraEP > 0 && (
+                                                                    <div className="text-[9px] text-red-600 font-bold">{analysis.totalCuotasMoraEP} en mora</div>
+                                                                )}
+                                                            </td>
+                                                            <td colSpan={3}></td>
+                                                        </tr>
+                                                    </tfoot>
+                                                </table>
+                                            </div>
+                                            <p className="text-[9px] text-gray-400 mt-1.5 italic">
+                                                * Saldo Pendiente = balance real (saldo inicial próxima cuota). Val. Cuotas Pend. = suma cuotas × intereses por pagar.
+                                            </p>
+                                        </>
+                                    ) : (
+                                        <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 text-center mt-2">
+                                            <p className="text-sm font-medium text-gray-500">No hay préstamos con cuotas pendientes en este momento.</p>
+                                        </div>
+                                    )}
                                 </div>
-                            )}
+                            </div>
 
-                        </div>
                     )}
 
                     {!analysis && !loadingAnalysis && (

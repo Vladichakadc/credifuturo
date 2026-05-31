@@ -503,7 +503,9 @@ const DashboardLayout = ({ user, onLogout }) => {
                             )}
                         </div>
                         <div className="flex-1 min-w-0">
-                            <p className="text-base font-medium text-gray-900 truncate">{user?.name || 'Administrador'}</p>
+                            <p className="text-base font-medium text-gray-900 truncate">
+                                {`${user?.name || 'Administrador'} ${user?.surname1 || ''} ${user?.surname2 || ''}`.trim()}
+                            </p>
                             <p className="text-sm text-gray-500 truncate">{user?.cedula ? `C.C. ${user.cedula}` : ''}</p>
                         </div>
                     </div>

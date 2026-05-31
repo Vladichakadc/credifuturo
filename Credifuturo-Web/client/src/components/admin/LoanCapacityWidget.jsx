@@ -1,7 +1,7 @@
 import React from 'react';
 import { Scale, CheckCircle, XCircle, AlertCircle, AlertTriangle, PiggyBank, CreditCard, Award, TrendingUp, Lock, FileText, Gauge, Clock, History } from 'lucide-react';
 import { calcVerdict, colorMap, kpiDescriptions } from '../../utils/loanCapacity';
-
+import { useSortTable, SortIcon } from '../../utils/useSortTable';
 const LoanCapacityWidget = ({ analysis, loading }) => {
     if (loading) {
         return (
@@ -16,6 +16,9 @@ const LoanCapacityWidget = ({ analysis, loading }) => {
 
     const v = calcVerdict(analysis, { audience: 'admin' });
     const c = v ? (colorMap[v.color] || colorMap.green) : null;
+
+    const { sortedData: sortedVigentes, sortConfig: vigentesSort, handleSort: handleVigentesSort } =
+        useSortTable(analysis?.prestamosVigentes || []);
 
     return (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mt-5">
@@ -222,6 +225,93 @@ const LoanCapacityWidget = ({ analysis, loading }) => {
                         </div>
                     ))}
                 </div>
+
+                {/* Loans table */}
+                {analysis.prestamosVigentes?.length > 0 && (
+                    <div className="mt-4">
+                        <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Detalle de Préstamos con Cuotas Pendientes</p>
+                        <div className="overflow-hidden rounded-xl border border-gray-100">
+                            <table className="w-full text-xs">
+                                <thead>
+                                    <tr className="bg-gray-100 text-gray-500 uppercase text-[10px] font-bold">
+                                        {[
+                                            { key: 'idVm',                 label: 'ID',               cls: 'text-left' },
+                                            { key: 'valorPrestado',        label: 'Val. Prestado',    cls: 'text-right' },
+                                            { key: 'saldoPendiente',       label: 'Saldo Pendiente',  cls: 'text-right' },
+                                            { key: 'valorCuotasPendientes',label: 'Val. Cuotas Pend.',cls: 'text-right' },
+                                            { key: 'cuotasPendientesCount',label: 'Cuotas',           cls: 'text-center' },
+                                            { key: 'interesMensual',       label: 'Interés',          cls: 'text-center' },
+                                            { key: 'enMoraEP',             label: 'Estado',           cls: 'text-center' },
+                                        ].map(col => (
+                                            <th key={col.key} className={`px-3 py-2 cursor-pointer select-none hover:bg-gray-200 transition-colors ${col.cls}`} onClick={() => handleVigentesSort(col.key)}>
+                                                <span className="inline-flex items-center gap-1">{col.label}<SortIcon colKey={col.key} sortConfig={vigentesSort} /></span>
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {sortedVigentes.map((loan, i) => (
+                                        <tr key={i} className={`border-t border-gray-100 ${loan.enMoraEP ? 'bg-red-50' : i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                                            <td className="px-3 py-2.5 font-bold text-gray-700">{loan.idVm}</td>
+                                            <td className="px-3 py-2.5 text-right text-gray-600">
+                                                {loan.valorPrestado > 0 ? `$${Math.round(loan.valorPrestado).toLocaleString('es-CO')}` : '—'}
+                                            </td>
+                                            <td className="px-3 py-2.5 text-right font-bold">
+                                                <span className={loan.enMoraEP ? 'text-red-600' : 'text-gray-800'}>
+                                                    ${Math.round(loan.saldoPendiente).toLocaleString('es-CO')}
+                                                </span>
+                                                <div className="text-[9px] font-normal text-gray-400">Balance real</div>
+                                            </td>
+                                            <td className="px-3 py-2.5 text-right font-semibold text-amber-700">
+                                                ${Math.round(loan.valorCuotasPendientes).toLocaleString('es-CO')}
+                                                <div className="text-[9px] font-normal text-gray-400">Suma cuotas</div>
+                                            </td>
+                                            <td className="px-3 py-2.5 text-center">
+                                                <span className="font-semibold text-gray-700">
+                                                    {loan.cuotasPendientesCount + loan.cuotasMoraEPCount}
+                                                </span>
+                                                {loan.cuotas && <span className="text-gray-400"> / {loan.cuotas}</span>}
+                                                {loan.cuotasMoraEPCount > 0 && (
+                                                    <div className="text-[9px] text-red-500 font-bold">{loan.cuotasMoraEPCount} vencida(s)</div>
+                                                )}
+                                            </td>
+                                            <td className="px-3 py-2.5 text-center text-gray-600">
+                                                {loan.interesMensual > 0 ? `${loan.interesMensual.toFixed(2)}% m` : '—'}
+                                            </td>
+                                            <td className="px-3 py-2.5 text-center">
+                                                <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${loan.enMoraEP ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                    {loan.enMoraEP ? `Mora EP ×${loan.cuotasMoraEPCount}` : 'Al día'}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot>
+                                    <tr className="bg-gray-100 font-bold text-gray-700 border-t-2 border-gray-200">
+                                        <td className="px-3 py-2 text-[10px] uppercase">Total</td>
+                                        <td className="px-3 py-2 text-right">—</td>
+                                        <td className="px-3 py-2 text-right text-red-700">
+                                            ${Math.round(analysis.totalDeudaPendiente).toLocaleString('es-CO')}
+                                        </td>
+                                        <td className="px-3 py-2 text-right text-amber-700">
+                                            ${Math.round(analysis.prestamosVigentes.reduce((s, l) => s + l.valorCuotasPendientes, 0)).toLocaleString('es-CO')}
+                                        </td>
+                                        <td className="px-3 py-2 text-center">
+                                            {analysis.prestamosVigentes.reduce((s, l) => s + l.cuotasPendientesCount + l.cuotasMoraEPCount, 0)}
+                                            {analysis.totalCuotasMoraEP > 0 && (
+                                                <div className="text-[9px] text-red-600 font-bold">{analysis.totalCuotasMoraEP} en mora</div>
+                                            )}
+                                        </td>
+                                        <td colSpan={2}></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                        <p className="text-[9px] text-gray-400 mt-1.5 italic">
+                            * Saldo Pendiente = balance real (saldo inicial próxima cuota). Val. Cuotas Pend. = suma cuotas × intereses por pagar.
+                        </p>
+                    </div>
+                )}
 
                 <div className={`${c.bg} border-2 ${c.border} rounded-xl p-4`}>
                     <div className="flex items-center gap-3 mb-3">
