@@ -330,14 +330,14 @@ const PaymentsPage = () => {
 
     const handleOpenModal = (payment = null) => {
         if (payment) {
-            // Normalizar fechaPagoMax al formato YYYY-MM-DD que requiere input[type=date].
-            // Desde la BD puede venir como ISO "2026-01-04T05:00:00.000Z" o como "2026-01-04".
-            const rawFecha = payment.fechaPagoMax || '';
-            const fechaNorm = rawFecha ? rawFecha.split('T')[0] : '';
+            // Fecha de Pago Max: siempre muestra la fecha actual como punto de partida
+            // para que el admin registre el pago en la fecha real de hoy,
+            // en lugar de conservar la fecha límite programada originalmente.
+            const today = new Date().toISOString().split('T')[0];
 
             setPaymentForm({
                 ...payment,
-                fechaPagoMax: fechaNorm,
+                fechaPagoMax: today,
                 // cuotasPrestamo = número de cuota que se está pagando (mismo que itemQuantity)
                 cuotasPrestamo: payment.itemQuantity ?? payment.cuotasPrestamo,
                 nombre: payment.Client?.name || '',

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import api from '../../config/api';
 import { notifyUpdate } from '../../utils/sync';
-import { Plus, Download, Edit, Trash2, FileText, X, Save, Search, Calendar, DollarSign, User, Loader2, CheckCircle, Calculator, AlertTriangle } from 'lucide-react';
+import { Plus, Download, Edit, Trash2, FileText, X, Save, Search, Calendar, DollarSign, User, Loader2, CheckCircle, Calculator, AlertTriangle, ChevronDown, Users } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input, Label, FormField } from '../../components/ui/Input';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
@@ -39,6 +39,18 @@ const LoansPage = () => {
 
     // Alerta de préstamo activo para refinanciación
     const [activeLoanWarning, setActiveLoanWarning] = useState(null);
+
+    // Filtro por socio en la tabla de desembolsos
+    const [filterClientId, setFilterClientId] = useState('');
+    const [clientSearch, setClientSearch] = useState('');
+    const [dropdownOpen, setDropdownOpen] = useState(false);
+    const dropdownRef = React.useRef(null);
+
+    React.useEffect(() => {
+        const handler = (e) => { if (dropdownRef.current && !dropdownRef.current.contains(e.target)) setDropdownOpen(false); };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
 
     // Form States
     const [loanForm, setLoanForm] = useState({
@@ -524,20 +536,132 @@ const LoansPage = () => {
                 );
             })()}
 
-            <Card>
-                <CardContent className="p-0">
-                    <DataTable
-                        columns={disbursedColumns}
-                        data={disbursedLoans}
-                        isLoading={loading}
-                        searchKeys={['idVm', 'clientId']}
-                        actions={{
-                            onEdit: handleOpenDisbursedModal,
-                            onDelete: handleDeleteDisbursed
-                        }}
-                    />
-                </CardContent>
-            </Card>
+            {/* ── Filtro por socio ────────────────────────────────────────── */}
+            {!loading && (() => {
+                // Solo socios que tienen al menos un préstamo
+                const sociosConPrestamo = clients.filter(c =>
+                    disbursedLoans.some(l => String(l.clientId) === String(c.id))
+                );
+
+                const filteredDropdown = clientSearch.trim()
+                    ? sociosConPrestamo.filter(c => {
+                        const t = clientSearch.toLowerCase();
+                        return `${c.name} ${c.surname1 || ''} ${c.cedula || ''} ${c.customerId || ''}`.toLowerCase().includes(t);
+                    })
+                    : sociosConPrestamo;
+
+                const selectedClient = sociosConPrestamo.find(c => String(c.id) === String(filterClientId));
+                const filteredDisbursed = filterClientId
+                    ? disbursedLoans.filter(l => String(l.clientId) === String(filterClientId))
+                    : disbursedLoans;
+
+                return (
+                    <>
+                        <div className="flex items-center gap-3 flex-wrap">
+                            {/* Dropdown de socios */}
+                            <div className="relative" ref={dropdownRef}>
+                                <button
+                                    type="button"
+                                    onClick={() => { setDropdownOpen(o => !o); setClientSearch(''); }}
+                                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-colors min-w-[220px] ${filterClientId ? 'bg-emerald-700/10 border-emerald-700/40 text-emerald-800' : 'bg-white border-gray-200 text-gray-600 hover:border-emerald-400'}`}
+                                >
+                                    <Users className="h-4 w-4 flex-shrink-0" />
+                                    <span className="flex-1 text-left truncate">
+                                        {selectedClient ? `${selectedClient.name} ${selectedClient.surname1 || ''}` : 'Filtrar por socio'}
+                                    </span>
+                                    {filterClientId && (
+                                        <span
+                                            onClick={(e) => { e.stopPropagation(); setFilterClientId(''); setClientSearch(''); }}
+                                            className="ml-1 text-gray-400 hover:text-gray-700 cursor-pointer"
+                                            title="Quitar filtro"
+                                        >✕</span>
+                                    )}
+                                    <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
+                                </button>
+
+                                {dropdownOpen && (
+                                    <div className="absolute top-full left-0 mt-2 w-72 bg-white border border-gray-100 rounded-2xl shadow-2xl z-50 overflow-hidden">
+                                        <div className="p-3 border-b border-gray-100">
+                                            <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
+                                                <Search className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+                                                <input
+                                                    autoFocus
+                                                    type="text"
+                                                    placeholder="Buscar por nombre o cédula..."
+                                                    value={clientSearch}
+                                                    onChange={e => setClientSearch(e.target.value)}
+                                                    className="flex-1 bg-transparent text-sm outline-none text-gray-700 placeholder:text-gray-400"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="max-h-60 overflow-y-auto py-1">
+                                            <button
+                                                type="button"
+                                                onClick={() => { setFilterClientId(''); setDropdownOpen(false); }}
+                                                className={`w-full text-left px-4 py-2.5 text-sm hover:bg-emerald-50 transition-colors ${!filterClientId ? 'font-bold text-emerald-700 bg-emerald-50/50' : 'text-gray-600'}`}
+                                            >
+                                                <span className="flex items-center gap-2">
+                                                    <Users className="h-3.5 w-3.5 text-gray-400" />
+                                                    Todos los socios
+                                                    <span className="ml-auto text-xs text-gray-400">{disbursedLoans.length} préstamos</span>
+                                                </span>
+                                            </button>
+                                            {filteredDropdown.length === 0 ? (
+                                                <p className="px-4 py-3 text-sm text-gray-400 text-center">Sin resultados</p>
+                                            ) : filteredDropdown.map(c => {
+                                                const count = disbursedLoans.filter(l => String(l.clientId) === String(c.id)).length;
+                                                return (
+                                                    <button
+                                                        key={c.id}
+                                                        type="button"
+                                                        onClick={() => { setFilterClientId(String(c.id)); setDropdownOpen(false); }}
+                                                        className={`w-full text-left px-4 py-2.5 text-sm hover:bg-emerald-50 transition-colors ${String(filterClientId) === String(c.id) ? 'bg-emerald-50 font-bold text-emerald-700' : 'text-gray-700'}`}
+                                                    >
+                                                        <span className="flex items-center gap-2">
+                                                            <User className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+                                                            <span className="flex-1 truncate">
+                                                                <span className="font-semibold">{c.name} {c.surname1 || ''}</span>
+                                                                <span className="text-xs text-gray-400 ml-1">· {c.cedula}</span>
+                                                            </span>
+                                                            <span className="ml-auto text-xs font-bold text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-full flex-shrink-0">{count}</span>
+                                                        </span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                        <div className="p-2 border-t border-gray-50 text-center">
+                                            <span className="text-xs text-gray-400">{sociosConPrestamo.length} socios con préstamos</span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Badge del filtro activo */}
+                            {filterClientId && selectedClient && (
+                                <span className="text-xs bg-emerald-100 text-emerald-800 font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                    {filteredDisbursed.length} préstamo(s) de {selectedClient.name} {selectedClient.surname1 || ''}
+                                </span>
+                            )}
+                        </div>
+
+                        <Card>
+                            <CardContent className="p-0">
+                                <DataTable
+                                    columns={disbursedColumns}
+                                    data={filteredDisbursed}
+                                    isLoading={loading}
+                                    searchKeys={['idVm']}
+                                    actions={{
+                                        onEdit: handleOpenDisbursedModal,
+                                        onDelete: handleDeleteDisbursed
+                                    }}
+                                />
+                            </CardContent>
+                        </Card>
+                    </>
+                );
+            })()}
 
             {/* Modal for Disbursed Loans */}
             {isModalOpen && activeTab === 'disbursed' && (
