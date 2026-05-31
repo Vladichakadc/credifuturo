@@ -116,7 +116,7 @@ const LoanAnalyzerPage = () => {
     useEffect(() => {
         const fetchClients = async () => {
             try {
-                const res = await api.get('/admin/socios');
+                const res = await api.get('/admin/clients');
                 setClients(res.data.filter(c => c.role !== 'admin' && c.role !== 'root'));
             } catch (err) {
                 console.error(err);
@@ -134,7 +134,7 @@ const LoanAnalyzerPage = () => {
         const fetchAnalysis = async () => {
             setLoadingAnalysis(true);
             try {
-                const res = await api.get(`/admin/socios/${selectedId}/loan-capacity`);
+                const res = await api.get(`/admin/clients/${selectedId}/loan-capacity`);
                 setAnalysis(res.data);
             } catch (err) {
                 console.error(err);
@@ -223,7 +223,7 @@ const LoanAnalyzerPage = () => {
                                     <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden mb-3">
                                         <div className={`h-2 rounded-full transition-all duration-700 ${colorMap[v.score.color].badge}`} style={{ width: `${v.score.score}%` }} />
                                     </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                                         {v.score.componentes.map((comp) => {
                                             const pct = comp.max > 0 ? (comp.pts / comp.max) * 100 : 0;
                                             return (
@@ -236,7 +236,7 @@ const LoanAnalyzerPage = () => {
                                                         <p className="text-sm font-bold text-gray-800 whitespace-nowrap">{comp.pts}<span className="text-[10px] font-normal text-gray-400"> / {comp.max}</span></p>
                                                     </div>
                                                     <div className="w-full bg-gray-100 rounded-full h-1 my-1.5 overflow-hidden">
-                                                        <div className={`h-1 rounded-full ${pct >= 75 ? 'bg-emerald-500' : pct >= 50 ? 'bg-yellow-500' : pct >= 25 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${pct}%` }} />
+                                                        <div className={`h-1 rounded-full transition-all duration-500 ${pct >= 75 ? 'bg-emerald-500' : pct >= 50 ? 'bg-yellow-500' : pct >= 25 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${pct}%` }} />
                                                     </div>
                                                     <p className="text-[10px] text-gray-600 leading-snug">{comp.detalle}</p>
                                                 </div>

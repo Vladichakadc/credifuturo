@@ -31,19 +31,26 @@ function explicarComponente(key, a, scoreData) {
     }
     if (key === 'antiguedad') {
         const m = a.mesesComoSocio || 0;
+        if (m === 0) return 'Sin tiempo registrado como socio. El puntaje escala linealmente hasta alcanzar el máximo a los 24 meses.';
+        if (m < 24) return `${m} de 24 meses completados (${Math.round((m/24)*100)}% del máximo). Puntaje crece 0.5 pts por mes hasta llegar a 12 pts.`;
+        return `${m} meses como socio — antigüedad consolidada. Puntaje máximo de 12 pts alcanzado.`;
+    }
+    if (key === 'lealtad') {
         const liq = a.prestamosLiquidados || 0;
-        const partes = [];
-        if (m < 24) partes.push(`${m} meses como socio (alcanza el puntaje máximo a los 24 meses)`);
-        else partes.push(`${m} meses como socio — antigüedad consolidada`);
-        if (liq === 0) partes.push('sin créditos saldados aún');
-        else if (liq < 3) partes.push(`${liq} crédito(s) saldado(s) (alcanza el puntaje máximo con 3 créditos)`);
-        else partes.push(`${liq} créditos saldados — track record sólido`);
-        return partes.join(' · ');
+        if (liq === 0) return 'Sin créditos saldados aún. Cada préstamo cancelado a satisfacción aporta 2.67 pts (máximo 8 pts con 3 créditos).';
+        if (liq < 3) return `${liq} de 3 crédito(s) saldado(s) a satisfacción. ${3 - liq} crédito(s) más para alcanzar el puntaje máximo de 8 pts.`;
+        return `${liq} créditos cancelados — track record sólido. Puntaje máximo de 8 pts alcanzado.`;
     }
     if (key === 'compromiso') {
         return a.enMoraActual
             ? 'Cuota(s) vencida(s) sin pagar. Este componente se anula automáticamente mientras exista mora EP activa.'
             : 'Cartera al día — ninguna cuota vencida sin pagar. Componente al máximo.';
+    }
+    if (key === 'penalizaciones') {
+        const pen = a.totalAhorrosConPenalizacion || 0;
+        if (pen === 0) return 'Sin penalizaciones por atraso en el pago de ahorros este año. No se restan puntos del total.';
+        const dias = a.totalDiasPenalizacionAhorro || 0;
+        return `${pen} pago(s) de ahorro con penalidad por mora este año (${dias} días de atraso acumulados). Se restan 2 puntos por cada evento.`;
     }
     return '';
 }
@@ -80,18 +87,24 @@ export function calcScore(a) {
         comportamientoPts = 30 * (1 - tasaMoraReal / 30);
     }
 
-    // ── Componente 3: Antigüedad + lealtad (20 pts) ──────────────────────
-    // 12 pts por antigüedad (puntaje máximo a los 24 meses) + 8 pts por préstamos liquidados (puntaje máximo a 3).
+    // ── Componentes 3 y 4: Antigüedad (12 pts) y Lealtad (8 pts) ────────
+    // Antigüedad: escala linealmente 0→12 pts en 24 meses de permanencia.
+    // Lealtad: 2.67 pts por cada préstamo cancelado, máximo 3 créditos (8 pts).
     const meses = a.mesesComoSocio || 0;
     const antiguedadPts = Math.min(meses / 24, 1) * 12;
     const liquidadosPts = Math.min((a.prestamosLiquidados || 0) / 3, 1) * 8;
-    const antLealtadPts = antiguedadPts + liquidadosPts;
 
-    // ── Componente 4: Compromiso actual (10 pts) ─────────────────────────
+    // ── Componente 5: Compromiso actual (10 pts) ─────────────────────────
     // 0 si tiene mora EP activa; 10 si no.
     const compromisoPts = a.enMoraActual ? 0 : 10;
 
-    const score = Math.round(capacidadPts + comportamientoPts + antLealtadPts + compromisoPts);
+    // ── Componente 6 (Castigo): Penalizaciones por Ahorro (Puntos Negativos) ─
+    // Se restan 2 puntos por cada aporte mensual pagado con penalización.
+    const cantPenalizaciones = a.totalAhorrosConPenalizacion || 0;
+    const penalizacionesPts = -(cantPenalizaciones * 2);
+
+    let score = Math.round(capacidadPts + comportamientoPts + antiguedadPts + liquidadosPts + compromisoPts + penalizacionesPts);
+    if (score < 0) score = 0;
 
     let nivel, color;
     if (score >= 80)      { nivel = 'EXCELENTE'; color = 'green'; }
@@ -105,10 +118,12 @@ export function calcScore(a) {
         tasaMoraReal, moraReal, cuotasConResultado
     };
     scoreData.componentes = [
-        { key: 'capacidad',     label: 'Capacidad financiera',  pts: Math.round(capacidadPts * 10) / 10, max: 40, hint: 'Margen entre tu deuda actual y el cupo máximo permitido.', detalle: explicarComponente('capacidad', a, scoreData) },
-        { key: 'comportamiento',label: 'Comportamiento de pago',pts: Math.round(comportamientoPts * 10) / 10, max: 30, hint: 'Cumplimiento sobre cuotas con resultado conocido.', detalle: explicarComponente('comportamiento', a, scoreData) },
-        { key: 'antiguedad',    label: 'Antigüedad + lealtad',  pts: Math.round(antLealtadPts * 10) / 10, max: 20, hint: 'Permanencia como socio y créditos saldados previamente.', detalle: explicarComponente('antiguedad', a, scoreData) },
-        { key: 'compromiso',    label: 'Cartera al día',        pts: compromisoPts, max: 10, hint: 'Ausencia de mora EP vigente en este momento.', detalle: explicarComponente('compromiso', a, scoreData) },
+        { key: 'capacidad',      label: 'Capacidad financiera',   pts: Math.round(capacidadPts * 10) / 10,   max: 40, hint: 'Margen entre tu deuda actual y el cupo máximo (regla 3×).', detalle: explicarComponente('capacidad', a, scoreData) },
+        { key: 'comportamiento', label: 'Comportamiento de pago', pts: Math.round(comportamientoPts * 10) / 10, max: 30, hint: 'Cumplimiento sobre cuotas con resultado conocido.', detalle: explicarComponente('comportamiento', a, scoreData) },
+        { key: 'antiguedad',     label: 'Antigüedad como socio',  pts: Math.round(antiguedadPts * 10) / 10,  max: 12, hint: 'Meses de permanencia continua en el fondo. Máximo a los 24 meses.', detalle: explicarComponente('antiguedad', a, scoreData) },
+        { key: 'lealtad',        label: 'Lealtad crediticia',     pts: Math.round(liquidadosPts * 10) / 10,  max: 8,  hint: 'Créditos cancelados a satisfacción. Máximo con 3 créditos saldados.', detalle: explicarComponente('lealtad', a, scoreData) },
+        { key: 'compromiso',     label: 'Cartera al día',         pts: compromisoPts,                        max: 10, hint: 'Ausencia de mora EP vigente en este momento.', detalle: explicarComponente('compromiso', a, scoreData) },
+        { key: 'penalizaciones', label: 'Penalizaciones Ahorro',  pts: penalizacionesPts,                    max: 0,  hint: 'Se restan 2 pts por cada ahorro mensual pagado con atraso.', detalle: explicarComponente('penalizaciones', a, scoreData) },
     ];
     return scoreData;
 }

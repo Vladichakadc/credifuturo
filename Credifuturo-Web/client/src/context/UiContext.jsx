@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import { X, CheckCircle, AlertCircle, Info, AlertTriangle } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
@@ -54,15 +54,19 @@ export const UiProvider = ({ children }) => {
         setToasts(prev => prev.filter(t => t.id !== id));
     }, []);
 
-    const toast = {
+    // Memoizado: sin esto, `toast` cambia de referencia en cada render del Provider,
+    // y cualquier useEffect con [toast] en deps entra en loop al agregar un toast.
+    const toast = useMemo(() => ({
         success: (msg) => addToast(msg, 'success'),
         error: (msg) => addToast(msg, 'error'),
         info: (msg) => addToast(msg, 'info'),
         warning: (msg) => addToast(msg, 'warning')
-    };
+    }), [addToast]);
+
+    const value = useMemo(() => ({ toast }), [toast]);
 
     return (
-        <UiContext.Provider value={{ toast }}>
+        <UiContext.Provider value={value}>
             {children}
             {createPortal(
                 <div className="fixed top-4 right-4 z-50 flex flex-col items-end pointer-events-none">

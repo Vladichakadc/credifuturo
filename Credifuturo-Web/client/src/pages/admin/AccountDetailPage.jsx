@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../../config/api';
 import {
     Users, DollarSign, PiggyBank, BarChart3, CheckCircle,
@@ -56,29 +56,94 @@ const fmtCur = (v) => {
 };
 const fmtVal = (v) => (v === null || v === undefined || v === '') ? <span className="text-gray-300 text-xs italic">—</span> : v;
 
+// Vista admin del detalle del socio. Quitamos Nombre/Apellido/Customer_id (redundantes porque
+// el admin ya está viendo a UN socio concreto), Item_Quantity, Mes/Año Abonado duplicados.
+// Se añaden columnas calculadas: Periodo, Δ vs anterior, Acumulado.
 const SAVINGS_COLS = [
-    { key: 'externalId',         label: 'Id_VM',                  minW: 100 },
-    { key: 'clientCustomerId',   label: 'Customer_id',            minW: 110 },
-    { key: 'clientName',         label: 'Nombre',                 minW: 140 },
-    { key: 'clientSurname',      label: 'Apellido',               minW: 140 },
-    { key: 'status',             label: 'Estado',                 minW: 110 },
-    { key: 'date',               label: 'Fecha Pago',             minW: 120 },
-    { key: 'year',               label: 'Año pago',               minW: 80  },
-    { key: 'month',              label: 'Mes pago',               minW: 110 },
-    { key: 'penalizacion',       label: 'Penalización',           minW: 110 },
-    { key: 'diasPenalizacion',   label: 'Días Penalización',      minW: 110 },
-    { key: 'amount',             label: 'Valor Mensual',          minW: 130, isCur: true },
-    { key: 'valorAPenalizar',    label: 'Valor a Penalizar',      minW: 130, isCur: true },
-    { key: 'valorAhorrado',      label: 'Valor Ahorrado',         minW: 130, isCur: true },
-    { key: 'mesAbonado',         label: 'Mes Abonado',            minW: 110 },
-    { key: 'anioAbonado',        label: 'Año Abonado',            minW: 100 },
-    { key: 'itemQuantity',       label: 'Item_Quantity',          minW: 100 },
-    { key: 'banco',              label: 'Banco',                  minW: 140 },
-    { key: 'numeroTransaccion',  label: '# Transacción',          minW: 140 },
-    { key: 'origen',             label: 'Desde Cuenta Ahorros',   minW: 180 },
-    { key: 'type',               label: 'Tipo de Ahorro',         minW: 130 },
-    { key: 'observaciones',      label: 'Observaciones',          minW: 200 },
+    { key: 'externalId',        label: 'Id_VM',         minW: 90,  highlight: true },
+    { key: 'status',            label: 'Estado',        minW: 110, isStatusBadge: true },
+    { key: 'date',              label: 'Fecha Aporte',  minW: 110 },
+    { key: 'periodo',           label: 'Periodo',       minW: 130, isPeriodo: true },
+    { key: 'amount',            label: 'Valor Bruto',   minW: 120, isCur: true },
+    { key: 'valorAhorrado',     label: 'Valor Neto',    minW: 120, isCur: true, isNeto: true },
+    { key: 'penalizacion',      label: 'Penaliz.',      minW: 90,  isPenBadge: true },
+    { key: 'valorAPenalizar',   label: 'Descuento',     minW: 110, isCur: true, isDescuento: true },
+    { key: 'delta',             label: 'Δ vs anterior', minW: 130, isDelta: true },
+    { key: 'acumulado',         label: 'Acumulado',     minW: 130, isCur: true, isAcum: true },
+    { key: 'type',              label: 'Tipo',          minW: 120 },
+    { key: 'banco',             label: 'Banco',         minW: 120 },
+    { key: 'numeroTransaccion', label: '# Transacción', minW: 130 },
+    { key: 'observaciones',     label: 'Observaciones', minW: 180 },
 ];
+
+// Enriquece registros con delta vs anterior cronológico y acumulado neto.
+const enrichSavings = (rows) => {
+    if (!Array.isArray(rows) || rows.length === 0) return [];
+    const chrono = [...rows].sort((a, b) => {
+        const da = a.date ? new Date(a.date).getTime() : 0;
+        const db = b.date ? new Date(b.date).getTime() : 0;
+        return da - db;
+    });
+    let acum = 0;
+    let prev = null;
+    const map = {};
+    chrono.forEach(s => {
+        const val = parseFloat(s.valorAhorrado || s.amount || 0);
+        acum += val;
+        map[s.id] = { delta: prev != null ? val - prev : null, acumulado: acum };
+        prev = val;
+    });
+    return rows.map(r => ({ ...r, delta: map[r.id]?.delta ?? null, acumulado: map[r.id]?.acumulado ?? null }));
+};
+
+// Renderer especializado para celdas de la tabla Capital Ahorrado (admin)
+const renderSavingsCell = (col, row) => {
+    const value = row[col.key];
+    if (col.isStatusBadge) {
+        if (!value) return <span className="text-gray-300 text-xs italic">—</span>;
+        const isAbono = String(value).trim().toLowerCase() === 'abono';
+        return <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide ${isAbono ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{value}</span>;
+    }
+    if (col.isPeriodo) {
+        const mes = row?.month || row?.mesAbonado || '';
+        const anio = row?.year || row?.anioAbonado || '';
+        if (!mes && !anio) return <span className="text-gray-300 text-xs italic">—</span>;
+        return <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{mes} {anio}</span>;
+    }
+    if (col.isPenBadge) {
+        if (!value) return <span className="text-gray-300 text-xs italic">—</span>;
+        const isSI = String(value).trim().toUpperCase() === 'SI';
+        return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${isSI ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>{value}</span>;
+    }
+    if (col.isDelta) {
+        if (value == null || isNaN(value)) return <span className="text-gray-300 text-xs italic">—</span>;
+        if (value === 0) return <span className="text-[10px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">sin cambio</span>;
+        const pos = value > 0;
+        return (
+            <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${pos ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800'}`}>
+                {pos ? '▲' : '▼'} {pos ? '+' : ''}${Math.abs(value).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            </span>
+        );
+    }
+    if (col.isCur) {
+        const num = parseFloat(value);
+        if (isNaN(num)) return <span className="text-gray-300 text-xs italic">—</span>;
+        if (col.isDescuento && num > 0) {
+            return <span className="font-medium text-amber-700 tabular-nums">−${num.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>;
+        }
+        if (col.isAcum) {
+            return <span className="font-bold text-emerald-700 tabular-nums">${num.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>;
+        }
+        if (col.isNeto) {
+            return <span className="font-medium text-emerald-800 tabular-nums">${num.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>;
+        }
+        return <span className={`font-medium tabular-nums ${num === 0 ? 'text-gray-400' : 'text-gray-800'}`}>${num.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>;
+    }
+    if (col.key === 'externalId') {
+        return <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded text-[11px]">{fmtVal(value)}</span>;
+    }
+    return <span className="text-gray-600">{fmtVal(value)}</span>;
+};
 
 // ─── Helper: get authenticated user's cedula from localStorage ───────────────
 const getAuthCedula = () => {
@@ -89,11 +154,11 @@ const getAuthCedula = () => {
 };
 
 // ─── Reusable Full List Modal ────────────────────────────────────────────────
-const FullListModal = ({ title, columns, data, onClose, icon: Icon }) => (
+const FullListModal = ({ title, columns, data, onClose, icon: Icon, renderCell, footer }) => (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
         <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={onClose} />
         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl overflow-hidden relative z-10 animate-in fade-in zoom-in duration-200 flex flex-col" style={{ maxHeight: '90vh' }}>
-            <div className="px-6 py-4 bg-brand-primary flex items-center justify-between text-white shrink-0 shadow-md z-20">
+            <div className="px-6 py-4 bg-emerald-700 flex items-center justify-between text-white shrink-0 shadow-md z-20">
                 <div className="flex items-center gap-2">
                     {Icon && <Icon className="h-6 w-6 opacity-90" />}
                     <h3 className="text-xl font-bold">{title}</h3>
@@ -104,33 +169,49 @@ const FullListModal = ({ title, columns, data, onClose, icon: Icon }) => (
             </div>
             <div className="overflow-auto flex-1 bg-gray-50/30">
                 <table className="text-xs border-collapse" style={{ minWidth: `${columns.reduce((a, c) => a + c.minW, 0)}px`, width: '100%' }}>
-                    <thead className="sticky top-0 z-10 bg-white border-b-2 border-gray-200 text-gray-700 shadow-sm">
+                    <thead className="sticky top-0 z-10 bg-emerald-700 text-white shadow-sm">
                         <tr>
                             {columns.map(col => (
-                                <th key={col.key} style={{ minWidth: col.minW }} className="px-4 py-3.5 text-left font-bold uppercase tracking-wider text-[10px] whitespace-nowrap">
+                                <th key={col.key} style={{ minWidth: col.minW }} className="px-4 py-3 text-left font-bold uppercase tracking-wider text-[10px] whitespace-nowrap">
                                     {col.label}
                                 </th>
                             ))}
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 bg-white">
-                        {data.map((row, i) => (
-                            <tr key={row.id || i} className={`transition-colors hover:bg-brand-primary/5`}>
-                                {columns.map(col => (
-                                    <td key={col.key} style={{ minWidth: col.minW }} className="px-4 py-2.5 whitespace-nowrap border-r border-gray-50 last:border-r-0">
-                                        {col.isCur ? <span className="font-semibold text-gray-800 tabular-nums">{fmtCur(row[col.key])}</span>
-                                            : col.key === 'externalId' || col.key === 'clientCustomerId' ? <span className="font-semibold text-brand-primary bg-brand-primary/10 px-2 py-0.5 rounded">{fmtVal(row[col.key])}</span>
-                                            : col.key === 'status' ? <span className={`px-2 py-1 rounded-full text-[10px] font-bold tracking-wide ${row[col.key] === 'Abono' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{row[col.key] || '—'}</span>
-                                            : <span className="text-gray-600">{fmtVal(row[col.key])}</span>}
+                        {data.map((row, i) => {
+                            const tieneDescuento = parseFloat(row.valorAPenalizar || 0) > 0;
+                            return (
+                                <tr key={row.id || i} className={`transition-colors hover:bg-emerald-50 ${tieneDescuento ? 'bg-amber-50/40' : ''}`}>
+                                    {columns.map(col => (
+                                        <td key={col.key} style={{ minWidth: col.minW }} className="px-4 py-2.5 whitespace-nowrap">
+                                            {renderCell
+                                                ? renderCell(col, row)
+                                                : col.isCur ? <span className="font-semibold text-gray-800 tabular-nums">{fmtCur(row[col.key])}</span>
+                                                : col.key === 'externalId' || col.key === 'clientCustomerId' ? <span className="font-semibold text-brand-primary bg-brand-primary/10 px-2 py-0.5 rounded">{fmtVal(row[col.key])}</span>
+                                                : col.key === 'status' ? <span className={`px-2 py-1 rounded-full text-[10px] font-bold tracking-wide ${row[col.key] === 'Abono' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{row[col.key] || '—'}</span>
+                                                : <span className="text-gray-600">{fmtVal(row[col.key])}</span>}
+                                        </td>
+                                    ))}
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                    {footer?.cols && (
+                        <tfoot>
+                            <tr className="bg-emerald-50 font-bold text-emerald-900 border-t-2 border-emerald-200 sticky bottom-0">
+                                {footer.cols.map((c, idx) => (
+                                    <td key={idx} colSpan={c.span || 1} className={`px-4 py-2.5 ${c.align === 'right' ? 'text-right' : c.align === 'center' ? 'text-center' : ''}`}>
+                                        {c.content || ''}
                                     </td>
                                 ))}
                             </tr>
-                        ))}
-                    </tbody>
+                        </tfoot>
+                    )}
                 </table>
             </div>
             <div className="px-6 py-4 bg-white border-t border-gray-100 flex justify-between items-center shrink-0">
-                <span className="text-sm text-gray-500 font-medium">Total Registros Históricos: <strong className="text-brand-primary text-base">{data.length}</strong></span>
+                <span className="text-sm text-gray-500 font-medium">Total Registros Históricos: <strong className="text-emerald-700 text-base">{data.length}</strong></span>
                 <button onClick={onClose} className="px-6 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-lg transition-colors text-sm">
                     Cerrar Lista
                 </button>
@@ -143,7 +224,19 @@ const FullListModal = ({ title, columns, data, onClose, icon: Icon }) => (
 const SavingsDetail = ({ data, fullData, loading }) => {
     const [showModal, setShowModal] = useState(false);
 
-    const previewData = data.slice(0, 6);
+    const enrichedFull = useMemo(() => enrichSavings(fullData || data), [fullData, data]);
+    const enrichedPreview = useMemo(() => {
+        const ids = new Set((data || []).slice(0, 25).map(r => r.id));
+        return enrichedFull.filter(r => ids.has(r.id)).slice(0, 25);
+    }, [enrichedFull, data]);
+
+    const totals = useMemo(() => {
+        return (data || []).reduce((a, r) => ({
+            amount: a.amount + parseFloat(r.amount || 0),
+            valorAhorrado: a.valorAhorrado + parseFloat(r.valorAhorrado || r.amount || 0),
+            valorAPenalizar: a.valorAPenalizar + parseFloat(r.valorAPenalizar || 0),
+        }), { amount: 0, valorAhorrado: 0, valorAPenalizar: 0 });
+    }, [data]);
 
     return (
         <>
@@ -152,7 +245,7 @@ const SavingsDetail = ({ data, fullData, loading }) => {
                     <h2 className="text-lg font-bold text-brand-primary flex items-center gap-2">
                         <PiggyBank className="h-5 w-5" /> Capital Ahorrado
                     </h2>
-                    <p className="text-xs text-gray-400 mt-0.5">Mostrando los {previewData.length} ahorros más recientes</p>
+                    <p className="text-xs text-gray-400 mt-0.5">Mostrando los primeros {enrichedPreview.length} de {(data || []).length} ahorros</p>
                 </div>
                 <button onClick={() => setShowModal(true)}
                     className="flex items-center gap-1 text-xs font-semibold text-brand-primary hover:text-brand-dark transition-colors bg-brand-primary/5 px-3 py-1.5 rounded-lg hover:bg-brand-primary/10">
@@ -161,12 +254,23 @@ const SavingsDetail = ({ data, fullData, loading }) => {
             </div>
 
             {showModal && (
-                <FullListModal 
-                    title="Historial de Ahorros Filtrado" 
-                    icon={PiggyBank} 
-                    columns={SAVINGS_COLS} 
-                    data={fullData} 
-                    onClose={() => setShowModal(false)} 
+                <FullListModal
+                    title="Historial de Ahorros"
+                    icon={PiggyBank}
+                    columns={SAVINGS_COLS}
+                    data={enrichedFull}
+                    onClose={() => setShowModal(false)}
+                    renderCell={renderSavingsCell}
+                    footer={{
+                        cols: [
+                            { span: 4, content: <span className="text-[10px] uppercase tracking-widest">Totales · {enrichedFull.length} mov.</span> },
+                            { content: <span className="tabular-nums text-emerald-900">${totals.amount.toLocaleString('es-CO', { minimumFractionDigits: 0 })}</span>, align: 'right' },
+                            { content: <span className="tabular-nums text-emerald-800">${totals.valorAhorrado.toLocaleString('es-CO', { minimumFractionDigits: 0 })}</span>, align: 'right' },
+                            {},
+                            { content: totals.valorAPenalizar > 0 ? <span className="tabular-nums text-amber-700">−${totals.valorAPenalizar.toLocaleString('es-CO', { minimumFractionDigits: 0 })}</span> : '—', align: 'right' },
+                            { span: 6 }
+                        ]
+                    }}
                 />
             )}
 
@@ -174,44 +278,48 @@ const SavingsDetail = ({ data, fullData, loading }) => {
                 <div className="flex items-center justify-center py-20">
                     <Loader2 className="h-8 w-8 animate-spin text-brand-primary/30" />
                 </div>
-            ) : data.length === 0 ? (
+            ) : enrichedPreview.length === 0 ? (
                 <div className="text-center py-16 text-gray-400">Sin registros de ahorro para este año</div>
             ) : (
                 <div className="overflow-auto rounded-lg border border-gray-100" style={{ maxHeight: '500px' }}>
                     <table className="text-xs border-collapse" style={{ minWidth: `${SAVINGS_COLS.reduce((a, c) => a + c.minW, 0)}px`, width: '100%' }}>
-                        <thead className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200">
+                        <thead className="sticky top-0 z-10 bg-emerald-700 text-white">
                             <tr>
                                 {SAVINGS_COLS.map(col => (
                                     <th key={col.key}
                                         style={{ minWidth: col.minW }}
-                                        className="px-3 py-2.5 text-left font-semibold text-gray-500 uppercase tracking-wide text-[10px] whitespace-nowrap border-r border-gray-100 last:border-r-0">
+                                        className="px-3 py-2.5 text-left font-bold uppercase tracking-wider text-[10px] whitespace-nowrap">
                                         {col.label}
                                     </th>
                                 ))}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
-                            {previewData.map((row, i) => (
-                                <tr key={row.id || i} className={`transition-colors hover:bg-brand-primary/5 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/60'}`}>
-                                    {SAVINGS_COLS.map(col => (
-                                        <td key={col.key}
-                                            style={{ minWidth: col.minW }}
-                                            className="px-3 py-2 whitespace-nowrap border-r border-gray-50 last:border-r-0">
-                                            {col.isCur
-                                                ? <span className="font-medium text-gray-800 tabular-nums">{fmtCur(row[col.key])}</span>
-                                                : col.key === 'externalId' || col.key === 'clientCustomerId'
-                                                    ? <span className="font-semibold text-brand-primary">{fmtVal(row[col.key])}</span>
-                                                    : col.key === 'status'
-                                                        ? <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${row[col.key] === 'Abono' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                                                            {row[col.key] || '—'}
-                                                          </span>
-                                                        : <span className="text-gray-700">{fmtVal(row[col.key])}</span>
-                                            }
-                                        </td>
-                                    ))}
-                                </tr>
-                            ))}
+                            {enrichedPreview.map((row, i) => {
+                                const tieneDescuento = parseFloat(row.valorAPenalizar || 0) > 0;
+                                return (
+                                    <tr key={row.id || i} className={`transition-colors hover:bg-emerald-50 ${tieneDescuento ? 'bg-amber-50/40' : i % 2 === 0 ? 'bg-white' : 'bg-gray-50/60'}`}>
+                                        {SAVINGS_COLS.map(col => (
+                                            <td key={col.key}
+                                                style={{ minWidth: col.minW }}
+                                                className="px-3 py-2 whitespace-nowrap">
+                                                {renderSavingsCell(col, row)}
+                                            </td>
+                                        ))}
+                                    </tr>
+                                );
+                            })}
                         </tbody>
+                        <tfoot>
+                            <tr className="bg-emerald-50 font-bold text-emerald-900 border-t-2 border-emerald-200 sticky bottom-0">
+                                <td className="px-3 py-2 text-[10px] uppercase tracking-widest" colSpan={4}>Totales · {(data || []).length} mov.</td>
+                                <td className="px-3 py-2 text-right tabular-nums">${totals.amount.toLocaleString('es-CO', { minimumFractionDigits: 0 })}</td>
+                                <td className="px-3 py-2 text-right tabular-nums text-emerald-800">${totals.valorAhorrado.toLocaleString('es-CO', { minimumFractionDigits: 0 })}</td>
+                                <td className="px-3 py-2"></td>
+                                <td className="px-3 py-2 text-right tabular-nums text-amber-700">{totals.valorAPenalizar > 0 ? `−$${totals.valorAPenalizar.toLocaleString('es-CO', { minimumFractionDigits: 0 })}` : '—'}</td>
+                                <td className="px-3 py-2" colSpan={6}></td>
+                            </tr>
+                        </tfoot>
                     </table>
                 </div>
             )}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../../config/api';
-import { Search, RefreshCw, Wallet, Inbox, Download, TrendingUp, Hash, Calendar, Calculator, ArrowDownToLine, ArrowUpToLine, Clock } from 'lucide-react';
+import { Search, RefreshCw, Wallet, Inbox, Download, TrendingUp, Hash, Calendar, Calculator, ArrowDownToLine, ArrowUpToLine, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Card, CardContent } from '../../components/ui/Card';
 import { useUi } from '../../context/UiContext';
@@ -87,6 +87,10 @@ const UserContributionsListPage = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const ITEMS_PER_PAGE = 25;
+
+    useEffect(() => { setCurrentPage(1); }, [searchTerm]);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -353,6 +357,9 @@ const UserContributionsListPage = () => {
                     ...r,
                     pctDelTotal: total > 0 ? (parseFloat(r.amount || 0) / total) * 100 : 0
                 }));
+                const totalPages = Math.max(1, Math.ceil(enriched.length / ITEMS_PER_PAGE));
+                const startIdx = (currentPage - 1) * ITEMS_PER_PAGE;
+                const paginated = enriched.slice(startIdx, startIdx + ITEMS_PER_PAGE);
                 return (
                     <Card className="overflow-hidden border border-gray-100 shadow-sm">
                         <div className="table-container max-h-[70vh] overflow-y-auto">
@@ -365,7 +372,7 @@ const UserContributionsListPage = () => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {enriched.map((item, idx) => (
+                                    {paginated.map((item, idx) => (
                                         <tr key={item.id} className={`transition-colors duration-150 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/70'} hover:bg-emerald-50`}>
                                             {TABLE_COLUMNS.map(col => (
                                                 <td key={col.key} style={{ textAlign: col.align, minWidth: col.minWidth }}>
@@ -385,6 +392,22 @@ const UserContributionsListPage = () => {
                                 </tfoot>
                             </table>
                         </div>
+                        {totalPages > 1 && (
+                            <div className="flex justify-between items-center gap-2 p-3 border-t border-gray-100 bg-gray-50/50">
+                                <span className="text-xs text-gray-500">Mostrando <strong className="text-emerald-700">{startIdx + 1}–{Math.min(startIdx + ITEMS_PER_PAGE, enriched.length)}</strong> de <strong>{enriched.length}</strong> aporte(s)</span>
+                                <div className="flex items-center gap-2">
+                                    <Button variant="ghost" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
+                                        <ChevronLeft className="h-4 w-4 mr-1" /> Anterior
+                                    </Button>
+                                    <span className="text-xs text-gray-600 font-medium">
+                                        Página <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">{currentPage}</span> de {totalPages}
+                                    </span>
+                                    <Button variant="ghost" size="sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
+                                        Siguiente <ChevronRight className="h-4 w-4 ml-1" />
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
                     </Card>
                 );
             })()}

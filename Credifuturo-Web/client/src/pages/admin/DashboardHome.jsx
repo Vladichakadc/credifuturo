@@ -13,7 +13,7 @@ import { Button } from '../../components/ui/Button';
 import { useUi } from '../../context/UiContext';
 import DataTable from '../../components/ui/DataTable';
 import nuLogo from '../../assets/nu-logo.png';
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList, ComposedChart, Line } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList, ComposedChart, Line, ReferenceLine } from 'recharts';
 import nuBg from '../../assets/nu-bg.png';
 import logo from '../../assets/logo.jpg';
 import YearMultiSelect from '../../components/admin/YearMultiSelect';
@@ -402,10 +402,11 @@ const ComparativeChart = ({ title, historic, current, color, labelHistoric, labe
 
     // Color coding por nivel de desempeño
     const getPerformanceLevel = () => {
-        if (progressPct >= 100) return { label: 'Superado', color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200', dot: 'bg-emerald-500', ring: 'ring-emerald-200' };
-        if (progressPct >= 85) return { label: 'En Ruta', color: 'text-blue-700', bg: 'bg-blue-50 border-blue-200', dot: 'bg-blue-500', ring: 'ring-blue-200' };
-        if (progressPct >= 60) return { label: 'Moderado', color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200', dot: 'bg-amber-500', ring: 'ring-amber-200' };
-        return { label: 'Rezagado', color: 'text-red-700', bg: 'bg-red-50 border-red-200', dot: 'bg-red-500', ring: 'ring-red-200' };
+        // hex/bgHex/borderHex/dotHex/ringHex: valores exactos para inline styles corporativos
+        if (progressPct >= 100) return { label: 'Superado',  hex: '#166534', bgHex: '#f0fdf4', borderHex: '#16653440', dotHex: '#166534', ringHex: '#16653428', color: 'text-brand-primary' };
+        if (progressPct >= 85)  return { label: 'En Ruta',   hex: '#1d4ed8', bgHex: '#eff6ff', borderHex: '#bfdbfe',   dotHex: '#3b82f6', ringHex: '#bfdbfe',   color: 'text-blue-700' };
+        if (progressPct >= 60)  return { label: 'Moderado',  hex: '#b45309', bgHex: '#fffbeb', borderHex: '#fde68a',   dotHex: '#f59e0b', ringHex: '#fde68a',   color: 'text-amber-700' };
+        return                         { label: 'Rezagado',  hex: '#dc2626', bgHex: '#fef2f2', borderHex: '#fecaca',   dotHex: '#ef4444', ringHex: '#fecaca',   color: 'text-red-700' };
     };
     const perf = getPerformanceLevel();
 
@@ -416,21 +417,30 @@ const ComparativeChart = ({ title, historic, current, color, labelHistoric, labe
         : `Al ritmo actual, cerraría el año en ${fmtCOP(projectedYearEnd)} (${projectedPctVs2025.toFixed(1)}% vs 2025)`;
 
     // ── Estilo Power BI: gradientes por barra, tooltip enriquecido, animación ──
+    const CORP = '#166534'; // brand-primary corporativo
     const gid = `cmp-${String(color || 'x').replace('#', '')}`;
     const gradientDefs = (
         <defs>
+            {/* Barra actual: color corporativo pasado por prop */}
             <linearGradient id={`${gid}-cur`} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={color} stopOpacity={1} />
-                <stop offset="100%" stopColor={color} stopOpacity={0.6} />
+                <stop offset="100%" stopColor={color} stopOpacity={0.65} />
             </linearGradient>
+            {/* Barra histórica (2025): gris neutro refinado */}
             <linearGradient id={`${gid}-hist`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#cbd5e1" stopOpacity={0.95} />
-                <stop offset="100%" stopColor="#cbd5e1" stopOpacity={0.5} />
+                <stop offset="0%" stopColor="#94a3b8" stopOpacity={0.85} />
+                <stop offset="100%" stopColor="#64748b" stopOpacity={0.65} />
             </linearGradient>
+            {/* Barra estimada futura: color suavizado */}
             <linearGradient id={`${gid}-est`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={color} stopOpacity={0.5} />
-                <stop offset="100%" stopColor={color} stopOpacity={0.18} />
+                <stop offset="0%" stopColor={color} stopOpacity={0.45} />
+                <stop offset="100%" stopColor={color} stopOpacity={0.15} />
             </linearGradient>
+            {/* Sombra para línea de tendencia */}
+            <filter id={`${gid}-shadow`}>
+                <feDropShadow dx="0" dy="1" stdDeviation="2.5"
+                    floodColor={isPositive ? CORP : '#dc2626'} floodOpacity="0.3" />
+            </filter>
         </defs>
     );
     const barCells = data.map((d, i) => (
@@ -453,29 +463,46 @@ const ComparativeChart = ({ title, historic, current, color, labelHistoric, labe
     if (compact) {
         return (
             <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={data} margin={{ top: 20, right: 10, left: 10, bottom: 0 }}>
+                <ComposedChart data={data} margin={{ top: 24, right: 12, left: 10, bottom: 0 }}>
                     {gradientDefs}
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 900, fill: '#374151' }} />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0fdf4" />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false}
+                        tick={{ fontSize: 10, fontWeight: 900, fill: '#374151' }} />
                     <YAxis hide domain={[0, 'dataMax + 5000000']} />
-                    <Tooltip cursor={{ fill: `${color}12`, radius: 8 }} content={<CompTooltip />} />
-                    <Bar dataKey="value" radius={[6, 6, 0, 0]} barSize={value2027 !== undefined ? 40 : 55} animationDuration={1100} animationEasing="ease-out">
+                    <Tooltip cursor={{ fill: `${color}10`, radius: 8 }} content={<CompTooltip />} />
+                    <ReferenceLine y={historic} stroke={CORP} strokeDasharray="5 4"
+                        strokeWidth={1} strokeOpacity={0.3}
+                        label={{ value: labelHistoric, position: 'insideTopRight', fontSize: 8,
+                            fill: CORP, fontWeight: 700, opacity: 0.5 }} />
+                    <Bar dataKey="value" radius={[6, 6, 0, 0]}
+                        barSize={value2027 !== undefined ? 40 : 55}
+                        animationDuration={1100} animationEasing="ease-out">
                         {barCells}
-                        <LabelList dataKey="value" position="top" formatter={(v) => fmtCOP(v)} style={{ fontSize: '12px', fontWeight: '900', fill: '#0f172a' }} />
+                        <LabelList dataKey="value" position="top" formatter={(v) => fmtCOP(v)}
+                            style={{ fontSize: '11px', fontWeight: '900', fill: '#0f172a' }} />
                     </Bar>
-                    <Line dataKey="value" type="linear" stroke={isPositive ? '#10b981' : '#ef4444'} strokeWidth={2} strokeDasharray="6 4" dot={{ r: 5, fill: isPositive ? '#10b981' : '#ef4444', strokeWidth: 2, stroke: '#fff' }} activeDot={false} />
+                    <Line dataKey="value" type="monotone"
+                        stroke={isPositive ? CORP : '#dc2626'}
+                        strokeWidth={2.5}
+                        dot={{ r: 5, fill: isPositive ? CORP : '#dc2626', strokeWidth: 2.5, stroke: '#fff' }}
+                        activeDot={{ r: 7, fill: isPositive ? CORP : '#dc2626', strokeWidth: 0 }}
+                        filter={`url(#${gid}-shadow)`}
+                    />
                 </ComposedChart>
             </ResponsiveContainer>
         );
     }
 
     return (
-        <div className={`flex flex-col bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden ring-1 ${perf.ring}`}>
+        <div className="flex flex-col bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden"
+            style={{ boxShadow: `0 0 0 1px ${perf.ringHex}` }}>
             {/* Header con título y badge de estado */}
             <div className="px-5 pt-5 pb-2 flex flex-col items-center gap-2 text-center relative">
-                <h4 className="text-sm font-black text-emerald-800 uppercase tracking-widest">{title}</h4>
-                <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full border ${perf.bg} ${perf.color}`}>
-                    <span className={`inline-block w-1.5 h-1.5 rounded-full ${perf.dot} mr-1`}></span>
+                <h4 className="text-sm font-black uppercase tracking-widest" style={{ color: '#166534' }}>{title}</h4>
+                <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded-full border"
+                    style={{ backgroundColor: perf.bgHex, borderColor: perf.borderHex, color: perf.hex }}>
+                    <span className="inline-block w-1.5 h-1.5 rounded-full mr-1"
+                        style={{ backgroundColor: perf.dotHex }}></span>
                     {perf.label}
                 </span>
                 {onExpand && (
@@ -488,37 +515,34 @@ const ComparativeChart = ({ title, historic, current, color, labelHistoric, labe
             {/* Gráfico */}
             <div className="w-full h-64 px-2">
                 <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={data} margin={{ top: 20, right: 10, left: 10, bottom: 0 }}>
+                    <ComposedChart data={data} margin={{ top: 26, right: 14, left: 10, bottom: 0 }}>
                         {gradientDefs}
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis
-                            dataKey="name"
-                            axisLine={false}
-                            tickLine={false}
-                            tick={{ fontSize: 10, fontWeight: 900, fill: '#374151' }}
-                        />
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0fdf4" />
+                        <XAxis dataKey="name" axisLine={false} tickLine={false}
+                            tick={{ fontSize: 10, fontWeight: 900, fill: '#374151' }} />
                         <YAxis hide domain={[0, 'dataMax + 5000000']} />
-                        <Tooltip
-                            cursor={{ fill: `${color}12`, radius: 8 }}
-                            content={<CompTooltip />}
-                        />
-                        <Bar dataKey="value" radius={[6, 6, 0, 0]} barSize={value2027 !== undefined ? 40 : 55} animationDuration={1100} animationEasing="ease-out">
+                        <Tooltip cursor={{ fill: `${color}10`, radius: 8 }} content={<CompTooltip />} />
+                        {/* Línea de referencia al nivel histórico (2025) */}
+                        <ReferenceLine y={historic} stroke={CORP} strokeDasharray="5 4"
+                            strokeWidth={1.2} strokeOpacity={0.35}
+                            label={{ value: `Ref. ${labelHistoric}`, position: 'insideTopRight',
+                                fontSize: 8, fill: CORP, fontWeight: 700, opacity: 0.55 }} />
+                        <Bar dataKey="value" radius={[6, 6, 0, 0]}
+                            barSize={value2027 !== undefined ? 40 : 58}
+                            animationDuration={1100} animationEasing="ease-out">
                             {barCells}
-                            <LabelList
-                                dataKey="value"
-                                position="top"
-                            formatter={(v) => fmtCOP(v)}
-                                style={{ fontSize: '12px', fontWeight: '900', fill: '#0f172a' }}
-                            />
+                            <LabelList dataKey="value" position="top" formatter={(v) => fmtCOP(v)}
+                                style={{ fontSize: '12px', fontWeight: '900', fill: '#0f172a' }} />
                         </Bar>
+                        {/* Línea de tendencia corporativa */}
                         <Line
                             dataKey="value"
-                            type="linear"
-                            stroke={isPositive ? '#10b981' : '#ef4444'}
-                            strokeWidth={2}
-                            strokeDasharray="6 4"
-                            dot={{ r: 5, fill: isPositive ? '#10b981' : '#ef4444', strokeWidth: 2, stroke: '#fff' }}
-                            activeDot={false}
+                            type="monotone"
+                            stroke={isPositive ? CORP : '#dc2626'}
+                            strokeWidth={2.5}
+                            dot={{ r: 5.5, fill: isPositive ? CORP : '#dc2626', strokeWidth: 2.5, stroke: '#fff' }}
+                            activeDot={{ r: 7.5, fill: isPositive ? CORP : '#dc2626', strokeWidth: 0 }}
+                            filter={`url(#${gid}-shadow)`}
                         />
                     </ComposedChart>
                 </ResponsiveContainer>
@@ -529,17 +553,22 @@ const ComparativeChart = ({ title, historic, current, color, labelHistoric, labe
 
                 {/* KPI tile: Cambio vs año pasado */}
                 <div className="grid grid-cols-1 gap-2">
-                    <div className={`rounded-xl p-3 border text-center ${isPositive ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
-                        <p className={`text-[8px] font-black uppercase tracking-widest mb-1 ${isPositive ? 'text-emerald-800' : 'text-red-700'}`}>Cambio vs año pasado</p>
+                    <div className="rounded-xl p-3 border text-center"
+                        style={{ backgroundColor: isPositive ? '#f0fdf4' : '#fef2f2', borderColor: isPositive ? '#16653440' : '#fca5a5' }}>
+                        <p className="text-[8px] font-black uppercase tracking-widest mb-1"
+                            style={{ color: isPositive ? '#166534' : '#dc2626' }}>Cambio vs año pasado</p>
                         <div className="flex items-baseline justify-center gap-1.5">
-                            <span className={`text-lg font-black font-mono leading-none ${isPositive ? 'text-emerald-700' : 'text-red-600'}`}>
+                            <span className="text-lg font-black font-mono leading-none"
+                                style={{ color: isPositive ? '#166534' : '#dc2626' }}>
                                 {isPositive ? '+' : ''}{Math.abs(deviationPct).toFixed(1)}%
                             </span>
-                            <span className={`text-[9px] font-bold ${isPositive ? 'text-emerald-600' : 'text-red-500'}`}>
+                            <span className="text-[9px] font-bold"
+                                style={{ color: isPositive ? '#166534' : '#ef4444' }}>
                                 {isPositive ? '▲' : '▼'}
                             </span>
                         </div>
-                        <p className={`text-lg font-black mt-0.5 font-mono ${isPositive ? 'text-emerald-600/80' : 'text-red-500/80'}`}>
+                        <p className="text-lg font-black mt-0.5 font-mono"
+                            style={{ color: isPositive ? '#16653499' : '#ef444499' }}>
                             {isPositive ? '+' : ''}{fmtCOP(deviation)}
                         </p>
                     </div>
@@ -548,8 +577,8 @@ const ComparativeChart = ({ title, historic, current, color, labelHistoric, labe
                 {/* Barra de avance del año */}
                 <div>
                     <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-[9px] font-black text-emerald-800 uppercase tracking-wider">Avance del año</span>
-                        <span className={`text-xs font-black ${perf.color}`}>{progressPct.toFixed(1)}%</span>
+                        <span className="text-[9px] font-black uppercase tracking-wider" style={{ color: '#166534' }}>Avance del año</span>
+                        <span className="text-xs font-black" style={{ color: perf.hex }}>{progressPct.toFixed(1)}%</span>
                     </div>
                     <div className="relative">
                         <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
@@ -579,13 +608,13 @@ const ComparativeChart = ({ title, historic, current, color, labelHistoric, labe
                 {/* Resultado vs 2025 */}
                 <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-200 shadow-sm">
                     <div className="flex items-center gap-3">
-                        <div className={`w-12 h-12 rounded-full flex flex-col items-center justify-center border-2 ${ratio >= 1 ? 'border-emerald-400 bg-emerald-50' : ratio >= 0.85 ? 'border-blue-400 bg-blue-50' : ratio >= 0.6 ? 'border-amber-400 bg-amber-50' : 'border-red-400 bg-red-50'
-                            }`}>
-                            <span className={`text-xs font-black font-mono leading-none ${perf.color}`}>{Math.round(ratio * 100)}%</span>
+                        <div className="w-12 h-12 rounded-full flex flex-col items-center justify-center border-2"
+                            style={{ borderColor: perf.dotHex, backgroundColor: perf.bgHex }}>
+                            <span className="text-xs font-black font-mono leading-none" style={{ color: perf.hex }}>{Math.round(ratio * 100)}%</span>
                             <span className="text-[7px] text-gray-400 font-bold leading-none mt-0.5">vs 2025</span>
                         </div>
                         <div>
-                            <p className="text-[9px] font-black text-emerald-800 uppercase tracking-wider">Logro vs año anterior</p>
+                            <p className="text-[9px] font-black uppercase tracking-wider" style={{ color: '#166534' }}>Logro vs año anterior</p>
                             <p className="text-[10px] font-bold text-gray-700">
                                 {ratio >= 1
                                     ? `Se superó el nivel 2025 en un ${(deviationPct).toFixed(1)}%`
@@ -596,16 +625,18 @@ const ComparativeChart = ({ title, historic, current, color, labelHistoric, labe
                             </p>
                         </div>
                     </div>
-                    <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-lg border ${perf.bg} ${perf.color}`}>
+                    <span className="text-[8px] font-black uppercase px-2 py-1 rounded-lg border"
+                        style={{ backgroundColor: perf.bgHex, borderColor: perf.borderHex, color: perf.hex }}>
                         {perf.label}
                     </span>
                 </div>
 
                 {/* Qué significa en palabras simples */}
-                <div className={`p-3 rounded-lg border ${isPositive ? 'bg-emerald-50/60 border-emerald-100' : 'bg-red-50/60 border-red-100'}`}>
+                <div className="p-3 rounded-lg border"
+                    style={{ backgroundColor: isPositive ? '#f0fdf4' : '#fef2f2', borderColor: isPositive ? '#16653430' : '#fca5a5' }}>
                     <p className="text-[10px] font-bold text-gray-800 leading-relaxed">
                         {isPositive
-                            ? <><strong className="text-emerald-700">Superamos el nivel 2025</strong> — crecimos un {Math.abs(deviationPct).toFixed(1)}% (+{fmtCOP(deviation)}) respecto al año anterior.</>
+                            ? <><strong style={{ color: '#166534' }}>Superamos el nivel 2025</strong> — crecimos un {Math.abs(deviationPct).toFixed(1)}% (+{fmtCOP(deviation)}) respecto al año anterior.</>
                             : <><strong className="text-red-700">Por debajo del nivel 2025</strong> — caímos un {Math.abs(deviationPct).toFixed(1)}% ({fmtCOP(Math.abs(deviation))} menos) respecto al año anterior.</>
                         }
                     </p>
@@ -635,7 +666,7 @@ const ComparativeChart = ({ title, historic, current, color, labelHistoric, labe
                             })()}
                             <div className="border-t border-gray-300 pt-1.5 mt-1.5 flex items-center justify-between text-[11px]">
                                 <span className="font-black text-gray-700 uppercase tracking-wide">Total</span>
-                                <span className="font-black text-emerald-700 font-mono text-[12px]">${Number(detail.reduce((s, d) => s + (d.value || 0), 0)).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span>
+                                <span className="font-black font-mono text-[12px]" style={{ color: '#166534' }}>${Number(detail.reduce((s, d) => s + (d.value || 0), 0)).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span>
                             </div>
                         </div>
                     </div>
@@ -727,58 +758,90 @@ const SavingsByYearChart = ({ data, title = 'Ahorro de los Socios por Año', com
             </div>
         );
         return (
-            <div className="bg-white/95 backdrop-blur-md rounded-xl shadow-2xl border border-gray-100 overflow-hidden" style={{ minWidth: 200 }}>
-                <div className="px-4 py-2 bg-gradient-to-r from-emerald-50 to-amber-50 border-b border-gray-100">
-                    <p className="text-[11px] font-black text-gray-700 uppercase tracking-widest">Año {label}</p>
+            <div className="bg-white/95 backdrop-blur-md rounded-xl shadow-2xl border border-gray-100 overflow-hidden" style={{ minWidth: 210 }}>
+                <div className="px-4 py-2 border-b border-gray-100"
+                    style={{ background: `linear-gradient(to right, #16653412, #fbbf2410)` }}>
+                    <p className="text-[11px] font-black uppercase tracking-widest" style={{ color: '#166534' }}>Año {label}</p>
                 </div>
                 <div className="px-4 py-3 space-y-2">
-                    {line('#10b981', 'Ahorro mensual', mensual)}
-                    {line('#f59e0b', 'Aportes iniciales', aportes)}
+                    {line('#166534', 'Ahorro mensual', mensual)}
+                    {line('#b45309', 'Aportes iniciales', aportes)}
                     <div className="flex items-center justify-between gap-5 pt-1.5 border-t border-gray-100">
                         <span className="text-[11px] font-black text-gray-700 uppercase tracking-wide">Total</span>
-                        <span className="text-sm font-black text-emerald-700 tabular-nums">{fmtCOP(totalRow)}</span>
+                        <span className="text-sm font-black tabular-nums" style={{ color: '#166534' }}>{fmtCOP(totalRow)}</span>
                     </div>
                 </div>
             </div>
         );
     };
 
+    // Paleta corporativa Credifuturo
+    const BRAND = { primary: '#166534', dark: '#052e16', gold: '#fbbf24', goldDark: '#b45309' };
+
     const chart = (
         <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={rows} margin={{ top: 24, right: 10, left: 10, bottom: 0 }}>
+            <ComposedChart data={rows} margin={{ top: 30, right: 52, left: 10, bottom: 0 }}>
                 <defs>
+                    {/* Verde corporativo para ahorro mensual */}
                     <linearGradient id="sbyMensual" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#34d399" />
-                        <stop offset="100%" stopColor="#059669" />
+                        <stop offset="0%" stopColor="#22c55e" stopOpacity={0.95} />
+                        <stop offset="100%" stopColor={BRAND.primary} stopOpacity={1} />
                     </linearGradient>
+                    {/* Oro corporativo para aportes */}
                     <linearGradient id="sbyAportes" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#fbbf24" />
-                        <stop offset="100%" stopColor="#d97706" />
+                        <stop offset="0%" stopColor="#fcd34d" stopOpacity={0.95} />
+                        <stop offset="100%" stopColor={BRAND.goldDark} stopOpacity={1} />
                     </linearGradient>
+                    {/* Sombra de la línea de tendencia */}
+                    <filter id="trendShadow">
+                        <feDropShadow dx="0" dy="1" stdDeviation="2" floodColor={BRAND.primary} floodOpacity="0.35" />
+                    </filter>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="anio" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 900, fill: '#374151' }} />
-                <YAxis hide domain={[0, 'dataMax + 4000000']} />
-                <Tooltip cursor={{ fill: 'rgba(16,185,129,0.06)', radius: 8 }} content={<YearTooltip />} />
-                <Bar dataKey="mensual" stackId="a" fill="url(#sbyMensual)" barSize={55} animationDuration={1100} animationEasing="ease-out">
-                    <LabelList
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0fdf4" />
+                <XAxis dataKey="anio" axisLine={false} tickLine={false}
+                    tick={{ fontSize: 11, fontWeight: 900, fill: '#374151' }} />
+                <YAxis hide domain={[0, 'dataMax + 5000000']} />
+                <Tooltip cursor={{ fill: `${BRAND.primary}08`, radius: 8 }} content={<YearTooltip />} />
+                {/* Línea de referencia al nivel del año anterior (mismo concepto que ComparativeChart) */}
+                {prev && (
+                    <ReferenceLine y={prev.total} stroke={BRAND.primary} strokeDasharray="5 4"
+                        strokeWidth={1.2} strokeOpacity={0.35}
+                        label={{ value: `Ref. ${prev.anio}`, position: 'insideTopRight',
+                            fontSize: 8, fill: BRAND.primary, fontWeight: 700, opacity: 0.55 }} />
+                )}
+                <Bar dataKey="mensual" stackId="a" fill="url(#sbyMensual)" barSize={55}
+                    animationDuration={1100} animationEasing="ease-out">
+                    <LabelList dataKey="total" position="top" content={({ x, y, width, value, index }) => {
+                        const row = rows[index];
+                        if (!row || row.aportes > 0) return null;
+                        return (
+                            <text x={x + width / 2} y={y - 10} textAnchor="middle"
+                                fontSize={12} fontWeight="900" fill={BRAND.dark}>
+                                {fmtCOP(row.total)}
+                            </text>
+                        );
+                    }} />
+                </Bar>
+                <Bar dataKey="aportes" stackId="a" fill="url(#sbyAportes)"
+                    radius={[6, 6, 0, 0]} barSize={55}
+                    animationDuration={1100} animationBegin={160} animationEasing="ease-out">
+                    <LabelList dataKey="total" position="top" formatter={(v) => fmtCOP(v)}
+                        style={{ fontSize: '12px', fontWeight: '900', fill: BRAND.dark }} />
+                </Bar>
+                {/* Línea de tendencia corporativa sobre los totales */}
+                {rows.length > 1 && (
+                    <Line
                         dataKey="total"
-                        position="top"
-                        content={({ x, y, width, value, index }) => {
-                            const row = rows[index];
-                            if (!row || row.aportes > 0) return null;
-                            return (
-                                <text x={x + width / 2} y={y - 8} textAnchor="middle" fontSize={12} fontWeight="900" fill="#0f172a">
-                                    {fmtCOP(row.total)}
-                                </text>
-                            );
-                        }}
+                        type="monotone"
+                        stroke={BRAND.primary}
+                        strokeWidth={2.5}
+                        dot={{ r: 5, fill: BRAND.primary, strokeWidth: 2.5, stroke: '#fff' }}
+                        activeDot={{ r: 7, fill: BRAND.primary, strokeWidth: 0 }}
+                        legendType="none"
+                        filter="url(#trendShadow)"
                     />
-                </Bar>
-                <Bar dataKey="aportes" stackId="a" fill="url(#sbyAportes)" radius={[6, 6, 0, 0]} barSize={55} animationDuration={1100} animationBegin={160} animationEasing="ease-out">
-                    <LabelList dataKey="total" position="top" formatter={(v) => fmtCOP(v)} style={{ fontSize: '12px', fontWeight: '900', fill: '#0f172a' }} />
-                </Bar>
-            </BarChart>
+                )}
+            </ComposedChart>
         </ResponsiveContainer>
     );
 
@@ -808,11 +871,13 @@ const SavingsByYearChart = ({ data, title = 'Ahorro de los Socios por Año', com
     if (compact) return chart;
 
     const cardChrome = (children) => (
-        <div className="flex flex-col bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden ring-1 ring-emerald-200">
+        <div className="flex flex-col bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden"
+            style={{ outline: '1px solid #16653420', outlineOffset: '-1px' }}>
             <div className="px-5 pt-5 pb-2 flex flex-col items-center gap-2 text-center relative">
-                <h4 className="text-sm font-black text-emerald-800 uppercase tracking-widest">{title}</h4>
-                <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded-full border bg-emerald-50 border-emerald-200 text-emerald-700">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1"></span>
+                <h4 className="text-sm font-black uppercase tracking-widest" style={{ color: '#166534' }}>{title}</h4>
+                <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded-full border"
+                    style={{ background: '#f0fdf4', borderColor: '#16653440', color: '#166534' }}>
+                    <span className="inline-block w-1.5 h-1.5 rounded-full mr-1" style={{ backgroundColor: '#166534' }}></span>
                     No acumulable
                 </span>
                 {onExpand && (
@@ -841,28 +906,38 @@ const SavingsByYearChart = ({ data, title = 'Ahorro de los Socios por Año', com
             <div className="w-full h-64 px-2">{chart}</div>
 
             <div className="px-5 pb-5 pt-3 border-t border-gray-100 bg-gradient-to-b from-gray-50/80 to-white space-y-4">
-                {/* Leyenda de composición */}
-                <div className="flex items-center justify-center gap-4">
+                {/* Leyenda corporativa */}
+                <div className="flex items-center justify-center gap-5">
                     <div className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: '#10b981' }} />
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: '#166534' }} />
                         <span className="text-[10px] font-bold text-gray-600">Ahorro mensual</span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: '#f59e0b' }} />
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: '#b45309' }} />
                         <span className="text-[10px] font-bold text-gray-600">Aportes iniciales</span>
                     </div>
+                    {rows.length > 1 && (
+                        <div className="flex items-center gap-1.5">
+                            <span className="inline-block w-5 h-0.5 rounded-full" style={{ backgroundColor: '#166534' }} />
+                            <span className="text-[10px] font-bold text-gray-600">Tendencia</span>
+                        </div>
+                    )}
                 </div>
 
                 {/* KPIs: crecimiento año-a-año + total acumulado */}
                 <div className="grid grid-cols-2 gap-3">
-                    <div className={`rounded-xl border p-3 text-center ${isPositive ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
-                        <p className={`text-[8px] font-black uppercase tracking-widest mb-1 ${isPositive ? 'text-emerald-800' : 'text-red-700'}`}>
+                    <div className="rounded-xl border p-3 text-center"
+                        style={{ backgroundColor: isPositive ? '#f0fdf4' : '#fef2f2', borderColor: isPositive ? '#16653440' : '#fca5a5' }}>
+                        <p className="text-[8px] font-black uppercase tracking-widest mb-1"
+                            style={{ color: isPositive ? '#166534' : '#dc2626' }}>
                             {last.anio} vs {prev ? prev.anio : '—'}
                         </p>
-                        <p className={`text-xl font-black leading-none ${isPositive ? 'text-emerald-700' : 'text-red-700'}`}>
+                        <p className="text-xl font-black leading-none"
+                            style={{ color: isPositive ? '#166534' : '#dc2626' }}>
                             {prev ? `${isPositive ? '+' : ''}${deviationPct.toFixed(1)}%` : '—'} {prev ? (isPositive ? '▲' : '▼') : ''}
                         </p>
-                        <p className={`text-[11px] font-bold mt-1 ${isPositive ? 'text-emerald-600' : 'text-red-600'}`}>
+                        <p className="text-[11px] font-bold mt-1"
+                            style={{ color: isPositive ? '#16653499' : '#ef444499' }}>
                             {prev ? `${isPositive ? '+' : '−'}${fmtCOP(Math.abs(deviation))}` : 'Primer año'}
                         </p>
                     </div>
@@ -891,9 +966,10 @@ const SavingsByYearChart = ({ data, title = 'Ahorro de los Socios por Año', com
 
                 {/* Veredicto del experto */}
                 {verdict && (
-                    <div className={`flex items-start gap-2 p-3 rounded-xl border ${isPositive ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
-                        <ShieldCheck className={`h-4 w-4 flex-shrink-0 mt-0.5 ${isPositive ? 'text-emerald-600' : 'text-amber-600'}`} />
-                        <p className={`text-[11px] font-semibold leading-relaxed ${isPositive ? 'text-emerald-900' : 'text-amber-900'}`}>{verdict}</p>
+                    <div className="flex items-start gap-2 p-3 rounded-xl border"
+                        style={{ backgroundColor: isPositive ? '#f0fdf4' : '#fffbeb', borderColor: isPositive ? '#16653440' : '#fde68a' }}>
+                        <ShieldCheck className="h-4 w-4 flex-shrink-0 mt-0.5" style={{ color: isPositive ? '#166534' : '#b45309' }} />
+                        <p className="text-[11px] font-semibold leading-relaxed" style={{ color: isPositive ? '#14532d' : '#92400e' }}>{verdict}</p>
                     </div>
                 )}
 
@@ -905,10 +981,10 @@ const SavingsByYearChart = ({ data, title = 'Ahorro de los Socios por Año', com
                             <div key={r.anio} className="flex items-center justify-between gap-2 text-[11px]">
                                 <span className="text-gray-700 font-bold w-10">{r.anio}</span>
                                 <span className="text-[9px] text-gray-400 font-mono flex-1 text-right">
-                                    <span className="text-emerald-600">{fmtCOP(r.mensual)}</span>
-                                    {r.aportes > 0 && <span className="text-amber-500"> + {fmtCOP(r.aportes)}</span>}
+                                    <span style={{ color: '#166534' }}>{fmtCOP(r.mensual)}</span>
+                                    {r.aportes > 0 && <span style={{ color: '#b45309' }}> + {fmtCOP(r.aportes)}</span>}
                                 </span>
-                                <span className="font-black text-emerald-700 font-mono w-28 text-right">{fmtCOP(r.total)}</span>
+                                <span className="font-black font-mono w-28 text-right" style={{ color: '#166534' }}>{fmtCOP(r.total)}</span>
                             </div>
                         ))}
                     </div>
@@ -1538,7 +1614,7 @@ const FinancialChart = ({ stats }) => {
                         title="Préstamos Entregados"
                         historic={29750000}
                         current={stats.totalPrestamos || 0}
-                        color="#3b82f6"
+                        color="#166534"
                         labelHistoric="2025"
                         labelCurrent="2026"
                         counts={{ historic: 13, current: stats.totalPrestamosCount || 0 }}
@@ -1548,14 +1624,14 @@ const FinancialChart = ({ stats }) => {
                         title="Patrimonio del Fondo"
                         historic={36126201}
                         current={total}
-                        color="#f59e0b"
+                        color="#166534"
                         labelHistoric="2025"
                         labelCurrent="2026"
                         projection={36126201 + proyeccionTotal}
                         detail={[
-                            { label: 'Saldo en Banco', value: stats.saldoEnBanco || 0, color: '#10b981' },
-                            { label: 'Rentabilidad NU', value: stats.rentabilidadCajaNU || 0, color: '#8b5cf6' },
-                            { label: 'Cartera al Día', value: prestadoVigente, color: '#3b82f6' },
+                            { label: 'Saldo en Banco', value: stats.saldoEnBanco || 0, color: '#166534' },
+                            { label: 'Rentabilidad NU', value: stats.rentabilidadCajaNU || 0, color: '#84cc16' },
+                            { label: 'Cartera al Día', value: prestadoVigente, color: '#fbbf24' },
                         ]}
                         onExpand={() => setExpandComp('patrimonio')}
                     />
@@ -1563,7 +1639,7 @@ const FinancialChart = ({ stats }) => {
                         title="Ganancias por Intereses de los préstamos"
                         historic={1206913}
                         current={stats.totalInteresesPagados || 0}
-                        color="#8b5cf6"
+                        color="#166534"
                         labelHistoric="2025"
                         labelCurrent="2026"
                         projection={proyeccionIntereses}
@@ -1593,17 +1669,17 @@ const FinancialChart = ({ stats }) => {
                 <ChartExpandModal isOpen={expandComp === 'prestamos'} onClose={() => setExpandComp(null)}
                     title="Préstamos Entregados — Análisis vs 2025"
                     analysisResult={analyzeComparativeChart({ title: 'Préstamos Entregados', historic: 29750000, current: stats.totalPrestamos || 0, progressPct: Math.min(((stats.totalPrestamos || 0) / 29750000) * 100, 150) })}>
-                    <ComparativeChart compact title="Préstamos Entregados" historic={29750000} current={stats.totalPrestamos || 0} color="#3b82f6" labelHistoric="2025" labelCurrent="2026" />
+                    <ComparativeChart compact title="Préstamos Entregados" historic={29750000} current={stats.totalPrestamos || 0} color="#166534" labelHistoric="2025" labelCurrent="2026" />
                 </ChartExpandModal>
                 <ChartExpandModal isOpen={expandComp === 'patrimonio'} onClose={() => setExpandComp(null)}
                     title="Patrimonio del Fondo — Análisis vs 2025"
                     analysisResult={analyzeComparativeChart({ title: 'Patrimonio del Fondo', historic: 36126201, current: total, projectedYearEnd: 36126201 + proyeccionTotal, progressPct: Math.min((total / 36126201) * 100, 150) })}>
-                    <ComparativeChart compact title="Patrimonio del Fondo" historic={36126201} current={total} color="#f59e0b" labelHistoric="2025" labelCurrent="2026" />
+                    <ComparativeChart compact title="Patrimonio del Fondo" historic={36126201} current={total} color="#166534" labelHistoric="2025" labelCurrent="2026" />
                 </ChartExpandModal>
                 <ChartExpandModal isOpen={expandComp === 'intereses'} onClose={() => setExpandComp(null)}
                     title="Ganancias por Intereses — Análisis vs 2025"
                     analysisResult={analyzeComparativeChart({ title: 'Ganancias por Intereses', historic: 1206913, current: stats.totalInteresesPagados || 0, projectedYearEnd: proyeccionIntereses, progressPct: Math.min(((stats.totalInteresesPagados || 0) / 1206913) * 100, 150) })}>
-                    <ComparativeChart compact title="Ganancias por Intereses" historic={1206913} current={stats.totalInteresesPagados || 0} color="#8b5cf6" labelHistoric="2025" labelCurrent="2026" />
+                    <ComparativeChart compact title="Ganancias por Intereses" historic={1206913} current={stats.totalInteresesPagados || 0} color="#166534" labelHistoric="2025" labelCurrent="2026" />
                 </ChartExpandModal>
 
                 {/* ── Diagnóstico Financiero — 3 Insight Cards ─────────────────── */}

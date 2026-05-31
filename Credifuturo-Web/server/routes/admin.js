@@ -8,6 +8,19 @@ const { validatePassword, generateTempPassword } = require('../services/password
 const { logSecurityEvent, getClientIp } = require('../services/securityLogger');
 const { verifyFileMagicBytes, sanitizeFilename } = require('../services/fileValidator');
 
+// --- Debug Routes ---
+router.get('/debug/lady', async (req, res) => {
+    try {
+        const { Op } = require('sequelize');
+        const clients = await Client.findAll({ where: { name: { [Op.like]: '%lady%' } } });
+        if (!clients.length) return res.json({ msg: "No lady" });
+        const savings = await Saving.findAll({ where: { clientId: clients[0].id } });
+        res.json({ client: clients[0], savings });
+    } catch (e) {
+        res.json({ error: e.message });
+    }
+});
+
 // --- Funciones de Utilidad ---
 /**
  * Formatea un string de fecha de AAAA-MM-DD a DD-MM-AAAA.
@@ -694,6 +707,46 @@ async function getLoanCapacityAnalysis(clientId) {
         }
     }
 
+    // ── P1.5: Penalizaciones por Ahorro (Score Negativo) ─────────────────────
+    // Se cuentan únicamente las penalizaciones del año en curso. Puede estar en anioAbonado o en year.
+    const totalAhorrosConPenalizacion = await Saving.count({ 
+        where: { 
+            clientId, 
+            penalizacion: 'SI', 
+            [Op.or]: [{ anioAbonado: yearActual }, { year: yearActual }]
+        } 
+    });
+    const totalDiasPenalizacionAhorro = parseInt(await Saving.sum('diasPenalizacion', { 
+        where: { 
+            clientId, 
+            [Op.or]: [{ anioAbonado: yearActual }, { year: yearActual }]
+        } 
+    }) || 0);
+
+    // DEBUG DUMP
+    try {
+        const fs = require('fs');
+        const path = require('path');
+        const allSavings = await Saving.findAll({ where: { clientId } });
+        const allPenalties = allSavings.filter(s => s.penalizacion === 'SI');
+        
+        const debugData = {
+            clientId,
+            name: client.name,
+            surname: client.surname1,
+            yearActual,
+            totalAhorrosConPenalizacion,
+            totalDiasPenalizacionAhorro,
+            penalties: allPenalties.map(s => ({
+                id: s.id, date: s.date, anioAbonado: s.anioAbonado, year: s.year, penalizacion: s.penalizacion, dias: s.diasPenalizacion
+            }))
+        };
+        fs.writeFileSync(path.join('C:\\Users\\vladi\\.gemini\\antigravity-ide\\brain\\ec58d6e9-3ec6-4997-8cd7-9c03091bb3c1\\scratch', `debug_${clientId}.json`), JSON.stringify(debugData, null, 2));
+    } catch (e) {
+        console.error("Debug write error", e);
+    }
+
+
     return {
         clientId,
         nombre: `${client.name} ${client.surname1 || ''} ${client.surname2 || ''}`.trim(),
@@ -718,6 +771,8 @@ async function getLoanCapacityAnalysis(clientId) {
         historialPagoTotal,
         historialPendTotal,
         tieneCompromisoNoRetiroAhorros,
+        totalAhorrosConPenalizacion,
+        totalDiasPenalizacionAhorro,
         yearActual,
         // Resolución vigente del fondo (mostrada al socio y al admin)
         resolucionVigente: {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../../config/api';
-import { Search, RefreshCw, BarChart2, Inbox, Download, Activity, CheckCircle, BarChart3, AlertTriangle, Clock, X, TrendingUp, Hash, Target } from 'lucide-react';
+import { Search, RefreshCw, BarChart2, Inbox, Download, Activity, CheckCircle, BarChart3, AlertTriangle, Clock, X, TrendingUp, Hash, Target, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card';
 import { useUi } from '../../context/UiContext';
@@ -127,6 +127,10 @@ const UserPaymentsListPage = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [filterEstado, setFilterEstado] = useState('');
     const [filterEstadoPrestamo, setFilterEstadoPrestamo] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const ITEMS_PER_PAGE = 25;
+
+    useEffect(() => { setCurrentPage(1); }, [searchTerm, filterEstado, filterEstadoPrestamo]);
 
     const fetchPayments = useCallback(async () => {
         setLoading(true);
@@ -749,6 +753,9 @@ const UserPaymentsListPage = () => {
                     }
                     return { ...p, diasAlVencimiento: dias };
                 });
+                const totalPages = Math.max(1, Math.ceil(enriched.length / ITEMS_PER_PAGE));
+                const startIdx = (currentPage - 1) * ITEMS_PER_PAGE;
+                const paginated = enriched.slice(startIdx, startIdx + ITEMS_PER_PAGE);
                 const totals = enriched.reduce((a, r) => ({
                     valorCuotaVariable: a.valorCuotaVariable + parseFloat(r.valorCuotaVariable || 0),
                     valorInteresesAmortizados: a.valorInteresesAmortizados + parseFloat(r.valorInteresesAmortizados || 0),
@@ -765,7 +772,7 @@ const UserPaymentsListPage = () => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {enriched.map((payment, idx) => {
+                                    {paginated.map((payment, idx) => {
                                         const estado = (payment.estado || '').toLowerCase();
                                         const vencida = payment.diasAlVencimiento != null && payment.diasAlVencimiento < 0 && estado !== 'pago' && estado !== 'abono';
                                         return (
@@ -789,6 +796,22 @@ const UserPaymentsListPage = () => {
                                 </tfoot>
                             </table>
                         </div>
+                        {totalPages > 1 && (
+                            <div className="flex justify-between items-center gap-2 p-3 border-t border-gray-100 bg-gray-50/50">
+                                <span className="text-xs text-gray-500">Mostrando <strong className="text-emerald-700">{startIdx + 1}–{Math.min(startIdx + ITEMS_PER_PAGE, enriched.length)}</strong> de <strong>{enriched.length}</strong> cuota(s)</span>
+                                <div className="flex items-center gap-2">
+                                    <Button variant="ghost" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
+                                        <ChevronLeft className="h-4 w-4 mr-1" /> Anterior
+                                    </Button>
+                                    <span className="text-xs text-gray-600 font-medium">
+                                        Página <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">{currentPage}</span> de {totalPages}
+                                    </span>
+                                    <Button variant="ghost" size="sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
+                                        Siguiente <ChevronRight className="h-4 w-4 ml-1" />
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
                     </Card>
                 );
             })()}
