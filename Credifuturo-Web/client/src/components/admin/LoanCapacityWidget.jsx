@@ -83,7 +83,7 @@ const LoanCapacityWidget = ({ analysis, loading }) => {
                             {analysis.mesesComoSocio != null ? `${analysis.mesesComoSocio} meses` : '—'}
                         </p>
                         <p className="text-[10px] text-gray-500 leading-tight mt-0.5">
-                            Permanencia desde el ingreso al fondo. Aporta puntaje en el componente de lealtad (satura a 24 meses).
+                            Permanencia desde el ingreso al fondo. Aporta puntaje en el componente de lealtad; alcanza el máximo a los 24 meses.
                         </p>
                     </div>
                     <div className="rounded-lg border border-gray-100 bg-white p-3">
@@ -93,7 +93,7 @@ const LoanCapacityWidget = ({ analysis, loading }) => {
                         </div>
                         <p className="text-sm font-bold text-gray-800">{analysis.prestamosLiquidados || 0}</p>
                         <p className="text-[10px] text-gray-500 leading-tight mt-0.5">
-                            Préstamos cancelados a satisfacción. Evidencia capacidad de pago histórica (satura a 3).
+                            Préstamos cancelados a satisfacción. Evidencia capacidad de pago histórica; alcanza el máximo con 3 créditos.
                         </p>
                     </div>
                     <div className={`rounded-lg border p-3 ${analysis.pagosTardios > 0 ? 'bg-orange-50 border-orange-200' : 'border-gray-100 bg-white'}`}>

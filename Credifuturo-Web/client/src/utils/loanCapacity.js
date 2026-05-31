@@ -33,10 +33,10 @@ function explicarComponente(key, a, scoreData) {
         const m = a.mesesComoSocio || 0;
         const liq = a.prestamosLiquidados || 0;
         const partes = [];
-        if (m < 24) partes.push(`${m} meses como socio (satura a 24m para 12 pts)`);
+        if (m < 24) partes.push(`${m} meses como socio (alcanza el puntaje máximo a los 24 meses)`);
         else partes.push(`${m} meses como socio — antigüedad consolidada`);
         if (liq === 0) partes.push('sin créditos saldados aún');
-        else if (liq < 3) partes.push(`${liq} crédito(s) saldado(s) (satura a 3 para 8 pts)`);
+        else if (liq < 3) partes.push(`${liq} crédito(s) saldado(s) (alcanza el puntaje máximo con 3 créditos)`);
         else partes.push(`${liq} créditos saldados — track record sólido`);
         return partes.join(' · ');
     }
@@ -81,7 +81,7 @@ export function calcScore(a) {
     }
 
     // ── Componente 3: Antigüedad + lealtad (20 pts) ──────────────────────
-    // 12 pts por antigüedad (saturando a 24 meses) + 8 pts por préstamos liquidados (saturando a 3).
+    // 12 pts por antigüedad (puntaje máximo a los 24 meses) + 8 pts por préstamos liquidados (puntaje máximo a 3).
     const meses = a.mesesComoSocio || 0;
     const antiguedadPts = Math.min(meses / 24, 1) * 12;
     const liquidadosPts = Math.min((a.prestamosLiquidados || 0) / 3, 1) * 8;
