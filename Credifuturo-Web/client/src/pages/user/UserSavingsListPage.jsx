@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../../config/api';
-import { RefreshCw, PiggyBank, Inbox, Download, ChevronLeft, ChevronRight, FileDown, Loader2, CheckCircle2, Clock, AlertTriangle, Hash } from 'lucide-react';
+import { RefreshCw, PiggyBank, Inbox, Download, ChevronLeft, ChevronRight, FileDown, Loader2, CheckCircle2, Clock, AlertTriangle, Hash, Calculator, TrendingUp, Activity, ArrowUpToLine, Shield } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Card, CardContent } from '../../components/ui/Card';
 import { useUi } from '../../context/UiContext';
@@ -8,7 +8,7 @@ import * as XLSX from 'xlsx';
 import { formatDate } from '../../utils/excelUtils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList, LineChart, Line, PieChart, Pie, Cell, ReferenceLine } from 'recharts';
 import html2canvas from 'html2canvas';
 import SavingsListPDF from './SavingsListPDF'; // Nuevo componente para el PDF
 
@@ -16,35 +16,43 @@ const fmtCOP = v => `$${Number(v).toLocaleString('es-CO', { minimumFractionDigit
 
 const ACCENT_PALETTE = ['#166534', '#fbbf24', '#1a7a42', '#d97706', '#2d9652', '#f5c518', '#052e16'];
 
-const getStatusColor = (status, index) => {
+// Clasificación semántica + descripción contextual para cada tipo de movimiento.
+// kind: 'credito' suma al saldo, 'debito' lo reduce, 'neutro' es informativo.
+const classifyMovement = (status, index) => {
     const s = (status || '').toLowerCase();
     if (s.includes('abono') || s.includes('deposito') || s.includes('pagado') || s.includes('activo') || s.includes('vigente'))
-        return { accent: '#166534', Icon: CheckCircle2 };
+        return { label: 'Capital Acreditado', accent: '#166534', Icon: CheckCircle2, kind: 'credito',
+            desc: 'Ahorros mensuales abonados efectivamente a tu cuenta del fondo.' };
     if (s.includes('descuento') || s.includes('penaliz') || s.includes('mora') || s.includes('multa') || s.includes('sancion'))
-        return { accent: '#d97706', Icon: AlertTriangle };
+        return { label: 'Penalización por Mora', accent: '#d97706', Icon: AlertTriangle, kind: 'debito',
+            desc: 'Descuentos aplicados por incumplimiento en la fecha límite de aporte.' };
     if (s.includes('interes') || s.includes('distribucion') || s.includes('rendimiento') || s.includes('dividendo'))
-        return { accent: '#fbbf24', Icon: Hash };
+        return { label: 'Rendimientos Distribuidos', accent: '#fbbf24', Icon: TrendingUp, kind: 'credito',
+            desc: 'Intereses generados por el fondo y abonados a los socios.' };
     if (s.includes('pendiente') || s.includes('proceso'))
-        return { accent: '#f5c518', Icon: Clock };
-    return { accent: ACCENT_PALETTE[index % ACCENT_PALETTE.length], Icon: Hash };
+        return { label: status, accent: '#f5c518', Icon: Clock, kind: 'neutro',
+            desc: 'Movimientos en proceso de conciliación.' };
+    return { label: status, accent: ACCENT_PALETTE[index % ACCENT_PALETTE.length], Icon: Hash, kind: 'neutro',
+        desc: 'Otros movimientos registrados en tu cuenta.' };
 };
 
 const TABLE_COLUMNS = [
-    { key: 'externalId', label: 'Id_VM', align: 'center', minWidth: '100px', highlight: true },
-    { key: 'status', label: 'Estado', align: 'center', minWidth: '130px', isTypeBadge: true },
-    { key: 'date', label: 'Fecha Pago', align: 'center', minWidth: '130px', isDate: true },
-    { key: 'month', label: 'Mes pago', align: 'center', minWidth: '110px' },
-    { key: 'year', label: 'Año', align: 'center', minWidth: '80px' },
-    { key: 'amount', label: 'Valor Mensual', align: 'right', minWidth: '130px', isCurrency: true },
-    { key: 'valorAhorrado', label: 'Valor Ahorrado', align: 'right', minWidth: '130px', isCurrency: true },
-    { key: 'penalizacion', label: 'Penalización', align: 'center', minWidth: '120px', isPenBadge: true },
-    { key: 'valorAPenalizar', label: 'Valor Penalizado', align: 'right', minWidth: '130px', isCurrency: true },
-    { key: 'type', label: 'Tipo', align: 'center', minWidth: '130px' },
-    { key: 'banco', label: 'Banco', align: 'left', minWidth: '140px' },
-    { key: 'observaciones', label: 'Observaciones', align: 'left', minWidth: '200px' },
+    { key: 'externalId', label: 'Id_VM', align: 'center', minWidth: '90px', highlight: true },
+    { key: 'status', label: 'Estado', align: 'center', minWidth: '120px', isTypeBadge: true },
+    { key: 'date', label: 'Fecha Pago', align: 'center', minWidth: '110px', isDate: true },
+    { key: 'periodo', label: 'Periodo', align: 'center', minWidth: '130px', isPeriodo: true },
+    { key: 'amount', label: 'Valor Bruto', align: 'right', minWidth: '120px', isCurrency: true },
+    { key: 'valorAhorrado', label: 'Valor Neto', align: 'right', minWidth: '120px', isCurrency: true },
+    { key: 'penalizacion', label: 'Penaliz.', align: 'center', minWidth: '90px', isPenBadge: true },
+    { key: 'valorAPenalizar', label: 'Descuento', align: 'right', minWidth: '110px', isCurrency: true },
+    { key: 'delta', label: 'Δ vs mes anterior', align: 'center', minWidth: '130px', isDelta: true },
+    { key: 'acumulado', label: 'Acumulado', align: 'right', minWidth: '130px', isCurrency: true },
+    { key: 'type', label: 'Tipo', align: 'center', minWidth: '120px' },
+    { key: 'banco', label: 'Banco', align: 'left', minWidth: '120px' },
+    { key: 'observaciones', label: 'Observaciones', align: 'left', minWidth: '180px' },
 ];
 
-const ITEMS_PER_PAGE = 15;
+const ITEMS_PER_PAGE = 25;
 
 const TypeBadge = ({ value }) => {
     if (!value) return <span className="text-gray-300 text-xs italic">—</span>;
@@ -59,22 +67,45 @@ const PenBadge = ({ value }) => {
     if (!value) return <span className="text-gray-300 text-xs italic">—</span>;
     const isSI = value.trim().toUpperCase() === 'SI';
     return (
-        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ring-1 ${isSI ? 'bg-orange-100 text-orange-800 ring-orange-200' : 'bg-emerald-100 text-emerald-800 ring-emerald-200'}`}>
+        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ring-1 ${isSI ? 'bg-amber-100 text-amber-900 ring-amber-200' : 'bg-emerald-100 text-emerald-800 ring-emerald-200'}`}>
             {value}
         </span>
     );
 };
 
-const CellValue = ({ column, value }) => {
+const CellValue = ({ column, value, row }) => {
     if (column.isTypeBadge) return <TypeBadge value={value} />;
     if (column.isPenBadge) return <PenBadge value={value} />;
     if (column.isDate) return <span className="tabular-nums text-gray-700">{formatDate(value)}</span>;
+    if (column.isPeriodo) {
+        const mes = row?.month || '';
+        const anio = row?.year || '';
+        if (!mes && !anio) return <span className="text-gray-300 text-xs italic">—</span>;
+        return <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{mes} {anio}</span>;
+    }
+    if (column.isDelta) {
+        if (value == null || isNaN(value)) return <span className="text-gray-300 text-xs italic">—</span>;
+        if (value === 0) return <span className="text-[10px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">sin cambio</span>;
+        const pos = value > 0;
+        return (
+            <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${pos ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800'}`}>
+                {pos ? '▲' : '▼'} {pos ? '+' : ''}${Math.abs(value).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            </span>
+        );
+    }
     if (value === null || value === undefined || value === '') return <span className="text-gray-300 text-xs italic">—</span>;
     if (column.isCurrency) {
         const num = parseFloat(value);
-        return <span className="font-medium text-gray-900 tabular-nums">${!isNaN(num) ? num.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : value}</span>;
+        if (isNaN(num)) return <span className="text-gray-300 text-xs italic">—</span>;
+        if (column.key === 'valorAPenalizar' && num > 0) {
+            return <span className="font-medium text-amber-700 tabular-nums">−${num.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>;
+        }
+        if (column.key === 'acumulado') {
+            return <span className="font-bold text-emerald-700 tabular-nums">${num.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>;
+        }
+        return <span className={`font-medium tabular-nums ${num === 0 ? 'text-gray-400' : 'text-gray-900'}`}>${num.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>;
     }
-    if (column.highlight) return <span className="font-semibold text-gray-900">{value}</span>;
+    if (column.highlight) return <span className="font-bold text-emerald-800">{value}</span>;
     return <span className="text-gray-700">{value}</span>;
 };
 
@@ -174,14 +205,57 @@ const UserSavingsListPage = () => {
 
     const summaryStats = useMemo(() => {
         const totalAhorrado = filteredSavings.reduce((acc, curr) => acc + parseFloat(curr.valorAhorrado || curr.amount || 0), 0);
+        const totalBruto = filteredSavings.reduce((acc, curr) => acc + parseFloat(curr.amount || 0), 0);
         const totalPenalizado = filteredSavings.reduce((acc, curr) => acc + parseFloat(curr.valorAPenalizar || 0), 0);
         const numAportes = filteredSavings.length;
+        const aporteMensuales = filteredSavings.filter(s => (s.type || '').toLowerCase().includes('mensual'));
+        const aportePromedio = aporteMensuales.length > 0
+            ? aporteMensuales.reduce((s, r) => s + parseFloat(r.valorAhorrado || r.amount || 0), 0) / aporteMensuales.length
+            : 0;
+        const aporteMaximo = filteredSavings.reduce((m, r) => Math.max(m, parseFloat(r.valorAhorrado || r.amount || 0)), 0);
+        const fechas = filteredSavings
+            .map(s => s.date ? new Date(s.date) : null)
+            .filter(d => d && !isNaN(d.getTime()))
+            .sort((a, b) => a - b);
+        const ultimoAporte = fechas[fechas.length - 1] || null;
+        const diasDesdeUltimo = ultimoAporte ? Math.floor((Date.now() - ultimoAporte.getTime()) / 86400000) : null;
+        const conPenalizacion = filteredSavings.filter(s => parseFloat(s.valorAPenalizar || 0) > 0).length;
+        const tasaCumplimiento = numAportes > 0 ? ((numAportes - conPenalizacion) / numAportes) * 100 : 100;
+
         return {
-            totalAhorrado,
-            totalPenalizado,
-            numAportes,
+            totalAhorrado, totalBruto, totalPenalizado, numAportes,
+            aportePromedio, aporteMaximo, ultimoAporte, diasDesdeUltimo,
+            conPenalizacion, tasaCumplimiento
         };
     }, [filteredSavings]);
+
+    // Tendencia mensual (últimos 12 meses): valor neto ahorrado
+    const monthlyTrend = useMemo(() => {
+        const buckets = {};
+        filteredSavings.forEach(s => {
+            const f = s.date ? new Date(s.date) : null;
+            if (!f || isNaN(f.getTime())) return;
+            const key = `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}`;
+            buckets[key] = (buckets[key] || 0) + parseFloat(s.valorAhorrado || s.amount || 0);
+        });
+        return Object.entries(buckets)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .slice(-12)
+            .map(([k, v]) => ({ mes: k.slice(2).replace('-', '/'), valor: v }));
+    }, [filteredSavings]);
+
+    const trendStats = useMemo(() => {
+        if (monthlyTrend.length === 0) return { avg: 0, max: 0, min: 0, latest: 0, deltaPct: 0 };
+        const avg = monthlyTrend.reduce((s, x) => s + x.valor, 0) / monthlyTrend.length;
+        const max = Math.max(...monthlyTrend.map(x => x.valor));
+        const min = Math.min(...monthlyTrend.map(x => x.valor));
+        const latest = monthlyTrend[monthlyTrend.length - 1]?.valor || 0;
+        const deltaPct = avg > 0 ? ((latest - avg) / avg) * 100 : 0;
+        return { avg, max, min, latest, deltaPct };
+    }, [monthlyTrend]);
+
+    // Métricas económicas avanzadas
+    const fmtShortDate = (d) => d ? d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
     const statsByStatus = useMemo(() => {
         const map = {};
@@ -195,6 +269,20 @@ const UserSavingsListPage = () => {
             .sort(([a], [b]) => a.localeCompare(b, 'es'))
             .map(([status, d]) => ({ status, ...d }));
     }, [savings]);
+
+    const economics = useMemo(() => {
+        const costoPenalizacionPct = summaryStats.totalBruto > 0
+            ? (summaryStats.totalPenalizado / summaryStats.totalBruto) * 100
+            : 0;
+        // Rendimiento implícito: si hay distribución de intereses, qué % representa sobre el capital acreditado
+        const intereses = statsByStatus
+            .filter(s => /interes|distribucion|rendimiento|dividendo/i.test(s.status))
+            .reduce((sum, s) => sum + parseFloat(s.total || 0), 0);
+        const rendimientoPct = summaryStats.totalAhorrado > 0
+            ? (intereses / (summaryStats.totalAhorrado - intereses || 1)) * 100
+            : 0;
+        return { costoPenalizacionPct, rendimientoImplicitoTotal: intereses, rendimientoPct };
+    }, [summaryStats, statsByStatus]);
 
     const uniqueStatuses = useMemo(() => {
         const statuses = savings.map(s => (s.status || '').trim()).filter(Boolean);
@@ -475,46 +563,169 @@ const UserSavingsListPage = () => {
                 </div>
             </div>
 
-            {/* Tarjetas por Estado */}
+            {/* KPI Row: métricas ejecutivas del comportamiento de ahorro */}
             {savings.length > 0 && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {/* Tarjeta total global */}
-                    <Card className="overflow-hidden border-0 shadow-md sm:col-span-2 lg:col-span-1" style={{ background: 'linear-gradient(135deg, #052e16 0%, #166534 55%, #1a7a42 100%)' }}>
-                        <div className="p-5 relative">
-                            <div className="absolute top-4 right-4 bg-white/10 rounded-xl p-2">
-                                <PiggyBank className="h-5 w-5 text-white/80" />
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <Card className="border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                        <div className="p-4">
+                            <div className="flex items-center justify-between mb-2">
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Aporte Mensual Promedio</p>
+                                <Calculator className="h-4 w-4 text-emerald-700" />
                             </div>
-                            <p className="text-emerald-200 text-xs font-semibold uppercase tracking-wider mb-1">Total Ahorrado</p>
-                            <p className="text-2xl font-bold text-white tabular-nums leading-tight">{fmtCOP(summaryStats.totalAhorrado)}</p>
-                            <div className="h-px bg-white/15 my-3" />
-                            <div className="flex items-center gap-1.5 text-emerald-200 text-sm">
-                                <Hash className="h-3.5 w-3.5" />
-                                {summaryStats.numAportes} {summaryStats.numAportes === 1 ? 'registro' : 'registros'}{filterStatus ? ' (filtrado)' : ''}
+                            <p className="text-xl font-black text-emerald-800 tabular-nums leading-tight">{fmtCOP(summaryStats.aportePromedio)}</p>
+                            <p className="text-[10px] text-gray-500 mt-1 leading-tight">Valor neto promedio en aportes tipo "Mensual"</p>
+                        </div>
+                    </Card>
+                    <Card className="border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                        <div className="p-4">
+                            <div className="flex items-center justify-between mb-2">
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Aporte Máximo</p>
+                                <TrendingUp className="h-4 w-4 text-emerald-500" />
+                            </div>
+                            <p className="text-xl font-black text-emerald-600 tabular-nums leading-tight">{fmtCOP(summaryStats.aporteMaximo)}</p>
+                            <p className="text-[10px] text-gray-500 mt-1 leading-tight">Mayor contribución registrada en el histórico</p>
+                        </div>
+                    </Card>
+                    <Card className="border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                        <div className="p-4">
+                            <div className="flex items-center justify-between mb-2">
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Último Aporte</p>
+                                <ArrowUpToLine className="h-4 w-4 text-amber-500" />
+                            </div>
+                            <p className="text-base font-black text-amber-600 leading-tight">{fmtShortDate(summaryStats.ultimoAporte)}</p>
+                            <p className="text-[10px] text-gray-500 mt-1 leading-tight">
+                                {summaryStats.diasDesdeUltimo != null ? `Hace ${summaryStats.diasDesdeUltimo} día(s)` : 'Sin movimientos'}
+                            </p>
+                        </div>
+                    </Card>
+                    <Card className={`border shadow-sm hover:shadow-md transition-shadow ${summaryStats.conPenalizacion > 0 ? 'border-amber-200 bg-amber-50/50' : 'border-gray-100'}`}>
+                        <div className="p-4">
+                            <div className="flex items-center justify-between mb-2">
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Cumplimiento</p>
+                                <Shield className={`h-4 w-4 ${summaryStats.conPenalizacion > 0 ? 'text-amber-500' : 'text-emerald-500'}`} />
+                            </div>
+                            <p className={`text-xl font-black tabular-nums leading-tight ${summaryStats.conPenalizacion > 0 ? 'text-amber-700' : 'text-emerald-600'}`}>
+                                {summaryStats.tasaCumplimiento.toFixed(0)}<span className="text-sm font-bold">%</span>
+                            </p>
+                            <p className="text-[10px] text-gray-500 mt-1 leading-tight">
+                                {summaryStats.conPenalizacion > 0
+                                    ? `${summaryStats.conPenalizacion} aporte(s) con penalización por mora`
+                                    : 'Aportes puntuales sin penalización'}
+                            </p>
+                        </div>
+                    </Card>
+                </div>
+            )}
+
+            {/* Comparativo bruto vs neto si hay penalizaciones */}
+            {savings.length > 0 && summaryStats.totalPenalizado > 0 && (
+                <Card className="border border-amber-100 bg-amber-50/30 shadow-sm">
+                    <div className="p-4 flex items-start gap-3">
+                        <div className="bg-amber-500 rounded-lg p-2 shrink-0">
+                            <AlertTriangle className="h-4 w-4 text-white" />
+                        </div>
+                        <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Capital Bruto Ingresado</p>
+                                <p className="text-base font-black text-gray-800 tabular-nums">{fmtCOP(summaryStats.totalBruto)}</p>
+                                <p className="text-[9px] text-gray-500">Total recibido antes de penalizaciones</p>
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-amber-800">Penalizaciones Aplicadas</p>
+                                <p className="text-base font-black text-amber-700 tabular-nums">− {fmtCOP(summaryStats.totalPenalizado)}</p>
+                                <p className="text-[9px] text-amber-700">Descuentos por mora en pago mensual</p>
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-700">Capital Neto Acreditado</p>
+                                <p className="text-base font-black text-emerald-700 tabular-nums">{fmtCOP(summaryStats.totalAhorrado)}</p>
+                                <p className="text-[9px] text-emerald-600">Suma efectivamente abonada a tu cuenta</p>
+                            </div>
+                        </div>
+                    </div>
+                </Card>
+            )}
+
+            {/* Composición de movimientos: donut + lista contextual */}
+            {savings.length > 0 && statsByStatus.length > 0 && (() => {
+                const enriched = statsByStatus.map((s, i) => ({ ...s, ...classifyMovement(s.status, i) }));
+                const totalAbs = enriched.reduce((sum, e) => sum + Math.abs(e.total), 0);
+                const totalCreditos = enriched.filter(e => e.kind === 'credito').reduce((s, e) => s + e.total, 0);
+                const totalDebitos = enriched.filter(e => e.kind === 'debito').reduce((s, e) => s + Math.abs(e.total), 0);
+                return (
+                    <Card className="border border-gray-100 shadow-sm overflow-hidden">
+                        <div className="px-5 pt-4 pb-3 border-b border-gray-50 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <PiggyBank className="h-4 w-4 text-emerald-600" />
+                                <h3 className="text-sm font-bold text-gray-700">Composición de Movimientos</h3>
+                            </div>
+                            <p className="text-[10px] text-gray-500">{summaryStats.numAportes} registro(s){filterStatus ? ' · filtrado' : ''}</p>
+                        </div>
+                        <div className="p-5 grid grid-cols-1 lg:grid-cols-5 gap-6 items-center">
+                            {/* Donut */}
+                            <div className="lg:col-span-2 flex flex-col items-center">
+                                <div style={{ width: '100%', height: 200, position: 'relative' }}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <PieChart>
+                                            <Pie
+                                                data={enriched.map(e => ({ name: e.label, value: Math.abs(e.total), color: e.accent }))}
+                                                dataKey="value" nameKey="name"
+                                                cx="50%" cy="50%" innerRadius={56} outerRadius={86} paddingAngle={2}
+                                            >
+                                                {enriched.map((e, i) => <Cell key={i} fill={e.accent} />)}
+                                            </Pie>
+                                            <Tooltip formatter={(v) => fmtCOP(v)} />
+                                        </PieChart>
+                                    </ResponsiveContainer>
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                        <p className="text-[9px] uppercase tracking-widest text-gray-400 font-bold">Saldo Neto</p>
+                                        <p className="text-lg font-black text-gray-800 tabular-nums">{fmtCOP(totalCreditos - totalDebitos)}</p>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 w-full mt-2 text-center">
+                                    <div className="bg-emerald-50 rounded-lg py-1.5 px-2">
+                                        <p className="text-[9px] uppercase tracking-wide text-emerald-700 font-bold">Créditos</p>
+                                        <p className="text-xs font-bold text-emerald-700 tabular-nums">+ {fmtCOP(totalCreditos)}</p>
+                                    </div>
+                                    <div className={`${totalDebitos > 0 ? 'bg-amber-50' : 'bg-gray-50'} rounded-lg py-1.5 px-2`}>
+                                        <p className={`text-[9px] uppercase tracking-wide font-bold ${totalDebitos > 0 ? 'text-amber-800' : 'text-gray-500'}`}>Débitos</p>
+                                        <p className={`text-xs font-bold tabular-nums ${totalDebitos > 0 ? 'text-amber-800' : 'text-gray-500'}`}>− {fmtCOP(totalDebitos)}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            {/* Lista de movimientos */}
+                            <div className="lg:col-span-3 space-y-3">
+                                {enriched.map((e) => {
+                                    const pct = totalAbs > 0 ? (Math.abs(e.total) / totalAbs) * 100 : 0;
+                                    const sign = e.kind === 'debito' ? '−' : '+';
+                                    return (
+                                        <div key={e.status} className="border border-gray-100 rounded-lg p-3 hover:bg-gray-50/50 transition-colors">
+                                            <div className="flex items-start justify-between gap-3 mb-1.5">
+                                                <div className="flex items-start gap-2.5 min-w-0">
+                                                    <span className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: e.accent }} />
+                                                    <div className="min-w-0">
+                                                        <p className="text-sm font-bold text-gray-800 leading-tight">{e.label}</p>
+                                                        <p className="text-[10px] text-gray-400 mt-0.5">{e.count} {e.count === 1 ? 'movimiento' : 'movimientos'}{e.label !== e.status ? ` · "${e.status}"` : ''}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right flex-shrink-0">
+                                                    <p className="text-sm font-black tabular-nums" style={{ color: e.accent }}>
+                                                        {sign} {fmtCOP(Math.abs(e.total))}
+                                                    </p>
+                                                    <p className="text-[10px] text-gray-400 tabular-nums">{pct.toFixed(0)}% del flujo</p>
+                                                </div>
+                                            </div>
+                                            <div className="w-full bg-gray-100 rounded-full h-1 overflow-hidden mb-1.5">
+                                                <div className="h-1 rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: e.accent }} />
+                                            </div>
+                                            <p className="text-[10px] text-gray-500 leading-snug">{e.desc}</p>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </div>
                     </Card>
-
-                    {/* Tarjetas por estado */}
-                    {statsByStatus.map(({ status, total, count }, i) => {
-                        const { accent, Icon } = getStatusColor(status, i);
-                        return (
-                            <Card key={status} className="bg-white shadow-sm overflow-hidden" style={{ borderTop: `3px solid ${accent}` }}>
-                                <div className="p-5">
-                                    <div className="flex items-center justify-between mb-3">
-                                        <div className="flex items-center gap-2 min-w-0">
-                                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: accent }} />
-                                            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 truncate" title={status}>{status}</span>
-                                        </div>
-                                        <Icon className="h-4 w-4 flex-shrink-0 text-gray-300" />
-                                    </div>
-                                    <p className="text-2xl font-bold tabular-nums text-gray-900">{fmtCOP(total)}</p>
-                                    <p className="text-xs mt-1.5 text-gray-400">{count} {count === 1 ? 'registro' : 'registros'}</p>
-                                </div>
-                            </Card>
-                        );
-                    })}
-                </div>
-            )}
+                );
+            })()}
 
             {/* Gráfico de Evolución */}
             <div ref={chartRef} className="bg-white p-6 rounded-xl border border-gray-200/80 shadow-sm">
@@ -534,33 +745,163 @@ const UserSavingsListPage = () => {
                 ) : <p className="text-center text-gray-500 py-10">No hay suficientes datos para mostrar el gráfico.</p>}
             </div>
 
+            {/* Métricas económicas: penalización vs rendimiento */}
+            {savings.length > 0 && (economics.costoPenalizacionPct > 0 || economics.rendimientoImplicitoTotal > 0) && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {economics.costoPenalizacionPct > 0 && (
+                        <Card className="border border-amber-100 shadow-sm bg-gradient-to-br from-amber-50/40 to-white">
+                            <div className="p-4">
+                                <div className="flex items-center justify-between mb-2">
+                                    <p className="text-[10px] font-bold uppercase tracking-widest text-amber-800">Costo Financiero · Penalizaciones</p>
+                                    <AlertTriangle className="h-4 w-4 text-amber-500" />
+                                </div>
+                                <p className="text-2xl font-black text-amber-700 tabular-nums leading-tight">
+                                    {economics.costoPenalizacionPct.toFixed(2)}<span className="text-base">%</span>
+                                </p>
+                                <p className="text-[10px] text-gray-600 mt-1 leading-snug">
+                                    Del capital bruto ingresado se descontó {fmtCOP(summaryStats.totalPenalizado)} por mora.
+                                    Cada punto porcentual representa dinero que no se acreditó a tu ahorro.
+                                </p>
+                            </div>
+                        </Card>
+                    )}
+                    {economics.rendimientoImplicitoTotal > 0 && (
+                        <Card className="border border-emerald-100 shadow-sm bg-gradient-to-br from-emerald-50/40 to-white">
+                            <div className="p-4">
+                                <div className="flex items-center justify-between mb-2">
+                                    <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-700">Rendimiento Acreditado</p>
+                                    <TrendingUp className="h-4 w-4 text-emerald-500" />
+                                </div>
+                                <p className="text-2xl font-black text-emerald-600 tabular-nums leading-tight">
+                                    {fmtCOP(economics.rendimientoImplicitoTotal)}
+                                </p>
+                                <p className="text-[10px] text-gray-600 mt-1 leading-snug">
+                                    Equivale a un <span className="font-bold">{economics.rendimientoPct.toFixed(2)}%</span> sobre tu capital aportado neto.
+                                    Son intereses distribuidos por el fondo, no aportes propios.
+                                </p>
+                            </div>
+                        </Card>
+                    )}
+                </div>
+            )}
+
+            {/* Tendencia mensual de los últimos 12 meses */}
+            {monthlyTrend.length > 1 && (
+                <Card className="border border-gray-100 shadow-sm">
+                    <div className="px-5 pt-4 pb-3 border-b border-gray-50 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <Activity className="h-4 w-4 text-emerald-600" />
+                            <h3 className="text-sm font-bold text-gray-700">Tendencia Mensual · últimos {monthlyTrend.length} meses</h3>
+                        </div>
+                        <div className="flex items-center gap-3 text-[10px]">
+                            <span className="flex items-center gap-1 text-gray-500">
+                                <span className="w-3 h-0.5 bg-gray-400" style={{ borderTop: '1px dashed #94a3b8', backgroundColor: 'transparent' }} />
+                                Promedio: <span className="font-bold tabular-nums text-gray-700">{fmtCOP(trendStats.avg)}</span>
+                            </span>
+                            <span className={`px-2 py-0.5 rounded font-bold ${trendStats.deltaPct >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800'}`}>
+                                Último mes: {trendStats.deltaPct >= 0 ? '+' : ''}{trendStats.deltaPct.toFixed(0)}% vs promedio
+                            </span>
+                        </div>
+                    </div>
+                    <div className="p-5" style={{ height: 240 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={monthlyTrend} margin={{ top: 28, right: 24, left: 8, bottom: 4 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                                <XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 11 }} />
+                                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#9ca3af', fontSize: 10 }} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} width={52} />
+                                <Tooltip
+                                    formatter={(v) => fmtCOP(v)}
+                                    labelFormatter={(label) => `Mes ${label}`}
+                                    contentStyle={{ borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 12 }}
+                                />
+                                <ReferenceLine y={trendStats.avg} stroke="#94a3b8" strokeDasharray="4 4" label={{ value: 'Promedio', position: 'insideTopRight', fill: '#94a3b8', fontSize: 10 }} />
+                                <Line type="monotone" dataKey="valor" stroke="#166534" strokeWidth={2.5} dot={{ fill: '#166534', r: 4 }} activeDot={{ r: 6 }}>
+                                    <LabelList
+                                        dataKey="valor"
+                                        position="top"
+                                        offset={10}
+                                        style={{ fill: '#166534', fontSize: 10, fontWeight: 700 }}
+                                        formatter={(v) => fmtCOP(v)}
+                                    />
+                                </Line>
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </div>
+                    <div className="px-5 pb-4 text-[10px] text-gray-500">
+                        Capital neto acreditado mes a mes. La línea punteada representa tu promedio del periodo: te ayuda a identificar si tu ritmo de ahorro está mejorando o decayendo.
+                    </div>
+                </Card>
+            )}
+
             {filteredSavings.length === 0 ? (
                 <Card><CardContent className="p-12 text-center">
                     <Inbox className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                     <p className="text-gray-500">No tienes ahorros registrados.</p>
                 </CardContent></Card>
-            ) : (
-                <Card className="overflow-hidden border-none shadow-none bg-transparent">
+            ) : (() => {
+                // Enriquecer páginadas: delta vs registro previo cronológico + acumulado neto
+                const chronological = [...filteredSavings].sort((a, b) => {
+                    const da = a.date ? new Date(a.date).getTime() : 0;
+                    const db = b.date ? new Date(b.date).getTime() : 0;
+                    return da - db;
+                });
+                let acumNeto = 0;
+                const acumMap = {};
+                const deltaMap = {};
+                let prevValor = null;
+                chronological.forEach(s => {
+                    const val = parseFloat(s.valorAhorrado || s.amount || 0);
+                    acumNeto += val;
+                    acumMap[s.id] = acumNeto;
+                    deltaMap[s.id] = prevValor != null ? val - prevValor : null;
+                    prevValor = val;
+                });
+                const enriched = paginatedSavings.map(s => ({
+                    ...s,
+                    delta: deltaMap[s.id],
+                    acumulado: acumMap[s.id]
+                }));
+                // Totales del set filtrado completo (no solo página actual)
+                const totals = filteredSavings.reduce((a, r) => ({
+                    amount: a.amount + parseFloat(r.amount || 0),
+                    valorAhorrado: a.valorAhorrado + parseFloat(r.valorAhorrado || r.amount || 0),
+                    valorAPenalizar: a.valorAPenalizar + parseFloat(r.valorAPenalizar || 0),
+                }), { amount: 0, valorAhorrado: 0, valorAPenalizar: 0 });
+                return (
+                <Card className="overflow-hidden border border-gray-100 shadow-sm">
                     <div className="table-container max-h-[70vh] overflow-y-auto">
                         <table className="premium-table">
                             <thead>
-                                <tr className="bg-brand-primary text-white">
+                                <tr className="bg-emerald-700 text-white">
                                     {TABLE_COLUMNS.map(col => (
-                                        <th key={col.key} className="sticky top-0 z-10 bg-brand-primary" style={{ textAlign: col.align, minWidth: col.minWidth }}>{col.label}</th>
+                                        <th key={col.key} className="sticky top-0 z-10 bg-emerald-700" style={{ textAlign: col.align, minWidth: col.minWidth }}>{col.label}</th>
                                     ))}
                                 </tr>
                             </thead>
                             <tbody>
-                                {paginatedSavings.map((saving, idx) => (
-                                    <tr key={saving.id} className={`transition-colors duration-150 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/70'} hover:bg-emerald-50`}>
-                                        {TABLE_COLUMNS.map(col => (
-                                            <td key={col.key} style={{ textAlign: col.align, minWidth: col.minWidth }}>
-                                                <CellValue column={col} value={saving[col.key]} />
-                                            </td>
-                                        ))}
-                                    </tr>
-                                ))}
+                                {enriched.map((saving, idx) => {
+                                    const tieneDescuento = parseFloat(saving.valorAPenalizar || 0) > 0;
+                                    return (
+                                        <tr key={saving.id} className={`transition-colors duration-150 ${tieneDescuento ? 'bg-amber-50/40' : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/70'} hover:bg-emerald-50`}>
+                                            {TABLE_COLUMNS.map(col => (
+                                                <td key={col.key} style={{ textAlign: col.align, minWidth: col.minWidth }}>
+                                                    <CellValue column={col} value={saving[col.key]} row={saving} />
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
+                            <tfoot>
+                                <tr className="bg-emerald-50 font-bold text-emerald-900 border-t-2 border-emerald-200 sticky bottom-0">
+                                    <td className="px-3 py-2 text-[10px] uppercase tracking-widest" colSpan={4}>Totales · {filteredSavings.length} mov.{filterStatus ? ' (filtrado)' : ''}</td>
+                                    <td className="px-3 py-2 text-right tabular-nums">${totals.amount.toLocaleString('es-CO', { minimumFractionDigits: 0 })}</td>
+                                    <td className="px-3 py-2 text-right tabular-nums text-emerald-800">${totals.valorAhorrado.toLocaleString('es-CO', { minimumFractionDigits: 0 })}</td>
+                                    <td className="px-3 py-2"></td>
+                                    <td className="px-3 py-2 text-right tabular-nums text-amber-700">{totals.valorAPenalizar > 0 ? `−$${totals.valorAPenalizar.toLocaleString('es-CO', { minimumFractionDigits: 0 })}` : '—'}</td>
+                                    <td className="px-3 py-2" colSpan={5}></td>
+                                </tr>
+                            </tfoot>
                         </table>
                     </div>
                     {totalPages > 1 && (
@@ -581,7 +922,8 @@ const UserSavingsListPage = () => {
                         </div>
                     )}
                 </Card>
-            )}
+                );
+            })()}
 
             {/* Componente oculto para la generación del PDF */}
             {isGeneratingPdf && (

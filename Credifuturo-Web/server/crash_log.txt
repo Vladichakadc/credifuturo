@@ -125,3 +125,111 @@
     at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
     at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
 ---
+[2026-05-31T01:59:27.800Z] getStatusColor is not defined
+
+    at UserSavingsListPage (http://localhost:5173/src/pages/user/UserSavingsListPage.jsx?t=1780192767650:170:21)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Outlet (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4537:26)
+    at div
+    at main
+    at div
+    at UserDashboardLayout (http://localhost:5173/src/layouts/UserDashboardLayout.jsx:209:32)
+    at ProtectedRoute (http://localhost:5173/src/App.jsx?t=1780192291169:72:29)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4601:5)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4544:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:5290:5)
+    at App (http://localhost:5173/src/App.jsx?t=1780192291169:65:27)
+    at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
+    at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
+---
+[2026-05-31T02:08:48.316Z] Cannot access 'statsByStatus' before initialization
+
+    at UserSavingsListPage (http://localhost:5173/src/pages/user/UserSavingsListPage.jsx?t=1780193278432:170:21)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Outlet (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4537:26)
+    at div
+    at main
+    at div
+    at UserDashboardLayout (http://localhost:5173/src/layouts/UserDashboardLayout.jsx:209:32)
+    at ProtectedRoute (http://localhost:5173/src/App.jsx?t=1780192291169:72:29)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4601:5)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4544:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:5290:5)
+    at App (http://localhost:5173/src/App.jsx?t=1780192291169:65:27)
+    at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
+    at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
+---
+[2026-05-31T02:09:12.265Z] Cannot access 'statsByStatus' before initialization
+
+    at UserSavingsListPage (http://localhost:5173/src/pages/user/UserSavingsListPage.jsx?t=1780193278432:170:21)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Outlet (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4537:26)
+    at div
+    at main
+    at div
+    at UserDashboardLayout (http://localhost:5173/src/layouts/UserDashboardLayout.jsx:209:32)
+    at ProtectedRoute (http://localhost:5173/src/App.jsx?t=1780192291169:72:29)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4601:5)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4544:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:5290:5)
+    at App (http://localhost:5173/src/App.jsx?t=1780192291169:65:27)
+    at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
+    at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
+---
+[2026-05-31T02:09:42.385Z] Cannot access 'statsByStatus' before initialization
+
+    at UserSavingsListPage (http://localhost:5173/src/pages/user/UserSavingsListPage.jsx?t=1780193278432:170:21)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Outlet (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4537:26)
+    at div
+    at main
+    at div
+    at UserDashboardLayout (http://localhost:5173/src/layouts/UserDashboardLayout.jsx:209:32)
+    at ProtectedRoute (http://localhost:5173/src/App.jsx?t=1780192291169:72:29)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4601:5)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4544:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:5290:5)
+    at App (http://localhost:5173/src/App.jsx?t=1780192291169:65:27)
+    at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
+    at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
+---
+[2026-05-31T02:12:42.236Z] Cannot access 'statsByStatus' before initialization
+
+    at UserSavingsListPage (http://localhost:5173/src/pages/user/UserSavingsListPage.jsx?t=1780193278432:170:21)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Outlet (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4537:26)
+    at div
+    at main
+    at div
+    at UserDashboardLayout (http://localhost:5173/src/layouts/UserDashboardLayout.jsx:209:32)
+    at ProtectedRoute (http://localhost:5173/src/App.jsx?t=1780192291169:72:29)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4601:5)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4544:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:5290:5)
+    at App (http://localhost:5173/src/App.jsx?t=1780192291169:65:27)
+    at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
+    at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
+---
+[2026-05-31T02:13:10.823Z] Cannot access 'statsByStatus' before initialization
+
+    at UserSavingsListPage (http://localhost:5173/src/pages/user/UserSavingsListPage.jsx?t=1780193278432:170:21)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Outlet (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4537:26)
+    at div
+    at main
+    at div
+    at UserDashboardLayout (http://localhost:5173/src/layouts/UserDashboardLayout.jsx:209:32)
+    at ProtectedRoute (http://localhost:5173/src/App.jsx?t=1780193395117:72:29)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4131:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4601:5)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:4544:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1fbab888:5290:5)
+    at App (http://localhost:5173/src/App.jsx?t=1780193395117:65:27)
+    at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
+    at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
+---

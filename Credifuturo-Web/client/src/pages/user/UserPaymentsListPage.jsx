@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../../config/api';
-import { Search, RefreshCw, BarChart2, Inbox, Download, Activity, CheckCircle, BarChart3, AlertTriangle, PieChart, Clock, X, TrendingUp, Hash } from 'lucide-react';
+import { Search, RefreshCw, BarChart2, Inbox, Download, Activity, CheckCircle, BarChart3, AlertTriangle, Clock, X, TrendingUp, Hash, Target } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card';
 import { useUi } from '../../context/UiContext';
 import * as XLSX from 'xlsx';
 import { formatDate } from '../../utils/excelUtils';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LineChart, Line, PieChart as RPieChart, Pie, Cell, LabelList, ReferenceLine } from 'recharts';
 
 const fmtCOP = v => `$${Number(v).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
@@ -28,28 +28,22 @@ const PaymentTooltip = ({ active, payload, label }) => {
     );
 };
 
+// Columnas optimizadas para vista del socio: se omiten datos redundantes (su propio nombre, cédula, customer ID)
 const TABLE_COLUMNS = [
-    { key: 'externalId', label: 'Id_EP', align: 'center', minWidth: '80px', highlight: true },
-    { key: 'idVm', label: 'Id_VM', align: 'center', minWidth: '90px', highlight: true },
-    { key: 'clientCustomerId', label: 'Customer ID', align: 'center', minWidth: '110px' },
-    { key: 'clientName', label: 'Socio', align: 'left', minWidth: '180px' },
-    { key: 'clientCedula', label: 'Cédula', align: 'left', minWidth: '100px' },
-    { key: 'mesDesembolso', label: 'Mes Desembolso', align: 'center', minWidth: '130px' },
-    { key: 'saldoInicial', label: 'Saldo Inicial', align: 'right', minWidth: '130px', isCurrency: true },
-    { key: 'cuotasPrestamo', label: '# Cuotas Prestamo', align: 'center', minWidth: '130px', isNumber: true },
-    { key: 'interesMensual', label: 'Interés Mensual', align: 'center', minWidth: '120px', isPercent: true },
-    { key: 'valorInteresesAmortizados', label: 'Val. Intereses', align: 'right', minWidth: '120px', isCurrency: true },
-    { key: 'fechaPago', label: 'Fecha Pago Max', align: 'center', minWidth: '120px', isDate: true },
-    { key: 'mesPago', label: 'Mes Pago', align: 'center', minWidth: '100px' },
-    { key: 'valorCuotaVariable', label: 'Cuota Variable', align: 'right', minWidth: '130px', isCurrency: true },
-    { key: 'estadoPrestamo', label: 'Estado Préstamo', align: 'center', minWidth: '130px', isBadge: true },
-    { key: 'estado', label: 'Estado Pago', align: 'center', minWidth: '110px', isBadge: true },
-    { key: 'saldoFinal', label: 'Saldo Final', align: 'right', minWidth: '130px', isCurrency: true },
-    { key: 'banco', label: 'Banco', align: 'left', minWidth: '140px' },
-    { key: 'numeroTransaccion', label: '# Transacción', align: 'left', minWidth: '120px' },
-    { key: 'cuentaAhorros', label: 'Cuenta Ahorros', align: 'left', minWidth: '140px' },
-    { key: 'observaciones', label: 'Observaciones', align: 'left', minWidth: '200px' }
+    { key: 'idVm', label: 'Crédito', align: 'center', minWidth: '90px', highlight: true },
+    { key: 'mesPago', label: 'Mes', align: 'center', minWidth: '100px' },
+    { key: 'fechaPago', label: 'Fecha Límite', align: 'center', minWidth: '120px', isDate: true },
+    { key: 'diasAlVencimiento', label: 'Vencimiento', align: 'center', minWidth: '120px', isVencimiento: true },
+    { key: 'valorCuotaVariable', label: 'Valor Cuota', align: 'right', minWidth: '120px', isCurrency: true },
+    { key: 'valorInteresesAmortizados', label: 'Intereses', align: 'right', minWidth: '110px', isCurrency: true },
+    { key: 'saldoFinal', label: 'Saldo Insoluto', align: 'right', minWidth: '130px', isCurrency: true },
+    { key: 'estado', label: 'Estado', align: 'center', minWidth: '110px', isBadge: true },
+    { key: 'banco', label: 'Banco', align: 'left', minWidth: '120px' },
+    { key: 'numeroTransaccion', label: '# Transacción', align: 'left', minWidth: '110px' },
+    { key: 'observaciones', label: 'Observaciones', align: 'left', minWidth: '160px' }
 ];
+
+const STATUS_COLORS = { Pagado: '#166534', Pendiente: '#fbbf24', Mora: '#ef4444' };
 
 const StatCard = ({ title, value, description, icon: Icon, accentColor, customBg, isDark = false }) => (
     <Card
@@ -91,20 +85,32 @@ const StatusBadge = ({ value }) => {
     );
 };
 
-const CellValue = ({ column, value }) => {
+const CellValue = ({ column, value, row }) => {
     if (column.isBadge) return <StatusBadge value={value} />;
     if (column.isDate) return <span className="tabular-nums text-gray-700">{formatDate(value)}</span>;
+    if (column.isVencimiento) {
+        // value es número de días: positivo = vence en N días, negativo = vencido hace N días
+        const estado = (row?.estado || '').toLowerCase();
+        const pagada = estado === 'pago' || estado === 'pagado' || estado === 'abono';
+        if (pagada) return <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">✓ Liquidada</span>;
+        if (value == null || isNaN(value)) return <span className="text-gray-300 text-xs italic">—</span>;
+        if (value < 0) return <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded-full">⚠ {Math.abs(value)}d vencida</span>;
+        if (value === 0) return <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">Hoy</span>;
+        if (value <= 7) return <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">En {value}d</span>;
+        return <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-gray-600 bg-gray-50 px-2 py-0.5 rounded-full">En {value}d</span>;
+    }
     if (value === null || value === undefined || value === '') return <span className="text-gray-300 text-xs italic">—</span>;
     if (column.isCurrency) {
         const num = parseFloat(value);
-        return <span className="font-medium text-gray-900 tabular-nums">${!isNaN(num) ? num.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : value}</span>;
+        if (isNaN(num)) return <span className="text-gray-300 text-xs italic">—</span>;
+        return <span className={`font-medium tabular-nums ${num === 0 ? 'text-gray-400' : 'text-gray-900'}`}>${num.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>;
     }
     if (column.isPercent) {
         const num = parseFloat(value);
         if (!isNaN(num)) return <span className="tabular-nums text-gray-700">{(num * 100).toFixed(2)}%</span>;
     }
     if (column.isNumber) return <span className="tabular-nums text-gray-700">{value}</span>;
-    if (column.highlight) return <span className="font-semibold text-gray-900">{value}</span>;
+    if (column.highlight) return <span className="font-bold text-emerald-800">{value}</span>;
     return <span className="text-gray-700">{value}</span>;
 };
 
@@ -283,6 +289,65 @@ const UserPaymentsListPage = () => {
         return Object.values(map).sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
     }, [payments]);
 
+    // Donut: distribución del valor total entre pagado / pendiente / mora
+    const donutData = useMemo(() => {
+        const buckets = [
+            { name: 'Pagado', value: stats.totalRecaudo, color: STATUS_COLORS.Pagado },
+            { name: 'Pendiente', value: Math.max(0, stats.carteraActiva - stats.moraCartera), color: STATUS_COLORS.Pendiente },
+            { name: 'En mora', value: stats.moraCartera, color: STATUS_COLORS.Mora }
+        ];
+        return buckets.filter(b => b.value > 0);
+    }, [stats]);
+
+    // Tendencia mensual de pagos efectivamente realizados (últimos 12 meses naturales)
+    const monthlyTrend = useMemo(() => {
+        const buckets = {};
+        payments.forEach(p => {
+            if ((p.estado || '').trim().toLowerCase() !== 'pago') return;
+            const f = p.fechaPago ? new Date(p.fechaPago) : null;
+            if (!f || isNaN(f.getTime())) return;
+            const key = `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}`;
+            buckets[key] = (buckets[key] || 0) + parseFloat(p.valorCuotaPago || p.valorCuotaVariable || 0);
+        });
+        return Object.entries(buckets)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .slice(-12)
+            .map(([k, v]) => ({ mes: k.slice(2).replace('-', '/'), valor: v }));
+    }, [payments]);
+
+    const trendAvg = useMemo(() => {
+        if (monthlyTrend.length === 0) return 0;
+        return monthlyTrend.reduce((s, x) => s + x.valor, 0) / monthlyTrend.length;
+    }, [monthlyTrend]);
+
+    // Métricas económicas operativas: velocidad, tiempo restante, eficiencia
+    const operativeMetrics = useMemo(() => {
+        // Velocidad de pago: cuotas pagadas / meses activos del último año
+        const fechasPago = payments
+            .filter(p => (p.estado || '').trim().toLowerCase() === 'pago' && p.fechaPago)
+            .map(p => new Date(p.fechaPago))
+            .filter(d => !isNaN(d.getTime()))
+            .sort((a, b) => a - b);
+        const mesesActivos = fechasPago.length > 1
+            ? Math.max(1, ((fechasPago[fechasPago.length - 1] - fechasPago[0]) / (1000 * 60 * 60 * 24 * 30.44)))
+            : 1;
+        const velocidad = fechasPago.length > 0 ? fechasPago.length / mesesActivos : 0;
+
+        // Tiempo restante estimado en meses
+        const cuotasRestantes = stats.totalCuotas - stats.cuotasPagadas;
+        const tiempoRestanteMeses = velocidad > 0 ? cuotasRestantes / velocidad : null;
+
+        // Carga financiera mensual promedio (cuota promedio pagada)
+        const valorCuotaPromedio = stats.cuotasPagadas > 0 ? stats.totalRecaudo / stats.cuotasPagadas : 0;
+
+        // Ratio intereses / capital
+        const ratioInteresesCapital = stats.totalRecaudo > 0
+            ? (stats.totalIntereses / stats.totalRecaudo) * 100
+            : 0;
+
+        return { velocidad, tiempoRestanteMeses, valorCuotaPromedio, ratioInteresesCapital, cuotasRestantes };
+    }, [payments, stats]);
+
     const handleExport = () => {
         if (filteredPayments.length === 0) { toast.error('No hay datos para exportar.'); return; }
         const exportData = filteredPayments.map(p => ({
@@ -333,62 +398,206 @@ const UserPaymentsListPage = () => {
                 </div>
             </div>
 
-            {/* Tarjetas de resumen — colores corporativos */}
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <StatCard
-                    title="Cartera Activa"
-                    value={fmtCOP(stats.carteraActiva)}
-                    description="Suma cuotas pendientes"
-                    icon={Activity}
-                    accentColor="#166534"
-                />
+            {/* KPIs consolidados — métricas operativas clave */}
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
                 <StatCard
                     title="Total Pagado"
                     value={fmtCOP(stats.totalRecaudo)}
-                    description="Suma cuotas pagadas"
+                    description={`${stats.cuotasPagadas} cuotas liquidadas a satisfacción`}
                     icon={CheckCircle}
+                    accentColor="#166534"
+                />
+                <StatCard
+                    title="Cartera Vigente"
+                    value={fmtCOP(stats.carteraActiva)}
+                    description={`${stats.totalCuotas - stats.cuotasPagadas} cuota(s) por vencer`}
+                    icon={Activity}
                     accentColor="#1a7a42"
                 />
                 <StatCard
-                    title="Intereses Pagados"
+                    title="Intereses Causados"
                     value={fmtCOP(stats.totalIntereses)}
-                    description="Intereses amortizados"
+                    description="Costo financiero amortizado"
                     icon={BarChart3}
                     accentColor="#fbbf24"
                 />
                 <StatCard
                     title="Cartera Vencida"
                     value={fmtCOP(stats.moraCartera)}
-                    description="Cuotas en mora"
+                    description={stats.moraCartera > 0 ? '⚠ Requiere regularización' : 'Sin obligaciones en mora'}
                     icon={AlertTriangle}
-                    accentColor="#d97706"
-                    customBg="linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)"
+                    accentColor={stats.moraCartera > 0 ? '#dc2626' : '#9ca3af'}
+                    customBg={stats.moraCartera > 0 ? 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)' : undefined}
                 />
             </div>
 
-            <div className="grid gap-4 md:grid-cols-3">
-                <StatCard
-                    title="Cuotas Totales"
-                    value={stats.totalCuotas}
-                    description="Registros actuales"
-                    icon={PieChart}
-                    accentColor="#052e16"
-                />
-                <StatCard
-                    title="Cuotas Pagadas"
-                    value={stats.cuotasPagadas}
-                    description="Estado 'Pago'"
-                    icon={CheckCircle}
-                    accentColor="#166534"
-                />
-                <StatCard
-                    title="Cuotas Pendientes"
-                    value={stats.totalCuotas - stats.cuotasPagadas}
-                    description="Estado 'Pendiente'"
-                    icon={Clock}
-                    accentColor="#f5c518"
-                />
-            </div>
+            {/* Barra de progreso global del portafolio */}
+            {stats.totalCuotas > 0 && (
+                <Card className="border border-gray-100 shadow-sm">
+                    <div className="p-4">
+                        <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                                <Target className="h-4 w-4 text-emerald-600" />
+                                <p className="text-sm font-bold text-gray-700">Avance del Portafolio Crediticio</p>
+                            </div>
+                            <p className="text-xs font-semibold text-gray-500">
+                                <span className="text-emerald-600 font-black">{((stats.cuotasPagadas / stats.totalCuotas) * 100).toFixed(0)}%</span> · {stats.cuotasPagadas} de {stats.totalCuotas} cuotas
+                            </p>
+                        </div>
+                        <div className="w-full h-3 bg-gray-100 rounded-full overflow-hidden flex">
+                            <div className="h-full bg-emerald-500 transition-all duration-700" style={{ width: `${(stats.cuotasPagadas / stats.totalCuotas) * 100}%` }} />
+                            {stats.moraCartera > 0 && (
+                                <div className="h-full bg-red-500 transition-all duration-700" style={{ width: `${(stats.moraCartera / (stats.totalRecaudo + stats.carteraActiva)) * 100}%` }} title="En mora" />
+                            )}
+                        </div>
+                        <div className="flex items-center gap-4 mt-2 text-[10px] text-gray-500">
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Pagado</span>
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gray-200" /> Por vencer</span>
+                            {stats.moraCartera > 0 && <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> En mora</span>}
+                        </div>
+                    </div>
+                </Card>
+            )}
+
+            {/* Análisis económico operativo */}
+            {payments.length > 0 && operativeMetrics.velocidad > 0 && (
+                <Card className="border border-emerald-200 shadow-sm bg-gradient-to-br from-emerald-50/40 to-white">
+                    <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                            <div className="flex items-center justify-between mb-1">
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-900">Velocidad de Pago</p>
+                                <Activity className="h-4 w-4 text-emerald-700" />
+                            </div>
+                            <p className="text-xl font-black text-emerald-900 tabular-nums leading-tight">
+                                {operativeMetrics.velocidad.toFixed(2)} <span className="text-xs">cuotas/mes</span>
+                            </p>
+                            <p className="text-[10px] text-gray-600 mt-1 leading-snug">
+                                Ritmo histórico al que has liquidado cuotas. Refleja tu cumplimiento real, no el cronograma teórico.
+                            </p>
+                        </div>
+                        <div>
+                            <div className="flex items-center justify-between mb-1">
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-700">Tiempo Restante Estimado</p>
+                                <Clock className="h-4 w-4 text-emerald-500" />
+                            </div>
+                            <p className="text-xl font-black text-emerald-700 tabular-nums leading-tight">
+                                {operativeMetrics.tiempoRestanteMeses != null
+                                    ? `~${operativeMetrics.tiempoRestanteMeses.toFixed(1)} meses`
+                                    : '—'}
+                            </p>
+                            <p className="text-[10px] text-gray-600 mt-1 leading-snug">
+                                Al ritmo actual ({operativeMetrics.velocidad.toFixed(2)} cuotas/mes) terminarías las {operativeMetrics.cuotasRestantes} cuota(s) pendientes en este plazo.
+                            </p>
+                        </div>
+                        <div>
+                            <div className="flex items-center justify-between mb-1">
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-amber-800">Cuota Promedio Pagada</p>
+                                <Target className="h-4 w-4 text-amber-500" />
+                            </div>
+                            <p className="text-xl font-black text-amber-800 tabular-nums leading-tight">
+                                {fmtCOP(operativeMetrics.valorCuotaPromedio)}
+                            </p>
+                            <p className="text-[10px] text-gray-600 mt-1 leading-snug">
+                                Valor medio que has desembolsado por cuota. Útil para presupuestar futuros pagos.
+                            </p>
+                        </div>
+                        <div>
+                            <div className="flex items-center justify-between mb-1">
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-amber-800">Intereses sobre Capital</p>
+                                <BarChart3 className="h-4 w-4 text-amber-600" />
+                            </div>
+                            <p className="text-xl font-black text-amber-800 tabular-nums leading-tight">
+                                {operativeMetrics.ratioInteresesCapital.toFixed(1)}<span className="text-sm">%</span>
+                            </p>
+                            <p className="text-[10px] text-gray-600 mt-1 leading-snug">
+                                Por cada $100 pagados, {operativeMetrics.ratioInteresesCapital.toFixed(1)} corresponden a intereses y el resto amortiza capital.
+                            </p>
+                        </div>
+                    </div>
+                </Card>
+            )}
+
+            {/* Donut composición + Línea tendencia mensual */}
+            {payments.length > 0 && (donutData.length > 0 || monthlyTrend.length > 0) && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {donutData.length > 0 && (
+                        <Card className="border border-gray-100 shadow-sm">
+                            <div className="px-5 pt-4 pb-3 border-b border-gray-50 flex items-center gap-2">
+                                <BarChart3 className="h-4 w-4 text-emerald-600" />
+                                <h3 className="text-sm font-bold text-gray-700">Composición del Portafolio</h3>
+                            </div>
+                            <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
+                                <div style={{ height: 180 }}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <RPieChart>
+                                            <Pie data={donutData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={42} outerRadius={70} paddingAngle={2}>
+                                                {donutData.map((d, i) => <Cell key={i} fill={d.color} />)}
+                                            </Pie>
+                                            <Tooltip formatter={(v) => fmtCOP(v)} />
+                                        </RPieChart>
+                                    </ResponsiveContainer>
+                                </div>
+                                <div className="space-y-2">
+                                    {donutData.map(d => {
+                                        const total = donutData.reduce((s, x) => s + x.value, 0);
+                                        const pct = total > 0 ? ((d.value / total) * 100).toFixed(0) : 0;
+                                        return (
+                                            <div key={d.name} className="text-sm">
+                                                <div className="flex items-center justify-between mb-0.5">
+                                                    <span className="flex items-center gap-2">
+                                                        <span className="w-3 h-3 rounded-full" style={{ background: d.color }} />
+                                                        <span className="text-gray-700 font-medium">{d.name}</span>
+                                                    </span>
+                                                    <span className="text-xs font-bold text-gray-500">{pct}%</span>
+                                                </div>
+                                                <p className="text-xs tabular-nums text-gray-600 ml-5">{fmtCOP(d.value)}</p>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </Card>
+                    )}
+                    {monthlyTrend.length > 1 && (
+                        <Card className="border border-gray-100 shadow-sm">
+                            <div className="px-5 pt-4 pb-3 border-b border-gray-50 flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <TrendingUp className="h-4 w-4 text-emerald-600" />
+                                    <h3 className="text-sm font-bold text-gray-700">Tendencia de Pagos · últimos {monthlyTrend.length} meses</h3>
+                                </div>
+                                <span className="text-[10px] text-gray-500 flex items-center gap-1">
+                                    <span className="w-3 border-t border-dashed border-gray-400" />
+                                    Promedio: <span className="font-bold tabular-nums text-gray-700">{fmtCOP(trendAvg)}</span>
+                                </span>
+                            </div>
+                            <div className="p-5" style={{ height: 240 }}>
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={monthlyTrend} margin={{ top: 28, right: 24, left: 8, bottom: 4 }}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                                        <XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 11 }} />
+                                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#9ca3af', fontSize: 10 }} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} width={52} />
+                                        <Tooltip
+                                            formatter={(v) => fmtCOP(v)}
+                                            labelFormatter={(label) => `Mes ${label}`}
+                                            contentStyle={{ borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 12 }}
+                                        />
+                                        <ReferenceLine y={trendAvg} stroke="#94a3b8" strokeDasharray="4 4" label={{ value: 'Promedio', position: 'insideTopRight', fill: '#94a3b8', fontSize: 10 }} />
+                                        <Line type="monotone" dataKey="valor" stroke="#166534" strokeWidth={2.5} dot={{ fill: '#166534', r: 4 }} activeDot={{ r: 6 }}>
+                                            <LabelList
+                                                dataKey="valor"
+                                                position="top"
+                                                offset={10}
+                                                style={{ fill: '#166534', fontSize: 10, fontWeight: 700 }}
+                                                formatter={(v) => fmtCOP(v)}
+                                            />
+                                        </Line>
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </Card>
+                    )}
+                </div>
+            )}
 
             {/* Tarjeta total + Gráfico por préstamo */}
             {payments.length > 0 && (
@@ -528,32 +737,61 @@ const UserPaymentsListPage = () => {
                     <Inbox className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                     <p className="text-gray-500">No tienes pagos registrados.</p>
                 </CardContent></Card>
-            ) : (
-                <Card className="overflow-hidden border-none shadow-none bg-transparent">
-                    <div className="table-container">
-                        <table className="premium-table">
-                            <thead>
-                                <tr>
-                                    {TABLE_COLUMNS.map(col => (
-                                        <th key={col.key} style={{ textAlign: col.align, minWidth: col.minWidth }}>{col.label}</th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filteredPayments.map((payment, idx) => (
-                                    <tr key={payment.id} className={`transition-colors duration-150 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/70'} hover:bg-emerald-50`}>
+            ) : (() => {
+                const today = new Date(); today.setHours(0, 0, 0, 0);
+                const enriched = filteredPayments.map(p => {
+                    let dias = null;
+                    if (p.fechaPago) {
+                        const f = safeParseDate(p.fechaPago, p.mesPago);
+                        if (f && !isNaN(f.getTime())) {
+                            dias = Math.round((f - today) / 86400000);
+                        }
+                    }
+                    return { ...p, diasAlVencimiento: dias };
+                });
+                const totals = enriched.reduce((a, r) => ({
+                    valorCuotaVariable: a.valorCuotaVariable + parseFloat(r.valorCuotaVariable || 0),
+                    valorInteresesAmortizados: a.valorInteresesAmortizados + parseFloat(r.valorInteresesAmortizados || 0),
+                }), { valorCuotaVariable: 0, valorInteresesAmortizados: 0 });
+                return (
+                    <Card className="overflow-hidden border border-gray-100 shadow-sm">
+                        <div className="table-container max-h-[70vh] overflow-y-auto">
+                            <table className="premium-table">
+                                <thead>
+                                    <tr className="bg-emerald-700 text-white">
                                         {TABLE_COLUMNS.map(col => (
-                                            <td key={col.key} style={{ textAlign: col.align, minWidth: col.minWidth }}>
-                                                <CellValue column={col} value={payment[col.key]} />
-                                            </td>
+                                            <th key={col.key} className="sticky top-0 z-10 bg-emerald-700" style={{ textAlign: col.align, minWidth: col.minWidth }}>{col.label}</th>
                                         ))}
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </Card>
-            )}
+                                </thead>
+                                <tbody>
+                                    {enriched.map((payment, idx) => {
+                                        const estado = (payment.estado || '').toLowerCase();
+                                        const vencida = payment.diasAlVencimiento != null && payment.diasAlVencimiento < 0 && estado !== 'pago' && estado !== 'abono';
+                                        return (
+                                            <tr key={payment.id} className={`transition-colors duration-150 ${vencida ? 'bg-red-50/60' : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/70'} hover:bg-emerald-50`}>
+                                                {TABLE_COLUMNS.map(col => (
+                                                    <td key={col.key} style={{ textAlign: col.align, minWidth: col.minWidth }}>
+                                                        <CellValue column={col} value={payment[col.key]} row={payment} />
+                                                    </td>
+                                                ))}
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                                <tfoot>
+                                    <tr className="bg-emerald-50 font-bold text-emerald-900 border-t-2 border-emerald-200">
+                                        <td className="px-3 py-2 text-[10px] uppercase tracking-widest" colSpan={4}>Totales · {enriched.length} cuota(s)</td>
+                                        <td className="px-3 py-2 text-right tabular-nums">${totals.valorCuotaVariable.toLocaleString('es-CO', { minimumFractionDigits: 0 })}</td>
+                                        <td className="px-3 py-2 text-right tabular-nums text-amber-700">${totals.valorInteresesAmortizados.toLocaleString('es-CO', { minimumFractionDigits: 0 })}</td>
+                                        <td className="px-3 py-2" colSpan={5}></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </Card>
+                );
+            })()}
         </div>
     );
 };

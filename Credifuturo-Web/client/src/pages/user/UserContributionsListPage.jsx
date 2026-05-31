@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../../config/api';
-import { Search, RefreshCw, Wallet, Inbox, Download, TrendingUp, Hash, Calendar } from 'lucide-react';
+import { Search, RefreshCw, Wallet, Inbox, Download, TrendingUp, Hash, Calendar, Calculator, ArrowDownToLine, ArrowUpToLine, Clock } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Card, CardContent } from '../../components/ui/Card';
 import { useUi } from '../../context/UiContext';
@@ -25,13 +25,13 @@ const BarTooltip = ({ active, payload, label }) => {
 const TABLE_COLUMNS = [
     { key: 'externalId', label: 'Id_AI', align: 'center', minWidth: '80px', highlight: true },
     { key: 'status', label: 'Estado', align: 'center', minWidth: '100px', isStatusBadge: true },
-    { key: 'date', label: 'Fecha Pago', align: 'center', minWidth: '110px', isDate: true },
-    { key: 'year', label: 'Año', align: 'center', minWidth: '80px' },
-    { key: 'month', label: 'Mes', align: 'center', minWidth: '100px' },
-    { key: 'amount', label: 'Valor', align: 'right', minWidth: '120px', isCurrency: true },
+    { key: 'date', label: 'Fecha Aporte', align: 'center', minWidth: '110px', isDate: true },
+    { key: 'periodo', label: 'Periodo', align: 'center', minWidth: '120px', isPeriodo: true },
+    { key: 'amount', label: 'Valor Aportado', align: 'right', minWidth: '130px', isCurrency: true },
+    { key: 'pctDelTotal', label: '% del Total', align: 'center', minWidth: '110px', isPctBar: true },
     { key: 'banco', label: 'Banco', align: 'left', minWidth: '120px' },
-    { key: 'numeroTransaccion', label: '# Transaccion', align: 'left', minWidth: '120px' },
-    { key: 'origen', label: 'Desde Cuenta de Ahorros', align: 'left', minWidth: '180px' },
+    { key: 'numeroTransaccion', label: '# Transacción', align: 'left', minWidth: '120px' },
+    { key: 'origen', label: 'Cuenta Origen', align: 'left', minWidth: '160px' },
 ];
 
 const StatusBadge = ({ value }) => {
@@ -46,15 +46,33 @@ const StatusBadge = ({ value }) => {
     );
 };
 
-const CellValue = ({ column, value }) => {
+const CellValue = ({ column, value, row }) => {
     if (column.isDate) return <span className="tabular-nums text-gray-700">{formatDate(value)}</span>;
     if (column.isStatusBadge) return <StatusBadge value={value} />;
+    if (column.isPeriodo) {
+        const mes = row?.month || '';
+        const anio = row?.year || '';
+        if (!mes && !anio) return <span className="text-gray-300 text-xs italic">—</span>;
+        return <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{mes} {anio}</span>;
+    }
+    if (column.isPctBar) {
+        const pct = typeof value === 'number' ? Math.max(0, Math.min(100, value)) : 0;
+        return (
+            <div className="flex items-center gap-2">
+                <div className="flex-1 bg-gray-100 rounded-full h-1.5 overflow-hidden min-w-[50px]">
+                    <div className="h-1.5 rounded-full bg-emerald-500 transition-all duration-500" style={{ width: `${pct}%` }} />
+                </div>
+                <span className="text-[10px] font-bold tabular-nums text-emerald-700 w-10 text-right">{pct.toFixed(1)}%</span>
+            </div>
+        );
+    }
     if (value === null || value === undefined || value === '') return <span className="text-gray-300 text-xs italic">—</span>;
     if (column.isCurrency) {
         const num = parseFloat(value);
-        return <span className="font-medium text-gray-900 tabular-nums">${!isNaN(num) ? num.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : value}</span>;
+        if (isNaN(num)) return <span className="text-gray-300 text-xs italic">—</span>;
+        return <span className="font-medium text-gray-900 tabular-nums">${num.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>;
     }
-    if (column.highlight) return <span className="font-semibold text-gray-900">{value}</span>;
+    if (column.highlight) return <span className="font-bold text-emerald-800">{value}</span>;
     return <span className="text-gray-700">{value}</span>;
 };
 
@@ -110,8 +128,26 @@ const UserContributionsListPage = () => {
             .sort(([a], [b]) => Number(a) - Number(b))
             .map(([yr, val]) => ({ anio: yr, valor: val }));
         const years = barData.map(d => d.anio);
-        return { totalAmount, barData, count: data.length, yearRange: years.length > 0 ? `${years[0]} – ${years[years.length - 1]}` : '—' };
+        const ticketPromedio = data.length > 0 ? totalAmount / data.length : 0;
+
+        // Fechas: primer aporte, último aporte, frecuencia
+        const fechas = data
+            .map(s => s.date ? new Date(s.date) : null)
+            .filter(d => d && !isNaN(d.getTime()))
+            .sort((a, b) => a - b);
+        const primerAporte = fechas[0] || null;
+        const ultimoAporte = fechas[fechas.length - 1] || null;
+        const diasDesdeUltimo = ultimoAporte ? Math.floor((Date.now() - ultimoAporte.getTime()) / (1000 * 60 * 60 * 24)) : null;
+        const aporteMaximo = data.reduce((m, s) => Math.max(m, parseFloat(s.amount || 0)), 0);
+
+        return {
+            totalAmount, barData, count: data.length,
+            yearRange: years.length > 0 ? `${years[0]} – ${years[years.length - 1]}` : '—',
+            ticketPromedio, primerAporte, ultimoAporte, diasDesdeUltimo, aporteMaximo
+        };
     }, [data]);
+
+    const fmtDate = (d) => d ? d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
     const handleExport = () => {
         if (filteredData.length === 0) { toast.error('No hay datos para exportar.'); return; }
@@ -162,6 +198,54 @@ const UserContributionsListPage = () => {
                     <Button variant="ghost" onClick={fetchData}><RefreshCw className="h-4 w-4" /></Button>
                 </div>
             </div>
+
+            {/* KPI row con métricas del comportamiento de aporte */}
+            {data.length > 0 && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <Card className="border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                        <div className="p-4">
+                            <div className="flex items-center justify-between mb-2">
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Aporte Promedio</p>
+                                <Calculator className="h-4 w-4 text-emerald-700" />
+                            </div>
+                            <p className="text-xl font-black text-emerald-800 tabular-nums leading-tight">{fmtCOP(stats.ticketPromedio)}</p>
+                            <p className="text-[10px] text-gray-500 mt-1 leading-tight">Valor promedio por aporte realizado</p>
+                        </div>
+                    </Card>
+                    <Card className="border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                        <div className="p-4">
+                            <div className="flex items-center justify-between mb-2">
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Aporte Máximo</p>
+                                <TrendingUp className="h-4 w-4 text-emerald-500" />
+                            </div>
+                            <p className="text-xl font-black text-emerald-600 tabular-nums leading-tight">{fmtCOP(stats.aporteMaximo)}</p>
+                            <p className="text-[10px] text-gray-500 mt-1 leading-tight">Mayor contribución registrada en el histórico</p>
+                        </div>
+                    </Card>
+                    <Card className="border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                        <div className="p-4">
+                            <div className="flex items-center justify-between mb-2">
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Primer Aporte</p>
+                                <ArrowDownToLine className="h-4 w-4 text-amber-600" />
+                            </div>
+                            <p className="text-base font-black text-amber-700 leading-tight">{fmtDate(stats.primerAporte)}</p>
+                            <p className="text-[10px] text-gray-500 mt-1 leading-tight">Fecha del primer ingreso de capital al fondo</p>
+                        </div>
+                    </Card>
+                    <Card className="border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                        <div className="p-4">
+                            <div className="flex items-center justify-between mb-2">
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Último Aporte</p>
+                                <ArrowUpToLine className="h-4 w-4 text-amber-500" />
+                            </div>
+                            <p className="text-base font-black text-amber-600 leading-tight">{fmtDate(stats.ultimoAporte)}</p>
+                            <p className="text-[10px] text-gray-500 mt-1 leading-tight">
+                                {stats.diasDesdeUltimo != null ? `Hace ${stats.diasDesdeUltimo} día(s)` : 'Sin registros'}
+                            </p>
+                        </div>
+                    </Card>
+                </div>
+            )}
 
             {/* Tarjeta inteligente + Gráfico por años */}
             {data.length > 0 && (
@@ -263,32 +347,47 @@ const UserContributionsListPage = () => {
                     <Inbox className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                     <p className="text-gray-500">No tienes aportes iniciales registrados.</p>
                 </CardContent></Card>
-            ) : (
-                <Card className="overflow-hidden border-none shadow-none bg-transparent">
-                    <div className="table-container">
-                        <table className="premium-table">
-                            <thead>
-                                <tr>
-                                    {TABLE_COLUMNS.map(col => (
-                                        <th key={col.key} style={{ textAlign: col.align, minWidth: col.minWidth }}>{col.label}</th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filteredData.map((item, idx) => (
-                                    <tr key={item.id} className={`transition-colors duration-150 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/70'} hover:bg-emerald-50`}>
+            ) : (() => {
+                const total = filteredData.reduce((s, r) => s + parseFloat(r.amount || 0), 0);
+                const enriched = filteredData.map(r => ({
+                    ...r,
+                    pctDelTotal: total > 0 ? (parseFloat(r.amount || 0) / total) * 100 : 0
+                }));
+                return (
+                    <Card className="overflow-hidden border border-gray-100 shadow-sm">
+                        <div className="table-container max-h-[70vh] overflow-y-auto">
+                            <table className="premium-table">
+                                <thead>
+                                    <tr className="bg-emerald-700 text-white">
                                         {TABLE_COLUMNS.map(col => (
-                                            <td key={col.key} style={{ textAlign: col.align, minWidth: col.minWidth }}>
-                                                <CellValue column={col} value={item[col.key]} />
-                                            </td>
+                                            <th key={col.key} className="sticky top-0 z-10 bg-emerald-700" style={{ textAlign: col.align, minWidth: col.minWidth }}>{col.label}</th>
                                         ))}
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </Card>
-            )}
+                                </thead>
+                                <tbody>
+                                    {enriched.map((item, idx) => (
+                                        <tr key={item.id} className={`transition-colors duration-150 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/70'} hover:bg-emerald-50`}>
+                                            {TABLE_COLUMNS.map(col => (
+                                                <td key={col.key} style={{ textAlign: col.align, minWidth: col.minWidth }}>
+                                                    <CellValue column={col} value={item[col.key]} row={item} />
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot>
+                                    <tr className="bg-emerald-50 font-bold text-emerald-900 border-t-2 border-emerald-200">
+                                        <td className="px-3 py-2 text-[10px] uppercase tracking-widest" colSpan={4}>Total · {enriched.length} aporte(s)</td>
+                                        <td className="px-3 py-2 text-right tabular-nums">${total.toLocaleString('es-CO', { minimumFractionDigits: 0 })}</td>
+                                        <td className="px-3 py-2 text-center text-[10px]">100%</td>
+                                        <td className="px-3 py-2" colSpan={3}></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </Card>
+                );
+            })()}
         </div>
     );
 };
