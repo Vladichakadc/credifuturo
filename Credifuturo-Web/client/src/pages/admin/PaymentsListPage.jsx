@@ -174,7 +174,7 @@ const TABLE_COLUMNS = [
     { key: 'clientCedula', label: 'Cédula', align: 'left', minWidth: '120px' },
     { key: 'mesDesembolso', label: 'Mes Desembolso', align: 'center', minWidth: '130px' },
     { key: 'saldoInicial', label: 'Saldo Inicial', align: 'right', minWidth: '130px', isCurrency: true },
-    { key: 'cuotasPrestamo', label: '# Cuotas Prestamo', align: 'center', minWidth: '130px', isNumber: true },
+    { key: 'itemQuantity', label: 'N° Cuota', align: 'center', minWidth: '100px', isCuotaNum: true },
     { key: 'interesMensual', label: 'Interés Mensual', align: 'center', minWidth: '120px', isPercent: true },
     { key: 'valorInteresesAmortizados', label: 'Val. Intereses', align: 'right', minWidth: '130px', isCurrency: true },
     { key: 'fechaPagoMax', label: 'Fecha Pago Max', align: 'center', minWidth: '130px', isDate: true },
@@ -240,6 +240,16 @@ const CellRenderer = ({ column, value, row, onDownload }) => {
 
     if (value === null || value === undefined || value === '') {
         return <span className="text-gray-300 text-xs italic">—</span>;
+    }
+    if (column.isCuotaNum) {
+        const num = parseInt(value) || '—';
+        const total = parseInt(row.cuotasPrestamo) || null;
+        return (
+            <span className="inline-flex items-center gap-1 tabular-nums font-semibold">
+                <span className="text-emerald-700">{num}</span>
+                {total && <span className="text-gray-400 font-normal text-[10px]">/ {total}</span>}
+            </span>
+        );
     }
     if (column.isTechId) return <span className="font-mono text-xs text-gray-400 tabular-nums">{value}</span>;
     if (column.isDate) return <span className="tabular-nums text-gray-700">{displayFecha(value, row.mesPago)}</span>;
@@ -587,7 +597,8 @@ const PaymentsListPage = () => {
             'Cédula': p.clientCedula,
             'Mes Desembolso': p.mesDesembolso,
             'Saldo Inicial': p.saldoInicial,
-            '# Cuotas Prestamo': p.cuotasPrestamo,
+            'N° Cuota': p.itemQuantity ?? '',
+            'Total Cuotas': p.cuotasPrestamo,
             'Item_Quantity': cuotaNumMap[p.id] ?? p.itemQuantity ?? 0,
             'Interés Mensual': p.interesMensual,
             'Val. Intereses Amortizados': p.valorInteresesAmortizados,

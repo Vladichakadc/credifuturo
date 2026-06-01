@@ -72,7 +72,7 @@ const InitialContributionsPage = () => {
                         name: '', // Will be populated by useEffect
                         surname: '', // Will be populated by useEffect
                         status: savingToEdit.status || 'Abono',
-                        date: savingToEdit.date || new Date().toISOString().split('T')[0],
+                        date: new Date().toISOString().split('T')[0],
                         year: savingToEdit.year || new Date().getFullYear(),
                         month: savingToEdit.month || monthNames[new Date().getMonth()],
                         amount: savingToEdit.amount || '',

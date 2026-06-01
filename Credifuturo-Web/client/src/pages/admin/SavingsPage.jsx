@@ -306,9 +306,10 @@ const SavingsPage = () => {
     }, [savingForm.date, savingForm.amount, savingForm.month, savingForm.anioAbonado, savingForm.clientId, isModalOpen, isEditing, savings]);
 
     const handleOpenModal = (saving = null) => {
+        const today = new Date().toISOString().split('T')[0];
         if (saving) {
             setIsEditing(true);
-            setSavingForm({ ...saving });
+            setSavingForm({ ...saving, date: today });
         } else {
             setIsEditing(false);
             setSavingForm({

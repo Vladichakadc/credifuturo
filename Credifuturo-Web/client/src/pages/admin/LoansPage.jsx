@@ -164,12 +164,15 @@ const LoansPage = () => {
     }, [disbursedForm.clientId, clients, isEditing]);
 
     const handleOpenDisbursedModal = (loan = null) => {
+        const today = new Date().toISOString().split('T')[0];
         if (loan) {
             setIsEditing(true);
             setDisbursedForm({
                 ...loan,
                 nombre: loan.nombre || '',
                 apellido: loan.apellido || '',
+                // Fecha del préstamo: muestra hoy al editar (refleja la operación actual)
+                fechaPrestamo: today,
                 // Convert stored decimal to % for display (0.015 -> 1.5)
                 interesMensual: loan.interesMensual ? parseFloat((parseFloat(loan.interesMensual) * 100).toFixed(4)) : ''
             });
