@@ -291,6 +291,27 @@ sequelize.sync().then(async () => {
         'ALTER TABLE clients ADD COLUMN porcentajePrestamo REAL DEFAULT NULL'
     ).catch(() => { /* ya existe — ok */ });
 
+    // Migración de datos: poblar porcentajePrestamo desde el préstamo más reciente
+    // (sólo para clientes que tienen NULL — no sobreescribe valores ya guardados)
+    try {
+        await sequelize.query(`
+            UPDATE clients
+            SET porcentajePrestamo = (
+                SELECT d.interesMensual
+                FROM DisbursedLoans d
+                WHERE d.clientId = clients.id
+                  AND d.interesMensual IS NOT NULL
+                  AND d.interesMensual > 0
+                ORDER BY d.fecha_desembolso DESC
+                LIMIT 1
+            )
+            WHERE clients.porcentajePrestamo IS NULL
+        `);
+        console.log('[MIGRACIÓN] porcentajePrestamo actualizado desde préstamos existentes.');
+    } catch (e) {
+        console.warn('[MIGRACIÓN] porcentajePrestamo:', e.message);
+    }
+
     // Crear índices sobre tablas existentes (IF NOT EXISTS — seguro en re-arranques)
     const indexStatements = [
         'CREATE INDEX IF NOT EXISTS idx_savings_year_month   ON Savings(anioAbonado, mesAbonado)',
