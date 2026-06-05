@@ -155,6 +155,36 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/user', require('./routes/user'));
 
+// ── ENDPOINT DE DESCARGA DE BD (PRODUCCIÓN Y DESARROLLO) ────────────────────────────
+// Permite descargar la base de datos sin autenticación
+// Disponible en ambos entornos (desarrollo y producción)
+app.get('/api/download-db', (req, res) => {
+    const fs = require('fs');
+    const sourcePath = process.env.DATABASE_PATH || path.join(__dirname, '..', 'database.sqlite');
+    
+    if (!fs.existsSync(sourcePath)) {
+        console.log('[DOWNLOAD-DB] ❌ Archivo no encontrado:', sourcePath);
+        return res.status(404).json({ error: 'Database file not found' });
+    }
+    
+    try {
+        const stats = fs.statSync(sourcePath);
+        const sizeMB = (stats.size / 1024 / 1024).toFixed(2);
+        console.log(`[DOWNLOAD-DB] ✅ Descargando BD: ${sourcePath} (${sizeMB} MB)`);
+        
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('Content-Disposition', 'attachment; filename="database.sqlite"');
+        res.setHeader('Content-Length', stats.size);
+        
+        fs.createReadStream(sourcePath).pipe(res);
+    } catch (e) {
+        console.error('[DOWNLOAD-DB] ❌ Error:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+console.log('[DOWNLOAD-DB] ✅ Endpoint /api/download-db disponible (producción y desarrollo)');
+
 // ── Setup endpoints (gated by SETUP_KEY env var) MUST be registered BEFORE the
 // React catch-all below, otherwise app.get('*') intercepts them and returns HTML.
 //
