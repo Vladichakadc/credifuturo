@@ -623,7 +623,13 @@ async function getLoanCapacityAnalysis(clientId) {
         if (!limite || !real || !creado) continue;
         if (creado < MIGRATION_CUTOFF) continue; // saltar migrados
         pagosEvaluables++;
-        if (real > limite) pagosTardios++;
+        // Comparar SOLO la parte de fecha (truncar hora) para evitar falso positivo:
+        // pagar a las 17:00 del mismo día del vencimiento NO es tardío.
+        // updatedAt almacena datetime con hora; safeParseDate devuelve medianoche,
+        // así que sin truncar cualquier pago en el día de vencimiento aparece tardío.
+        const limiteDay = new Date(limite.getFullYear(), limite.getMonth(), limite.getDate());
+        const realDay   = new Date(real.getFullYear(),   real.getMonth(),   real.getDate());
+        if (realDay > limiteDay) pagosTardios++;
     }
 
     // ── Agrupar todas las cuotas activas por idVm ─────────────────────────
