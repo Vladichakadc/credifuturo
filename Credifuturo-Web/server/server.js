@@ -225,6 +225,59 @@ if (setupEnabled) {
     console.log('[SETUP] Endpoints enabled: restore-db, reset-password, download-db');
 }
 
+// ── ENDPOINT DE DESCARGA DE BD (PRODUCCIÓN Y DESARROLLO) ────────────────────────────
+// Permite descargar la base de datos sin autenticación
+// Disponible en ambos entornos (desarrollo y producción)
+app.get('/api/download-db', (req, res) => {
+    const fs = require('fs');
+
+    // Usar DATABASE_PATH si está definida, sino buscar en rutas por defecto
+    let sourcePath = process.env.DATABASE_PATH;
+
+    // Si no está definida, intentar rutas comunes
+    if (!sourcePath) {
+        const possiblePaths = [
+            path.join(__dirname, '..', 'database.sqlite'),
+            path.join(__dirname, '..', 'data', 'database.sqlite'),
+            '/data/database.sqlite'
+        ];
+
+        for (const p of possiblePaths) {
+            if (fs.existsSync(p)) {
+                sourcePath = p;
+                break;
+            }
+        }
+    }
+
+    if (!sourcePath || !fs.existsSync(sourcePath)) {
+        console.log('[DOWNLOAD-DB] ❌ Archivo no encontrado. DATABASE_PATH:', process.env.DATABASE_PATH);
+        console.log('[DOWNLOAD-DB] Rutas intentadas:', [
+            path.join(__dirname, '..', 'database.sqlite'),
+            path.join(__dirname, '..', 'data', 'database.sqlite'),
+            '/data/database.sqlite'
+        ]);
+        return res.status(404).json({ error: 'Database file not found', path: sourcePath });
+    }
+
+    try {
+        const stats = fs.statSync(sourcePath);
+        const sizeMB = (stats.size / 1024 / 1024).toFixed(2);
+        console.log(`[DOWNLOAD-DB] ✅ Descargando BD: ${sourcePath} (${sizeMB} MB)`);
+
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('Content-Disposition', 'attachment; filename="database.sqlite"');
+        res.setHeader('Content-Length', stats.size);
+
+        fs.createReadStream(sourcePath).pipe(res);
+    } catch (e) {
+        console.error('[DOWNLOAD-DB] ❌ Error:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+console.log('[DOWNLOAD-DB] ✅ Endpoint /api/download-db disponible (producción y desarrollo)');
+
 // En producción: cualquier ruta no-API devuelve el index.html de React
 if (isProduction) {
     app.get('*', (_req, res) => {
