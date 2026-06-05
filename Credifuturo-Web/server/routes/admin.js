@@ -2774,13 +2774,18 @@ router.get('/dashboard-stats', async (req, res) => {
             ? clientWhere
             : { estatus: { [Op.like]: '%Activo%' } };
 
-        // ── 4.5 TOTAL PRÉSTAMOS VIGENTES (para Saldo en Banco) ──
-        // Solo préstamos en estado 'Vigente' representan capital activo
-        // que aún no ha sido retornado al fondo. Los cancelados ya fueron saldados
-        // y sus cuotas pagadas se contabilizan en totalAllCuotasPagadas.
+        // ── 4.5 TOTAL PRÉSTAMOS VIGENTES (cartera activa, NO para Saldo en Banco) ──
         const totalAllLoans = await DisbursedLoan.sum('valorPrestado', {
             where: { estado: { [Op.like]: '%Vigente%' } }
         }) || 0;
+
+        // ── 4.6 CAPITAL DESEMBOLSADO HISTÓRICO (para Saldo en Banco) ──
+        // Suma TODOS los préstamos sin importar estado ni año.
+        // BUG anterior: se usaba totalAllLoans (solo Vigente), lo que excluía el capital
+        // de préstamos ya liquidados. Como sus cuotas SÍ se contaban en totalAllCuotasPagadas,
+        // ese capital se contabilizaba dos veces inflando Caja Disponible ~$5.800.000.
+        // Corrección 2026-06-05: usar capital histórico total para que la resta sea completa.
+        const totalCapitalHistorico = await DisbursedLoan.sum('valorPrestado') || 0;
 
         // ── 5. TOTAL APORTES INICIALES (solo socios activos) ──
         // Se filtran por effectiveClientWhere para sumar únicamente los aportes
@@ -3179,10 +3184,15 @@ router.get('/dashboard-stats', async (req, res) => {
             // Rendimiento NU: valor actualizado manualmente desde el extracto de Nubank.
             // Actualizar este valor cuando se consulte el extracto real de la cuenta.
             rentabilidadCajaNU: 453490,
-            // Saldo en Banco:
-            // = (Capital Ahorrado Activos + Aportes Iniciales Activos) - Préstamos Vigentes + Cuotas Pagadas
-            // Fórmula: (totalSavingsResult + totalInitialContributions - totalAllLoans) + totalCuotasPagadas
-            saldoEnBanco: Math.round((totalSavingsResult + totalInitialContributions - totalAllLoans) + totalCuotasPagadas),
+            // Caja Disponible = Patrimonio − Capital Desembolsado (histórico total) + Cuotas Recaudadas (histórico total)
+            // Patrimonio     = ahorros mensuales + aportes iniciales de socios activos (todos los años)
+            // Capital        = TODOS los préstamos desembolsados (vigentes + liquidados, todos los años)
+            // Cuotas         = TODOS los pagos recibidos sin filtro de año (totalAllCuotasPagadas)
+            totalCapitalHistorico: Math.round(totalCapitalHistorico),
+            totalAllCuotasPagadas: Math.round(totalAllCuotasPagadas),
+            saldoEnBanco: Math.round(
+                (totalSavingsResult + totalInitialContributions - totalCapitalHistorico) + totalAllCuotasPagadas
+            ),
             carteraMora,
             moraCarteraEP: Math.round(moraCarteraEP),
             sociosMoraCount: sociosMora,

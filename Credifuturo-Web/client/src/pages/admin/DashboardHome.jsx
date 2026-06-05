@@ -2687,7 +2687,7 @@ const DashboardHome = () => {
                     <StatCard
                         title="Caja Disponible"
                         value={loading ? '...' : `$${Number(stats?.saldoEnBanco || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
-                        description="Balance líquido del fondo"
+                        description="Patrimonio − Capital total + Cuotas históricas"
                         icon={nuLogo}
                         customBg="linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)"
                         isDark={false}
