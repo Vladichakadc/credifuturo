@@ -3183,7 +3183,7 @@ router.get('/dashboard-stats', async (req, res) => {
             totalPenaltyValue: Math.round(totalPenaltyValue),
             // Rendimiento NU: valor actualizado manualmente desde el extracto de Nubank.
             // Actualizar este valor cuando se consulte el extracto real de la cuenta.
-            rentabilidadCajaNU: 453490,
+            rentabilidadCajaNU: 543815,
             // ── Caja Disponible ──────────────────────────────────────────────────
             // Fórmula: Patrimonio − Capital Desembolsado (período) + Cuotas Recaudadas (período)
             //
