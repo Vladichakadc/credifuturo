@@ -158,6 +158,32 @@ app.use('/api/user', require('./routes/user'));
 // ── Setup endpoints (gated by SETUP_KEY env var) MUST be registered BEFORE the
 // React catch-all below, otherwise app.get('*') intercepts them and returns HTML.
 //
+
+// ── ENDPOINT DE DESCARGA DE BD (DESARROLLO) ────────────────────────────
+// Permite descargar la base de datos sin autenticación (solo en desarrollo)
+// En producción, usa /api/setup/download-db con SETUP_KEY
+if (!isProduction) {
+    app.get('/api/download-db', (req, res) => {
+        const fs = require('fs');
+        const sourcePath = process.env.DATABASE_PATH || path.join(__dirname, '..', 'database.sqlite');
+        
+        if (!fs.existsSync(sourcePath)) {
+            return res.status(404).json({ error: 'Database file not found' });
+        }
+        
+        const stats = fs.statSync(sourcePath);
+        console.log(`[DOWNLOAD-DB] Descargando BD: ${sourcePath} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
+        
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('Content-Disposition', 'attachment; filename="database.sqlite"');
+        res.setHeader('Content-Length', stats.size);
+        
+        fs.createReadStream(sourcePath).pipe(res);
+    });
+    
+    console.log('[DOWNLOAD-DB] ✅ Endpoint /api/download-db disponible (solo desarrollo)');
+}
+
 // A04 (Insecure Design): defense in depth — además de SETUP_KEY,
 // se exige longitud mínima de 32 caracteres y ALLOW_SETUP_IN_PRODUCTION=true
 // para montar estos endpoints destructivos en NODE_ENV=production.
