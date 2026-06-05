@@ -3184,14 +3184,25 @@ router.get('/dashboard-stats', async (req, res) => {
             // Rendimiento NU: valor actualizado manualmente desde el extracto de Nubank.
             // Actualizar este valor cuando se consulte el extracto real de la cuenta.
             rentabilidadCajaNU: 453490,
-            // Caja Disponible = Patrimonio − Capital Desembolsado (histórico total) + Cuotas Recaudadas (histórico total)
-            // Patrimonio     = ahorros mensuales + aportes iniciales de socios activos (todos los años)
-            // Capital        = TODOS los préstamos desembolsados (vigentes + liquidados, todos los años)
-            // Cuotas         = TODOS los pagos recibidos sin filtro de año (totalAllCuotasPagadas)
+            // ── Caja Disponible ──────────────────────────────────────────────────
+            // Fórmula: Patrimonio − Capital Desembolsado (período) + Cuotas Recaudadas (período)
+            //
+            // Patrimonio    = ahorros mensuales + aportes iniciales de socios activos (todos los años).
+            // Capital       = totalPrestamos: suma de valorPrestado para los años seleccionados
+            //                 (vigentes + cancelados del período; excluye migraciones pre-2026).
+            // Cuotas        = totalCuotasPagadas: pagos recibidos dentro del período seleccionado.
+            //
+            // AUDITORÍA 2026-06-05 (doble corrección):
+            //   Bug 1 original: usaba totalAllLoans (solo Vigente) → excluía cancelados del período.
+            //   Bug 2 corrección previa: usaba totalCapitalHistorico (todo tiempo) + totalAllCuotasPagadas
+            //     (todo tiempo), incluyendo 16 préstamos migrados pre-2026 ("Cancelado", $35.55M)
+            //     y sus cuotas históricas ($30.95M), resultado: $23.581.911 en vez de $22.374.996.
+            //   Solución final: usar las variables ya filtradas por período (totalPrestamos,
+            //     totalCuotasPagadas) — consistencia temporal, excluye datos históricos migrados.
             totalCapitalHistorico: Math.round(totalCapitalHistorico),
             totalAllCuotasPagadas: Math.round(totalAllCuotasPagadas),
             saldoEnBanco: Math.round(
-                (totalSavingsResult + totalInitialContributions - totalCapitalHistorico) + totalAllCuotasPagadas
+                (totalSavingsResult + totalInitialContributions - totalPrestamos) + totalCuotasPagadas
             ),
             carteraMora,
             moraCarteraEP: Math.round(moraCarteraEP),
