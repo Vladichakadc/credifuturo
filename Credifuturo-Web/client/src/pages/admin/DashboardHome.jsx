@@ -2780,7 +2780,11 @@ const DashboardHome = () => {
                             </div>
 
                             {/* Socios en Mora */}
-                            <div className={`bg-gradient-to-br ${sociosMoraColor} to-white rounded-xl border border-gray-100 p-5 flex flex-col gap-3 shadow-sm`}>
+                            <div
+                                className={`bg-gradient-to-br ${sociosMoraColor} to-white rounded-xl border border-gray-100 p-5 flex flex-col gap-3 shadow-sm transition-all duration-200 ${sociosMora > 0 ? 'cursor-pointer hover:shadow-md hover:border-brand-primary/20 active:scale-[0.99]' : ''}`}
+                                onClick={() => sociosMora > 0 && setShowMoraModal(true)}
+                                title={sociosMora > 0 ? 'Ver detalle de socios en mora' : undefined}
+                            >
                                 <div className="flex items-center justify-between">
                                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Socios en Mora</p>
                                     <Users className={`h-4 w-4 ${sociosMoraText}`} />
