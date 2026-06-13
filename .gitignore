@@ -1,8 +1,7 @@
-# Base de datos (excluir copias de respaldo, mantener la principal para deploy)
+# Base de datos (no subir la BD activa local ni copias de respaldo)
 *.db
+*.sqlite
 *.sqlite.bak*
-# Incluir la base de datos principal del servidor
-!Credifuturo-Web/database.sqlite
 
 # Backups Excel (generados automáticamente por el servidor)
 Backups/
