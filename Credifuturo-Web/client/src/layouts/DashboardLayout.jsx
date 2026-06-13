@@ -21,7 +21,8 @@ import {
     TrendingUp,
     Scale,
     AlertTriangle,
-    Banknote
+    Banknote,
+    History
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import api, { apiWithRetry } from '../config/api';
@@ -312,6 +313,7 @@ const DashboardLayout = ({ user, onLogout }) => {
             ]
         },
         { type: 'link', icon: FileText, label: 'Copias de Seguridad', path: '/admin/reports' },
+        { type: 'link', icon: History, label: 'Logs', path: '/admin/logs' },
         {
             type: 'submenu',
             key: 'informes',

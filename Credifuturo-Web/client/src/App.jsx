@@ -21,6 +21,7 @@ import SavingsSummaryPage from './pages/admin/SavingsSummaryPage';
 import DevolucionesAhorrosPage from './pages/admin/DevolucionesAhorrosPage';
 import LoanAnalyzerPage from './pages/admin/LoanAnalyzerPage';
 import OrphanLoansPage from './pages/admin/OrphanLoansPage';
+import AccessLogsPage from './pages/admin/AccessLogsPage';
 
 // User Pages
 import UserDashboardLayout from './layouts/UserDashboardLayout';
@@ -106,6 +107,7 @@ function App() {
                     <Route path="account-detail" element={<AccountDetailPage />} />
                     <Route path="statutes" element={<UserStatutesPage />} />
                     <Route path="resolutions" element={<UserResolutionsPage />} />
+                    <Route path="logs" element={<AccessLogsPage />} />
 
                     {/* Ruta Legacy para acceder al dashboard antiguo si es necesario durante la migración */}
                     <Route path="legacy" element={<AdminDashboard />} />

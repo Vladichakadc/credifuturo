@@ -5,7 +5,7 @@ const { Client, Saving, Soporte, Loan, DisbursedLoan, LoanPayment } = require('.
 const bcrypt = require('bcryptjs');
 const { verifyToken, requireRole, requireFreshPassword } = require('../middleware/authMiddleware');
 const { validatePassword, generateTempPassword } = require('../services/passwordPolicy');
-const { logSecurityEvent, getClientIp } = require('../services/securityLogger');
+const { logSecurityEvent, getClientIp, LOG_FILE } = require('../services/securityLogger');
 const { verifyFileMagicBytes, sanitizeFilename } = require('../services/fileValidator');
 
 // --- Debug Routes ---
@@ -3591,6 +3591,73 @@ router.delete('/informes/:name', async (req, res) => {
     } catch (err) {
         console.error('Error al eliminar informe:', err);
         res.status(500).json({ error: 'Error al eliminar informe' });
+    }
+});
+
+// ─────────────────────────────────────────────
+// REGISTROS DE ACCESO (AUDITORÍA) — A09
+// Lee logs/security.log (eventos LOGIN_*, PASSWORD_*, alertas de fuerza
+// bruta) y los enriquece con el nombre/código del socio para que el
+// administrador pueda auditar el uso del portal. Nunca incluye contraseñas:
+// el logger ya las redacta antes de escribir al archivo.
+// ─────────────────────────────────────────────
+const ACCESS_LOG_EVENTS = new Set([
+    'LOGIN_SUCCESS',
+    'LOGIN_FAIL_USER_NOT_FOUND',
+    'LOGIN_FAIL_BAD_PASSWORD',
+    'LOGIN_FAIL_DEACTIVATED',
+    'ALERT_BRUTE_FORCE_SUSPECTED',
+    'PASSWORD_CHANGED',
+    'PASSWORD_CHANGE_FAIL_BAD_CURRENT',
+    'PASSWORD_RESET_REQUESTED',
+    'PASSWORD_RESET_BY_ADMIN',
+]);
+
+router.get('/logs/access', async (req, res) => {
+    try {
+        if (!fs.existsSync(LOG_FILE)) return res.json({ data: [] });
+
+        const lines = fs.readFileSync(LOG_FILE, 'utf-8').split('\n').filter(Boolean);
+        const limit = Math.min(parseInt(req.query.limit, 10) || 500, 2000);
+
+        const entries = [];
+        for (let i = lines.length - 1; i >= 0 && entries.length < limit; i--) {
+            const jsonStr = lines[i].replace(/^\[SECURITY\]\s*/, '');
+            let obj;
+            try { obj = JSON.parse(jsonStr); } catch { continue; }
+            if (ACCESS_LOG_EVENTS.has(obj.event)) entries.push(obj);
+        }
+
+        const ids = [...new Set(entries.map(e => e.userId || e.targetClientId).filter(Boolean))];
+        const clients = ids.length
+            ? await Client.findAll({
+                where: { id: ids },
+                attributes: ['id', 'name', 'apellido1', 'apellido2', 'customerId', 'cedula', 'role']
+            })
+            : [];
+        const clientMap = new Map(clients.map(c => [c.id, c]));
+
+        const data = entries.map(({ ts, event, userId, targetClientId, cedula, role, ip, mustChangePassword, ...extra }) => {
+            const id = userId || targetClientId || null;
+            const c = id ? clientMap.get(id) : null;
+            return {
+                ts,
+                event,
+                userId: id,
+                cedula: c?.cedula || cedula || null,
+                nombre: c ? `${c.name} ${c.apellido1 || ''} ${c.apellido2 || ''}`.trim() : null,
+                customerId: c?.customerId || null,
+                role: c?.role || role || null,
+                ip: ip || null,
+                mustChangePassword: mustChangePassword ?? null,
+                extra
+            };
+        });
+
+        res.json({ data });
+    } catch (err) {
+        console.error('logs/access error:', err);
+        res.status(500).json({ error: 'Error al leer registros de acceso.' });
     }
 });
 
