@@ -1075,6 +1075,23 @@ router.get('/savings/ranking', async (req, res) => {
     }
 });
 
+// Exención de penalización para socios nuevos: el mes de ingreso (Aporte Inicial)
+// y el mes inmediatamente siguiente (primer Mensual) nunca generan penalización,
+// sin importar el día en que se registre el pago. A partir del segundo mes
+// posterior al ingreso aplican las reglas normales de penalización (día > 10 / pago atrasado).
+function isExentoPenalizacionNuevoSocio(fechaIngreso, mesAbonado, anioAbonado) {
+    if (!fechaIngreso) return false;
+    const [entryYearStr, entryMonthStr] = String(fechaIngreso).split('-');
+    const entryYear = parseInt(entryYearStr);
+    const entryMonth = parseInt(entryMonthStr);
+    if (isNaN(entryYear) || isNaN(entryMonth)) return false;
+
+    const entryIndex = entryYear * 12 + (entryMonth - 1);
+    const abonadoIndex = anioAbonado * 12 + (mesAbonado - 1);
+    const diff = abonadoIndex - entryIndex;
+    return diff >= 0 && diff <= 1;
+}
+
 router.post('/savings', async (req, res) => {
     try {
         // ==== 1. ID_VM CONSECUTIVO (SIEMPRE AM) ====
@@ -1170,8 +1187,26 @@ router.post('/savings', async (req, res) => {
             }
         }
 
+        // ── VALIDACIÓN: Exención por socio nuevo (mes de ingreso y mes siguiente) ──
+        let isNuevoSocioExento = false;
+        if (clientIdForCheck) {
+            const clienteSocio = await Client.findByPk(clientIdForCheck, { attributes: ['fechaIngreso'] });
+            if (clienteSocio) {
+                isNuevoSocioExento = isExentoPenalizacionNuevoSocio(clienteSocio.fechaIngreso, mesAbonadoNum, anioAbonadoReq);
+                if (isNuevoSocioExento) {
+                    console.log(`✅ Exención nuevo socio: cliente ${clientIdForCheck} (ingreso ${clienteSocio.fechaIngreso}) - mes abonado ${mesAbonadoNum}/${anioAbonadoReq}. Sin penalización.`);
+                }
+            }
+        }
+
         if (isPagoAdicionalMesActual) {
             // Pago adicional: el socio ya pagó este mes, NO genera penalización
+            penalizacion = "NO";
+            diasPenalizacion = 0;
+            valorAPenalizar = 0;
+        } else if (isNuevoSocioExento) {
+            // Socio nuevo: el mes de ingreso (Aporte Inicial) y el mes siguiente (primer Mensual)
+            // no generan penalización, sin importar el día de pago.
             penalizacion = "NO";
             diasPenalizacion = 0;
             valorAPenalizar = 0;
@@ -1352,7 +1387,23 @@ router.put('/savings/:id', async (req, res) => {
             }
         }
 
+        // ── VALIDACIÓN: Exención por socio nuevo (mes de ingreso y mes siguiente) ──
+        let isNuevoSocioExento = false;
+        if (clientIdForCheck) {
+            const clienteSocio = await Client.findByPk(clientIdForCheck, { attributes: ['fechaIngreso'] });
+            if (clienteSocio) {
+                isNuevoSocioExento = isExentoPenalizacionNuevoSocio(clienteSocio.fechaIngreso, mesAbonadoNum, anioAbonadoReq);
+                if (isNuevoSocioExento) {
+                    console.log(`✅ [PUT] Exención nuevo socio: cliente ${clientIdForCheck} (ingreso ${clienteSocio.fechaIngreso}) - mes abonado ${mesAbonadoNum}/${anioAbonadoReq}. Sin penalización.`);
+                }
+            }
+        }
+
         if (isPagoAdicionalMesActual) {
+            penalizacion = "NO";
+            diasPenalizacion = 0;
+            valorAPenalizar = 0;
+        } else if (isNuevoSocioExento) {
             penalizacion = "NO";
             diasPenalizacion = 0;
             valorAPenalizar = 0;
