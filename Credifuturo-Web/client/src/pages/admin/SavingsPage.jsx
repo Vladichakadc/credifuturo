@@ -15,6 +15,21 @@ const monthNames = [
     'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
 ];
 
+// Exención de penalización para socios nuevos: el mes de ingreso (Aporte Inicial)
+// y el mes inmediatamente siguiente (primer Mensual) nunca generan penalización,
+// sin importar el día de pago. Debe coincidir con la lógica del backend (admin.js).
+const getMonthIndex = (year, month) => year * 12 + (month - 1);
+
+const isExentoPenalizacionNuevoSocio = (fechaIngreso, mesAbonado, anioAbonado) => {
+    if (!fechaIngreso) return false;
+    const [entryYearStr, entryMonthStr] = String(fechaIngreso).split('-');
+    const entryYear = parseInt(entryYearStr);
+    const entryMonth = parseInt(entryMonthStr);
+    if (isNaN(entryYear) || isNaN(entryMonth)) return false;
+    const diff = getMonthIndex(anioAbonado, mesAbonado) - getMonthIndex(entryYear, entryMonth);
+    return diff >= 0 && diff <= 1;
+};
+
 // Bank list is imported from utils
 
 // ——— Small reusable select ———
@@ -192,6 +207,10 @@ const SavingsPage = () => {
         const isPagoAdelantado = (anioAbonadoUser > anio) || (anioAbonadoUser === anio && mesAbonadoCalc > mes);
         const isPagoAtrasado = (anioAbonadoUser < anio) || (anioAbonadoUser === anio && mesAbonadoCalc < mes);
 
+        // ── VALIDACIÓN: Exención por socio nuevo (mes de ingreso y mes siguiente) ──
+        const selectedClient = clients.find(c => String(c.id) === String(savingForm.clientId));
+        const isNuevoSocioExento = isExentoPenalizacionNuevoSocio(selectedClient?.fechaIngreso, mesAbonadoCalc, anioAbonadoUser);
+
         // ── VALIDACIÓN: Pago adicional del mes actual (sin penalización) ──
         // Si el socio ya tiene un ahorro registrado para el mismo mes/año,
         // cualquier pago adicional NO genera penalización.
@@ -208,8 +227,7 @@ const SavingsPage = () => {
             );
             if (existePagoMesActual) {
                 isPagoAdicionalMesActual = true;
-                const client = clients.find(c => String(c.id) === String(savingForm.clientId));
-                const clientName = client ? `${client.name} ${client.surname1}` : 'El socio seleccionado';
+                const clientName = selectedClient ? `${selectedClient.name} ${selectedClient.surname1}` : 'El socio seleccionado';
                 pagoAdicionalDetectedInfo = {
                     name: clientName,
                     month: savingForm.month,
@@ -222,6 +240,12 @@ const SavingsPage = () => {
         // 1. Cálculo Base
         if (isPagoAdicionalMesActual) {
             // Pago adicional: el socio ya pagó este mes, NO genera penalización
+            penalizacionStatus = 'NO';
+            diasPenalizacion = 0;
+            valorAPenalizar = 0;
+        } else if (isNuevoSocioExento) {
+            // Socio nuevo: el mes de ingreso (Aporte Inicial) y el mes siguiente (primer Mensual)
+            // no generan penalización, sin importar el día de pago.
             penalizacionStatus = 'NO';
             diasPenalizacion = 0;
             valorAPenalizar = 0;
@@ -248,9 +272,20 @@ const SavingsPage = () => {
             );
 
             if (clientSavingsThisYear.length === 0) {
-                // Find missed months (Jan up to current mes)
+                // Find missed months (Jan up to current mes), excluyendo meses anteriores
+                // al ingreso del socio y su mes de gracia (mes de ingreso + mes siguiente).
+                const entryFecha = selectedClient?.fechaIngreso;
+                let entryMonthIndex = null;
+                if (entryFecha) {
+                    const [eYearStr, eMonthStr] = String(entryFecha).split('-');
+                    const eYear = parseInt(eYearStr);
+                    const eMonth = parseInt(eMonthStr);
+                    if (!isNaN(eYear) && !isNaN(eMonth)) entryMonthIndex = getMonthIndex(eYear, eMonth);
+                }
+
                 const missed = [];
                 for (let m = 1; m <= mes; m++) {
+                    if (entryMonthIndex !== null && getMonthIndex(anio, m) <= entryMonthIndex + 1) continue;
                     const cutoff = getBaseDate(anio, m, 10);
                     if (paymentDate > cutoff) missed.push(m);
                 }
@@ -268,8 +303,7 @@ const SavingsPage = () => {
                         penalizacionStatus = 'SI';
                     }
 
-                    const client = clients.find(c => String(c.id) === String(savingForm.clientId));
-                    const clientName = client ? `${client.name} ${client.surname1}` : 'El socio seleccionado';
+                    const clientName = selectedClient ? `${selectedClient.name} ${selectedClient.surname1}` : 'El socio seleccionado';
                     const mesNombres = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
                     const mesesTextoAlert = missed.map(m => mesNombres[m - 1]).join(', ');
 
