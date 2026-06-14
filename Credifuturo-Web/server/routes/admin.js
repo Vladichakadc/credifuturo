@@ -6,6 +6,7 @@ const bcrypt = require('bcryptjs');
 const { verifyToken, requireRole, requireFreshPassword } = require('../middleware/authMiddleware');
 const { validatePassword, generateTempPassword } = require('../services/passwordPolicy');
 const { logSecurityEvent, getClientIp, LOG_FILE } = require('../services/securityLogger');
+const { getLastActivity } = require('../services/sessionActivity');
 const { verifyFileMagicBytes, sanitizeFilename } = require('../services/fileValidator');
 
 // --- Debug Routes ---
@@ -3637,9 +3638,28 @@ router.get('/logs/access', async (req, res) => {
             : [];
         const clientMap = new Map(clients.map(c => [c.id, c]));
 
+        // Para la sesión de inicio más reciente de cada socio, estimamos
+        // cuánto tiempo lleva conectado comparando con su última actividad
+        // registrada (en memoria desde el último reinicio del servidor).
+        const seenLoginUsers = new Set();
+        const now = Date.now();
+
         const data = entries.map(({ ts, event, userId, targetClientId, cedula, role, ip, mustChangePassword, ...extra }) => {
             const id = userId || targetClientId || null;
             const c = id ? clientMap.get(id) : null;
+
+            let sessionDurationMin = null;
+            let online = false;
+            if (event === 'LOGIN_SUCCESS' && id && !seenLoginUsers.has(id)) {
+                seenLoginUsers.add(id);
+                const last = getLastActivity(id);
+                const loginMs = new Date(ts).getTime();
+                if (last && last >= loginMs) {
+                    sessionDurationMin = Math.round((last - loginMs) / 60000);
+                    online = (now - last) < 3 * 60 * 1000;
+                }
+            }
+
             return {
                 ts,
                 event,
@@ -3650,6 +3670,8 @@ router.get('/logs/access', async (req, res) => {
                 role: c?.role || role || null,
                 ip: ip || null,
                 mustChangePassword: mustChangePassword ?? null,
+                sessionDurationMin,
+                online,
                 extra
             };
         });

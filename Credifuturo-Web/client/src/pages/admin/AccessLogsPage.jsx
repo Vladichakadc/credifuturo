@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import api from '../../config/api';
 import { useUi } from '../../context/UiContext';
-import { History, Search, Loader2, ShieldAlert, LogIn, LogOut, KeyRound, RefreshCw } from 'lucide-react';
+import { History, Search, Loader2, ShieldAlert, LogIn, LogOut, KeyRound, RefreshCw, Clock } from 'lucide-react';
 import { Badge } from '../../components/ui/Badge';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
@@ -38,6 +38,15 @@ const formatHora = (ts) => {
     return new Date(ts).toLocaleTimeString('es-CO', {
         timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', second: '2-digit'
     });
+};
+
+const formatDuracion = (mins) => {
+    if (mins === null || mins === undefined) return null;
+    if (mins < 1) return '< 1 min';
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    if (h === 0) return `${m} min`;
+    return `${h}h ${m}min`;
 };
 
 const detalleTexto = (entry) => {
@@ -95,7 +104,8 @@ const AccessLogsPage = () => {
         const exitosos = logs.filter(l => l.event === 'LOGIN_SUCCESS').length;
         const fallidos = logs.filter(l => l.event.startsWith('LOGIN_FAIL')).length;
         const alertas = logs.filter(l => l.event === 'ALERT_BRUTE_FORCE_SUSPECTED').length;
-        return { total, exitosos, fallidos, alertas };
+        const conectados = logs.filter(l => l.online).length;
+        return { total, exitosos, fallidos, alertas, conectados };
     }, [logs]);
 
     return (
@@ -108,6 +118,8 @@ const AccessLogsPage = () => {
                     </h1>
                     <p className="text-gray-500 text-sm mt-1">
                         Auditoría de ingresos al portal: quién entró, cuándo y desde qué IP. No incluye contraseñas.
+                        El "Tiempo conectado" se estima para la sesión más reciente de cada socio a partir de su
+                        última actividad registrada desde el último reinicio del servidor.
                     </p>
                 </div>
                 <Button variant="secondary" size="sm" onClick={fetchLogs} disabled={loading}>
@@ -117,7 +129,7 @@ const AccessLogsPage = () => {
             </div>
 
             {/* KPIs */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
                     <p className="text-xs text-gray-500 uppercase font-bold">Eventos totales</p>
                     <p className="text-2xl font-bold text-gray-800 mt-1">{kpis.total}</p>
@@ -133,6 +145,10 @@ const AccessLogsPage = () => {
                 <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
                     <p className="text-xs text-gray-500 uppercase font-bold">Alertas de seguridad</p>
                     <p className="text-2xl font-bold text-orange-600 mt-1">{kpis.alertas}</p>
+                </div>
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
+                    <p className="text-xs text-gray-500 uppercase font-bold">Conectados ahora</p>
+                    <p className="text-2xl font-bold text-blue-600 mt-1">{kpis.conectados}</p>
                 </div>
             </div>
 
@@ -192,6 +208,7 @@ const AccessLogsPage = () => {
                                     <th className="px-3 py-2 text-left">Código</th>
                                     <th className="px-3 py-2 text-left">Cédula</th>
                                     <th className="px-3 py-2 text-left">IP</th>
+                                    <th className="px-3 py-2 text-left">Tiempo conectado</th>
                                     <th className="px-3 py-2 text-left">Detalle</th>
                                 </tr>
                             </thead>
@@ -213,6 +230,21 @@ const AccessLogsPage = () => {
                                             <td className="px-3 py-2.5 text-gray-500">{l.customerId || '—'}</td>
                                             <td className="px-3 py-2.5 text-gray-500">{l.cedula || '—'}</td>
                                             <td className="px-3 py-2.5 text-gray-500 font-mono">{l.ip || '—'}</td>
+                                            <td className="px-3 py-2.5 text-gray-500">
+                                                {l.event !== 'LOGIN_SUCCESS' || l.sessionDurationMin === null ? (
+                                                    '—'
+                                                ) : l.online ? (
+                                                    <Badge variant="success" className="flex items-center gap-1 w-fit">
+                                                        <Clock className="h-3 w-3" />
+                                                        En línea · {formatDuracion(l.sessionDurationMin)}
+                                                    </Badge>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1">
+                                                        <Clock className="h-3 w-3 text-gray-400" />
+                                                        {formatDuracion(l.sessionDurationMin)}
+                                                    </span>
+                                                )}
+                                            </td>
                                             <td className="px-3 py-2.5 text-gray-500">{detalleTexto(l)}</td>
                                         </tr>
                                     );
