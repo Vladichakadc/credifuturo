@@ -162,7 +162,7 @@ app.use('/api/user', require('./routes/user'));
 // se exige longitud mínima de 32 caracteres y ALLOW_SETUP_IN_PRODUCTION=true
 // para montar estos endpoints destructivos en NODE_ENV=production.
 const setupKey = process.env.SETUP_KEY;
-const setupAllowedInProd = process.env.ALLOW_SETUP_IN_PRODUCTION === 'true';
+const setupAllowedInProd = process.env.ALLOW_SETUP_IN_PRODUCTION?.toLowerCase() === 'true';
 const setupKeyStrong = typeof setupKey === 'string' && setupKey.length >= 32;
 const setupEnabled = setupKey && setupKeyStrong && (!isProduction || setupAllowedInProd);
 
