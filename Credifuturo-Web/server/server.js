@@ -16,6 +16,7 @@ const DisbursedLoan = require('./models/DisbursedLoan');
 const LoanPayment = require('./models/LoanPayment');
 const Soporte = require('./models/Soporte'); // Tabla de soportes de pago
 const PasswordResetRequest = require('./models/PasswordResetRequest');
+const AppSetting = require('./models/AppSetting');
 
 const app = express();
 const PORT = process.env.PORT || 3000;

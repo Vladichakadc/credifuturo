@@ -3,7 +3,7 @@ import api from '../../config/api';
 import {
     Users, DollarSign, AlertTriangle, PiggyBank, BarChart3,
     Save, CheckCircle, XCircle, AlertCircle, X, RefreshCw, Database, TrendingUp, Landmark, Activity,
-    ShieldCheck, ActivitySquare, FileDown, Clock, Calendar, ChevronDown, Maximize2
+    ShieldCheck, ActivitySquare, FileDown, Clock, Calendar, ChevronDown, Maximize2, Edit2
 } from 'lucide-react';
 import ChartExpandModal, { analyzeComparativeChart, analyzeIncomeDistribution } from '../../components/ChartExpandModal';
 import jsPDF from 'jspdf';
@@ -1957,6 +1957,9 @@ const DashboardHome = () => {
     const [showMoraEPModal, setShowMoraEPModal] = useState(false);
     const [showPenaltyModal, setShowPenaltyModal] = useState(false);
     const [generatingPdf, setGeneratingPdf] = useState(false);
+    const [showNUModal, setShowNUModal] = useState(false);
+    const [nuInputRaw, setNuInputRaw] = useState('');
+    const [nuSaving, setNuSaving] = useState(false);
     const reportRef = useRef(null);
 
     // ── Load distinct statuses from clients table on mount ─────────────────────
@@ -2692,14 +2695,25 @@ const DashboardHome = () => {
                         customBg="linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)"
                         isDark={false}
                     />
-                    <StatCard
-                        title="Rendimiento Cuenta NU"
-                        value={loading ? '...' : `$${Number(stats?.rentabilidadCajaNU || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
-                        description="Intereses generados por depósitos"
-                        icon={nuLogo}
-                        customBg="linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)"
-                        isDark={false}
-                    />
+                    <div className="relative">
+                        <StatCard
+                            title="Rendimiento Cuenta NU"
+                            value={loading ? '...' : `$${Number(stats?.rentabilidadCajaNU || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+                            description={isAdmin ? 'Clic para actualizar el valor' : 'Intereses generados por depósitos'}
+                            icon={nuLogo}
+                            customBg="linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)"
+                            isDark={false}
+                            onClick={isAdmin ? () => {
+                                setNuInputRaw(String(stats?.rentabilidadCajaNU || ''));
+                                setShowNUModal(true);
+                            } : undefined}
+                        />
+                        {isAdmin && (
+                            <div className="absolute bottom-3 left-3 flex items-center gap-1 text-[10px] text-violet-400 font-medium pointer-events-none">
+                                <Edit2 className="w-3 h-3" /> Editar
+                            </div>
+                        )}
+                    </div>
                     <StatCard
                         title="Disponible Total"
                         value={loading ? '...' : `$${Number((stats?.saldoEnBanco || 0) + (stats?.rentabilidadCajaNU || 0)).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
@@ -2873,6 +2887,81 @@ const DashboardHome = () => {
             {showMoraModal && <MoraModal details={stats?.detalleMora} onClose={() => setShowMoraModal(false)} />}
             {showMoraEPModal && <MoraEPModal details={stats?.detalleMoraEP} onClose={() => setShowMoraEPModal(false)} />}
             {showPenaltyModal && <PenaltyModal details={stats?.detallePenalidad} onClose={() => setShowPenaltyModal(false)} />}
+
+            {/* Modal: Actualizar Rendimiento Cuenta NU */}
+            {showNUModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={() => setShowNUModal(false)} />
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden relative z-10 animate-in fade-in zoom-in duration-200">
+                        <div className="px-6 py-4 flex items-center justify-between" style={{ background: 'linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)' }}>
+                            <div className="flex items-center gap-2">
+                                <img src={nuLogo} alt="NU" className="h-7 w-auto object-contain" />
+                                <h3 className="text-lg font-bold text-violet-800">Rendimiento Cuenta NU</h3>
+                            </div>
+                            <button onClick={() => setShowNUModal(false)} className="p-1 hover:bg-violet-200 rounded-full transition-colors">
+                                <X className="h-5 w-5 text-violet-600" />
+                            </button>
+                        </div>
+                        <div className="px-6 py-5">
+                            <p className="text-sm text-gray-500 mb-4">
+                                Ingresa el valor del rendimiento generado por los depósitos en la cuenta NU, según el extracto más reciente.
+                            </p>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">
+                                Monto en pesos colombianos
+                            </label>
+                            <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">$</span>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    className="w-full pl-7 pr-4 py-3 border-2 border-violet-200 rounded-xl text-xl font-bold text-violet-800 focus:outline-none focus:border-violet-500 transition-colors text-right"
+                                    placeholder="0"
+                                    value={nuInputRaw === '' ? '' : Number(nuInputRaw).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                                    onChange={e => {
+                                        const raw = e.target.value.replace(/\D/g, '');
+                                        setNuInputRaw(raw === '' ? '' : raw);
+                                    }}
+                                    autoFocus
+                                />
+                            </div>
+                            {nuInputRaw !== '' && (
+                                <p className="text-xs text-violet-500 mt-1 text-right font-medium">
+                                    $ {Number(nuInputRaw).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                                </p>
+                            )}
+                        </div>
+                        <div className="px-6 pb-5 flex gap-3">
+                            <Button
+                                variant="outline"
+                                className="flex-1"
+                                onClick={() => setShowNUModal(false)}
+                                disabled={nuSaving}
+                            >
+                                Cancelar
+                            </Button>
+                            <Button
+                                className="flex-1 bg-violet-600 hover:bg-violet-700 text-white"
+                                disabled={nuSaving || nuInputRaw === ''}
+                                onClick={async () => {
+                                    setNuSaving(true);
+                                    try {
+                                        await api.put('/admin/settings/rentabilidadCajaNU', { value: Number(nuInputRaw) });
+                                        setShowNUModal(false);
+                                        setNuInputRaw('');
+                                        await fetchStats();
+                                    } catch {
+                                        alert('No se pudo guardar el valor. Intenta de nuevo.');
+                                    } finally {
+                                        setNuSaving(false);
+                                    }
+                                }}
+                            >
+                                {nuSaving ? 'Guardando…' : 'Actualizar'}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
         </div>
     );

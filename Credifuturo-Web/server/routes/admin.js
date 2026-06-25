@@ -3216,6 +3216,10 @@ router.get('/dashboard-stats', async (req, res) => {
             month: p.mesPago
         }));
 
+        const AppSetting = require('../models/AppSetting');
+        const nuSetting = await AppSetting.findOne({ where: { key: 'rentabilidadCajaNU' } });
+        const rentabilidadCajaNU = nuSetting ? Number(nuSetting.value) : 543815;
+
         res.json({
             clientsCount: totalClientsCount,
             activeClientsCount,
@@ -3239,9 +3243,8 @@ router.get('/dashboard-stats', async (req, res) => {
             ahorroPorAnio,
             totalPenaltyDays: Math.round(totalPenaltyDays),
             totalPenaltyValue: Math.round(totalPenaltyValue),
-            // Rendimiento NU: valor actualizado manualmente desde el extracto de Nubank.
-            // Actualizar este valor cuando se consulte el extracto real de la cuenta.
-            rentabilidadCajaNU: 543815,
+            // Rendimiento NU: leído desde AppSettings (editable por admin desde el panel).
+            rentabilidadCajaNU,
             // ── Caja Disponible ──────────────────────────────────────────────────
             // Fórmula: Patrimonio − Capital Desembolsado (período) + Cuotas Recaudadas (período)
             //
@@ -3914,6 +3917,24 @@ router.put('/password-reset-requests/:id/reject', verifyToken, requireRole('admi
         if (!request) return res.status(404).json({ error: 'Solicitud no encontrada.' });
         await request.update({ status: 'rejected' });
         res.json({ ok: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── Configuración global (AppSettings) ──────────────────────────────────────
+
+// PUT /settings/:key — actualiza o crea una configuración global (solo admin)
+router.put('/settings/:key', verifyToken, requireFreshPassword, requireRole('admin'), async (req, res) => {
+    try {
+        const AppSetting = require('../models/AppSetting');
+        const { key } = req.params;
+        const { value } = req.body;
+        if (value === undefined || value === null) {
+            return res.status(400).json({ error: 'El campo value es requerido.' });
+        }
+        const [setting] = await AppSetting.upsert({ key, value: String(value) });
+        res.json({ ok: true, key, value: setting.value });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
