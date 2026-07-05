@@ -5,14 +5,12 @@
 @layer base {
   body {
     @apply bg-ui-background text-gray-900 antialiased font-sans;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
-  h1,
-  h2,
-  h3,
-  h4,
-  h5,
-  h6 {
+  h1, h2, h3, h4, h5, h6 {
     @apply font-bold tracking-tight text-brand-dark;
   }
 }
@@ -21,11 +19,20 @@ html {
   scroll-behavior: smooth;
 }
 
-@layer components {
+/* ─── Scrollbar premium (webkit) ────────────────────────── */
+::-webkit-scrollbar        { width: 4px; height: 4px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: #d1d5db; border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
 
-  /* Mejora Global de Tablas - Auto Layout & No-Cut */
+/* ─── Safe area utilities ────────────────────────────────── */
+.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+.mb-safe { margin-bottom: env(safe-area-inset-bottom); }
+
+/* ─── Tablas premium ─────────────────────────────────────── */
+@layer components {
   .table-container {
-    @apply overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm;
+    @apply overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-card;
   }
 
   .premium-table {
@@ -37,20 +44,33 @@ html {
   }
 
   .premium-table th {
-    @apply px-4 py-3 font-semibold text-xs uppercase tracking-wider whitespace-nowrap text-center border-r border-brand-dark/20 last:border-r-0;
+    @apply px-4 py-3.5 font-semibold text-xs uppercase tracking-wider whitespace-nowrap text-center
+           border-r border-white/10 last:border-r-0;
   }
 
   .premium-table td {
     @apply px-4 py-3 whitespace-nowrap border-b border-gray-100;
   }
 
-  /* Sticky header para todas las tablas coordinadas */
   .premium-table thead {
-    @apply sticky top-0 z-10 shadow-sm;
+    @apply sticky top-0 z-10;
   }
 
-  /* Tooltip fallback style for interactive cells if needed */
+  .premium-table tbody tr {
+    @apply hover:bg-brand-primary/[0.03] transition-colors duration-100;
+  }
+
   .cell-expandable {
     @apply truncate max-w-[200px] hover:whitespace-normal hover:bg-gray-50 cursor-help transition-all;
+  }
+
+  /* Tarjeta de KPI con acento superior verde */
+  .kpi-card {
+    @apply bg-white rounded-xl border border-gray-200 shadow-card p-4 relative overflow-hidden;
+  }
+
+  .kpi-card::before {
+    content: '';
+    @apply absolute top-0 left-0 right-0 h-[3px] bg-brand-primary;
   }
 }
