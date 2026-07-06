@@ -1969,7 +1969,7 @@ const SavingsSummaryPage = ({ lockedSocio = null, hideControls = false, preloade
                             </div>
                             
                             {/* KPI Cards (Row 1) */}
-                            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5 mb-4">
+                            <div className="grid gap-3 lg:gap-4 grid-cols-2 lg:grid-cols-5 mb-4">
                                 <PaymentStatCard title="Total Valor Prestado" value={`$${paymentStats.totalValorPrestado.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`} description="Suma bruta de préstamos" icon={DollarSign} color="text-emerald-500" />
                                 <PaymentStatCard title="Cartera Activa + intereses" value={`$${paymentStats.carteraActiva.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`} description="Suma cuotas pendientes" icon={Activity} color="text-emerald-700" />
                                 <PaymentStatCard title="Total Recaudo + intereses" value={`$${paymentStats.totalRecaudo.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`} description="Suma cuotas pagadas" icon={CheckCircle} color="text-blue-600" />
@@ -1978,7 +1978,7 @@ const SavingsSummaryPage = ({ lockedSocio = null, hideControls = false, preloade
                             </div>
 
                             {/* KPI Cards (Row 2) */}
-                            <div className="grid gap-4 md:grid-cols-3 mb-6">
+                            <div className="grid gap-3 lg:gap-4 grid-cols-3 mb-6">
                                 <PaymentStatCard title="Cuotas Totales" value={paymentStats.totalCuotas} description="Registros actuales" icon={PieChart} color="text-gray-500" />
                                 <PaymentStatCard title="Cuotas Pagadas" value={paymentStats.cuotasPagadas} description="Estado 'Pago'" icon={CheckCircle} color="text-green-600" />
                                 <PaymentStatCard title="Cuotas Pendientes" value={paymentStats.totalCuotas - paymentStats.cuotasPagadas} description="Estado 'Pendiente'" icon={Clock} color="text-amber-600" />
