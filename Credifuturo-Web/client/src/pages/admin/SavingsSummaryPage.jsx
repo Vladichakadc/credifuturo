@@ -1718,41 +1718,78 @@ const SavingsSummaryPage = ({ lockedSocio = null, hideControls = false, preloade
                 )}
             </div>
             
+            {/* Hero del socio — solo en la vista de socio (hideControls) */}
+            {hideControls && selectedSocio && (
+                <div className="rounded-2xl overflow-hidden shadow-card print:hidden"
+                     style={{ background: 'linear-gradient(135deg, #052e16 0%, #166534 70%, #14532d 100%)' }}>
+                    <div className="p-5 lg:p-6 text-white">
+                        <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-full bg-white/15 ring-2 ring-white/20 flex items-center justify-center font-black text-lg flex-shrink-0">
+                                {(selectedSocio.name || '?')[0].toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                                <p className="text-lg font-extrabold leading-tight truncate">
+                                    {selectedSocio.name} {selectedSocio.surname1} {selectedSocio.surname2 || ''}
+                                </p>
+                                <p className="text-xs text-white/60 font-mono mt-0.5">
+                                    C.C. {selectedSocio.cedula}{selectedSocio.customerId ? ` · ${selectedSocio.customerId}` : ''}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-white/10">
+                            <div>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-white/50">
+                                    {selectedYear === 'Todos' ? 'Total en el fondo' : `Total en ${selectedYear}`}
+                                </p>
+                                <p className="text-base lg:text-xl font-extrabold text-brand-gold tabular-nums">
+                                    ${Math.round(userStats.totalAhorradoGeneral || 0).toLocaleString('es-CO')}
+                                </p>
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-white/50">Ahorros mensuales</p>
+                                <p className="text-base lg:text-xl font-extrabold tabular-nums">
+                                    ${Math.round(userStats.totalSavings || 0).toLocaleString('es-CO')}
+                                </p>
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-white/50">Aportes iniciales</p>
+                                <p className="text-base lg:text-xl font-extrabold tabular-nums">
+                                    ${Math.round(userStats.totalInitialContributions || 0).toLocaleString('es-CO')}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Socio Selector & Year Filter Header */}
-            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm relative z-50 print:hidden">
+            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-white p-4 lg:p-6 rounded-2xl border border-gray-100 shadow-sm relative z-50 print:hidden">
                 {!hideControls && (
                     <div className="flex-1 max-w-xl">
                         <SocioSelect clients={clients} selectedSocio={selectedSocio} onSelect={handleSelectSocio} />
                     </div>
                 )}
-                {hideControls && selectedSocio && (
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-brand-primary/10 flex items-center justify-center font-black text-brand-primary text-sm">
-                            {(selectedSocio.name || '?')[0].toUpperCase()}
-                        </div>
-                        <div>
-                            <p className="font-bold text-gray-900 text-sm">{selectedSocio.name} {selectedSocio.surname1} {selectedSocio.surname2 || ''}</p>
-                            <p className="text-xs text-gray-400 font-mono">C.C. {selectedSocio.cedula} · {selectedSocio.customerId}</p>
-                        </div>
+                {hideControls && (
+                    <div>
+                        <p className="text-sm font-bold text-gray-700">Tu estado de cuenta</p>
+                        <p className="text-xs text-gray-400">Filtra por año o descarga tu informe en PDF</p>
                     </div>
                 )}
 
-                <div className="flex items-center gap-3 shrink-0 print:hidden">
+                <div className="flex flex-wrap items-center gap-3 shrink-0 print:hidden">
+                    <button
+                        onClick={() => window.print()}
+                        className="bg-brand-primary hover:bg-brand-dark text-white px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-brand-primary/20 transition-all active:scale-95 flex items-center gap-2 group min-h-[44px]"
+                    >
+                        <Download className="h-4 w-4 group-hover:-translate-y-1 transition-transform" /> Informe PDF
+                    </button>
                     {!hideControls && (
-                        <>
-                            <button 
-                                onClick={() => window.print()}
-                                className="bg-brand-primary hover:bg-brand-dark text-white px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-brand-primary/20 transition-all active:scale-95 flex items-center gap-2 group"
-                            >
-                                <Download className="h-4 w-4 group-hover:-translate-y-1 transition-transform" /> Informe PDF
-                            </button>
-                            <button 
-                                onClick={() => setShowRankingModal(true)}
-                                className="bg-amber-400 hover:bg-amber-500 text-amber-950 px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-amber-400/20 transition-all active:scale-95 flex items-center gap-2 group"
-                            >
-                                <Trophy className="h-4 w-4 group-hover:rotate-12 transition-transform" /> Ranking
-                            </button>
-                        </>
+                        <button
+                            onClick={() => setShowRankingModal(true)}
+                            className="bg-amber-400 hover:bg-amber-500 text-amber-950 px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-amber-400/20 transition-all active:scale-95 flex items-center gap-2 group min-h-[44px]"
+                        >
+                            <Trophy className="h-4 w-4 group-hover:rotate-12 transition-transform" /> Ranking
+                        </button>
                     )}
 
                     <PillSelect
@@ -1765,7 +1802,7 @@ const SavingsSummaryPage = ({ lockedSocio = null, hideControls = false, preloade
                             ...availableYears.map(y => ({ value: y, label: String(y) }))
                         ]}
                     />
-                    <button onClick={() => selectedSocio && fetchData(selectedSocio.cedula)} className="p-3.5 rounded-xl bg-brand-primary text-white hover:bg-brand-dark transition-all shadow-lg shadow-brand-primary/20 active:scale-95"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></button>
+                    <button onClick={() => selectedSocio && fetchData(selectedSocio.cedula)} className="p-3.5 rounded-xl bg-brand-primary text-white hover:bg-brand-dark transition-all shadow-lg shadow-brand-primary/20 active:scale-95 min-h-[44px]"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></button>
                 </div>
             </div>
 
