@@ -13,7 +13,12 @@ import {
     Scale,
     ChevronRight,
     Landmark,
-    Flame
+    Flame,
+    HeartPulse,
+    CreditCard,
+    Sparkles,
+    Users,
+    ShieldCheck
 } from 'lucide-react';
 
 const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
@@ -46,6 +51,7 @@ const MiPanelPage = () => {
     const [aportes, setAportes] = useState([]);
     const [payments, setPayments] = useState([]);
     const [capacity, setCapacity] = useState(null);
+    const [fondo, setFondo] = useState(null);
 
     useEffect(() => {
         const fetchAll = async () => {
@@ -56,14 +62,16 @@ const MiPanelPage = () => {
                 api.get('/admin/my/initial-contributions'),
                 api.get('/admin/my/payments'),
                 api.get('/admin/my/loan-capacity'),
+                api.get('/admin/dashboard-stats'),
             ]);
-            const [pRes, bRes, sRes, aRes, payRes, capRes] = results;
+            const [pRes, bRes, sRes, aRes, payRes, capRes, fRes] = results;
             if (pRes.status === 'fulfilled') setProfile(pRes.value.data);
             if (bRes.status === 'fulfilled') setBalance(bRes.value.data);
             if (sRes.status === 'fulfilled') setSavings(sRes.value.data?.data || []);
             if (aRes.status === 'fulfilled') setAportes(aRes.value.data?.data || []);
             if (payRes.status === 'fulfilled') setPayments(payRes.value.data?.data || []);
             if (capRes.status === 'fulfilled') setCapacity(capRes.value.data);
+            if (fRes.status === 'fulfilled') setFondo(fRes.value.data);
             if (results.every(r => r.status === 'rejected')) {
                 toast.error('No se pudo cargar tu información. Intenta de nuevo.');
             }
@@ -164,6 +172,95 @@ const MiPanelPage = () => {
         [capacity]
     );
 
+    // ── 5 · Proyección de cierre de año ───────────────────────────────
+    // Promedio mensual acreditado este año × meses que faltan por abonar.
+    const proyeccion = useMemo(() => {
+        const anio = hoy.getFullYear();
+        const porMes = {};
+        savings.forEach(r => {
+            const m = parseMes(r.mesAbonado);
+            if (m && Number(r.anioAbonado) === anio) {
+                porMes[m] = (porMes[m] || 0) + Number(r.valorAhorrado ?? r.amount ?? 0);
+            }
+        });
+        const mesesAbonados = Object.keys(porMes).length;
+        if (mesesAbonados === 0) return null;
+        const promedio = Object.values(porMes).reduce((s, v) => s + v, 0) / mesesAbonados;
+        // Meses del año aún sin abono acreditado (del actual a diciembre)
+        let mesesFaltantes = 0;
+        for (let m = hoy.getMonth() + 1; m <= 12; m++) if (!porMes[m]) mesesFaltantes++;
+        const total = Number(balance?.totalSavings || 0);
+        return { promedio, estimado: total + promedio * mesesFaltantes, mesesFaltantes };
+    }, [savings, balance, hoy]);
+
+    // ── 6 · Salud financiera (letra A–E desde el score crediticio) ────
+    const salud = useMemo(() => {
+        if (!veredicto?.score) return null;
+        const s = veredicto.score;
+        const letras = { EXCELENTE: 'A', BUENO: 'B', ACEPTABLE: 'C', 'DÉBIL': 'D', 'CRÍTICO': 'E' };
+        const colores = {
+            green:   { text: 'text-emerald-600', ring: '#059669', bg: 'bg-emerald-50' },
+            emerald: { text: 'text-emerald-600', ring: '#10b981', bg: 'bg-emerald-50' },
+            yellow:  { text: 'text-yellow-600',  ring: '#ca8a04', bg: 'bg-yellow-50' },
+            amber:   { text: 'text-amber-600',   ring: '#d97706', bg: 'bg-amber-50' },
+            red:     { text: 'text-red-600',     ring: '#dc2626', bg: 'bg-red-50' },
+        };
+        const deuda = Number(capacity?.totalDeudaPendiente || 0);
+        const ahorro = Number(capacity?.ahorroTotal || 0);
+        const cobertura = deuda > 0 ? ahorro / deuda : null;
+        let resumen;
+        if (capacity?.enMoraActual) {
+            resumen = 'Tienes cuotas vencidas sin pagar. Regularizar tus pagos mejora tu calificación de inmediato.';
+        } else if (deuda === 0) {
+            resumen = 'Sin deudas con el fondo y cartera limpia. Tu ahorro trabaja 100% para ti.';
+        } else if (cobertura >= 1) {
+            resumen = `Tu ahorro cubre ${cobertura.toFixed(1)} veces tu deuda y tu cartera está al día.`;
+        } else {
+            resumen = `Tu deuda supera tu ahorro (cobertura ${cobertura.toFixed(1)}×). Aumentar tu ahorro mensual equilibra tu perfil.`;
+        }
+        return { letra: letras[s.nivel] || 'C', nivel: s.nivel, score: s.score, color: colores[s.color] || colores.yellow, resumen };
+    }, [veredicto, capacity]);
+
+    // ── 7 · Préstamos en curso con progreso ───────────────────────────
+    const prestamos = useMemo(() => {
+        const vigentes = capacity?.prestamosVigentes || [];
+        if (vigentes.length === 0) return [];
+        // Cuotas pagadas por préstamo desde el historial real de pagos
+        const pagadasPorVm = {};
+        payments.forEach(p => {
+            const est = (p.estado || '').toLowerCase();
+            if (est === 'pago' || est === 'abono') {
+                const vm = (p.idVm || '').trim();
+                pagadasPorVm[vm] = (pagadasPorVm[vm] || 0) + 1;
+            }
+        });
+        return vigentes.map(l => {
+            const vm = (l.idVm || '').trim();
+            const pagadas = pagadasPorVm[vm] || 0;
+            const pendientes = (l.cuotasPendientesCount || 0) + (l.cuotasMoraEPCount || 0);
+            const totales = l.cuotas || pagadas + pendientes;
+            return {
+                idVm: vm,
+                pagadas,
+                totales,
+                pct: totales > 0 ? Math.round((pagadas / totales) * 100) : 0,
+                saldo: Number(l.saldoPendiente || 0),
+                valorPrestado: Number(l.valorPrestado || 0),
+                interes: l.interesMensual,
+                enMora: l.enMoraEP,
+            };
+        });
+    }, [capacity, payments]);
+
+    // Intereses que el socio ha aportado al fondo (cuotas ya pagadas)
+    const interesesPagados = useMemo(() =>
+        payments.reduce((s, p) => {
+            const est = (p.estado || '').toLowerCase();
+            return (est === 'pago' || est === 'abono')
+                ? s + Number(p.valorInteresesAmortizados || 0)
+                : s;
+        }, 0), [payments]);
+
     const nombre = profile?.name || 'Socio';
     const anioIngreso = profile?.fechaIngreso ? String(profile.fechaIngreso).slice(0, 4) : null;
 
@@ -234,6 +331,16 @@ const MiPanelPage = () => {
                         ))}
                     </div>
                     <p className="text-[10px] text-white/40 mt-1">Ahorro acreditado por mes · últimos 12 meses</p>
+                    {proyeccion && proyeccion.mesesFaltantes > 0 && (
+                        <div className="flex items-start gap-2 mt-3 pt-3 border-t border-white/10">
+                            <Sparkles className="h-3.5 w-3.5 text-brand-gold flex-shrink-0 mt-0.5" />
+                            <p className="text-xs text-white/70 leading-relaxed">
+                                A tu ritmo de <b className="text-white">{fmt(proyeccion.promedio)}/mes</b>, cerrarías {hoy.getFullYear()} con
+                                <b className="text-brand-gold"> ≈ {fmt(proyeccion.estimado)}</b>
+                                <span className="text-white/40"> · estimado, no garantizado</span>
+                            </p>
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -365,21 +472,113 @@ const MiPanelPage = () => {
                 </div>
             </div>
 
-            {/* Acceso al panel del fondo */}
+            {/* Salud financiera + Préstamo en curso */}
+            <div className="grid gap-4 md:grid-cols-2">
+                {/* 5 · Mi salud financiera */}
+                {salud && (
+                    <div className={`bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5 ${prestamos.length === 0 ? 'md:col-span-2' : ''}`}>
+                        <p className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-3 flex items-center gap-1.5">
+                            <HeartPulse className="h-3.5 w-3.5" />
+                            Mi salud financiera
+                        </p>
+                        <div className="flex items-center gap-4">
+                            <div
+                                className="w-16 h-16 rounded-full flex-shrink-0 grid place-items-center"
+                                style={{ background: `conic-gradient(${salud.color.ring} ${salud.score}%, #f3f4f6 ${salud.score}% 100%)` }}
+                            >
+                                <div className="w-12 h-12 rounded-full bg-white grid place-items-center">
+                                    <span className={`text-xl font-extrabold ${salud.color.text}`}>{salud.letra}</span>
+                                </div>
+                            </div>
+                            <div className="min-w-0">
+                                <p className={`text-sm font-extrabold ${salud.color.text}`}>
+                                    {salud.nivel} · {salud.score}/100
+                                </p>
+                                <p className="text-xs text-gray-500 mt-1 leading-relaxed">{salud.resumen}</p>
+                            </div>
+                        </div>
+                        <p className="text-[10px] text-gray-400 mt-3">
+                            Calificación del fondo: capacidad, cumplimiento, antigüedad, lealtad y constancia de ahorro.
+                        </p>
+                    </div>
+                )}
+
+                {/* 6 · Préstamos en curso */}
+                {prestamos.map(l => (
+                    <div key={l.idVm} className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
+                        <p className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-3 flex items-center gap-1.5">
+                            <CreditCard className="h-3.5 w-3.5" />
+                            Préstamo {l.idVm} en curso
+                            {l.enMora && <span className="ml-1 text-red-600 normal-case">· con cuota vencida</span>}
+                        </p>
+                        <div className="flex items-baseline justify-between">
+                            <p className="text-lg font-extrabold text-gray-900">
+                                {l.pagadas} <span className="text-sm font-bold text-gray-400">de {l.totales} cuotas</span>
+                            </p>
+                            <p className="text-xs font-bold text-brand-primary">{l.pct}%</p>
+                        </div>
+                        <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-2">
+                            <div
+                                className={`h-full rounded-full transition-all ${l.enMora ? 'bg-red-400' : ''}`}
+                                style={{
+                                    width: `${l.pct}%`,
+                                    background: l.enMora ? undefined : 'linear-gradient(90deg, #166534, #84cc16)'
+                                }}
+                            />
+                        </div>
+                        <div className="flex justify-between text-[11px] text-gray-500 mt-2">
+                            <span>Saldo: <b className="text-gray-700">{fmt(l.saldo)}</b></span>
+                            {l.valorPrestado > 0 && <span>Prestado: <b className="text-gray-700">{fmt(l.valorPrestado)}</b></span>}
+                            {l.interes > 0 && <span>Interés: <b className="text-gray-700">{Number(l.interes).toFixed(1)}% mes</b></span>}
+                        </div>
+                        {interesesPagados > 0 && (
+                            <p className="text-[11px] text-gray-400 mt-3 pt-3 border-t border-gray-100 flex items-center gap-1.5">
+                                <ShieldCheck className="h-3.5 w-3.5 text-brand-primary/60 flex-shrink-0" />
+                                Has aportado <b className="text-brand-primary">{fmt(interesesPagados)}</b>&nbsp;en intereses a las ganancias del fondo
+                            </p>
+                        )}
+                    </div>
+                ))}
+            </div>
+
+            {/* 7 · Acceso al panel del fondo con mini-indicadores */}
             <Link
                 to="/dashboard/fondo"
-                className="flex items-center justify-between bg-white rounded-2xl border border-gray-200 shadow-card p-4 hover:border-brand-primary/40 hover:shadow-card-hover transition-all group"
+                className="block bg-white rounded-2xl border border-gray-200 shadow-card p-4 hover:border-brand-primary/40 hover:shadow-card-hover transition-all group"
             >
-                <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-brand-primary/10">
-                        <Landmark className="h-5 w-5 text-brand-primary" />
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg bg-brand-primary/10">
+                            <Landmark className="h-5 w-5 text-brand-primary" />
+                        </div>
+                        <div>
+                            <p className="text-sm font-bold text-gray-900">Nuestro Fondo</p>
+                            <p className="text-xs text-gray-500">Indicadores y transparencia de todo el fondo Credifuturo</p>
+                        </div>
                     </div>
-                    <div>
-                        <p className="text-sm font-bold text-gray-900">Nuestro Fondo</p>
-                        <p className="text-xs text-gray-500">Indicadores y transparencia de todo el fondo Credifuturo</p>
-                    </div>
+                    <ChevronRight className="h-5 w-5 text-gray-300 group-hover:text-brand-primary group-hover:translate-x-0.5 transition-all" />
                 </div>
-                <ChevronRight className="h-5 w-5 text-gray-300 group-hover:text-brand-primary group-hover:translate-x-0.5 transition-all" />
+                {fondo && (
+                    <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-gray-100">
+                        <div className="text-center">
+                            <p className="text-base font-extrabold text-gray-900 flex items-center justify-center gap-1">
+                                <Users className="h-3.5 w-3.5 text-brand-primary/50" />
+                                {fondo.activeClientsCount || 0}
+                            </p>
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Socios activos</p>
+                        </div>
+                        <div className="text-center">
+                            <p className="text-base font-extrabold text-gray-900">{fmt(fondo.totalNetoActivos || 0)}</p>
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Patrimonio</p>
+                        </div>
+                        <div className="text-center">
+                            <p className={`text-base font-extrabold ${Number(fondo.moraCarteraEP || 0) > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                                {fmt(fondo.moraCarteraEP || 0)}
+                            </p>
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">En mora</p>
+                        </div>
+                    </div>
+                )}
             </Link>
         </div>
     );
