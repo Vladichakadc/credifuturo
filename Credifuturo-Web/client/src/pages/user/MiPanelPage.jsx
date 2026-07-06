@@ -23,6 +23,14 @@ import {
 
 const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
 
+// Abreviatura compacta para etiquetas de barras ($1,2M / $145k)
+const fmtCorto = (n) => {
+    const v = Number(n) || 0;
+    if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1).replace('.', ',')}M`;
+    if (v >= 1_000) return `${Math.round(v / 1_000)}k`;
+    return v > 0 ? String(Math.round(v)) : '';
+};
+
 const MESES_ABR = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 const MESES_NOMBRE = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
@@ -114,7 +122,14 @@ const MiPanelPage = () => {
         });
         const actual = hoy.getFullYear() * 12 + hoy.getMonth();
         const bars = [];
-        for (let k = actual - 11; k <= actual; k++) bars.push({ key: k, valor: map[k] || 0 });
+        for (let k = actual - 11; k <= actual; k++) {
+            bars.push({
+                key: k,
+                valor: map[k] || 0,
+                mesLabel: MESES_ABR[k % 12],
+                anio: Math.floor(k / 12),
+            });
+        }
         const max = Math.max(...bars.map(b => b.valor), 1);
         return bars.map(b => ({ ...b, pct: Math.round((b.valor / max) * 100) }));
     }, [savings, hoy]);
@@ -320,17 +335,36 @@ const MiPanelPage = () => {
                             </span>
                         )}
                     </div>
-                    {/* Sparkline últimos 12 meses */}
-                    <div className="flex items-end gap-1 h-10 mt-4" title="Ahorro neto acreditado por mes (últimos 12 meses)">
+                    {/* Sparkline últimos 12 meses con etiquetas */}
+                    <div className="flex items-end gap-1 mt-4">
                         {sparkline.map((b, i) => (
                             <div
                                 key={b.key}
-                                className={`flex-1 rounded-t-sm transition-all ${i === sparkline.length - 1 ? 'bg-brand-gold' : 'bg-white/30'}`}
-                                style={{ height: `${Math.max(b.pct, 4)}%` }}
-                            />
+                                className="flex-1 flex flex-col items-center min-w-0"
+                                title={`${b.mesLabel} ${b.anio}: ${fmt(b.valor)}`}
+                            >
+                                <span className={`text-[8px] font-bold leading-none mb-1 truncate max-w-full ${
+                                    i === sparkline.length - 1 ? 'text-brand-gold' : 'text-white/60'
+                                }`}>
+                                    {fmtCorto(b.valor)}&nbsp;
+                                </span>
+                                <div className="w-full h-10 flex items-end">
+                                    <div
+                                        className={`w-full rounded-t-sm transition-all ${i === sparkline.length - 1 ? 'bg-brand-gold' : 'bg-white/30'}`}
+                                        style={{ height: `${Math.max(b.pct, 4)}%` }}
+                                    />
+                                </div>
+                                <span className={`text-[8px] font-bold leading-none mt-1 uppercase ${
+                                    i === sparkline.length - 1 ? 'text-brand-gold' : 'text-white/40'
+                                }`}>
+                                    {b.mesLabel}
+                                </span>
+                            </div>
                         ))}
                     </div>
-                    <p className="text-[10px] text-white/40 mt-1">Ahorro acreditado por mes · últimos 12 meses</p>
+                    <p className="text-[10px] text-white/40 mt-1.5">
+                        Ahorro acreditado por mes ($ COP) · {sparkline[0]?.mesLabel} {sparkline[0]?.anio} – {sparkline[11]?.mesLabel} {sparkline[11]?.anio}
+                    </p>
                     {proyeccion && proyeccion.mesesFaltantes > 0 && (
                         <div className="flex items-start gap-2 mt-3 pt-3 border-t border-white/10">
                             <Sparkles className="h-3.5 w-3.5 text-brand-gold flex-shrink-0 mt-0.5" />
