@@ -12,7 +12,7 @@ import LoanCapacityWidget from '../../components/admin/LoanCapacityWidget';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
     ResponsiveContainer, Cell, AreaChart, Area, LabelList, ReferenceLine,
-    PieChart, Pie
+    PieChart, Pie, Legend
 } from 'recharts';
 import { useLocation } from 'react-router-dom';
 const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
@@ -860,23 +860,24 @@ const PowerBITooltip = ({ active, payload, label, showLabel = true }) => {
 };
 
 const AccountSummaryChart = ({ stats }) => {
+    // Solo los componentes del patrimonio: el total va en el centro de la dona
+    // (mostrarlo como tercera barra duplicaba visualmente sus componentes).
     const barData = useMemo(() => [
         { name: 'Capital Ahorrado', valor: stats?.totalSavings || 0 },
         { name: 'Aportes Iniciales', valor: stats?.totalInitialContributions || 0 },
-        { name: 'Total Ahorrado', valor: stats?.totalAhorradoGeneral || 0 },
     ].filter((item) => item.valor > 0), [stats]);
 
+    // Paleta corporativa consistente con el resto de la app: ahorro = verde, aportes = dorado
     const pieData = useMemo(() => [
-        { name: 'Capital', value: stats?.totalSavings || 0, color: '#6366f1' },
+        { name: 'Capital', value: stats?.totalSavings || 0, color: '#166534' },
         { name: 'Aportes', value: stats?.totalInitialContributions || 0, color: '#f59e0b' },
     ].filter(d => d.value > 0), [stats]);
 
     const fmtShort = (v) => {
-        if (v >= 1000000) return `$${(v / 1000000).toFixed(1)}M`;
+        if (v >= 1000000) return `$${(v / 1000000).toFixed(1).replace('.', ',')}M`;
         if (v >= 1000) return `$${(v / 1000).toFixed(0)}k`;
         return `$${v}`;
     };
-    const fmtFull = (v) => `$${Number(v).toLocaleString('es-CO')}`;
 
     const renderPieLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
         if (percent < 0.07) return null;
@@ -886,7 +887,7 @@ const AccountSummaryChart = ({ stats }) => {
         const y = cy + r * Math.sin(-midAngle * RADIAN);
         return (
             <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central"
-                fontSize={12} fontWeight={800} style={{ pointerEvents: 'none' }}>
+                fontSize={11} fontWeight={800} style={{ pointerEvents: 'none' }}>
                 {`${Math.round(percent * 100)}%`}
             </text>
         );
@@ -898,50 +899,56 @@ const AccountSummaryChart = ({ stats }) => {
         <div className="w-full h-full flex gap-2">
             <div className="flex-1 min-w-0">
                 <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={barData} margin={{ top: 36, right: 10, left: 0, bottom: 8 }} barSize={48} barGap={8}>
+                    <BarChart data={barData} margin={{ top: 36, right: 10, left: 0, bottom: 8 }} barSize={56} barGap={8}>
                         <defs>
                             <linearGradient id="sBarGrad0" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="#818cf8" /><stop offset="100%" stopColor="#4f46e5" />
+                                <stop offset="0%" stopColor="#22c55e" /><stop offset="100%" stopColor="#166534" />
                             </linearGradient>
                             <linearGradient id="sBarGrad1" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="0%" stopColor="#fcd34d" /><stop offset="100%" stopColor="#d97706" />
-                            </linearGradient>
-                            <linearGradient id="sBarGrad2" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="#c084fc" /><stop offset="100%" stopColor="#7e22ce" />
                             </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                         <XAxis dataKey="name" axisLine={false} tickLine={false}
                             tick={{ fill: '#64748b', fontSize: 10, fontWeight: 600 }} dy={6} />
                         <YAxis tickFormatter={fmtShort} axisLine={false} tickLine={false}
-                            tick={{ fill: '#94a3b8', fontSize: 10 }} width={55} />
-                        <RechartsTooltip cursor={{ fill: 'rgba(99,102,241,0.04)', radius: 8 }}
+                            tick={{ fill: '#94a3b8', fontSize: 10 }} width={55} domain={[0, 'auto']} />
+                        <RechartsTooltip cursor={{ fill: 'rgba(22,101,52,0.05)', radius: 8 }}
                             content={<PowerBITooltip showLabel={false} />} />
                         <Bar dataKey="valor" radius={[10, 10, 3, 3]} isAnimationActive={false}
                             label={{ position: 'top', fill: '#1e293b', fontSize: 11, fontWeight: 800,
-                                formatter: fmtFull, offset: 10 }}>
+                                formatter: fmtShort, offset: 10 }}>
                             {barData.map((_, i) => <Cell key={i} fill={`url(#sBarGrad${i})`} />)}
                         </Bar>
                     </BarChart>
                 </ResponsiveContainer>
             </div>
             {pieData.length > 1 && (
-                <div className="w-[170px] shrink-0 flex flex-col items-center justify-center gap-2">
-                    <ResponsiveContainer width="100%" height={160}>
-                        <PieChart>
-                            <Pie data={pieData} cx="50%" cy="50%" innerRadius={44} outerRadius={68}
-                                paddingAngle={3} dataKey="value" isAnimationActive={false} stroke="none"
-                                labelLine={false} label={renderPieLabel}>
-                                {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                            </Pie>
-                            <RechartsTooltip content={<PowerBITooltip showLabel={false} />} />
-                        </PieChart>
-                    </ResponsiveContainer>
-                    <div className="flex flex-col gap-2 w-full px-3">
+                <div className="w-[132px] sm:w-[170px] shrink-0 flex flex-col items-center justify-center gap-2">
+                    <div className="relative w-full h-[150px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                                <Pie data={pieData} cx="50%" cy="50%" innerRadius="58%" outerRadius="88%"
+                                    paddingAngle={3} dataKey="value" isAnimationActive={false} stroke="none"
+                                    labelLine={false} label={renderPieLabel}>
+                                    {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                                </Pie>
+                                <RechartsTooltip content={<PowerBITooltip showLabel={false} />} />
+                            </PieChart>
+                        </ResponsiveContainer>
+                        {/* Total del patrimonio en el centro de la dona */}
+                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                            <span className="text-[8px] font-bold uppercase tracking-wider text-gray-400">Total</span>
+                            <span className="text-[11px] sm:text-xs font-black text-gray-800 tabular-nums">
+                                {fmtShort(stats.totalAhorradoGeneral)}
+                            </span>
+                        </div>
+                    </div>
+                    <div className="flex flex-col gap-2 w-full px-2 sm:px-3">
                         {pieData.map((d) => (
                             <div key={d.name} className="flex items-center gap-2">
                                 <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                                <span className="text-[11px] text-gray-500 font-semibold flex-1">{d.name}</span>
+                                <span className="text-[11px] text-gray-500 font-semibold flex-1 truncate">{d.name}</span>
                                 <span className="text-[11px] text-gray-800 font-bold tabular-nums">
                                     {Math.round((d.value / (stats?.totalAhorradoGeneral || 1)) * 100)}%
                                 </span>
@@ -962,8 +969,9 @@ const MonthlySavingsTrendChart = ({ data, availableYears, selectedYear }) => {
     const mainYear   = sortedYears[sortedYears.length - 1];
     const otherYears = sortedYears.slice(0, -1);
 
-    const MAIN_COLOR   = '#2563eb';
-    const OTHER_COLORS = ['#cbd5e1', '#93c5fd', '#a5b4fc'];
+    // Paleta corporativa: año en curso = verde Credifuturo; años anteriores = dorado y neutros
+    const MAIN_COLOR   = '#166534';
+    const OTHER_COLORS = ['#f59e0b', '#94a3b8', '#cbd5e1'];
 
     const fmtLabel = (v) => {
         if (!v || v === 0) return '';
@@ -1062,6 +1070,16 @@ const MonthlySavingsTrendChart = ({ data, availableYears, selectedYear }) => {
 
                     <RechartsTooltip content={<PowerBITooltip />} />
 
+                    {showMultiple && (
+                        <Legend
+                            verticalAlign="top"
+                            align="left"
+                            height={26}
+                            iconType="plainline"
+                            wrapperStyle={{ fontSize: 11, fontWeight: 700, paddingLeft: 8 }}
+                        />
+                    )}
+
                     {avgValue > 0 && (
                         <ReferenceLine y={avgValue} stroke="#94a3b8" strokeDasharray="6 4" strokeWidth={1.5}
                             label={{ value: `Prom: ${fmtLabel(avgValue)}`, position: 'insideTopRight',
@@ -1073,8 +1091,9 @@ const MonthlySavingsTrendChart = ({ data, availableYears, selectedYear }) => {
                             {otherYears.map((year, i) => (
                                 <Area key={year} type="monotone" dataKey={year} name={`Año ${year}`}
                                     stroke={OTHER_COLORS[i] || '#94a3b8'} strokeWidth={1.5}
+                                    strokeDasharray="5 3"
                                     fill={`url(#pbGrad${year})`} fillOpacity={1}
-                                    dot={false} activeDot={false}
+                                    dot={false} activeDot={{ r: 4, fill: OTHER_COLORS[i] || '#94a3b8', stroke: '#fff', strokeWidth: 1.5 }}
                                     connectNulls={false} baseValue={0}
                                     isAnimationActive={false}
                                 />
