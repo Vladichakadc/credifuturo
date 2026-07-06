@@ -13,7 +13,8 @@ import {
     TrendingUp,
     Scale,
     DollarSign,
-    FileText
+    FileText,
+    Landmark
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { Button } from '../components/ui/Button';
@@ -139,7 +140,8 @@ const UserDashboardLayout = ({ user, onLogout }) => {
             icon: LayoutDashboard,
             label: 'Inicio',
             children: [
-                { icon: LayoutDashboard, label: 'Panel Principal', path: '/dashboard' },
+                { icon: LayoutDashboard, label: 'Mi Panel', path: '/dashboard' },
+                { icon: Landmark, label: 'Nuestro Fondo', path: '/dashboard/fondo' },
                 { icon: TrendingUp, label: 'Detalle de la Cuenta', path: '/dashboard/savings/summary' },
             ]
         },

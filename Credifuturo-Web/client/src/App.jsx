@@ -26,6 +26,7 @@ import AccessLogsPage from './pages/admin/AccessLogsPage';
 // User Pages
 import UserDashboardLayout from './layouts/UserDashboardLayout';
 import UserDashboardHome from './pages/user/UserDashboardHome';
+import MiPanelPage from './pages/user/MiPanelPage';
 import UserLoansListPage from './pages/user/UserLoansListPage';
 import UserSavingsListPage from './pages/user/UserSavingsListPage';
 import UserContributionsListPage from './pages/user/UserContributionsListPage';
@@ -118,8 +119,10 @@ function App() {
                         <UserDashboardLayout user={user} onLogout={handleLogout} />
                     </ProtectedRoute>
                 }>
-                    {/* Inicio del socio: panel del admin en modo solo-lectura */}
-                    <Route index element={<DashboardHome />} />
+                    {/* Inicio del socio: Mi Panel (información personal primero) */}
+                    <Route index element={<MiPanelPage />} />
+                    {/* Panel del fondo completo (antes era el inicio) */}
+                    <Route path="fondo" element={<DashboardHome />} />
                     {/* UserDashboardHome queda accesible en /dashboard/mi-resumen */}
                     <Route path="mi-resumen" element={<UserDashboardHome />} />
                     <Route path="loans" element={<UserLoansListPage />} />
