@@ -311,6 +311,7 @@ const RankingModal = ({ onClose }) => {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [devolucionTotal, setDevolucionTotal] = useState(0);
+    const [utilidadesDistribuir, setUtilidadesDistribuir] = useState('');
 
     useEffect(() => {
         const fetchRanking = async () => {
@@ -318,7 +319,9 @@ const RankingModal = ({ onClose }) => {
                 const res = await api.get('/admin/savings/ranking');
                 if (res.data.ok && Array.isArray(res.data.data)) {
                     setRanking(res.data.data);
-                    setDevolucionTotal(res.data.totalDevolucionIntereses || 0);
+                    const devolucion = res.data.totalDevolucionIntereses || 0;
+                    setDevolucionTotal(devolucion);
+                    setUtilidadesDistribuir(devolucion > 0 ? devolucion.toString() : '5000000');
                 }
             } catch (err) {
                 console.error('Error fetching ranking:', err.message);
@@ -379,321 +382,168 @@ const RankingModal = ({ onClose }) => {
         ? Math.round((1 - Number(baseGroup[0].totalNetSavings) / Number(middleGroup[middleGroup.length - 1].totalNetSavings)) * 100)
         : 0;
 
+    const utilidadesParsed = Number(utilidadesDistribuir.replace(/\D/g, '')) || 0;
+
     const renderRow = (entry, globalIndex) => {
         const pos = globalIndex + 1;
-        const pct = total > 0 ? ((Number(entry.totalNetSavings) / total) * 100).toFixed(1) : '0.0';
+        const pctFloat = total > 0 ? (Number(entry.totalNetSavings) / total) : 0;
+        const pct = (pctFloat * 100).toFixed(2);
         const barWidth = maxVal > 0 ? Math.round((Number(entry.totalNetSavings) / maxVal) * 100) : 0;
         const avatarColor = AVATAR_COLORS[globalIndex] || AVATAR_COLORS[AVATAR_COLORS.length - 1];
         const barColor = BAR_COLORS[globalIndex] || BAR_COLORS[BAR_COLORS.length - 1];
+        const gananciaEstimada = pctFloat * utilidadesParsed;
 
         const posEl = pos <= 3
             ? <div className={`w-8 h-8 rounded-full flex items-center justify-center text-base flex-shrink-0 ${['bg-amber-100','bg-slate-100','bg-orange-100'][pos-1]}`}>{MEDALS[pos-1]}</div>
             : <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-500 flex-shrink-0">{pos}</div>;
 
         return (
-            <div key={entry.customerId} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors hover:bg-gray-50 ${pos <= 3 ? 'bg-green-50/60' : ''}`}>
-                {posEl}
-                <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${avatarColor} flex items-center justify-center text-white text-xs font-extrabold flex-shrink-0 shadow-sm`}>
-                    {getInitials(entry.fullName)}
-                </div>
-                <div className="min-w-0 flex-1">
-                    <div className="text-sm font-bold text-gray-800 leading-tight">{entry.fullName}</div>
-                    <div className="text-xs text-gray-400 font-semibold">{entry.customerId}</div>
-                </div>
-                <div className="w-24 flex-shrink-0">
-                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                        <div className={`h-full bg-gradient-to-r ${barColor} rounded-full`} style={{ width: `${barWidth}%` }} />
+            <div key={entry.customerId} className={`group flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-3 rounded-2xl transition-all hover:bg-white hover:shadow-lg hover:shadow-brand-primary/5 hover:-translate-y-0.5 border border-transparent hover:border-brand-primary/10 ${pos <= 3 ? 'bg-gradient-to-r from-green-50/50 to-emerald-50/10' : 'bg-gray-50/40'}`}>
+                <div className="flex items-center gap-3 w-full sm:w-auto flex-1">
+                    {posEl}
+                    <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${avatarColor} flex items-center justify-center text-white text-xs font-extrabold flex-shrink-0 shadow-md ring-2 ring-white`}>
+                        {getInitials(entry.fullName)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                        <div className="text-sm font-bold text-gray-900 leading-tight group-hover:text-brand-primary transition-colors">{entry.fullName}</div>
+                        <div className="text-xs text-gray-400 font-semibold">{entry.customerId}</div>
                     </div>
                 </div>
-                <div className="text-right flex-shrink-0 w-28">
-                    <div className="text-sm font-black text-gray-900">{fmt(entry.totalNetSavings)}</div>
-                    <div className="text-xs text-gray-400 font-semibold">{pct}% del total</div>
+                
+                <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end pl-11 sm:pl-0">
+                    <div className="flex flex-col sm:items-end flex-shrink-0">
+                        <div className="flex items-center gap-2">
+                            <div className="text-sm font-black text-gray-900 tabular-nums">{fmt(entry.totalNetSavings)}</div>
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-gray-200 text-gray-600">{pct}%</span>
+                        </div>
+                        <div className="w-full sm:w-24 mt-1">
+                            <div className="h-1.5 bg-gray-200/60 rounded-full overflow-hidden">
+                                <div className={`h-full bg-gradient-to-r ${barColor} rounded-full`} style={{ width: `${barWidth}%` }} />
+                            </div>
+                        </div>
+                    </div>
+                    <div className="text-right flex-shrink-0 w-28 bg-emerald-50/80 rounded-xl p-2 border border-emerald-100/50">
+                        <div className="text-[9px] font-black uppercase tracking-widest text-emerald-600 mb-0.5">Utilidad (+{pct}%)</div>
+                        <div className="text-sm font-black text-emerald-700 tabular-nums">{fmt(gananciaEstimada)}</div>
+                    </div>
                 </div>
             </div>
         );
     };
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-brand-dark/80 backdrop-blur-md" onClick={onClose} />
-            <div className="relative bg-white w-full max-w-4xl h-[90vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-300">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+            <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
+            <div className="relative bg-[#f8fafc] w-full max-w-5xl h-[95vh] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-300 border border-white/20">
+                {/* Decoración de fondo */}
+                <div className="absolute top-0 inset-x-0 h-64 bg-gradient-to-b from-emerald-500/10 to-transparent pointer-events-none" />
+                <div className="absolute -top-48 -right-48 w-96 h-96 bg-brand-primary/10 rounded-full blur-3xl pointer-events-none" />
 
-                {/* Header */}
-                <div className="px-7 py-5 bg-gradient-to-r from-green-900 via-green-700 to-green-500 text-white flex justify-between items-center shrink-0">
+                {/* Header Pro Max */}
+                <div className="relative px-8 py-6 bg-white/60 backdrop-blur-xl border-b border-gray-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0 z-10">
                     <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-white/15 backdrop-blur rounded-2xl flex items-center justify-center text-2xl">🏆</div>
+                        <div className="w-14 h-14 bg-gradient-to-br from-green-500 to-emerald-700 rounded-2xl flex items-center justify-center text-3xl shadow-lg shadow-emerald-500/20 ring-4 ring-white">🏆</div>
                         <div>
-                            <h2 className="text-xl font-black tracking-tight">Ranking de Ahorro Mensual</h2>
-                            <p className="text-white/65 text-xs font-semibold mt-0.5 uppercase tracking-wider">Consolidado · Excluye aportes iniciales</p>
+                            <h2 className="text-2xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600">Ranking de Ahorro</h2>
+                            <p className="text-gray-500 text-xs font-bold mt-0.5 uppercase tracking-widest flex items-center gap-1.5">
+                                <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
+                                Base: {fmt(total)}
+                            </p>
                         </div>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-xl transition-colors"><X className="h-5 w-5" /></button>
+
+                    <div className="flex items-center gap-3 bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
+                        <div className="px-3">
+                            <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-0.5">💰 Ganancia a Distribuir</div>
+                            <input
+                                type="text"
+                                value={utilidadesDistribuir}
+                                onChange={(e) => {
+                                    const val = e.target.value.replace(/\D/g, '');
+                                    setUtilidadesDistribuir(val ? Number(val).toLocaleString('es-CO') : '');
+                                }}
+                                className="w-32 bg-transparent text-sm font-black text-emerald-600 outline-none placeholder:text-gray-300"
+                                placeholder="0"
+                            />
+                        </div>
+                        <button onClick={onClose} className="p-3 bg-gray-50 hover:bg-red-50 hover:text-red-600 text-gray-400 rounded-xl transition-colors"><X className="h-5 w-5" /></button>
+                    </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto">
+                <div className="flex-1 overflow-y-auto relative z-10">
                     {loading ? (
-                        <div className="flex flex-col items-center justify-center gap-4 py-24">
-                            <Loader2 className="h-12 w-12 animate-spin text-brand-primary/20" />
+                        <div className="flex flex-col items-center justify-center h-full gap-4">
+                            <div className="relative">
+                                <div className="absolute inset-0 bg-brand-primary/20 blur-xl rounded-full animate-pulse" />
+                                <Loader2 className="h-12 w-12 animate-spin text-brand-primary relative" />
+                            </div>
                             <p className="text-gray-400 font-bold animate-pulse uppercase tracking-widest text-xs">Calculando Posiciones...</p>
                         </div>
                     ) : ranking.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center gap-4 py-24 text-gray-400 font-bold uppercase tracking-widest">
-                            <Users className="h-16 w-16 opacity-20" />
-                            No hay datos suficientes para el ranking
+                        <div className="flex flex-col items-center justify-center h-full gap-4 text-gray-400 font-bold uppercase tracking-widest">
+                            <Users className="h-20 w-20 opacity-10" />
+                            No hay datos suficientes
                         </div>
                     ) : (
-                        <div className="p-6 flex flex-col gap-4">
-
-                            {/* KPI Cards — 2 tarjetas + análisis comportamiento */}
-                            <div className="grid grid-cols-2 gap-3">
-                                {/* Socios activos */}
-                                <div className="bg-white border border-gray-100 rounded-xl p-4 flex items-center gap-3 shadow-sm">
-                                    <div className="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center text-lg flex-shrink-0">👥</div>
-                                    <div className="min-w-0">
-                                        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Socios activos</div>
-                                        <div className="text-base font-black text-gray-900 leading-tight">{ranking.length}</div>
-                                        <div className="text-[10px] text-gray-400">con ahorro registrado</div>
-                                    </div>
-                                </div>
-
-                                {/* Total acumulado (neto = bruto − devolución intereses) */}
-                                <div className="bg-white border border-blue-100 rounded-xl p-4 flex items-start gap-3 shadow-sm">
-                                    <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-lg flex-shrink-0">💰</div>
-                                    <div className="min-w-0 flex-1">
-                                        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Total acumulado</div>
-                                        <div className="text-base font-black text-blue-700 leading-tight">{fmt(total)}</div>
-                                        <div className="text-[10px] text-gray-400">fondo neto de ahorros</div>
-                                        {devolucionTotal > 0 && (
-                                            <div className="mt-1 flex items-center gap-1">
-                                                <span className="text-[9px] text-purple-500 font-semibold">
-                                                    − {fmt(devolucionTotal)} devolución intereses
-                                                </span>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Panel de análisis profundo */}
-                            {(() => {
-                                const now = new Date();
-                                const curY = now.getFullYear();
-                                const curM = now.getMonth() + 1;
-
-                                const getMomentum = (months) => {
-                                    if (!months?.length) return 0;
-                                    const recent = months.slice(-6).reduce((s, m) => s + m.amount, 0);
-                                    const prev   = months.slice(-12, -6).reduce((s, m) => s + m.amount, 0);
-                                    return prev > 0 ? Math.round(((recent - prev) / prev) * 100) : 0;
-                                };
-
-                                const hasAnalysis = ranking.some(r => r.monthlyData?.length > 0);
-
-                                // Highlights
-                                const bestMomentum = [...ranking].sort((a,b) => getMomentum(b.monthlyData) - getMomentum(a.monthlyData))[0];
-                                const momentumVal  = bestMomentum ? getMomentum(bestMomentum.monthlyData) : 0;
-
-                                // Comparativo año anterior vs año actual (mismo período ene–mes actual)
-                                const prevYear = curY - 1;
-                                const yearComparison = ranking.map(r => {
-                                    const thisYearTotal = r.monthlyData?.filter(m => m.year === curY  && m.monthInt <= curM).reduce((s, m) => s + m.amount, 0) || 0;
-                                    const lastYearTotal = r.monthlyData?.filter(m => m.year === prevYear && m.monthInt <= curM).reduce((s, m) => s + m.amount, 0) || 0;
-                                    if (lastYearTotal === 0 && thisYearTotal === 0) return null;
-                                    const diff = thisYearTotal - lastYearTotal;
-                                    const pct  = lastYearTotal > 0 ? Math.round((diff / lastYearTotal) * 100) : 100;
-                                    return { ...r, thisYearTotal, lastYearTotal, diff, pct };
-                                }).filter(Boolean);
-                                const decliners = yearComparison.filter(r => r.diff < 0).sort((a, b) => a.diff - b.diff).slice(0, 2);
-                                const risers    = yearComparison.filter(r => r.diff > 0).sort((a, b) => b.diff - a.diff).slice(0, 2);
-                                // Campeón del mes: mayor aporte en el mes más reciente (actual o anterior)
-                                const lastM = curM === 1 ? 12 : curM - 1;
-                                const lastY = curM === 1 ? curY - 1 : curY;
-                                const championData = ranking.map(r => {
-                                    const cur  = r.monthlyData?.find(m => m.year === curY && m.monthInt === curM);
-                                    const prev = r.monthlyData?.find(m => m.year === lastY && m.monthInt === lastM);
-                                    const amt  = cur?.amount || prev?.amount || 0;
-                                    const period = cur  ? `${monthNames[curM - 1]} ${curY}`
-                                                 : prev ? `${monthNames[lastM - 1]} ${lastY}` : null;
-                                    return { ...r, champAmt: amt, champPeriod: period };
-                                }).filter(r => r.champAmt > 0).sort((a, b) => b.champAmt - a.champAmt);
-                                const monthChampion = championData[0];
-
-                                // Mayor esfuerzo: mayor incremento absoluto (pesos) promedio mensual en últimos 3 vs anteriores 3
-                                const getEffort = (months) => {
-                                    if (!months?.length) return 0;
-                                    const recentAvg = months.slice(-3).reduce((s, m) => s + m.amount, 0) / Math.max(1, Math.min(3, months.slice(-3).length));
-                                    const prevAvg   = months.slice(-6, -3).reduce((s, m) => s + m.amount, 0) / Math.max(1, Math.min(3, months.slice(-6, -3).length));
-                                    return Math.round(recentAvg - prevAvg);
-                                };
-                                const biggestEffort = [...ranking]
-                                    .map(r => ({ ...r, effort: getEffort(r.monthlyData) }))
-                                    .filter(r => r.effort > 0)
-                                    .sort((a, b) => b.effort - a.effort)[0];
-
-                                // Concentración del fondo
-
-
-                                return (
-                                    <div className="bg-gradient-to-br from-slate-50 to-white border border-slate-100 rounded-2xl p-5 shadow-sm flex flex-col gap-4">
-                                        <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 flex items-center gap-2">
-                                            🧠 Análisis de comportamiento
-                                            <div className="flex-1 h-px bg-gray-100" />
-                                        </div>
-
-                                        {!hasAnalysis && (
-                                            <div className="flex items-center gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-amber-700">
-                                                <span className="text-base flex-shrink-0">⚠️</span>
-                                                Reinicia el servidor backend para activar el análisis mensual por socio.
-                                            </div>
-                                        )}
-
-                                        {/* Highlights */}
-                                        <div className="flex flex-col gap-2">
-                                            {decliners.length > 0 && (
-                                                <div className="flex flex-col gap-2">
-                                                    <div className="text-[10px] font-black text-orange-600 uppercase tracking-widest flex items-center gap-2">
-                                                        📉 Bajaron el ahorro vs. {prevYear}
-                                                        <div className="flex-1 h-px bg-orange-100" />
-                                                    </div>
-                                                    {decliners.map((r, i) => (
-                                                        <div key={r.customerId} className="flex items-start gap-2.5 bg-orange-50 border border-orange-100 rounded-xl px-3.5 py-2.5">
-                                                            <span className="text-base mt-0.5 flex-shrink-0">{i === 0 ? '🔻' : '📉'}</span>
-                                                            <div className="min-w-0 flex-1">
-                                                                <div className="text-sm font-bold text-gray-800">{r.fullName}</div>
-                                                                <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                                                                    <span className="text-[10px] text-gray-500 font-semibold">{prevYear}: <strong className="text-gray-700">{fmt(r.lastYearTotal)}</strong></span>
-                                                                    <span className="text-[10px] text-gray-400">→</span>
-                                                                    <span className="text-[10px] text-gray-500 font-semibold">{curY}: <strong className="text-orange-700">{fmt(r.thisYearTotal)}</strong></span>
-                                                                    <span className="text-[10px] font-black text-red-600 bg-red-100 px-1.5 py-0.5 rounded-full">{r.pct}%</span>
-                                                                </div>
-                                                                <div className="text-[10px] text-orange-600 font-semibold mt-0.5">Dejó de aportar {fmt(Math.abs(r.diff))} menos que el año pasado</div>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-
-                                            {risers.length > 0 && (
-                                                <div className="flex flex-col gap-2">
-                                                    <div className="text-[10px] font-black text-green-700 uppercase tracking-widest flex items-center gap-2">
-                                                        📈 Más aportaron vs. {prevYear}
-                                                        <div className="flex-1 h-px bg-green-100" />
-                                                    </div>
-                                                    {risers.map((r, i) => (
-                                                        <div key={r.customerId} className="flex items-start gap-2.5 bg-green-50 border border-green-100 rounded-xl px-3.5 py-2.5">
-                                                            <span className="text-base mt-0.5 flex-shrink-0">{i === 0 ? '🥇' : '🥈'}</span>
-                                                            <div className="min-w-0 flex-1">
-                                                                <div className="text-sm font-bold text-gray-800">{r.fullName}</div>
-                                                                <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                                                                    <span className="text-[10px] text-gray-500 font-semibold">{prevYear}: <strong className="text-gray-700">{fmt(r.lastYearTotal)}</strong></span>
-                                                                    <span className="text-[10px] text-gray-400">→</span>
-                                                                    <span className="text-[10px] text-gray-500 font-semibold">{curY}: <strong className="text-green-700">{fmt(r.thisYearTotal)}</strong></span>
-                                                                    <span className="text-[10px] font-black text-green-700 bg-green-200 px-1.5 py-0.5 rounded-full">+{r.pct}%</span>
-                                                                </div>
-                                                                <div className="text-[10px] text-green-600 font-semibold mt-0.5">Aportó {fmt(r.diff)} más que el año pasado</div>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-
-                                            {bestMomentum && momentumVal > 0 && (
-                                                <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-100 rounded-xl px-3.5 py-2.5">
-                                                    <span className="text-base mt-0.5 flex-shrink-0">🚀</span>
-                                                    <div className="min-w-0">
-                                                        <div className="text-[10px] font-black text-blue-700 uppercase tracking-wide">Mejor momentum (últimos 6 meses)</div>
-                                                        <div className="text-sm font-bold text-gray-800">{bestMomentum.fullName}</div>
-                                                        <div className="text-[10px] text-blue-600 font-semibold">
-                                                            +{momentumVal}% vs semestre anterior · Prom. {fmt(bestMomentum.avgMonthly ?? 0)}/mes
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {monthChampion && (
-                                                <div className="flex items-start gap-2.5 bg-yellow-50 border border-yellow-100 rounded-xl px-3.5 py-2.5">
-                                                    <span className="text-base mt-0.5 flex-shrink-0">🏆</span>
-                                                    <div className="min-w-0">
-                                                        <div className="text-[10px] font-black text-yellow-700 uppercase tracking-wide">Campeón del mes · {monthChampion.champPeriod}</div>
-                                                        <div className="text-sm font-bold text-gray-800">{monthChampion.fullName}</div>
-                                                        <div className="text-[10px] text-yellow-600 font-semibold">
-                                                            Aportó {fmt(monthChampion.champAmt)} — el mayor aporte individual del período
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {biggestEffort && (
-                                                <div className="flex items-start gap-2.5 bg-purple-50 border border-purple-100 rounded-xl px-3.5 py-2.5">
-                                                    <span className="text-base mt-0.5 flex-shrink-0">💪</span>
-                                                    <div className="min-w-0">
-                                                        <div className="text-[10px] font-black text-purple-700 uppercase tracking-wide">Mayor esfuerzo reciente</div>
-                                                        <div className="text-sm font-bold text-gray-800">{biggestEffort.fullName}</div>
-                                                        <div className="text-[10px] text-purple-600 font-semibold">
-                                                            Incrementó +{fmt(biggestEffort.effort)}/mes en promedio vs. trimestre anterior
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                    </div>
-                                );
-                            })()}
+                        <div className="p-8 max-w-4xl mx-auto flex flex-col gap-8">
 
                             {/* Podium Top 3 */}
                             {top3.length >= 3 && (
-                                <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
-                                    <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-4 flex items-center gap-2">
-                                        🥇 Podio — Top 3 del fondo
-                                        <div className="flex-1 h-px bg-gray-100" />
-                                    </div>
-                                    <div className="flex items-end justify-center gap-6">
-                                        {[1, 0, 2].map((realIdx) => {
-                                            const entry = top3[realIdx];
-                                            const isFirst = realIdx === 0;
-                                            const blockH = ['h-20', 'h-14', 'h-11'][realIdx];
-                                            const blockGrad = ['from-amber-200 to-yellow-400', 'from-slate-200 to-slate-300', 'from-orange-200 to-amber-500'][realIdx];
-                                            const avGrad = AVATAR_COLORS[realIdx];
-                                            return (
-                                                <div key={entry.customerId} className="flex flex-col items-center gap-1.5">
-                                                    <span className={isFirst ? 'text-2xl' : 'text-xl'}>{MEDALS[realIdx]}</span>
-                                                    <div className={`w-12 h-12 rounded-full bg-gradient-to-br ${avGrad} flex items-center justify-center text-white text-sm font-extrabold shadow-md`}>
-                                                        {getInitials(entry.fullName)}
-                                                    </div>
-                                                    <div className={`text-center w-28 leading-tight font-bold text-gray-700 ${isFirst ? 'text-sm font-black' : 'text-xs'}`}>{entry.fullName}</div>
-                                                    <div className={`font-black text-brand-primary ${isFirst ? 'text-sm' : 'text-xs'}`}>{fmt(entry.totalNetSavings)}</div>
-                                                    <div className={`w-24 rounded-t-xl bg-gradient-to-b ${blockGrad} ${blockH} flex items-end justify-center pb-1`}>
-                                                        <span className="text-xl font-black text-white/60">{realIdx + 1}</span>
-                                                    </div>
+                                <div className="flex items-end justify-center gap-2 sm:gap-6 pt-4 pb-8">
+                                    {[1, 0, 2].map((realIdx) => {
+                                        const entry = top3[realIdx];
+                                        const isFirst = realIdx === 0;
+                                        const blockH = ['h-24', 'h-16', 'h-12'][realIdx];
+                                        const blockGrad = ['from-amber-300 to-yellow-500', 'from-slate-300 to-slate-400', 'from-orange-300 to-amber-600'][realIdx];
+                                        const avGrad = AVATAR_COLORS[realIdx];
+                                        const pct = ((Number(entry.totalNetSavings) / total) * 100).toFixed(2);
+                                        const ganancia = (Number(entry.totalNetSavings) / total) * utilidadesParsed;
+
+                                        return (
+                                            <div key={entry.customerId} className="flex flex-col items-center gap-2 relative group">
+                                                {isFirst && <div className="absolute -top-10 text-4xl animate-bounce">👑</div>}
+                                                <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${avGrad} flex items-center justify-center text-white text-lg font-extrabold shadow-xl ring-4 ring-white z-10 group-hover:-translate-y-2 transition-transform duration-300`}>
+                                                    {getInitials(entry.fullName)}
                                                 </div>
-                                            );
-                                        })}
-                                    </div>
+                                                <div className="bg-white px-3 py-1.5 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center -mt-4 pt-5 z-0">
+                                                    <div className={`text-center w-28 leading-tight font-bold text-gray-800 ${isFirst ? 'text-sm' : 'text-xs'} truncate`}>{entry.fullName}</div>
+                                                    <div className="font-black text-brand-primary text-xs mt-0.5">{fmt(entry.totalNetSavings)}</div>
+                                                    <div className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full mt-1">+{fmt(ganancia)}</div>
+                                                </div>
+                                                <div className={`w-28 sm:w-32 rounded-t-2xl bg-gradient-to-b ${blockGrad} ${blockH} flex flex-col items-center justify-end pb-2 shadow-inner`}>
+                                                    <span className="text-2xl font-black text-white/40 drop-shadow-sm">{realIdx + 1}</span>
+                                                    <span className="text-[10px] font-black text-white/60">{pct}%</span>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             )}
 
                             {/* Full Ranking List */}
-                            <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm flex flex-col gap-3">
-                                <div className="text-[10px] font-black uppercase tracking-widest text-gray-400">📋 Clasificación completa</div>
-
-                                {/* Search */}
-                                <div className="relative">
-                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-                                    <input
-                                        aria-label="Buscar socio"
-                                        type="text"
-                                        value={search}
-                                        onChange={e => setSearch(e.target.value)}
-                                        placeholder="Buscar socio..."
-                                        className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-xl bg-gray-50 outline-none focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/10 transition-all font-medium"
-                                    />
+                            <div className="bg-white/80 backdrop-blur-md border border-white rounded-[2rem] p-6 shadow-xl shadow-gray-200/50 flex flex-col gap-4">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
+                                    <div className="text-xs font-black uppercase tracking-widest text-gray-400 flex items-center gap-2">
+                                        <div className="w-1.5 h-4 bg-brand-primary rounded-full" />
+                                        Clasificación Completa
+                                    </div>
+                                    
+                                    <div className="relative w-full sm:w-72">
+                                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                                        <input
+                                            type="text"
+                                            value={search}
+                                            onChange={e => setSearch(e.target.value)}
+                                            placeholder="Buscar socio..."
+                                            className="w-full pl-11 pr-4 py-2.5 text-sm border-2 border-gray-100 rounded-xl bg-white outline-none focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10 transition-all font-bold text-gray-700 placeholder:text-gray-300"
+                                        />
+                                    </div>
                                 </div>
 
-                                <div className="flex flex-col gap-0.5">
+                                <div className="flex flex-col gap-2">
                                     {search ? (
                                         filtered.length === 0
-                                            ? <div className="text-center py-8 text-gray-400 text-sm font-semibold">Sin resultados para "{search}"</div>
+                                            ? <div className="text-center py-12 text-gray-400 text-sm font-semibold">Sin resultados para "{search}"</div>
                                             : filtered.map(entry => renderRow(entry, ranking.findIndex(r => r.customerId === entry.customerId)))
                                     ) : (
                                         <>
@@ -702,12 +552,10 @@ const RankingModal = ({ onClose }) => {
                                             {middleGroup.length > 0 && (
                                                 <>
                                                     {brechaTop > 10 && (
-                                                        <div className="flex items-center gap-2 py-1">
-                                                            <div className="flex-1 h-px bg-red-100" />
-                                                            <span className="bg-red-50 border border-red-200 rounded-lg px-3 py-0.5 text-[10px] font-black text-red-700">
-                                                                ⚡ Brecha del {brechaTop}% hasta el siguiente grupo
-                                                            </span>
-                                                            <div className="flex-1 h-px bg-red-100" />
+                                                        <div className="flex items-center gap-3 py-4 opacity-70">
+                                                            <div className="flex-1 h-px bg-gradient-to-r from-transparent to-gray-300" />
+                                                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">⚡ Brecha de Rendimiento</span>
+                                                            <div className="flex-1 h-px bg-gradient-to-l from-transparent to-gray-300" />
                                                         </div>
                                                     )}
                                                     {middleGroup.map((entry, i) => renderRow(entry, i + top3.length))}
@@ -717,12 +565,10 @@ const RankingModal = ({ onClose }) => {
                                             {baseGroup.length > 0 && (
                                                 <>
                                                     {brechaBase > 10 && (
-                                                        <div className="flex items-center gap-2 py-1">
-                                                            <div className="flex-1 h-px bg-red-100" />
-                                                            <span className="bg-red-50 border border-red-200 rounded-lg px-3 py-0.5 text-[10px] font-black text-red-700">
-                                                                ⚠️ Brecha del {brechaBase}% — oportunidad de mejora
-                                                            </span>
-                                                            <div className="flex-1 h-px bg-red-100" />
+                                                        <div className="flex items-center gap-3 py-4 opacity-70">
+                                                            <div className="flex-1 h-px bg-gradient-to-r from-transparent to-gray-300" />
+                                                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">⚠️ Oportunidad de Mejora</span>
+                                                            <div className="flex-1 h-px bg-gradient-to-l from-transparent to-gray-300" />
                                                         </div>
                                                     )}
                                                     {baseGroup.map((entry, i) => renderRow(entry, i + top3.length + middleGroup.length))}
@@ -731,15 +577,7 @@ const RankingModal = ({ onClose }) => {
                                         </>
                                     )}
                                 </div>
-
-                                {/* Legend */}
-                                <div className="flex gap-2 flex-wrap pt-2 border-t border-gray-100">
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-brand-primary bg-green-50 border border-green-200 px-2 py-0.5 rounded-md">● Top 3</span>
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-md">⚡ Brecha de rendimiento</span>
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-gray-500 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded-md">% = proporción del fondo</span>
-                                </div>
                             </div>
-
                         </div>
                     )}
                 </div>
