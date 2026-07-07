@@ -1035,9 +1035,17 @@ const FinancialChart = ({ stats }) => {
     const riskIndex = total > 0 ? ((mora / total) * 100).toFixed(1) : 0;
     const liquidity = total > 0 ? ((disponible / total) * 100).toFixed(1) : 0;
 
-    // Cálculo de Rentabilidad Histórica (2025) vs Actual
+    // Baselines del año anterior — calculados por el backend desde la BD y AppSettings
+    // (plan de mejora de gráficas: sin cifras congeladas en el código; los valores
+    // 2025 quedan como semilla por defecto en dashboard-stats si AppSettings está vacío).
+    const baselinePrestamos = Number(stats?.baselines?.prestamos) || 29750000;
+    const baselinePatrimonio = Number(stats?.baselines?.patrimonio) || 36126201;
+    const baselineIntereses = Number(stats?.baselines?.intereses) || 1206913;
+    const baselineAnio = stats?.baselines?.anio || 2025;
+
+    // Cálculo de Rentabilidad Histórica vs Actual (meta anual editable en AppSettings)
     const rentabilidadActual = (stats.totalInteresesPagados || 0) + (stats.rentabilidadCajaNU || 0) + (stats.totalPenaltyValue || 0);
-    const rentabilidad2025 = 2448052;
+    const rentabilidad2025 = Number(stats?.baselines?.metaGanancia) || 2448052;
     const achievement = (rentabilidadActual / rentabilidad2025) * 100; // Porcentaje de cumplimiento de la meta
     const growthValue = achievement - 100; // Crecimiento real
 
@@ -1102,7 +1110,7 @@ const FinancialChart = ({ stats }) => {
                 const _aActual = _aLast ? _aLast.total : 0;
                 const _aMeta = _aPrev ? _aPrev.total : 0;
                 const _aOk = _aMeta > 0 ? (_aActual / _aMeta) >= 0.85 : true;
-                const _score = [_aOk, parseFloat(riskIndex) <= 5, parseFloat(liquidity) >= 30, total >= 36126201 * 0.85, achievement >= 80].filter(Boolean).length;
+                const _score = [_aOk, parseFloat(riskIndex) <= 5, parseFloat(liquidity) >= 30, total >= baselinePatrimonio * 0.85, achievement >= 80].filter(Boolean).length;
                 const _v = _score >= 4
                     ? { from: 'from-emerald-600', to: 'to-emerald-800', icon: '✓', title: 'Fondo Saludable', desc: 'Los indicadores clave están en zona positiva. El fondo opera con normalidad.', badgeTxt: 'ESTADO NORMAL' }
                     : _score >= 3
@@ -1142,29 +1150,29 @@ const FinancialChart = ({ stats }) => {
                         ${Number(total).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
                     </p>
                     {(() => {
-                        const ref = 36126201;
+                        const ref = baselinePatrimonio;
                         const pct = ((total / ref) * 100 - 100).toFixed(1);
                         const up = total >= ref;
                         return <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full self-start ${up ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{up ? '▲' : '▼'} {Math.abs(pct)}% vs 2025</span>;
                     })()}
                     <div>
                         <div className="flex h-1.5 rounded-full overflow-hidden gap-px">
-                            <div className="bg-purple-500 rounded-l-full" style={{ width: `${total > 0 ? (disponible / total) * 100 : 0}%` }} />
-                            <div className="bg-blue-500 rounded-r-full flex-1" />
+                            <div className="bg-lime-500 rounded-l-full" style={{ width: `${total > 0 ? (disponible / total) * 100 : 0}%` }} />
+                            <div className="bg-emerald-700 rounded-r-full flex-1" />
                         </div>
                         <div className="flex items-center gap-2 mt-1.5 text-[8px] font-bold">
-                            <span className="text-purple-600">● Disponible</span>
-                            <span className="text-blue-600">● Cartera</span>
+                            <span className="text-lime-600">● Disponible</span>
+                            <span className="text-emerald-700">● Cartera</span>
                         </div>
                     </div>
                 </div>
 
-                {/* KPI 2: Liquidez */}
-                <div className={`p-5 flex flex-col gap-3 border-b md:border-b-0 border-r border-gray-100 ${parseFloat(liquidity) >= 30 ? 'bg-gradient-to-br from-purple-50 to-white' : 'bg-gradient-to-br from-amber-50 to-white'}`}>
+                {/* KPI 2: Liquidez — paleta semántica: verde = salud financiera, ámbar = atención */}
+                <div className={`p-5 flex flex-col gap-3 border-b md:border-b-0 border-r border-gray-100 ${parseFloat(liquidity) >= 30 ? 'bg-gradient-to-br from-emerald-50 to-white' : 'bg-gradient-to-br from-amber-50 to-white'}`}>
                     <div className="flex items-center justify-between">
                         <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Liquidez</p>
-                        <div className={`p-1.5 rounded-xl ${parseFloat(liquidity) >= 30 ? 'bg-purple-100' : 'bg-amber-100'}`}>
-                            <ActivitySquare className={`h-3.5 w-3.5 ${parseFloat(liquidity) >= 30 ? 'text-purple-600' : 'text-amber-600'}`} />
+                        <div className={`p-1.5 rounded-xl ${parseFloat(liquidity) >= 30 ? 'bg-emerald-100' : 'bg-amber-100'}`}>
+                            <ActivitySquare className={`h-3.5 w-3.5 ${parseFloat(liquidity) >= 30 ? 'text-emerald-600' : 'text-amber-600'}`} />
                         </div>
                     </div>
                     <p className="text-[26px] font-black text-gray-900 font-mono leading-none">
@@ -1175,7 +1183,7 @@ const FinancialChart = ({ stats }) => {
                     </span>
                     <div>
                         <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full ${parseFloat(liquidity) >= 30 ? 'bg-purple-500' : 'bg-amber-500'}`} style={{ width: `${liquidity}%` }} />
+                            <div className={`h-full rounded-full ${parseFloat(liquidity) >= 30 ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{ width: `${liquidity}%` }} />
                         </div>
                         <p className="text-[8px] text-gray-400 font-bold mt-1">${Number(disponible).toLocaleString('es-CO')} disponibles</p>
                     </div>
@@ -1537,12 +1545,12 @@ const FinancialChart = ({ stats }) => {
                                         Intereses de préstamos
                                         <p className="text-[10px] text-emerald-700 font-semibold">Lo que pagan los socios por sus préstamos</p>
                                     </td>
-                                    <td className="p-3 text-right text-blue-700 font-black bg-gray-50/50">${(1206913).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
+                                    <td className="p-3 text-right text-blue-700 font-black bg-gray-50/50">${baselineIntereses.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
                                     <td className="p-3 text-right font-black text-blue-700">${Math.round(stats.totalInteresesPagados || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                    <td className={`p-3 text-right text-sm font-black border-l ${getVariationStyles((stats.totalInteresesPagados || 0), 1206913)}`}>
-                                        {(((stats.totalInteresesPagados || 0) / 1206913) * 100 - 100).toFixed(1)}%
+                                    <td className={`p-3 text-right text-sm font-black border-l ${getVariationStyles((stats.totalInteresesPagados || 0), baselineIntereses)}`}>
+                                        {(((stats.totalInteresesPagados || 0) / baselineIntereses) * 100 - 100).toFixed(1)}%
                                     </td>
-                                    <td className={`p-3 text-right font-black border-l ${getVariationStyles((stats.totalInteresesPagados || 0), 1206913)}`}>
+                                    <td className={`p-3 text-right font-black border-l ${getVariationStyles((stats.totalInteresesPagados || 0), baselineIntereses)}`}>
                                         ${Math.round(stats.totalIntereses || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
                                     </td>
                                 </tr>
@@ -1576,12 +1584,12 @@ const FinancialChart = ({ stats }) => {
                                 </tr>
                                 <tr className="bg-emerald-50 border-t-2 border-emerald-200">
                                     <td className="p-3 text-emerald-900 font-black text-base uppercase tracking-wider">Ganancia total del fondo</td>
-                                    <td className="p-3 text-right text-emerald-800 font-black text-lg">${(2448052).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
+                                    <td className="p-3 text-right text-emerald-800 font-black text-lg">${rentabilidad2025.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
                                     <td className="p-3 text-right font-black text-emerald-700 text-lg">${Math.round((stats.totalInteresesPagados || 0) + (stats.rentabilidadCajaNU || 0) + (stats.totalPenaltyValue || 0)).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                    <td className={`p-3 text-right text-lg font-black border-l shadow-inner ${getVariationStyles(((stats.totalInteresesPagados || 0) + (stats.rentabilidadCajaNU || 0) + (stats.totalPenaltyValue || 0)), 2448052)}`}>
-                                        {((((stats.totalInteresesPagados || 0) + (stats.rentabilidadCajaNU || 0) + (stats.totalPenaltyValue || 0)) / 2448052) * 100 - 100).toFixed(1)}%
+                                    <td className={`p-3 text-right text-lg font-black border-l shadow-inner ${getVariationStyles(((stats.totalInteresesPagados || 0) + (stats.rentabilidadCajaNU || 0) + (stats.totalPenaltyValue || 0)), rentabilidad2025)}`}>
+                                        {((((stats.totalInteresesPagados || 0) + (stats.rentabilidadCajaNU || 0) + (stats.totalPenaltyValue || 0)) / rentabilidad2025) * 100 - 100).toFixed(1)}%
                                     </td>
-                                    <td className={`p-3 text-right font-black text-lg border-l rounded-br-lg ${getVariationStyles(((stats.totalInteresesPagados || 0) + (stats.rentabilidadCajaNU || 0) + (stats.totalPenaltyValue || 0)), 2448052)}`}>
+                                    <td className={`p-3 text-right font-black text-lg border-l rounded-br-lg ${getVariationStyles(((stats.totalInteresesPagados || 0) + (stats.rentabilidadCajaNU || 0) + (stats.totalPenaltyValue || 0)), rentabilidad2025)}`}>
                                         ${Math.round(proyeccionTotal).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
                                     </td>
                                 </tr>
@@ -1612,22 +1620,22 @@ const FinancialChart = ({ stats }) => {
                     />
                     <ComparativeChart
                         title="Préstamos Entregados"
-                        historic={29750000}
+                        historic={baselinePrestamos}
                         current={stats.totalPrestamos || 0}
                         color="#166534"
-                        labelHistoric="2025"
-                        labelCurrent="2026"
+                        labelHistoric={String(baselineAnio)}
+                        labelCurrent={String(baselineAnio + 1)}
                         counts={{ historic: 13, current: stats.totalPrestamosCount || 0 }}
                         onExpand={() => setExpandComp('prestamos')}
                     />
                     <ComparativeChart
                         title="Patrimonio del Fondo"
-                        historic={36126201}
+                        historic={baselinePatrimonio}
                         current={total}
                         color="#166534"
-                        labelHistoric="2025"
-                        labelCurrent="2026"
-                        projection={36126201 + proyeccionTotal}
+                        labelHistoric={String(baselineAnio)}
+                        labelCurrent={String(baselineAnio + 1)}
+                        projection={baselinePatrimonio + proyeccionTotal}
                         detail={[
                             { label: 'Saldo en Banco', value: stats.saldoEnBanco || 0, color: '#166534' },
                             { label: 'Rentabilidad NU', value: stats.rentabilidadCajaNU || 0, color: '#84cc16' },
@@ -1637,11 +1645,11 @@ const FinancialChart = ({ stats }) => {
                     />
                     <ComparativeChart
                         title="Ganancias por Intereses de los préstamos"
-                        historic={1206913}
+                        historic={baselineIntereses}
                         current={stats.totalInteresesPagados || 0}
                         color="#166534"
-                        labelHistoric="2025"
-                        labelCurrent="2026"
+                        labelHistoric={String(baselineAnio)}
+                        labelCurrent={String(baselineAnio + 1)}
                         projection={proyeccionIntereses}
                         note={`Adicionalmente, hay $${Number(Math.max(0, (stats.totalIntereses || 0) - (stats.totalInteresesPagados || 0))).toLocaleString('es-CO', { maximumFractionDigits: 0 })} en Intereses por Cobrar (cuotas aún no pagadas por los socios). Cuando se paguen, este valor aumentará el total de ganancias del fondo.`}
                         onExpand={() => setExpandComp('intereses')}
@@ -1668,18 +1676,18 @@ const FinancialChart = ({ stats }) => {
                 </ChartExpandModal>
                 <ChartExpandModal isOpen={expandComp === 'prestamos'} onClose={() => setExpandComp(null)}
                     title="Préstamos Entregados — Análisis vs 2025"
-                    analysisResult={analyzeComparativeChart({ title: 'Préstamos Entregados', historic: 29750000, current: stats.totalPrestamos || 0, progressPct: Math.min(((stats.totalPrestamos || 0) / 29750000) * 100, 150) })}>
-                    <ComparativeChart compact title="Préstamos Entregados" historic={29750000} current={stats.totalPrestamos || 0} color="#166534" labelHistoric="2025" labelCurrent="2026" />
+                    analysisResult={analyzeComparativeChart({ title: 'Préstamos Entregados', historic: baselinePrestamos, current: stats.totalPrestamos || 0, progressPct: Math.min(((stats.totalPrestamos || 0) / (baselinePrestamos || 1)) * 100, 150) })}>
+                    <ComparativeChart compact title="Préstamos Entregados" historic={baselinePrestamos} current={stats.totalPrestamos || 0} color="#166534" labelHistoric={String(baselineAnio)} labelCurrent={String(baselineAnio + 1)} />
                 </ChartExpandModal>
                 <ChartExpandModal isOpen={expandComp === 'patrimonio'} onClose={() => setExpandComp(null)}
                     title="Patrimonio del Fondo — Análisis vs 2025"
-                    analysisResult={analyzeComparativeChart({ title: 'Patrimonio del Fondo', historic: 36126201, current: total, projectedYearEnd: 36126201 + proyeccionTotal, progressPct: Math.min((total / 36126201) * 100, 150) })}>
-                    <ComparativeChart compact title="Patrimonio del Fondo" historic={36126201} current={total} color="#166534" labelHistoric="2025" labelCurrent="2026" />
+                    analysisResult={analyzeComparativeChart({ title: 'Patrimonio del Fondo', historic: baselinePatrimonio, current: total, projectedYearEnd: baselinePatrimonio + proyeccionTotal, progressPct: Math.min((total / (baselinePatrimonio || 1)) * 100, 150) })}>
+                    <ComparativeChart compact title="Patrimonio del Fondo" historic={baselinePatrimonio} current={total} color="#166534" labelHistoric={String(baselineAnio)} labelCurrent={String(baselineAnio + 1)} />
                 </ChartExpandModal>
                 <ChartExpandModal isOpen={expandComp === 'intereses'} onClose={() => setExpandComp(null)}
                     title="Ganancias por Intereses — Análisis vs 2025"
-                    analysisResult={analyzeComparativeChart({ title: 'Ganancias por Intereses', historic: 1206913, current: stats.totalInteresesPagados || 0, projectedYearEnd: proyeccionIntereses, progressPct: Math.min(((stats.totalInteresesPagados || 0) / 1206913) * 100, 150) })}>
-                    <ComparativeChart compact title="Ganancias por Intereses" historic={1206913} current={stats.totalInteresesPagados || 0} color="#166534" labelHistoric="2025" labelCurrent="2026" />
+                    analysisResult={analyzeComparativeChart({ title: 'Ganancias por Intereses', historic: baselineIntereses, current: stats.totalInteresesPagados || 0, projectedYearEnd: proyeccionIntereses, progressPct: Math.min(((stats.totalInteresesPagados || 0) / (baselineIntereses || 1)) * 100, 150) })}>
+                    <ComparativeChart compact title="Ganancias por Intereses" historic={baselineIntereses} current={stats.totalInteresesPagados || 0} color="#166534" labelHistoric={String(baselineAnio)} labelCurrent={String(baselineAnio + 1)} />
                 </ChartExpandModal>
 
                 {/* ── Diagnóstico Financiero — 3 Insight Cards ─────────────────── */}
@@ -1695,11 +1703,11 @@ const FinancialChart = ({ stats }) => {
                     const ahorroDiff = ahorroActual - ahorroMeta;
                     const ahorroHealthy = parseFloat(ahorroPct) >= 95;
 
-                    const prestamoMeta = 29750000;
+                    const prestamoMeta = baselinePrestamos;
                     const prestamoActual = stats.totalPrestamos || 0;
-                    const prestamoPct = ((prestamoActual / prestamoMeta) * 100).toFixed(1);
+                    const prestamoPct = ((prestamoActual / (prestamoMeta || 1)) * 100).toFixed(1);
 
-                    const interesesMeta = 1206913;
+                    const interesesMeta = baselineIntereses;
                     const interesesActual = stats.totalInteresesPagados || 0;
 
                     const today = new Date();
@@ -2651,14 +2659,14 @@ const DashboardHome = () => {
                         value={loading ? '...' : `$${Number(stats?.totalPrestamosMasIntereses || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
                         description="Capital + intereses del portafolio"
                         icon={Activity}
-                        color="text-rose-500"
+                        color="text-gray-500"
                     />
                     <StatCard
                         title="Intereses Proyectados"
                         value={loading ? '...' : `$${Number(stats?.totalIntereses || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
                         description="Intereses agendados del portafolio"
                         icon={BarChart3}
-                        color="text-purple-500"
+                        color="text-gray-500"
                         onClick={() => handleCardClick('/admin/payments/list')}
                     />
                     <StatCard
@@ -2674,8 +2682,8 @@ const DashboardHome = () => {
                         value={loading ? '...' : `$${Math.max(0, (stats?.totalIntereses || 0) - (stats?.totalInteresesPagados || 0)).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
                         description="Por recaudar al cierre del año"
                         icon={Clock}
-                        color="text-indigo-500"
-                        customBg="linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%)"
+                        color="text-gray-500"
+                        customBg="linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)"
                         onClick={() => handleCardClick('/admin/payments/list', { estado: 'Pendiente' })}
                     />
                 </div>

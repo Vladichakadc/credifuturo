@@ -973,23 +973,27 @@ const MonthlySavingsTrendChart = ({ data, availableYears, selectedYear }) => {
     const MAIN_COLOR   = '#166534';
     const OTHER_COLORS = ['#f59e0b', '#94a3b8', '#cbd5e1'];
 
+    // Formateadores con signo: las devoluciones (negativos) se muestran, no se ocultan
     const fmtLabel = (v) => {
         if (!v || v === 0) return '';
-        if (v >= 1000000) return `$${(v / 1000000).toFixed(1).replace('.0', '')}M`;
-        if (v >= 1000)    return `$${(v / 1000).toFixed(0)}k`;
-        return `$${v}`;
+        const abs = Math.abs(v), s = v < 0 ? '−' : '';
+        if (abs >= 1000000) return `${s}$${(abs / 1000000).toFixed(1).replace('.0', '')}M`;
+        if (abs >= 1000)    return `${s}$${(abs / 1000).toFixed(0)}k`;
+        return `${s}$${abs}`;
     };
     const fmtTick = (v) => {
         if (!v || v === 0) return '$0';
-        if (v >= 1000000) return `$${(v / 1000000).toFixed(1)}M`;
-        return `$${(v / 1000).toFixed(0)}k`;
+        const abs = Math.abs(v), s = v < 0 ? '−' : '';
+        if (abs >= 1000000) return `${s}$${(abs / 1000000).toFixed(1)}M`;
+        return `${s}$${(abs / 1000).toFixed(0)}k`;
     };
 
-    // Convierte 0 → null para que el spline no extrapole por debajo de cero
+    // Solo los meses SIN movimiento (0) pasan a null para no dibujar línea plana falsa.
+    // Los negativos (retiros/devoluciones) se conservan: son eventos financieros reales.
     const processedData = useMemo(() => showMultiple
         ? data.map(d => {
             const row = { name: d.name };
-            sortedYears.forEach(yr => { row[yr] = d[yr] > 0 ? d[yr] : null; });
+            sortedYears.forEach(yr => { row[yr] = d[yr] !== 0 ? d[yr] : null; });
             return row;
           })
         : data,
@@ -1017,11 +1021,12 @@ const MonthlySavingsTrendChart = ({ data, availableYears, selectedYear }) => {
         const { cx, cy, index, value } = props;
         if (!value || value === 0) return null;
         const isSpecial = index === maxIdx || index === lastIdx;
+        const esRetiro = value < 0; // devolución/retiro: punto rojo para que no pase inadvertido
         return (
             <circle key={`dot-${index}`} cx={cx} cy={cy}
-                r={isSpecial ? 5 : 3.5}
-                fill={isMain ? MAIN_COLOR : OTHER_COLORS[0]}
-                stroke="#fff" strokeWidth={isSpecial ? 2 : 1.5} />
+                r={esRetiro ? 5 : isSpecial ? 5 : 3.5}
+                fill={esRetiro ? '#dc2626' : isMain ? MAIN_COLOR : OTHER_COLORS[0]}
+                stroke="#fff" strokeWidth={isSpecial || esRetiro ? 2 : 1.5} />
         );
     };
 
@@ -1064,7 +1069,7 @@ const MonthlySavingsTrendChart = ({ data, availableYears, selectedYear }) => {
                     <YAxis axisLine={false} tickLine={false}
                         tick={{ fill: '#94a3b8', fontSize: 10 }}
                         tickFormatter={fmtTick}
-                        domain={[0, 'auto']}
+                        domain={[(dataMin) => Math.min(0, dataMin || 0), 'auto']}
                         allowDataOverflow={false}
                         width={50} />
 
@@ -1834,7 +1839,7 @@ const SavingsSummaryPage = ({ lockedSocio = null, hideControls = false, preloade
                             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col print:h-[300px] print:shadow-none print:border-gray-200 transition-all duration-500"
                                 style={{ height: Math.max(trendChartHeight * 0.65, 280) }}>
                                 <h2 className="text-lg font-bold text-brand-primary mb-4 flex items-center gap-2">
-                                    <BarChart3 className="h-5 w-5" /> Evolución de Ahorros
+                                    <BarChart3 className="h-5 w-5" /> Composición del Patrimonio
                                     <button onClick={() => setExpandAccountChart(true)} className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-brand-primary to-blue-600 text-white text-xs font-bold shadow-md shadow-brand-primary/30 hover:shadow-lg hover:shadow-brand-primary/40 hover:scale-105 active:scale-95 transition-all duration-200 print:hidden" title="Ampliar y analizar">
                                         <Maximize2 className="h-3.5 w-3.5" />
                                         <span>Ampliar y analizar</span>
@@ -1858,7 +1863,7 @@ const SavingsSummaryPage = ({ lockedSocio = null, hideControls = false, preloade
                     <ChartExpandModal
                         isOpen={expandAccountChart}
                         onClose={() => setExpandAccountChart(false)}
-                        title="Evolución de Ahorros — Composición del Patrimonio"
+                        title="Composición del Patrimonio — Capital Ahorrado vs Aportes"
                         analysisResult={analyzeSavingsComposition({ totalSavings: userStats.totalSavings, totalInitialContributions: userStats.totalInitialContributions, totalAhorradoGeneral: userStats.totalAhorradoGeneral })}
                     >
                         <AccountSummaryChart stats={userStats} />

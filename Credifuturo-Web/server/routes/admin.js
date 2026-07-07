@@ -3220,7 +3220,39 @@ router.get('/dashboard-stats', async (req, res) => {
         const nuSetting = await AppSetting.findOne({ where: { key: 'rentabilidadCajaNU' } });
         const rentabilidadCajaNU = nuSetting ? Number(nuSetting.value) : 543815;
 
+        // ── Baselines dinámicos del año anterior (plan de mejora de gráficas) ──
+        // Préstamos e intereses se calculan de la BD (verificado: coinciden con las
+        // antiguas constantes del frontend). Patrimonio de cierre y meta anual son
+        // decisiones/snapshots del comité: viven en AppSettings (editables vía
+        // PUT /admin/settings/:key) con los valores 2025 como semilla por defecto.
+        const _anioActual = new Date().getFullYear();
+        const _anioPrev = _anioActual - 1;
+        const _sequelize = require('../config/database');
+        const { QueryTypes: _QT } = require('sequelize');
+        const [prestamosPrevRow, interesesPrevRow, metaSetting, patrimonioSetting] = await Promise.all([
+            _sequelize.query(
+                `SELECT ROUND(SUM(COALESCE(valor_prestado, valorPrestado, monto))) total
+                 FROM DisbursedLoans WHERE anio_desembolso = :anio`,
+                { type: _QT.SELECT, replacements: { anio: _anioPrev } }),
+            _sequelize.query(
+                `SELECT ROUND(SUM(valor_intereses_amortizados)) total
+                 FROM LoanPayments WHERE estado IN ('Pago','Abono')
+                   AND strftime('%Y', fecha_pago_max) = :anio`,
+                { type: _QT.SELECT, replacements: { anio: String(_anioPrev) } }),
+            AppSetting.findOne({ where: { key: 'metaGananciaAnual' } }),
+            AppSetting.findOne({ where: { key: `patrimonioCierre${_anioPrev}` } }),
+        ]);
+        const baselines = {
+            anio: _anioPrev,
+            prestamos: Number(prestamosPrevRow[0]?.total) || 0,
+            intereses: Number(interesesPrevRow[0]?.total) || 0,
+            ahorro: (ahorroPorAnio.find(a => Number(a.anio) === _anioPrev)?.total) || 0,
+            patrimonio: patrimonioSetting ? Number(patrimonioSetting.value) : (_anioPrev === 2025 ? 36126201 : 0),
+            metaGanancia: metaSetting ? Number(metaSetting.value) : 2448052,
+        };
+
         res.json({
+            baselines,
             clientsCount: totalClientsCount,
             activeClientsCount,
             inactiveClientsCount,
