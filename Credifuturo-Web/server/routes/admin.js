@@ -3761,6 +3761,52 @@ router.get('/logs/access', async (req, res) => {
 // ENDPOINTS PARA SOCIOS (SOLO LECTURA)
 // ─────────────────────────────────────────────
 
+// GET /my/utilidades-estimadas — participación estimada del socio en las utilidades
+// a distribuir (decisión #4 del plan: visible al socio como estimación declarada).
+// Base del reparto: ahorro mensual neto de todos los socios activos (misma regla
+// que el Ranking). El valor de utilidades es el del comité en AppSettings; si no
+// está definido, se responde null y el cliente no muestra la sección.
+router.get('/my/utilidades-estimadas', verifyToken, requireFreshPassword, requireRole('user'), async (req, res) => {
+    try {
+        const { Op } = require('sequelize');
+        const AppSetting = require('../models/AppSetting');
+        const setting = await AppSetting.findOne({ where: { key: 'utilidadesADistribuir' } });
+        const utilidades = setting && Number(setting.value) > 0 ? Number(setting.value) : null;
+        if (!utilidades) return res.json({ ok: true, data: null });
+
+        const activos = await Client.findAll({ where: { estatus: 'Activo' }, attributes: ['id'] });
+        const rows = await Saving.findAll({
+            where: {
+                type: { [Op.ne]: 'Aporte Inicial' },
+                clientId: { [Op.in]: activos.map(c => c.id) }
+            },
+            attributes: ['clientId', 'amount', 'valorAhorrado']
+        });
+        const val = (s) => {
+            const v = parseFloat(s.valorAhorrado);
+            return v > 0 ? v : (parseFloat(s.amount) || 0);
+        };
+        let base = 0, propio = 0;
+        for (const s of rows) {
+            const x = val(s);
+            base += x;
+            if (s.clientId === req.user.id) propio += x;
+        }
+        const participacion = base > 0 ? propio / base : 0;
+        res.json({
+            ok: true,
+            data: {
+                utilidades,
+                participacionPct: participacion * 100,
+                valorEstimado: Math.round(participacion * utilidades)
+            }
+        });
+    } catch (err) {
+        console.error('my/utilidades-estimadas error:', err);
+        res.status(500).json({ ok: false, error: 'Error al calcular la participación estimada.' });
+    }
+});
+
 // GET /my/score-history — últimos 12 snapshots mensuales de los insumos del score.
 // El cliente recalcula cada score con calcScore() (fuente única de la fórmula).
 router.get('/my/score-history', verifyToken, requireFreshPassword, requireRole('user'), async (req, res) => {

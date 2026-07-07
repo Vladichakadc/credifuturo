@@ -78,6 +78,7 @@ const CuentaBetaPage = () => {
     const [aportes, setAportes] = useState([]);
     const [payments, setPayments] = useState([]);
     const [capacity, setCapacity] = useState(null);
+    const [utilidades, setUtilidades] = useState(null);
     const [yearFilter, setYearFilter] = useState('Todos');
 
     useEffect(() => {
@@ -87,12 +88,14 @@ const CuentaBetaPage = () => {
                 api.get('/admin/my/initial-contributions'),
                 api.get('/admin/my/payments'),
                 api.get('/admin/my/loan-capacity'),
+                api.get('/admin/my/utilidades-estimadas'),
             ]);
-            const [sRes, aRes, pRes, cRes] = results;
+            const [sRes, aRes, pRes, cRes, uRes] = results;
             if (sRes.status === 'fulfilled') setSavings(sRes.value.data?.data || []);
             if (aRes.status === 'fulfilled') setAportes(aRes.value.data?.data || []);
             if (pRes.status === 'fulfilled') setPayments(pRes.value.data?.data || []);
             if (cRes.status === 'fulfilled') setCapacity(cRes.value.data);
+            if (uRes.status === 'fulfilled') setUtilidades(uRes.value.data?.data || null);
             if (results.every(r => r.status === 'rejected')) {
                 toast.error('No se pudo cargar tu información. Intenta de nuevo.');
             }
@@ -413,6 +416,18 @@ const CuentaBetaPage = () => {
                                 ? `El fondo te ha devuelto ${fmt(relacion.neta)} más de lo que has pagado en intereses — tu ahorro también trabaja para ti.`
                                 : `Has aportado ${fmt(Math.abs(relacion.neta))} netos en intereses al fondo; esa ganancia se redistribuye entre todos los socios, incluido tú.`}
                     </p>
+                    {utilidades && (
+                        <div className="mt-3 pt-3 border-t border-gray-50">
+                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Tu participación estimada en las utilidades</p>
+                            <p className="text-lg font-black text-amber-600 tabular-nums">
+                                {fmt(utilidades.valorEstimado)}
+                                <span className="ml-2 text-xs font-bold text-gray-400">({utilidades.participacionPct.toFixed(2).replace('.', ',')}% de {fmt(utilidades.utilidades)})</span>
+                            </p>
+                            <p className="text-[10px] text-gray-400 mt-0.5 leading-snug">
+                                Proporcional a tu ahorro mensual neto · valor definido por el comité · estimación, no constituye promesa de pago.
+                            </p>
+                        </div>
+                    )}
                 </div>
             </div>
 
