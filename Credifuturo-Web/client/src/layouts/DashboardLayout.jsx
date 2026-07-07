@@ -299,6 +299,7 @@ const DashboardLayout = ({ user, onLogout }) => {
                 { icon: List, label: 'Lista de Ahorros', path: '/admin/savings/list' },
                 { icon: PlusCircle, label: 'Nuevo Ahorro', path: '/admin/savings?action=new' },
                 { icon: TrendingUp, label: 'Resumen Ahorros', path: '/admin/savings/summary' },
+                { icon: TrendingUp, label: 'Evolución Ahorros (beta)', path: '/admin/savings/evolution' },
                 { icon: Banknote, label: 'Devoluciones Ahorros', path: '/admin/savings/devoluciones' },
                 { icon: List, label: 'Lista de Aportes', path: '/admin/initial-contributions/list' },
                 { icon: PlusCircle, label: 'Nuevo Aporte', path: '/admin/initial-contributions/new' },

@@ -23,6 +23,7 @@ import LoanAnalyzerPage from './pages/admin/LoanAnalyzerPage';
 import OrphanLoansPage from './pages/admin/OrphanLoansPage';
 import AccessLogsPage from './pages/admin/AccessLogsPage';
 import ExecutivePanelPage from './pages/admin/ExecutivePanelPage';
+import SavingsEvolutionPage from './pages/admin/SavingsEvolutionPage';
 
 // User Pages
 import UserDashboardLayout from './layouts/UserDashboardLayout';
@@ -99,6 +100,8 @@ function App() {
                     <Route path="savings" element={<SavingsPage />} />
                     <Route path="savings/list" element={<SavingsListPage />} />
                     <Route path="savings/summary" element={<SavingsSummaryPage />} />
+                    {/* Evolución de Ahorros (beta): tríada stock/flujo/composición con negativos visibles */}
+                    <Route path="savings/evolution" element={<SavingsEvolutionPage />} />
                     <Route path="savings/devoluciones" element={<DevolucionesAhorrosPage />} />
                     {/* Aportes Module */}
                     <Route path="initial-contributions/list" element={<InitialContributionsListPage />} />

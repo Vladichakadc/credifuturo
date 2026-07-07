@@ -3942,6 +3942,44 @@ router.get('/executive-stats', async (req, res) => {
     }
 });
 
+// ── Evolución de Ahorros (beta): serie mensual con negativos visibles ─────
+// Regla de gobernanza de gráficas: las devoluciones (meses negativos) se
+// muestran, no se filtran. Serie por mes acreditado (mesAbonado/anioAbonado),
+// a nivel fondo o por socio (?clientId=). Neto = valorAhorrado; bruto = amount.
+router.get('/savings-evolution', async (req, res) => {
+    try {
+        const sequelize = require('../config/database');
+        const { QueryTypes } = require('sequelize');
+        const clientId = req.query.clientId ? parseInt(req.query.clientId, 10) : null;
+        const filtro = clientId ? 'AND clientId = :clientId' : '';
+        const replacements = clientId ? { clientId } : {};
+
+        const [serieMensual, aportesRow] = await Promise.all([
+            sequelize.query(`
+                SELECT anioAbonado anio, CAST(mesAbonado AS INTEGER) mes,
+                       ROUND(SUM(COALESCE(valorAhorrado, amount))) neto,
+                       ROUND(SUM(amount)) bruto
+                FROM Savings
+                WHERE type='Mensual' AND anioAbonado != '' AND mesAbonado != '' ${filtro}
+                GROUP BY 1, 2 ORDER BY 1, 2`,
+                { type: QueryTypes.SELECT, replacements }),
+            sequelize.query(`
+                SELECT ROUND(SUM(amount)) total, COUNT(*) registros
+                FROM Savings WHERE type='Aporte Inicial' ${filtro}`,
+                { type: QueryTypes.SELECT, replacements }),
+        ]);
+
+        res.json({
+            clientId,
+            serieMensual,
+            aportes: aportesRow[0] || { total: 0, registros: 0 },
+        });
+    } catch (err) {
+        console.error('savings-evolution error:', err);
+        res.status(500).json({ error: 'Error generando la serie de evolución' });
+    }
+});
+
 // ── Gestión de contraseñas (admin) ────────────────────────────────────────
 
 // Resetear contraseña de un socio (admin)
