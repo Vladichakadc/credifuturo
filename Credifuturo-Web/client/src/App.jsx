@@ -38,6 +38,8 @@ import UserStatutesPage from './pages/user/UserStatutesPage';
 import UserResolutionsPage from './pages/user/UserResolutionsPage';
 import UserSavingsSummaryPage from './pages/user/UserSavingsSummaryPage';
 import UserLoanAnalyzerPage from './pages/user/UserLoanAnalyzerPage';
+import CuentaBetaPage from './pages/user/CuentaBetaPage';
+import CapacidadBetaPage from './pages/user/CapacidadBetaPage';
 
 import Navbar from './components/Navbar';
 import { useState, useEffect } from 'react';
@@ -140,6 +142,9 @@ function App() {
                     <Route path="resolutions" element={<UserResolutionsPage />} />
                     <Route path="savings/summary" element={<UserSavingsSummaryPage />} />
                     <Route path="loan-capacity" element={<UserLoanAnalyzerPage />} />
+                    {/* Betas del plan Detalle de Cuenta + Capacidad: en evaluación, no reemplazan las vistas actuales */}
+                    <Route path="account-statement" element={<CuentaBetaPage />} />
+                    <Route path="loan-capacity-beta" element={<CapacidadBetaPage />} />
                 </Route>
 
                 <Route path="/" element={<Navigate to={user ? (user.role === 'admin' ? '/admin' : '/dashboard') : '/login'} />} />

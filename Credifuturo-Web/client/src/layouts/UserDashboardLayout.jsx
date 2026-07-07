@@ -14,7 +14,9 @@ import {
     Scale,
     DollarSign,
     FileText,
-    Landmark
+    Landmark,
+    Receipt,
+    Gauge
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { Button } from '../components/ui/Button';
@@ -143,6 +145,7 @@ const UserDashboardLayout = ({ user, onLogout }) => {
                 { icon: LayoutDashboard, label: 'Mi Panel', path: '/dashboard' },
                 { icon: Landmark, label: 'Nuestro Fondo', path: '/dashboard/fondo' },
                 { icon: TrendingUp, label: 'Detalle de la Cuenta', path: '/dashboard/savings/summary' },
+                { icon: Receipt, label: 'Detalle de Cuenta (beta)', path: '/dashboard/account-statement' },
             ]
         },
         {
@@ -163,7 +166,8 @@ const UserDashboardLayout = ({ user, onLogout }) => {
             children: [
                 { icon: List, label: 'Lista de Préstamos', path: '/dashboard/loans' },
                 { icon: List, label: 'Lista de Pagos', path: '/dashboard/payments' },
-                { icon: Scale, label: 'Analizador de Capacidad', path: '/dashboard/loan-capacity' }
+                { icon: Scale, label: 'Analizador de Capacidad', path: '/dashboard/loan-capacity' },
+                { icon: Gauge, label: 'Capacidad (beta)', path: '/dashboard/loan-capacity-beta' }
             ]
         },
         {
