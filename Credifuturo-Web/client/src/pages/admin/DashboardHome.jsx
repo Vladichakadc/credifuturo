@@ -996,7 +996,9 @@ const SavingsByYearChart = ({ data, title = 'Ahorro de los Socios por Año', com
 
 
 // ─── NUEVO: COMPONENTE DE GRÁFICA PROFESIONAL ────────────────────────────────────────────────────────
-const FinancialChart = ({ stats }) => {
+const FinancialChart = ({ stats, selectedYears = [], onEditMeta }) => {
+    // Etiqueta del período que cubren las cifras (regla de gobernanza: declarar el período)
+    const periodoLabel = selectedYears.length > 0 ? selectedYears.join(' – ') : 'todos los años';
     const [expandDonut, setExpandDonut] = useState(false);
     const [expandComp, setExpandComp] = useState(null);
 
@@ -1255,7 +1257,13 @@ const FinancialChart = ({ stats }) => {
                         <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                             <div className="bg-slate-500 h-full rounded-full" style={{ width: `${Math.min((proyeccionTotal / rentabilidad2025) * 100, 100)}%` }} />
                         </div>
-                        <p className="text-[8px] text-gray-400 font-bold mt-1">Meta: ${Number(rentabilidad2025).toLocaleString('es-CO')}</p>
+                        {onEditMeta ? (
+                            <button onClick={onEditMeta} className="text-[8px] text-gray-400 font-bold mt-1 hover:text-brand-primary transition-colors flex items-center gap-1" title="Editar meta anual">
+                                Meta: ${Number(rentabilidad2025).toLocaleString('es-CO')} <Edit2 className="w-2.5 h-2.5" />
+                            </button>
+                        ) : (
+                            <p className="text-[8px] text-gray-400 font-bold mt-1">Meta: ${Number(rentabilidad2025).toLocaleString('es-CO')}</p>
+                        )}
                     </div>
                 </div>
             </div>
@@ -1282,7 +1290,7 @@ const FinancialChart = ({ stats }) => {
                             {/* Encabezado */}
                             <div>
                                 <h3 className="text-[12px] font-black text-gray-800">Capital del Fondo</h3>
-                                <p className="text-[10px] text-gray-400 mt-0.5">Composición del patrimonio · socios activos</p>
+                                <p className="text-[10px] text-gray-400 mt-0.5">Composición del patrimonio · socios activos · ahorro neto de recargos por mora</p>
                             </div>
 
                             {/* Patrimonio total centrado */}
@@ -1361,7 +1369,9 @@ const FinancialChart = ({ stats }) => {
                             <div className="px-6 pt-5 pb-4 border-b border-gray-100 flex items-center justify-between gap-4">
                                 <div>
                                     <h3 className="text-[12px] font-black text-gray-800">¿Cuánto está ganando el fondo?</h3>
-                                    <p className="text-[10px] text-gray-400 mt-0.5">Ingresos acumulados al {new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                                    <p className="text-[10px] text-gray-400 mt-0.5">
+                                        Intereses y recargos del período {periodoLabel} al {new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })} · Cta. NU: valor acumulado ingresado manualmente
+                                    </p>
                                 </div>
                                 <div className="flex items-center gap-3">
                                     <div className="text-right">
@@ -1967,6 +1977,10 @@ const DashboardHome = () => {
     const [generatingPdf, setGeneratingPdf] = useState(false);
     const [showNUModal, setShowNUModal] = useState(false);
     const [nuInputRaw, setNuInputRaw] = useState('');
+    // Meta anual de ganancia: editable por el admin (AppSettings.metaGananciaAnual)
+    const [showMetaModal, setShowMetaModal] = useState(false);
+    const [metaInputRaw, setMetaInputRaw] = useState('');
+    const [metaSaving, setMetaSaving] = useState(false);
     const [nuSaving, setNuSaving] = useState(false);
     const reportRef = useRef(null);
 
@@ -2885,7 +2899,14 @@ const DashboardHome = () => {
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="p-0 bg-white rounded-b-xl overflow-hidden">
-                        <FinancialChart stats={stats} />
+                        <FinancialChart
+                            stats={stats}
+                            selectedYears={selectedYears}
+                            onEditMeta={isAdmin ? () => {
+                                setMetaInputRaw(String(stats?.baselines?.metaGanancia || ''));
+                                setShowMetaModal(true);
+                            } : undefined}
+                        />
                     </CardContent>
                 </Card>
             </div>
@@ -2965,6 +2986,81 @@ const DashboardHome = () => {
                                 }}
                             >
                                 {nuSaving ? 'Guardando…' : 'Actualizar'}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal: editar meta anual de ganancia (AppSettings.metaGananciaAnual) */}
+            {showMetaModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={() => setShowMetaModal(false)} />
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden relative z-10 animate-in fade-in zoom-in duration-200">
+                        <div className="px-6 py-4 flex items-center justify-between" style={{ background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)' }}>
+                            <div className="flex items-center gap-2">
+                                <TrendingUp className="h-6 w-6 text-emerald-700" />
+                                <h3 className="text-lg font-bold text-emerald-800">Meta Anual de Ganancia</h3>
+                            </div>
+                            <button onClick={() => setShowMetaModal(false)} className="p-1 hover:bg-emerald-200 rounded-full transition-colors">
+                                <X className="h-5 w-5 text-emerald-600" />
+                            </button>
+                        </div>
+                        <div className="px-6 py-5">
+                            <p className="text-sm text-gray-500 mb-4">
+                                Meta de ganancia del fondo para el año en curso (intereses + rendimientos + recargos), definida por el comité. Se usa en el Veredicto Ejecutivo y el KPI de cumplimiento.
+                            </p>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">
+                                Monto en pesos colombianos
+                            </label>
+                            <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">$</span>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    className="w-full pl-7 pr-4 py-3 border-2 border-emerald-200 rounded-xl text-xl font-bold text-emerald-800 focus:outline-none focus:border-emerald-500 transition-colors text-right"
+                                    placeholder="0"
+                                    value={metaInputRaw === '' ? '' : Number(metaInputRaw).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                                    onChange={e => {
+                                        const raw = e.target.value.replace(/\D/g, '');
+                                        setMetaInputRaw(raw === '' ? '' : raw);
+                                    }}
+                                    autoFocus
+                                />
+                            </div>
+                            {metaInputRaw !== '' && (
+                                <p className="text-xs text-emerald-600 mt-1 text-right font-medium">
+                                    $ {Number(metaInputRaw).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                                </p>
+                            )}
+                        </div>
+                        <div className="px-6 pb-5 flex gap-3">
+                            <Button
+                                variant="outline"
+                                className="flex-1"
+                                onClick={() => setShowMetaModal(false)}
+                                disabled={metaSaving}
+                            >
+                                Cancelar
+                            </Button>
+                            <Button
+                                className="flex-1"
+                                disabled={metaSaving || metaInputRaw === ''}
+                                onClick={async () => {
+                                    setMetaSaving(true);
+                                    try {
+                                        await api.put('/admin/settings/metaGananciaAnual', { value: Number(metaInputRaw) });
+                                        setShowMetaModal(false);
+                                        setMetaInputRaw('');
+                                        await fetchStats();
+                                    } catch {
+                                        alert('No se pudo guardar la meta. Intenta de nuevo.');
+                                    } finally {
+                                        setMetaSaving(false);
+                                    }
+                                }}
+                            >
+                                {metaSaving ? 'Guardando…' : 'Actualizar'}
                             </Button>
                         </div>
                     </div>
