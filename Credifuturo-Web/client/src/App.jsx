@@ -22,6 +22,7 @@ import DevolucionesAhorrosPage from './pages/admin/DevolucionesAhorrosPage';
 import LoanAnalyzerPage from './pages/admin/LoanAnalyzerPage';
 import OrphanLoansPage from './pages/admin/OrphanLoansPage';
 import AccessLogsPage from './pages/admin/AccessLogsPage';
+import ExecutivePanelPage from './pages/admin/ExecutivePanelPage';
 
 // User Pages
 import UserDashboardLayout from './layouts/UserDashboardLayout';
@@ -86,6 +87,8 @@ function App() {
                     </ProtectedRoute>
                 }>
                     <Route index element={<DashboardHome />} />
+                    {/* Panel Ejecutivo (beta): propuesta del plan de mejora, en evaluación */}
+                    <Route path="executive" element={<ExecutivePanelPage />} />
                     {/* Placeholder para futuras páginas - Redirige a inicio por ahora o al legacy dashboard si se requiere */}
                     <Route path="clients" element={<ClientsPage />} />
                     <Route path="clients/list" element={<ClientListPage />} />

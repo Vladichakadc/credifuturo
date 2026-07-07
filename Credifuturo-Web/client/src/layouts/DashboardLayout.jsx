@@ -251,6 +251,7 @@ const DashboardLayout = ({ user, onLogout }) => {
             label: 'Inicio',
             children: [
                 { icon: LayoutDashboard, label: 'Panel Principal', path: '/admin' },
+                { icon: BarChart2, label: 'Panel Ejecutivo (beta)', path: '/admin/executive' },
                 { icon: CreditCard, label: 'Detalle de Cuenta', path: '/admin/account-detail' },
                 { icon: TrendingUp, label: 'Resumen Total Socio', path: '/admin/savings/summary?view=total' },
             ]

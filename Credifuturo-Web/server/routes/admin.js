@@ -3842,6 +3842,106 @@ router.get('/my/balance', verifyToken, requireFreshPassword, requireRole('user')
     }
 });
 
+// ── Panel Ejecutivo (beta): agregados financieros del fondo ───────────────
+// Indicadores del plan de mejora del Panel Principal: concentración de cartera,
+// eficiencia de recaudo YTD, calendario de vencimientos, penetración de crédito
+// y series por año (baselines dinámicos — reemplazan las constantes 2025 del código).
+router.get('/executive-stats', async (req, res) => {
+    try {
+        const sequelize = require('../config/database');
+        const { QueryTypes } = require('sequelize');
+        const q = (sql) => sequelize.query(sql, { type: QueryTypes.SELECT });
+
+        const [
+            carteraRows, recaudoYtdRows, topDeudores, vencimientos,
+            penetracionRows, ahorroAnio, colocacionAnio, interesesAnio, flujo30Rows
+        ] = await Promise.all([
+            // Cartera pendiente: vigente vs vencida (PAR)
+            q(`SELECT CASE WHEN date(fecha_pago_max) < date('now') THEN 'vencida' ELSE 'vigente' END estado,
+                      COUNT(*) cuotas, ROUND(SUM(valor_cuota_variable)) valor
+               FROM LoanPayments WHERE estado='Pendiente' GROUP BY 1`),
+            // Recaudo del año: cuotas con vencimiento ya cumplido este año, por estado
+            q(`SELECT estado, COUNT(*) n, ROUND(SUM(valor_cuota_variable)) valor
+               FROM LoanPayments
+               WHERE strftime('%Y', fecha_pago_max) = strftime('%Y','now')
+                 AND date(fecha_pago_max) <= date('now')
+               GROUP BY estado`),
+            // Concentración: saldo pendiente por deudor (orden descendente)
+            q(`SELECT lp.clientId, c.name || ' ' || COALESCE(c.apellido1,'') nombre,
+                      ROUND(SUM(lp.valor_cuota_variable)) saldo
+               FROM LoanPayments lp JOIN Clients c ON c.id = lp.clientId
+               WHERE lp.estado='Pendiente'
+               GROUP BY lp.clientId ORDER BY saldo DESC`),
+            // Calendario de vencimientos: cuotas pendientes por mes (próximos 6 meses)
+            q(`SELECT strftime('%Y-%m', fecha_pago_max) mes, COUNT(*) cuotas,
+                      ROUND(SUM(valor_cuota_variable)) valor
+               FROM LoanPayments
+               WHERE estado='Pendiente'
+                 AND date(fecha_pago_max) >= date('now','start of month')
+                 AND date(fecha_pago_max) < date('now','start of month','+6 month')
+               GROUP BY 1 ORDER BY 1`),
+            // Penetración de crédito
+            q(`SELECT (SELECT COUNT(DISTINCT clientId) FROM LoanPayments WHERE estado='Pendiente') conCredito,
+                      (SELECT COUNT(*) FROM Clients WHERE estatus='Activo' AND role='user') activos`),
+            // Ahorro mensual por año (mes acreditado — mesAbonado/anioAbonado)
+            q(`SELECT anioAbonado anio, ROUND(SUM(amount)) total FROM Savings
+               WHERE type='Mensual' AND anioAbonado != '' GROUP BY anioAbonado ORDER BY anio`),
+            // Colocación de créditos por año
+            q(`SELECT anio_desembolso anio, COUNT(*) creditos,
+                      ROUND(SUM(COALESCE(valor_prestado, valorPrestado, monto))) total
+               FROM DisbursedLoans GROUP BY anio_desembolso ORDER BY anio`),
+            // Intereses por año de vencimiento y estado (cobrados vs agendados)
+            q(`SELECT strftime('%Y', fecha_pago_max) anio, estado,
+                      ROUND(SUM(valor_intereses_amortizados)) intereses
+               FROM LoanPayments WHERE estado IN ('Pago','Abono','Pendiente')
+               GROUP BY 1, 2 ORDER BY 1`),
+            // Flujo esperado próximos 30 días
+            q(`SELECT COUNT(*) cuotas, ROUND(SUM(valor_cuota_variable)) valor
+               FROM LoanPayments WHERE estado='Pendiente'
+                 AND date(fecha_pago_max) BETWEEN date('now') AND date('now','+30 day')`),
+        ]);
+
+        const vigente = carteraRows.find(r => r.estado === 'vigente') || { cuotas: 0, valor: 0 };
+        const vencida = carteraRows.find(r => r.estado === 'vencida') || { cuotas: 0, valor: 0 };
+        const carteraTotal = (vigente.valor || 0) + (vencida.valor || 0);
+
+        const pagadasYtd = recaudoYtdRows
+            .filter(r => r.estado === 'Pago' || r.estado === 'Abono')
+            .reduce((s, r) => ({ n: s.n + (r.n || 0), valor: s.valor + (r.valor || 0) }), { n: 0, valor: 0 });
+        const vencidasSinPago = recaudoYtdRows.find(r => r.estado === 'Pendiente') || { n: 0, valor: 0 };
+        const cuotasExigidas = pagadasYtd.n + (vencidasSinPago.n || 0);
+
+        res.json({
+            generadoEl: new Date().toISOString(),
+            cartera: {
+                total: carteraTotal,
+                vigente: vigente.valor || 0,
+                vencida: vencida.valor || 0,
+                cuotasPendientes: (vigente.cuotas || 0) + (vencida.cuotas || 0),
+                parPct: carteraTotal > 0 ? +(((vencida.valor || 0) / carteraTotal) * 100).toFixed(1) : 0,
+            },
+            recaudoYtd: {
+                pagadas: pagadasYtd.n,
+                exigidas: cuotasExigidas,
+                valorRecaudado: pagadasYtd.valor,
+                eficienciaPct: cuotasExigidas > 0 ? +((pagadasYtd.n / cuotasExigidas) * 100).toFixed(1) : null,
+            },
+            concentracion: topDeudores,
+            vencimientos,
+            flujo30dias: flujo30Rows[0] || { cuotas: 0, valor: 0 },
+            penetracion: penetracionRows[0] || { conCredito: 0, activos: 0 },
+            series: {
+                ahorroPorAnio: ahorroAnio,
+                colocacionPorAnio: colocacionAnio,
+                interesesPorAnio: interesesAnio,
+            },
+        });
+    } catch (err) {
+        console.error('executive-stats error:', err);
+        res.status(500).json({ error: 'Error generando indicadores ejecutivos' });
+    }
+});
+
 // ── Gestión de contraseñas (admin) ────────────────────────────────────────
 
 // Resetear contraseña de un socio (admin)
