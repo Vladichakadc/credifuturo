@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../config/api';
-import { calcVerdict, colorMap } from '../../utils/loanCapacity';
+import { calcVerdict, calcScore, colorMap } from '../../utils/loanCapacity';
 import { useUi } from '../../context/UiContext';
 import {
     Scale,
@@ -27,9 +27,9 @@ const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
 const MESES_ABR = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 const fmtFecha = (d) => d ? `${d.getDate()} ${MESES_ABR[d.getMonth()]} ${d.getFullYear()}` : '—';
 
-// Tasas mensuales vigentes en los créditos activos del fondo (validadas contra la BD).
-// La tasa definitiva la fija el comité al aprobar cada crédito.
-const TASAS_VIGENTES = [1.4, 1.6];
+// Respaldo si el backend no envía tasas: las vigentes en los créditos activos del fondo.
+// El valor oficial vive en AppSettings (tasasInteresVigentes) y llega en el análisis.
+const TASAS_FALLBACK = [1.4, 1.6];
 
 // ── Gauge semicircular del score (0-100) ─────────────────────────────
 const ScoreGauge = ({ score, nivel, color }) => {
@@ -67,7 +67,7 @@ const accionCoach = (comp, a) => {
         case 'lealtad':
             return 'Termina de pagar tu(s) crédito(s) a satisfacción: cada crédito saldado suma 2 pts (máximo 3 créditos).';
         case 'constancia':
-            return `Ahorra todos los meses y acerca tu promedio (${fmt(a.promedioAhorroMensual || 0)}) al referente de $200.000.`;
+            return `Ahorra todos los meses y acerca tu promedio (${fmt(a.promedioAhorroMensual || 0)}) al referente de ${fmt(a.referenteConstancia || 200000)} definido por el comité.`;
         case 'penalizaciones':
             return 'Consigna tu ahorro mensual antes de la fecha límite: los recargos por atraso restan puntos.';
         default:
@@ -78,25 +78,36 @@ const accionCoach = (comp, a) => {
 const CapacidadBetaPage = () => {
     const { toast } = useUi();
     const [analysis, setAnalysis] = useState(null);
+    const [scoreHistory, setScoreHistory] = useState([]);
     const [loading, setLoading] = useState(true);
     const [montoRaw, setMontoRaw] = useState('');
     const [plazo, setPlazo] = useState(6);
-    const [tasa, setTasa] = useState(TASAS_VIGENTES[0]);
+    const [tasa, setTasa] = useState(TASAS_FALLBACK[0]);
     const [expandedVm, setExpandedVm] = useState(null);
 
     useEffect(() => {
-        const fetchAnalysis = async () => {
+        const fetchAll = async () => {
             try {
-                const res = await api.get('/admin/my/loan-capacity');
-                setAnalysis(res.data);
-            } catch (err) {
-                console.error(err);
-                toast.error('Error al cargar tu análisis de capacidad.');
+                const [capRes, histRes] = await Promise.allSettled([
+                    api.get('/admin/my/loan-capacity'),
+                    api.get('/admin/my/score-history'),
+                ]);
+                if (capRes.status === 'fulfilled') {
+                    setAnalysis(capRes.value.data);
+                    if (Array.isArray(capRes.value.data?.tasasVigentes) && capRes.value.data.tasasVigentes.length > 0) {
+                        setTasa(capRes.value.data.tasasVigentes[0]);
+                    }
+                } else {
+                    toast.error('Error al cargar tu análisis de capacidad.');
+                }
+                if (histRes.status === 'fulfilled') {
+                    setScoreHistory(histRes.value.data?.data || []);
+                }
             } finally {
                 setLoading(false);
             }
         };
-        fetchAnalysis();
+        fetchAll();
     }, [toast]);
 
     const hoy = useMemo(() => {
@@ -105,6 +116,25 @@ const CapacidadBetaPage = () => {
     }, []);
 
     const v = useMemo(() => analysis ? calcVerdict(analysis, { audience: 'user' }) : null, [analysis]);
+
+    // Tasas del comité (AppSettings vía backend); respaldo local si no llegan
+    const tasas = useMemo(() => (
+        Array.isArray(analysis?.tasasVigentes) && analysis.tasasVigentes.length > 0
+            ? analysis.tasasVigentes
+            : TASAS_FALLBACK
+    ), [analysis]);
+
+    // Evolución del score: cada snapshot guarda los INSUMOS y acá se recalcula
+    // con calcScore (misma fórmula que el score actual — fuente única)
+    const evolucion = useMemo(() => {
+        const puntos = scoreHistory
+            .map(h => {
+                const s = calcScore(h.datos);
+                return s ? { anio: h.anio, mes: h.mes, score: s.score, color: s.color } : null;
+            })
+            .filter(Boolean);
+        return puntos;
+    }, [scoreHistory]);
 
     // ── Simulación: sistema del fondo = abono fijo a capital + interés sobre saldo ──
     const sim = useMemo(() => {
@@ -208,13 +238,32 @@ const CapacidadBetaPage = () => {
                     <p className="text-[11px] font-black uppercase tracking-widest text-gray-400 mb-2">Score crediticio</p>
                     {v.score && <ScoreGauge score={v.score.score} nivel={v.score.nivel} color={v.score.color} />}
                     <p className="text-[11px] text-gray-400 mt-3 text-center">de 100 puntos · 6 componentes</p>
+                    {evolucion.length > 0 && (
+                        <div className="w-full mt-4 pt-3 border-t border-gray-50">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 text-center">Evolución mensual</p>
+                            <div className="flex items-end justify-center gap-1.5 h-14">
+                                {evolucion.map((p, i) => (
+                                    <div key={`${p.anio}-${p.mes}`} className="flex flex-col items-center gap-1" title={`${MESES_ABR[p.mes - 1]} ${p.anio}: ${p.score} pts`}>
+                                        <div
+                                            className={`w-4 rounded-t transition-all ${i === evolucion.length - 1 ? 'bg-emerald-500' : 'bg-emerald-200'}`}
+                                            style={{ height: `${Math.max(6, (p.score / 100) * 44)}px` }}
+                                        />
+                                        <span className="text-[8px] font-bold text-gray-400">{MESES_ABR[p.mes - 1]}</span>
+                                    </div>
+                                ))}
+                            </div>
+                            {evolucion.length < 3 && (
+                                <p className="text-[10px] text-gray-300 text-center mt-1.5">El historial se construye mes a mes con la foto de las 8:10 PM</p>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 <div className="lg:col-span-2 grid grid-cols-2 gap-3">
                     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
                         <div className="flex items-center gap-1.5 mb-1"><PiggyBank className="h-3.5 w-3.5 text-emerald-600" /><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Ahorro acumulado</span></div>
                         <p className="text-lg font-black text-emerald-600 tabular-nums">{fmt(analysis.ahorroTotal)}</p>
-                        <p className="text-[10px] text-gray-400 mt-0.5">Base del cálculo del cupo</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">Neto de recargos · base del cupo</p>
                     </div>
                     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
                         <div className="flex items-center gap-1.5 mb-1"><CreditCard className={`h-3.5 w-3.5 ${analysis.enMoraActual ? 'text-red-600' : 'text-gray-500'}`} /><span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Deuda pendiente</span></div>
@@ -292,7 +341,7 @@ const CapacidadBetaPage = () => {
                         <div>
                             <label className="text-[11px] font-black uppercase tracking-widest text-gray-500">Tasa mensual</label>
                             <div className="flex gap-2 mt-1.5">
-                                {TASAS_VIGENTES.map(t => (
+                                {tasas.map(t => (
                                     <button key={t} onClick={() => setTasa(t)}
                                         className={`flex-1 py-2.5 rounded-xl text-sm font-black transition-all min-h-[44px] ${
                                             tasa === t ? 'bg-brand-primary text-white shadow-md' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
@@ -301,7 +350,7 @@ const CapacidadBetaPage = () => {
                                     </button>
                                 ))}
                             </div>
-                            <p className="text-[10px] text-gray-400 mt-1.5">Tasas vigentes en los créditos activos del fondo. La tasa definitiva la fija el comité al aprobar.</p>
+                            <p className="text-[10px] text-gray-400 mt-1.5">Tasas definidas por el comité. La tasa definitiva se fija al aprobar cada crédito.</p>
                         </div>
                     </div>
 

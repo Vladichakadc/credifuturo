@@ -535,9 +535,35 @@ async function getLoanCapacityAnalysis(clientId) {
     if (!client) throw new Error('Socio no encontrado');
 
     // ── Ahorros ────────────────────────────────────────────────────────────
-    const ahorroTotal = parseFloat(await Saving.sum('amount', { where: { clientId } }) || 0);
-    const aporteInicial = parseFloat(await Saving.sum('amount', { where: { clientId, type: 'Aporte Inicial' } }) || 0);
-    const ahorroMensual = parseFloat(await Saving.sum('amount', { where: { clientId, type: 'Mensual' } }) || 0);
+    // Decisión del comité (plan Detalle de Cuenta + Capacidad, 7-jul-2026): el cupo 3×
+    // se calcula sobre el ahorro NETO acreditado (valorAhorrado), no sobre el bruto —
+    // el recargo por mora es una sanción, no capital del socio. Las devoluciones de
+    // intereses (amount negativo, sin valorAhorrado) restan del acumulado.
+    const savingRows = await Saving.findAll({
+        where: { clientId },
+        attributes: ['type', 'amount', 'valorAhorrado']
+    });
+    const netoDe = (s) => {
+        const v = parseFloat(s.valorAhorrado);
+        return v > 0 ? v : (parseFloat(s.amount) || 0);
+    };
+    const ahorroTotal = savingRows.reduce((t, s) => t + netoDe(s), 0);
+    const aporteInicial = savingRows.filter(s => s.type === 'Aporte Inicial').reduce((t, s) => t + netoDe(s), 0);
+    const ahorroMensual = savingRows.filter(s => s.type === 'Mensual').reduce((t, s) => t + netoDe(s), 0);
+
+    // ── Parámetros del comité (AppSettings, editables vía PUT /admin/settings/:key) ──
+    // referenteConstanciaAhorro: techo del promedio mensual para el componente Constancia
+    // tasasInteresVigentes: tasas mensuales ofrecidas en el simulador (ej. "1.4,1.6")
+    const AppSetting = require('../models/AppSetting');
+    const [referenteSetting, tasasSetting] = await Promise.all([
+        AppSetting.findOne({ where: { key: 'referenteConstanciaAhorro' } }),
+        AppSetting.findOne({ where: { key: 'tasasInteresVigentes' } }),
+    ]);
+    const referenteConstancia = referenteSetting && Number(referenteSetting.value) > 0
+        ? Number(referenteSetting.value)
+        : 200000;
+    const tasasVigentes = String(tasasSetting?.value || '1.4,1.6')
+        .split(',').map(Number).filter(n => n > 0);
 
     // ── Todas las cuotas pendientes del socio ──────────────────────────────
     const cuotasPendientes = await LoanPayment.findAll({
@@ -805,6 +831,10 @@ async function getLoanCapacityAnalysis(clientId) {
         mesesConAhorroMensual,
         promedioAhorroMensual,
         yearActual,
+        // Parámetros del comité: el cliente (calcScore/simulador) los usa en lugar de constantes
+        referenteConstancia,
+        tasasVigentes,
+        definicionAhorro: 'neto', // el cupo 3× se calcula sobre ahorro neto de recargos
         // Resolución vigente del fondo (mostrada al socio y al admin)
         resolucionVigente: {
             titulo: 'Primer Informe 2026',
@@ -1067,9 +1097,18 @@ router.get('/savings/ranking', async (req, res) => {
                 status: { [Sequelize.Op.like]: '%Devolucion Total Intereses%' }
             }
         }) || 0;
-        const totalDevolucionIntereses = Math.round(parseFloat(devolucionSum));
+        // Los registros de devolución se guardan en negativo: se reporta el valor absoluto.
+        const totalDevolucionIntereses = Math.abs(Math.round(parseFloat(devolucionSum)));
 
-        res.json({ ok: true, data, totalDevolucionIntereses });
+        // Valor de utilidades a distribuir: decisión del comité en AppSettings
+        // (editable desde el modal de Ranking). Sin valor fijo en código.
+        const AppSetting = require('../models/AppSetting');
+        const utilidadesSetting = await AppSetting.findOne({ where: { key: 'utilidadesADistribuir' } });
+        const utilidadesADistribuir = utilidadesSetting && Number(utilidadesSetting.value) > 0
+            ? Number(utilidadesSetting.value)
+            : null;
+
+        res.json({ ok: true, data, totalDevolucionIntereses, utilidadesADistribuir });
     } catch (err) {
         console.error('Error en /savings/ranking:', err);
         res.status(500).json({ ok: false, error: err.message });
@@ -3722,6 +3761,28 @@ router.get('/logs/access', async (req, res) => {
 // ENDPOINTS PARA SOCIOS (SOLO LECTURA)
 // ─────────────────────────────────────────────
 
+// GET /my/score-history — últimos 12 snapshots mensuales de los insumos del score.
+// El cliente recalcula cada score con calcScore() (fuente única de la fórmula).
+router.get('/my/score-history', verifyToken, requireFreshPassword, requireRole('user'), async (req, res) => {
+    try {
+        const ScoreSnapshot = require('../models/ScoreSnapshot');
+        const rows = await ScoreSnapshot.findAll({
+            where: { clientId: req.user.id },
+            order: [['anio', 'DESC'], ['mes', 'DESC']],
+            limit: 12
+        });
+        const data = rows.reverse().map(r => {
+            let datos = {};
+            try { datos = JSON.parse(r.datos); } catch { /* snapshot corrupto: se omite el detalle */ }
+            return { anio: r.anio, mes: r.mes, datos };
+        });
+        res.json({ ok: true, data });
+    } catch (err) {
+        console.error('my/score-history error:', err);
+        res.status(500).json({ ok: false, error: 'Error al leer el historial de score.' });
+    }
+});
+
 router.get('/my/loan-capacity', verifyToken, requireFreshPassword, requireRole('user'), async (req, res) => {
     try {
         const analysis = await getLoanCapacityAnalysis(req.user.id);
@@ -4111,3 +4172,5 @@ router.put('/settings/:key', verifyToken, requireFreshPassword, requireRole('adm
 });
 
 module.exports = router;
+// Reutilizada por el cron de snapshots de score en server.js
+module.exports.getLoanCapacityAnalysis = getLoanCapacityAnalysis;

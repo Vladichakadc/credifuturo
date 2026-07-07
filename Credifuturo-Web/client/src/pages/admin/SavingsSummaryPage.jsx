@@ -4,7 +4,7 @@ import {
     Users, DollarSign, PiggyBank, BarChart3, CheckCircle, CreditCard,
     AlertTriangle, Database, TrendingUp, Landmark, Activity,
     ChevronRight, ArrowUpRight, Loader2, RefreshCw, X, Search,
-    Clock, ShieldAlert, Trophy, Download, Calendar, ChevronDown, Maximize2
+    Clock, ShieldAlert, Trophy, Download, Calendar, ChevronDown, Maximize2, Save
 } from 'lucide-react';
 import ChartExpandModal, { analyzeMonthlyTrend, analyzeSavingsComposition } from '../../components/ChartExpandModal';
 import { useUi } from '../../context/UiContext';
@@ -312,6 +312,8 @@ const RankingModal = ({ onClose }) => {
     const [search, setSearch] = useState('');
     const [devolucionTotal, setDevolucionTotal] = useState(0);
     const [utilidadesDistribuir, setUtilidadesDistribuir] = useState('');
+    const [guardandoUtilidades, setGuardandoUtilidades] = useState(false);
+    const [utilidadesGuardadas, setUtilidadesGuardadas] = useState(false);
 
     useEffect(() => {
         const fetchRanking = async () => {
@@ -319,9 +321,15 @@ const RankingModal = ({ onClose }) => {
                 const res = await api.get('/admin/savings/ranking');
                 if (res.data.ok && Array.isArray(res.data.data)) {
                     setRanking(res.data.data);
-                    const devolucion = res.data.totalDevolucionIntereses || 0;
-                    setDevolucionTotal(devolucion);
-                    setUtilidadesDistribuir(devolucion > 0 ? devolucion.toString() : '5000000');
+                    // totalDevolucionIntereses llega en valor absoluto desde el backend
+                    setDevolucionTotal(res.data.totalDevolucionIntereses || 0);
+                    // Valor del comité guardado en AppSettings; si no existe aún,
+                    // se sugiere la devolución histórica real. Sin valores fijos en código.
+                    const sugerido = Number(res.data.utilidadesADistribuir) > 0
+                        ? Number(res.data.utilidadesADistribuir)
+                        : (res.data.totalDevolucionIntereses || 0);
+                    setUtilidadesDistribuir(sugerido > 0 ? sugerido.toLocaleString('es-CO') : '');
+                    setUtilidadesGuardadas(Number(res.data.utilidadesADistribuir) > 0);
                 }
             } catch (err) {
                 console.error('Error fetching ranking:', err.message);
@@ -331,6 +339,20 @@ const RankingModal = ({ onClose }) => {
         };
         fetchRanking();
     }, []);
+
+    const guardarUtilidades = async () => {
+        const valor = Number(String(utilidadesDistribuir).replace(/\D/g, '')) || 0;
+        if (valor <= 0) return;
+        setGuardandoUtilidades(true);
+        try {
+            await api.put('/admin/settings/utilidadesADistribuir', { value: valor });
+            setUtilidadesGuardadas(true);
+        } catch (err) {
+            console.error('Error guardando utilidades:', err.message);
+        } finally {
+            setGuardandoUtilidades(false);
+        }
+    };
 
     const AVATAR_COLORS = [
         'from-amber-400 to-yellow-600',
@@ -361,8 +383,11 @@ const RankingModal = ({ onClose }) => {
     const getInitials = (name) => name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase();
     const fmt = (v) => `$${Number(v).toLocaleString('es-CO')}`;
 
-    const totalBruto = ranking.reduce((sum, r) => sum + Number(r.totalNetSavings), 0);
-    const total = totalBruto - devolucionTotal;
+    // Base del reparto = suma del ahorro neto de los socios activos. Cada participación
+    // se mide contra esta suma para que los porcentajes sumen 100% y la distribución
+    // reparta exactamente el valor definido (antes se usaba una base ajustada por
+    // devoluciones que dejaba el reparto incompleto).
+    const total = ranking.reduce((sum, r) => sum + Number(r.totalNetSavings), 0);
 
     const maxVal = ranking.length > 0 ? Number(ranking[0].totalNetSavings) : 1;
 
@@ -447,25 +472,40 @@ const RankingModal = ({ onClose }) => {
                             <h2 className="text-2xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600">Ranking de Ahorro</h2>
                             <p className="text-gray-500 text-xs font-bold mt-0.5 uppercase tracking-widest flex items-center gap-1.5">
                                 <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
-                                Base: {fmt(total)}
+                                Base: {fmt(total)} · ahorro neto socios activos
+                            </p>
+                            <p className="text-gray-400 text-[10px] mt-0.5 normal-case">
+                                Reparto proporcional al ahorro neto · estimación, no constituye promesa de pago{devolucionTotal > 0 ? ` · devoluciones históricas: ${fmt(devolucionTotal)}` : ''}
                             </p>
                         </div>
                     </div>
 
                     <div className="flex items-center gap-3 bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
                         <div className="px-3">
-                            <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-0.5">💰 Ganancia a Distribuir</div>
+                            <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-0.5">
+                                💰 Ganancia a Distribuir
+                                {utilidadesGuardadas && <span className="ml-1.5 text-emerald-500 normal-case tracking-normal">· del comité ✓</span>}
+                            </div>
                             <input
                                 type="text"
                                 value={utilidadesDistribuir}
                                 onChange={(e) => {
                                     const val = e.target.value.replace(/\D/g, '');
                                     setUtilidadesDistribuir(val ? Number(val).toLocaleString('es-CO') : '');
+                                    setUtilidadesGuardadas(false);
                                 }}
                                 className="w-32 bg-transparent text-sm font-black text-emerald-600 outline-none placeholder:text-gray-300"
                                 placeholder="0"
                             />
                         </div>
+                        <button
+                            onClick={guardarUtilidades}
+                            disabled={guardandoUtilidades || utilidadesGuardadas || utilidadesParsed <= 0}
+                            title="Guardar como valor oficial del comité (AppSettings)"
+                            className={`p-3 rounded-xl transition-colors ${utilidadesGuardadas ? 'bg-emerald-50 text-emerald-500' : 'bg-gray-50 hover:bg-emerald-50 hover:text-emerald-600 text-gray-400'} disabled:opacity-60`}
+                        >
+                            {guardandoUtilidades ? <Loader2 className="h-5 w-5 animate-spin" /> : utilidadesGuardadas ? <CheckCircle className="h-5 w-5" /> : <Save className="h-5 w-5" />}
+                        </button>
                         <button onClick={onClose} className="p-3 bg-gray-50 hover:bg-red-50 hover:text-red-600 text-gray-400 rounded-xl transition-colors"><X className="h-5 w-5" /></button>
                     </div>
                 </div>

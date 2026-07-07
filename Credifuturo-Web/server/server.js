@@ -17,6 +17,7 @@ const LoanPayment = require('./models/LoanPayment');
 const Soporte = require('./models/Soporte'); // Tabla de soportes de pago
 const PasswordResetRequest = require('./models/PasswordResetRequest');
 const AppSetting = require('./models/AppSetting');
+const ScoreSnapshot = require('./models/ScoreSnapshot'); // Foto mensual de insumos del score crediticio
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -350,6 +351,63 @@ sequelize.sync().then(async () => {
         });
 
         console.log('[CRON] 📅 Backup automático programado para las 8:00 PM (hora Colombia) todos los días.');
+
+        // ── Snapshot mensual de insumos del score crediticio ────────────────
+        // Guarda (upsert) una foto por socio activo y por mes calendario con los
+        // datos que consume calcScore() en el cliente — la fórmula NO se duplica
+        // en el backend: el cliente recalcula el score histórico con la fuente única.
+        const runScoreSnapshots = async () => {
+            const { getLoanCapacityAnalysis } = require('./routes/admin');
+            const hoy = new Date();
+            const anio = hoy.getFullYear();
+            const mes = hoy.getMonth() + 1;
+            const socios = await Client.findAll({
+                where: { estatus: 'Activo', role: 'user' },
+                attributes: ['id']
+            });
+            let ok = 0, fail = 0;
+            for (const socio of socios) {
+                try {
+                    const a = await getLoanCapacityAnalysis(socio.id);
+                    const datos = {
+                        ahorroTotal: a.ahorroTotal,
+                        totalDeudaPendiente: a.totalDeudaPendiente,
+                        enMoraActual: a.enMoraActual,
+                        totalCuotasMoraEP: a.totalCuotasMoraEP,
+                        historialMoraTotal: a.historialMoraTotal,
+                        pagosTardios: a.pagosTardios,
+                        historialPagoTotal: a.historialPagoTotal,
+                        mesesComoSocio: a.mesesComoSocio,
+                        prestamosLiquidados: a.prestamosLiquidados,
+                        prestamosVigentes: (a.prestamosVigentes || []).map(l => ({ enMoraEP: !!l.enMoraEP })),
+                        mesesConAhorroMensual: a.mesesConAhorroMensual,
+                        promedioAhorroMensual: a.promedioAhorroMensual,
+                        totalAhorrosConPenalizacion: a.totalAhorrosConPenalizacion,
+                        referenteConstancia: a.referenteConstancia,
+                    };
+                    const [row, created] = await ScoreSnapshot.findOrCreate({
+                        where: { clientId: socio.id, anio, mes },
+                        defaults: { datos: JSON.stringify(datos) }
+                    });
+                    if (!created) await row.update({ datos: JSON.stringify(datos) });
+                    ok++;
+                } catch (e) {
+                    fail++;
+                    console.warn(`[SNAPSHOT] Socio ${socio.id} falló:`, e.message);
+                }
+            }
+            console.log(`[SNAPSHOT] Score snapshots ${anio}-${String(mes).padStart(2, '0')}: ${ok} ok, ${fail} con error.`);
+        };
+
+        cron.schedule('0 10 20 * * *', () => runScoreSnapshots().catch(e => console.error('[SNAPSHOT] Error:', e.message)), {
+            scheduled: true,
+            timezone: 'America/Bogota'
+        });
+        // Semilla al arrancar (20s después, para no competir con el arranque):
+        // garantiza que el mes en curso siempre tenga snapshot aunque el server
+        // no esté encendido a las 8:10 PM.
+        setTimeout(() => runScoreSnapshots().catch(e => console.error('[SNAPSHOT] Error semilla:', e.message)), 20000);
+        console.log('[CRON] 📈 Snapshot de score programado para las 8:10 PM (hora Colombia) + semilla al arranque.');
     });
 }).catch(err => {
     console.error('Database connection failed:', err);

@@ -8,15 +8,17 @@ const fmt = (n) => Math.round(n).toLocaleString('es-CO');
 
 // Descripciones de las tarjetas KPI principales. Centralizadas acá para coherencia entre vistas.
 export const kpiDescriptions = {
-    ahorro: 'Capital aportado al fondo (aportes iniciales más ahorros mensuales acreditados). Constituye la base de cálculo de la capacidad de endeudamiento.',
+    ahorro: 'Capital neto acreditado al fondo (aportes iniciales más ahorros mensuales, descontando recargos por mora e incluyendo devoluciones). Constituye la base de cálculo de la capacidad de endeudamiento.',
     deuda: 'Saldo insoluto de los créditos vigentes — capital pendiente de amortización, sin incluir intereses futuros.',
     maximo: 'Cupo máximo aprobable directamente por el comité, equivalente a tres veces el ahorro acreditado (regla del 3× del fondo).',
     capacidadDisponible: 'Margen de crédito aún disponible sin requerir votación: cupo máximo menos la deuda vigente. Si es negativo, cualquier nuevo desembolso debe someterse a asamblea.'
 };
 
 // Techo de referencia para el componente "Constancia de ahorro" (monto promedio mensual saludable).
-// Definido en $200.000 — alcanzar o superar este nivel otorga el máximo del subcomponente de monto.
+// El valor lo define el comité en AppSettings (clave referenteConstanciaAhorro) y llega en el
+// campo referenteConstancia del análisis; $200.000 queda solo como respaldo si el backend no lo envía.
 const TECHO_AHORRO_PROMEDIO = 200_000;
+const referenteDe = (a) => (Number(a?.referenteConstancia) > 0 ? Number(a.referenteConstancia) : TECHO_AHORRO_PROMEDIO);
 
 // Explicación dinámica de cada componente del score, contextualizada con los datos del socio.
 function explicarComponente(key, a, scoreData) {
@@ -73,9 +75,10 @@ function explicarComponente(key, a, scoreData) {
         const esperados = a.mesesComoSocio || 0;
         const prom = a.promedioAhorroMensual || 0;
         if (meses === 0) return 'Sin aportes mensuales registrados aún. Comience aportando con regularidad para escalar este componente (hasta 12 pts).';
+        const techoRef = referenteDe(a);
         const cobertura = esperados > 0 ? Math.min(100, (meses / esperados) * 100) : 100;
-        const pctMonto = Math.min(100, (prom / TECHO_AHORRO_PROMEDIO) * 100);
-        return `${meses} mes(es) con aporte de ${esperados} esperados (${cobertura.toFixed(0)}% de regularidad) · Aporte promedio $${fmt(prom)} (${pctMonto.toFixed(0)}% del referente $${fmt(TECHO_AHORRO_PROMEDIO)}). Premia a quien ahorra constante y con monto significativo.`;
+        const pctMonto = Math.min(100, (prom / techoRef) * 100);
+        return `${meses} mes(es) con aporte de ${esperados} esperados (${cobertura.toFixed(0)}% de regularidad) · Aporte promedio $${fmt(prom)} (${pctMonto.toFixed(0)}% del referente $${fmt(techoRef)} definido por el comité). Premia a quien ahorra constante y con monto significativo.`;
     }
     if (key === 'penalizaciones') {
         const pen = a.totalAhorrosConPenalizacion || 0;
@@ -147,7 +150,7 @@ export function calcScore(a) {
     const mesesConAhorro = a.mesesConAhorroMensual || 0;
     const promedio = a.promedioAhorroMensual || 0;
     const regularidadRatio = meses > 0 ? Math.min(mesesConAhorro / meses, 1) : (mesesConAhorro > 0 ? 1 : 0);
-    const montoRatio = Math.min(promedio / TECHO_AHORRO_PROMEDIO, 1);
+    const montoRatio = Math.min(promedio / referenteDe(a), 1);
     const constanciaPts = (regularidadRatio * 6) + (montoRatio * 6);
 
     // ── Castigo: Penalizaciones por Ahorro (historial completo) ──────────

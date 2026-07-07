@@ -16,7 +16,8 @@ import {
     ChevronRight,
     Loader2,
     Landmark,
-    Info
+    Info,
+    Download
 } from 'lucide-react';
 
 const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
@@ -206,8 +207,28 @@ const CuentaBetaPage = () => {
 
     return (
         <div className="space-y-6 pb-10">
+            {/* CSS de impresión: el layout usa contenedores con overflow que recortan
+                el contenido al imprimir (gotcha conocido) — se neutralizan acá. */}
+            <style>{`
+                @media print {
+                    @page { size: A4 portrait; margin: 12mm 14mm; }
+                    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: white !important; }
+                    * { overflow: visible !important; max-height: none !important; }
+                    .print\\:hidden { display: none !important; }
+                    .shadow-sm, .shadow-md { box-shadow: none !important; }
+                    tr, .rounded-2xl { page-break-inside: avoid !important; }
+                    thead { display: table-header-group !important; }
+                }
+            `}</style>
+
+            {/* Encabezado solo para el PDF impreso */}
+            <div className="hidden print:block mb-4 pb-3 border-b-4 border-brand-primary">
+                <h1 className="text-2xl font-black uppercase tracking-widest text-brand-primary">Extracto de Cuenta</h1>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Credifuturo · generado el {fmtFecha(hoy)} · valores netos de recargos</p>
+            </div>
+
             {/* Encabezado */}
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3 print:hidden">
                 <div>
                     <h1 className="text-2xl font-bold text-brand-primary flex items-center gap-2">
                         <Receipt className="h-6 w-6 text-emerald-600" />
@@ -218,6 +239,12 @@ const CuentaBetaPage = () => {
                         Extracto unificado de tu cuenta · datos al {fmtFecha(hoy)}
                     </p>
                 </div>
+                <button
+                    onClick={() => window.print()}
+                    className="ml-auto bg-brand-primary hover:bg-brand-dark text-white px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-brand-primary/20 transition-all active:scale-95 flex items-center gap-2 min-h-[44px]"
+                >
+                    <Download className="h-4 w-4" /> Informe PDF
+                </button>
             </div>
 
             {/* Mi posición */}
@@ -255,7 +282,7 @@ const CuentaBetaPage = () => {
                         <h2 className="text-base font-bold text-gray-800">Extracto de movimientos</h2>
                         <p className="text-[11px] text-gray-400">Ahorros, aportes y devoluciones en una sola línea de tiempo, con saldo corrido</p>
                     </div>
-                    <div className="ml-auto flex items-center gap-1.5 flex-wrap">
+                    <div className="ml-auto flex items-center gap-1.5 flex-wrap print:hidden">
                         {['Todos', ...availableYears].map(y => (
                             <button
                                 key={y}
