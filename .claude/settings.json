@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(node -e ' *)",
-      "Bash(node db_audit_capacidad.js)"
+      "Bash(node db_audit_capacidad.js)",
+      "Bash(git checkout *)",
+      "Bash(npm run *)"
     ]
   }
 }
