@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, useLocation, Link } from 'react-router-dom';
 import {
     CreditCard,
@@ -10,7 +10,6 @@ import {
     LogOut,
     List,
     ChevronDown,
-    TrendingUp,
     Scale,
     DollarSign,
     FileText,
@@ -144,8 +143,6 @@ const UserDashboardLayout = ({ user, onLogout }) => {
             children: [
                 { icon: LayoutDashboard, label: 'Mi Panel', path: '/dashboard' },
                 { icon: Landmark, label: 'Nuestro Fondo', path: '/dashboard/fondo' },
-                { icon: TrendingUp, label: 'Detalle de la Cuenta', path: '/dashboard/savings/summary' },
-                { icon: Receipt, label: 'Detalle de Cuenta (beta)', path: '/dashboard/account-statement' },
             ]
         },
         {
@@ -171,10 +168,14 @@ const UserDashboardLayout = ({ user, onLogout }) => {
             ]
         },
         {
-            type: 'link',
+            type: 'submenu',
+            key: 'ahorros',
             icon: PiggyBank,
             label: 'Ahorros',
-            path: '/dashboard/savings'
+            children: [
+                { icon: Receipt, label: 'Detalle de la Cuenta', path: '/dashboard/cuenta' },
+                { icon: List, label: 'Lista de Ahorros', path: '/dashboard/savings' },
+            ]
         },
         {
             type: 'link',
@@ -183,6 +184,19 @@ const UserDashboardLayout = ({ user, onLogout }) => {
             path: '/dashboard/contributions'
         }
     ];
+
+    // Abre automáticamente el submenú que contiene la ruta activa,
+    // para que el socio siempre vea dónde está dentro del menú.
+    useEffect(() => {
+        navItems.forEach(item => {
+            if (item.type !== 'submenu') return;
+            const hasActive = item.children.some(c => location.pathname === c.path.split('?')[0]);
+            if (hasActive) {
+                setOpenSubmenus(prev => (prev[item.key] ? prev : { ...prev, [item.key]: true }));
+            }
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [location.pathname]);
 
     const userInitial = user?.name?.charAt(0)?.toUpperCase() || 'S';
     const userName = `${user?.name || 'Socio'} ${user?.surname1 || ''}`.trim();

@@ -737,7 +737,7 @@ const PowerBITooltip = ({ active, payload, label, showLabel = true }) => {
     );
 };
 
-const AccountSummaryChart = ({ stats }) => {
+export const AccountSummaryChart = ({ stats }) => {
     // Solo los componentes del patrimonio: el total va en el centro de la dona
     // (mostrarlo como tercera barra duplicaba visualmente sus componentes).
     const barData = useMemo(() => [
@@ -839,7 +839,7 @@ const AccountSummaryChart = ({ stats }) => {
     );
 };
 
-const MonthlySavingsTrendChart = ({ data, availableYears, selectedYear }) => {
+export const MonthlySavingsTrendChart = ({ data, availableYears, selectedYear }) => {
     if (!data || data.length === 0) return null;
 
     const showMultiple = selectedYear === 'Todos' && availableYears && availableYears.length > 0;

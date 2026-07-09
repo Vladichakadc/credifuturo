@@ -553,7 +553,7 @@ const CapacidadBetaPage = () => {
                     <b className="text-gray-600">Definiciones:</b> el <b>cupo máximo</b> es 3× tu ahorro acreditado (regla del fondo); el <b>cupo disponible</b> descuenta tu deuda vigente.
                     La simulación usa el sistema real del fondo: abono fijo a capital más interés sobre el saldo, por eso la primera cuota es la más alta y baja cada mes.
                     Versión beta en evaluación — el análisis completo actual sigue en <Link to="/dashboard/loan-capacity" className="text-brand-primary font-semibold underline">Analizador de Capacidad</Link>,
-                    y tu extracto en <Link to="/dashboard/account-statement" className="text-brand-primary font-semibold underline">Detalle de Cuenta (beta)</Link>.
+                    y tu extracto en <Link to="/dashboard/cuenta" className="text-brand-primary font-semibold underline">Detalle de la Cuenta</Link>.
                 </p>
             </div>
         </div>

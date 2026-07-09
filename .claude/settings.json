@@ -4,7 +4,13 @@
       "Bash(node -e ' *)",
       "Bash(node db_audit_capacidad.js)",
       "Bash(git checkout *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(git merge *)",
+      "Bash(git push *)",
+      "Bash(git stash *)",
+      "Bash(grep -n \"const [A-Z]\\\\|^const \\\\|function \\\\|=> {$\" Credifuturo-Web/client/src/pages/admin/SavingsSummaryPage.jsx)",
+      "Bash(git rm *)",
+      "Bash(npx eslint *)"
     ]
   }
 }

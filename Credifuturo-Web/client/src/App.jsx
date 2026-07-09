@@ -36,9 +36,8 @@ import UserPaymentsListPage from './pages/user/UserPaymentsListPage';
 import UserAccountDetailsPage from './pages/user/UserAccountDetailsPage';
 import UserStatutesPage from './pages/user/UserStatutesPage';
 import UserResolutionsPage from './pages/user/UserResolutionsPage';
-import UserSavingsSummaryPage from './pages/user/UserSavingsSummaryPage';
 import UserLoanAnalyzerPage from './pages/user/UserLoanAnalyzerPage';
-import CuentaBetaPage from './pages/user/CuentaBetaPage';
+import DetalleCuentaPage from './pages/user/DetalleCuentaPage';
 import CapacidadBetaPage from './pages/user/CapacidadBetaPage';
 
 import Navbar from './components/Navbar';
@@ -140,10 +139,12 @@ function App() {
                     <Route path="account-details" element={<UserAccountDetailsPage />} />
                     <Route path="statutes" element={<UserStatutesPage />} />
                     <Route path="resolutions" element={<UserResolutionsPage />} />
-                    <Route path="savings/summary" element={<UserSavingsSummaryPage />} />
                     <Route path="loan-capacity" element={<UserLoanAnalyzerPage />} />
-                    {/* Betas del plan Detalle de Cuenta + Capacidad: en evaluación, no reemplazan las vistas actuales */}
-                    <Route path="account-statement" element={<CuentaBetaPage />} />
+                    {/* Detalle de la Cuenta unificado (fusiona la vista clásica y la beta) */}
+                    <Route path="cuenta" element={<DetalleCuentaPage />} />
+                    {/* Rutas antiguas: redirigen a la vista unificada */}
+                    <Route path="savings/summary" element={<Navigate to="/dashboard/cuenta" replace />} />
+                    <Route path="account-statement" element={<Navigate to="/dashboard/cuenta" replace />} />
                     <Route path="loan-capacity-beta" element={<CapacidadBetaPage />} />
                 </Route>
 
