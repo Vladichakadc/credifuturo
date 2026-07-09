@@ -5,8 +5,10 @@ import { calcVerdict } from '../../utils/loanCapacity';
 import { useUi } from '../../context/UiContext';
 import ChartExpandModal, { analyzeMonthlyTrend, analyzeSavingsComposition } from '../../components/ChartExpandModal';
 import { AccountSummaryChart, MonthlySavingsTrendChart } from '../admin/SavingsSummaryPage';
+import * as XLSX from 'xlsx';
 import {
     PiggyBank,
+    FileSpreadsheet,
     Scale,
     CalendarClock,
     ArrowDownCircle,
@@ -25,10 +27,11 @@ import {
 } from 'lucide-react';
 
 /**
- * DetalleCuentaPage — vista unificada del estado de cuenta del socio.
- * Fusiona la antigua "Detalle de la Cuenta" (gráficos analíticos + préstamos)
- * con "Detalle de Cuenta (beta)" (extracto con saldo corrido, recargos visibles,
- * relación con el fondo). Un solo lugar, sin datos repetidos.
+ * DetalleCuentaPage — vista única de Ahorros del socio.
+ * Fusiona tres páginas: "Detalle de la Cuenta" (gráficos analíticos + préstamos),
+ * "Detalle de Cuenta (beta)" (extracto con saldo corrido, recargos, relación con
+ * el fondo) y "Lista de Ahorros" (KPIs de comportamiento, Excel, filtros).
+ * Un solo lugar, sin datos repetidos.
  */
 
 const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
@@ -93,6 +96,8 @@ const DetalleCuentaPage = () => {
     const [capacity, setCapacity] = useState(null);
     const [utilidades, setUtilidades] = useState(null);
     const [yearFilter, setYearFilter] = useState('Todos');
+    const [tipoFilter, setTipoFilter] = useState('Todos');
+    const [verTodo, setVerTodo] = useState(false);
     const [expandCompo, setExpandCompo] = useState(false);
     const [expandTrend, setExpandTrend] = useState(false);
 
@@ -153,6 +158,10 @@ const DetalleCuentaPage = () => {
                 recargo: esDevolucion ? 0 : Math.max(0, bruto - neto),
                 dias: Number(s.diasPenalizacion || 0),
                 neto,
+                // Campos crudos para la exportación a Excel (no se muestran en pantalla)
+                externalId: s.externalId || '', estado: s.status || '',
+                banco: s.banco || '', observaciones: s.observaciones || '',
+                periodo: mesNum ? `${MESES_ABR[mesNum - 1]} ${s.anioAbonado || ''}`.trim() : '',
             });
         });
         aportes.forEach(a => {
@@ -160,6 +169,8 @@ const DetalleCuentaPage = () => {
             rows.push({
                 id: `a-${a.id}`, fecha: parseFecha(a.date), tipo: 'aporte',
                 concepto: 'Aporte inicial', bruto: v, recargo: 0, dias: 0, neto: v,
+                externalId: a.externalId || '', estado: a.status || '',
+                banco: a.banco || '', observaciones: a.observaciones || '', periodo: '',
             });
         });
         rows.sort((x, y) => (x.fecha?.getTime() || 0) - (y.fecha?.getTime() || 0));
@@ -205,10 +216,13 @@ const DetalleCuentaPage = () => {
     }, [trendInfo.years, movimientos]);
 
     const visibles = useMemo(() => (
-        yearFilter === 'Todos'
-            ? movimientos
-            : movimientos.filter(r => r.fecha?.getFullYear() === Number(yearFilter))
-    ), [movimientos, yearFilter]);
+        movimientos
+            .filter(r => yearFilter === 'Todos' || r.fecha?.getFullYear() === Number(yearFilter))
+            .filter(r => tipoFilter === 'Todos' || r.tipo === tipoFilter)
+    ), [movimientos, yearFilter, tipoFilter]);
+
+    const FILAS_INICIALES = 30;
+    const visiblesLimitados = verTodo ? visibles : visibles.slice(0, FILAS_INICIALES);
 
     // ── Mi posición (siempre historial completo) ─────────────────────
     const patrimonioNeto = movimientos.length > 0 ? movimientos[0].saldo : 0;
@@ -262,16 +276,57 @@ const DetalleCuentaPage = () => {
         const montos = trendInfo.rows.map(r => Number(r[yr] || 0));
         const transcurridos = Number(yr) === currentYear ? hoy.getMonth() + 1 : 12;
         const conAhorro = montos.slice(0, transcurridos).filter(v => v > 0).length;
-        let mejorIdx = -1, mejorVal = 0;
-        montos.forEach((v, i) => { if (v > mejorVal) { mejorVal = v; mejorIdx = i; } });
+        // Promedio de los meses CON ahorro: coincide con la línea "Prom" del gráfico
+        const positivos = montos.filter(v => v > 0);
+        const promedio = positivos.length ? positivos.reduce((a, b) => a + b, 0) / positivos.length : 0;
         // Racha: meses seguidos con ahorro contando hacia atrás; el mes en curso
         // no rompe la racha si aún no registra (puede estar por pagar).
         let inicio = transcurridos - 1;
         if (montos[inicio] <= 0 && Number(yr) === currentYear) inicio -= 1;
         let racha = 0;
         for (let i = inicio; i >= 0 && montos[i] > 0; i--) racha++;
-        return { anio: yr, conAhorro, transcurridos, mejorMes: mejorIdx >= 0 ? MESES_ABR[mejorIdx] : null, mejorVal, racha };
+        return { anio: yr, conAhorro, transcurridos, promedio, racha };
     }, [trendInfo.rows, yearFilter, currentYear, hoy]);
+
+    // Cumplimiento histórico: % de aportes de ahorro pagados sin recargo (toda la historia)
+    const cumplimiento = useMemo(() => {
+        const ahorros = movimientos.filter(r => r.tipo === 'ahorro');
+        const aTiempo = ahorros.filter(r => r.recargo === 0).length;
+        const ultimo = ahorros.reduce((max, r) => (!max || (r.fecha && r.fecha > max)) ? r.fecha : max, null);
+        return {
+            pct: ahorros.length > 0 ? Math.round((aTiempo / ahorros.length) * 100) : 100,
+            aTiempo,
+            total: ahorros.length,
+            ultimoAporte: ultimo,
+            diasDesdeUltimo: ultimo ? Math.floor((hoy - ultimo) / 86400000) : null,
+        };
+    }, [movimientos, hoy]);
+
+    // Exportación a Excel: el libro completo de movimientos con columnas crudas
+    const exportarExcel = () => {
+        if (movimientos.length === 0) { toast.error('No hay movimientos para exportar.'); return; }
+        const cronologico = [...movimientos].reverse(); // más antiguo primero, como un libro contable
+        const data = cronologico.map(r => ({
+            'Fecha': r.fecha ? r.fecha.toISOString().split('T')[0] : '',
+            'Tipo': TIPO_META[r.tipo]?.label || r.tipo,
+            'Concepto': r.concepto,
+            'Periodo abonado': r.periodo,
+            'Id_VM': r.externalId,
+            'Estado': r.estado,
+            'Valor Bruto': r.tipo === 'devolucion' ? '' : r.bruto,
+            'Recargo': r.recargo > 0 ? -r.recargo : '',
+            'Días de atraso': r.dias > 0 ? r.dias : '',
+            'Valor Neto': r.neto,
+            'Saldo Acumulado': r.saldo,
+            'Banco': r.banco,
+            'Observaciones': r.observaciones,
+        }));
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Mis Ahorros');
+        XLSX.writeFile(wb, `Mis_Ahorros_${hoy.toISOString().split('T')[0]}.xlsx`);
+        toast.success('Excel exportado exitosamente');
+    };
 
     const relacion = useMemo(() => {
         const interesesPagados = payments
@@ -346,10 +401,10 @@ const DetalleCuentaPage = () => {
                 <div>
                     <h1 className="text-2xl font-bold text-brand-primary flex items-center gap-2">
                         <PiggyBank className="h-6 w-6 text-emerald-600" />
-                        Detalle de la Cuenta
+                        Mis Ahorros
                     </h1>
                     <p className="text-gray-600 text-sm mt-1">
-                        Tu estado de cuenta completo · datos al {fmtFecha(hoy)}
+                        Detalle completo de tu cuenta · datos al {fmtFecha(hoy)}
                     </p>
                 </div>
                 <div className="ml-auto flex items-center gap-2 flex-wrap">
@@ -357,7 +412,7 @@ const DetalleCuentaPage = () => {
                         {['Todos', ...availableYears].map(y => (
                             <button
                                 key={y}
-                                onClick={() => setYearFilter(y)}
+                                onClick={() => { setYearFilter(y); setVerTodo(false); }}
                                 className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors min-h-[32px] ${
                                     String(yearFilter) === String(y)
                                         ? 'bg-brand-primary text-white'
@@ -369,7 +424,13 @@ const DetalleCuentaPage = () => {
                         ))}
                     </div>
                     <button
-                        onClick={() => window.print()}
+                        onClick={exportarExcel}
+                        className="bg-white border-2 border-brand-primary/20 hover:border-brand-primary/50 text-brand-primary px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest transition-all active:scale-95 flex items-center gap-2 min-h-[44px]"
+                    >
+                        <FileSpreadsheet className="h-4 w-4" /> Excel
+                    </button>
+                    <button
+                        onClick={() => { setVerTodo(true); setTimeout(() => window.print(), 150); }}
                         className="bg-brand-primary hover:bg-brand-dark text-white px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-brand-primary/20 transition-all active:scale-95 flex items-center gap-2 min-h-[44px]"
                     >
                         <Download className="h-4 w-4" /> Informe PDF
@@ -412,6 +473,7 @@ const DetalleCuentaPage = () => {
                     </div>
                     <p className="text-[10px] text-white/40 mt-2">
                         Histórico completo, neto de recargos · patrimonio = ahorros + aportes − devoluciones
+                        {cumplimiento.ultimoAporte && ` · último aporte: ${fmtFecha(cumplimiento.ultimoAporte)} (hace ${cumplimiento.diasDesdeUltimo} día${cumplimiento.diasDesdeUltimo === 1 ? '' : 's'})`}
                     </p>
                 </div>
             </div>
@@ -469,7 +531,7 @@ const DetalleCuentaPage = () => {
                                 <span className="hidden sm:inline">Ampliar y analizar</span>
                             </button>
                         </h2>
-                        {/* Diagnóstico de constancia del año en foco */}
+                        {/* Diagnóstico de constancia del año en foco + disciplina histórica */}
                         <div className="flex items-center gap-2 flex-wrap mb-2 print:hidden">
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold">
                                 <Activity className="h-3 w-3" /> {constancia.anio}: ahorró {constancia.conAhorro} de {constancia.transcurridos} meses
@@ -479,11 +541,16 @@ const DetalleCuentaPage = () => {
                                     Racha: {constancia.racha} meses seguidos
                                 </span>
                             )}
-                            {constancia.mejorMes && (
+                            {constancia.promedio > 0 && (
                                 <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold">
-                                    Mejor mes: {constancia.mejorMes} ({fmt(constancia.mejorVal)})
+                                    Promedio mensual: {fmt(constancia.promedio)}
                                 </span>
                             )}
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                cumplimiento.pct >= 90 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                            }`}>
+                                Cumplimiento histórico: {cumplimiento.pct}% ({cumplimiento.aTiempo} de {cumplimiento.total} a tiempo)
+                            </span>
                         </div>
                         <div className="flex-1 min-h-[220px]">
                             <MonthlySavingsTrendChart data={trendInfo.rows} availableYears={trendInfo.years} selectedYear={yearFilter} />
@@ -516,12 +583,29 @@ const DetalleCuentaPage = () => {
 
             {/* Extracto de movimientos con saldo corrido */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b border-gray-100">
-                    <h2 className="text-base font-bold text-gray-800">Extracto de movimientos</h2>
-                    <p className="text-[11px] text-gray-400">
-                        Ahorros, aportes y devoluciones en una sola línea de tiempo, con saldo corrido
-                        {yearFilter !== 'Todos' ? ` · mostrando ${yearFilter}` : ''}
-                    </p>
+                <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center gap-3">
+                    <div>
+                        <h2 className="text-base font-bold text-gray-800">Extracto de movimientos</h2>
+                        <p className="text-[11px] text-gray-400">
+                            Ahorros, aportes y devoluciones en una sola línea de tiempo, con saldo corrido
+                            {yearFilter !== 'Todos' ? ` · mostrando ${yearFilter}` : ''} · {visibles.length} registro{visibles.length === 1 ? '' : 's'}
+                        </p>
+                    </div>
+                    <div className="ml-auto flex items-center gap-1.5 flex-wrap print:hidden">
+                        {[['Todos', 'Todos'], ['ahorro', 'Ahorros'], ['aporte', 'Aportes'], ['devolucion', 'Devoluciones']].map(([val, label]) => (
+                            <button
+                                key={val}
+                                onClick={() => { setTipoFilter(val); setVerTodo(false); }}
+                                className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors min-h-[32px] ${
+                                    tipoFilter === val
+                                        ? 'bg-brand-primary text-white'
+                                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                }`}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
                 {visibles.length === 0 ? (
@@ -542,7 +626,7 @@ const DetalleCuentaPage = () => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {visibles.map((r, i) => {
+                                    {visiblesLimitados.map((r, i) => {
                                         const meta = TIPO_META[r.tipo];
                                         return (
                                             <tr key={r.id} className={`border-t border-gray-50 ${i % 2 === 1 ? 'bg-gray-50/40' : ''}`}>
@@ -570,7 +654,7 @@ const DetalleCuentaPage = () => {
 
                         {/* Móvil: tarjetas */}
                         <div className="md:hidden divide-y divide-gray-50">
-                            {visibles.map(r => {
+                            {visiblesLimitados.map(r => {
                                 const meta = TIPO_META[r.tipo];
                                 return (
                                     <div key={r.id} className="px-4 py-3 flex items-start gap-3">
@@ -593,6 +677,18 @@ const DetalleCuentaPage = () => {
                                 );
                             })}
                         </div>
+
+                        {/* Paginación progresiva: primeros 30, botón para el resto */}
+                        {!verTodo && visibles.length > FILAS_INICIALES && (
+                            <div className="px-5 py-3 border-t border-gray-100 text-center print:hidden">
+                                <button
+                                    onClick={() => setVerTodo(true)}
+                                    className="text-xs font-bold text-brand-primary hover:text-brand-dark underline min-h-[36px] px-4"
+                                >
+                                    Ver los {visibles.length - FILAS_INICIALES} movimiento(s) restantes
+                                </button>
+                            </div>
+                        )}
                     </>
                 )}
             </div>
@@ -624,6 +720,9 @@ const DetalleCuentaPage = () => {
                             : relacion.neta >= 0
                                 ? `El fondo te ha devuelto ${fmt(relacion.neta)} más de lo que has pagado en intereses — tu ahorro también trabaja para ti.`
                                 : `Has aportado ${fmt(Math.abs(relacion.neta))} netos en intereses al fondo; esa ganancia se redistribuye entre todos los socios, incluido tú.`}
+                        {relacion.devoluciones > 0 && heroTotals.ahorros > 0 && (
+                            ` Las devoluciones equivalen a un ${((relacion.devoluciones / heroTotals.ahorros) * 100).toFixed(1).replace('.', ',')}% sobre tu ahorro mensual neto.`
+                        )}
                     </p>
                     {utilidades && (
                         <div className="mt-3 pt-3 border-t border-gray-50">

@@ -461,7 +461,7 @@ const MiPanelPage = () => {
                             <>{MESES_ABR[hoy.getMonth()]} aún está pendiente. Ahorrar a tiempo evita la penalización{racha.streak > 0 && <> y mantiene tu racha de <b className="text-brand-primary">{racha.streak} {racha.streak === 1 ? 'mes' : 'meses'}</b></>}.</>
                         )}
                     </p>
-                    <Link to="/dashboard/savings" className="inline-flex items-center gap-1 text-xs font-bold text-brand-primary hover:text-brand-dark mt-2 transition-colors">
+                    <Link to="/dashboard/cuenta" className="inline-flex items-center gap-1 text-xs font-bold text-brand-primary hover:text-brand-dark mt-2 transition-colors">
                         Ver mis ahorros <ChevronRight className="h-3.5 w-3.5" />
                     </Link>
                 </div>

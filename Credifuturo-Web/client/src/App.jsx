@@ -30,7 +30,6 @@ import UserDashboardLayout from './layouts/UserDashboardLayout';
 import UserDashboardHome from './pages/user/UserDashboardHome';
 import MiPanelPage from './pages/user/MiPanelPage';
 import UserLoansListPage from './pages/user/UserLoansListPage';
-import UserSavingsListPage from './pages/user/UserSavingsListPage';
 import UserContributionsListPage from './pages/user/UserContributionsListPage';
 import UserPaymentsListPage from './pages/user/UserPaymentsListPage';
 import UserAccountDetailsPage from './pages/user/UserAccountDetailsPage';
@@ -133,7 +132,7 @@ function App() {
                     {/* UserDashboardHome queda accesible en /dashboard/mi-resumen */}
                     <Route path="mi-resumen" element={<UserDashboardHome />} />
                     <Route path="loans" element={<UserLoansListPage />} />
-                    <Route path="savings" element={<UserSavingsListPage />} />
+                    <Route path="savings" element={<Navigate to="/dashboard/cuenta" replace />} />
                     <Route path="contributions" element={<UserContributionsListPage />} />
                     <Route path="payments" element={<UserPaymentsListPage />} />
                     <Route path="account-details" element={<UserAccountDetailsPage />} />

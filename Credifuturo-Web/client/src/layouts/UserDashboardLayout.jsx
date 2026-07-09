@@ -14,7 +14,6 @@ import {
     DollarSign,
     FileText,
     Landmark,
-    Receipt,
     Gauge
 } from 'lucide-react';
 import { cn } from '../utils/cn';
@@ -25,7 +24,7 @@ import logo from '../assets/logo.jpg';
 const USER_BOTTOM_NAV = [
     { icon: LayoutDashboard, label: 'Inicio', path: '/dashboard', exact: true },
     { icon: DollarSign, label: 'Préstamos', path: '/dashboard/loans' },
-    { icon: PiggyBank, label: 'Ahorros', path: '/dashboard/savings' },
+    { icon: PiggyBank, label: 'Ahorros', path: '/dashboard/cuenta' },
     { icon: Wallet, label: 'Aportes', path: '/dashboard/contributions' },
     { icon: Menu, label: 'Menú', action: 'menu' },
 ];
@@ -127,7 +126,7 @@ const SidebarSubmenu = ({ icon: Icon, label, children, isOpen, onToggle, locatio
 
 const UserDashboardLayout = ({ user, onLogout }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
-    const [openSubmenus, setOpenSubmenus] = useState({ inicio: true, estatutos: false, prestamos: false, ahorros: false });
+    const [openSubmenus, setOpenSubmenus] = useState({ inicio: true, estatutos: false, prestamos: false });
     const location = useLocation();
 
     const toggleSubmenu = (key) => {
@@ -168,14 +167,10 @@ const UserDashboardLayout = ({ user, onLogout }) => {
             ]
         },
         {
-            type: 'submenu',
-            key: 'ahorros',
+            type: 'link',
             icon: PiggyBank,
             label: 'Ahorros',
-            children: [
-                { icon: Receipt, label: 'Detalle de la Cuenta', path: '/dashboard/cuenta' },
-                { icon: List, label: 'Lista de Ahorros', path: '/dashboard/savings' },
-            ]
+            path: '/dashboard/cuenta'
         },
         {
             type: 'link',
