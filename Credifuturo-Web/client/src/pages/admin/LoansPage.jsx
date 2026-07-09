@@ -150,7 +150,13 @@ const LoansPage = () => {
             setDisbursedForm(prev => ({
                 ...prev,
                 nombre: client.name || '',
-                apellido: `${client.surname1 || ''} ${client.surname2 || ''}`.trim()
+                apellido: `${client.surname1 || ''} ${client.surname2 || ''}`.trim(),
+                // Tasa asignada al socio (regla de devoluciones: 1,6% si retiró
+                // ahorros el año anterior, 1,4% si no). Solo en creación; al
+                // editar se respeta la tasa pactada del préstamo.
+                ...(!isEditing && client.porcentajePrestamo
+                    ? { interesMensual: parseFloat((Number(client.porcentajePrestamo) * 100).toFixed(4)) }
+                    : {})
             }));
         }
         // Solo verificar en modo creación (no al editar)

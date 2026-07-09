@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import api from '../../config/api';
 import { calcVerdict, calcScore, colorMap } from '../../utils/loanCapacity';
 import { useUi } from '../../context/UiContext';
+import EstadoPrestamosSection from '../../components/EstadoPrestamosSection';
 import {
     Scale,
     Loader2,
@@ -16,8 +17,6 @@ import {
     CheckCircle,
     AlertTriangle,
     Lock,
-    ChevronDown,
-    ChevronRight,
     Target,
     Info,
     Vote
@@ -79,23 +78,30 @@ const CapacidadBetaPage = () => {
     const { toast } = useUi();
     const [analysis, setAnalysis] = useState(null);
     const [scoreHistory, setScoreHistory] = useState([]);
+    const [payments, setPayments] = useState([]);
+    const [loans, setLoans] = useState([]);
     const [loading, setLoading] = useState(true);
     const [montoRaw, setMontoRaw] = useState('');
     const [plazo, setPlazo] = useState(6);
     const [tasa, setTasa] = useState(TASAS_FALLBACK[0]);
-    const [expandedVm, setExpandedVm] = useState(null);
 
     useEffect(() => {
         const fetchAll = async () => {
             try {
-                const [capRes, histRes] = await Promise.allSettled([
+                const [capRes, histRes, payRes, loanRes] = await Promise.allSettled([
                     api.get('/admin/my/loan-capacity'),
                     api.get('/admin/my/score-history'),
+                    api.get('/admin/my/payments'),
+                    api.get('/admin/my/loans'),
                 ]);
                 if (capRes.status === 'fulfilled') {
                     setAnalysis(capRes.value.data);
-                    if (Array.isArray(capRes.value.data?.tasasVigentes) && capRes.value.data.tasasVigentes.length > 0) {
-                        setTasa(capRes.value.data.tasasVigentes[0]);
+                    // La tasa del socio manda (regla de devoluciones); las vigentes son respaldo
+                    const d = capRes.value.data;
+                    if (d?.tasaAsignada > 0) {
+                        setTasa(d.tasaAsignada);
+                    } else if (Array.isArray(d?.tasasVigentes) && d.tasasVigentes.length > 0) {
+                        setTasa(d.tasasVigentes[0]);
                     }
                 } else {
                     toast.error('Error al cargar tu análisis de capacidad.');
@@ -103,6 +109,8 @@ const CapacidadBetaPage = () => {
                 if (histRes.status === 'fulfilled') {
                     setScoreHistory(histRes.value.data?.data || []);
                 }
+                if (payRes.status === 'fulfilled') setPayments(payRes.value.data?.data || []);
+                if (loanRes.status === 'fulfilled') setLoans(loanRes.value.data?.data || []);
             } finally {
                 setLoading(false);
             }
@@ -224,7 +232,7 @@ const CapacidadBetaPage = () => {
             <div>
                 <h1 className="text-2xl font-bold text-brand-primary flex items-center gap-2">
                     <Scale className="h-6 w-6 text-emerald-600" />
-                    Mi Capacidad de Préstamo
+                    Simulador de Préstamo
                     <span className="text-[10px] font-black uppercase tracking-widest bg-lime-100 text-lime-700 px-2 py-0.5 rounded-full">Beta</span>
                 </h1>
                 <p className="text-gray-600 text-sm mt-1">
@@ -341,16 +349,21 @@ const CapacidadBetaPage = () => {
                         <div>
                             <label className="text-[11px] font-black uppercase tracking-widest text-gray-500">Tasa mensual</label>
                             <div className="flex gap-2 mt-1.5">
-                                {tasas.map(t => (
+                                {[...new Set([...(analysis?.tasaAsignada > 0 ? [analysis.tasaAsignada] : []), ...tasas])].sort((a, b) => a - b).map(t => (
                                     <button key={t} onClick={() => setTasa(t)}
                                         className={`flex-1 py-2.5 rounded-xl text-sm font-black transition-all min-h-[44px] ${
                                             tasa === t ? 'bg-brand-primary text-white shadow-md' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                                         }`}>
                                         {t.toFixed(1).replace('.', ',')}% mensual
+                                        {analysis?.tasaAsignada === t && <span className="block text-[9px] font-bold opacity-80">tu tasa</span>}
                                     </button>
                                 ))}
                             </div>
-                            <p className="text-[10px] text-gray-400 mt-1.5">Tasas definidas por el comité. La tasa definitiva se fija al aprobar cada crédito.</p>
+                            <p className="text-[10px] text-gray-400 mt-1.5">
+                                {analysis?.tasaAsignada > 0
+                                    ? `Tu tasa asignada es ${analysis.tasaAsignada.toFixed(1).replace('.', ',')}% (regla de devoluciones: 1,4% si mantuviste tus ahorros el año anterior, 1,6% si los retiraste). Puedes comparar con las demás tasas.`
+                                    : 'Tasas definidas por el comité. La tasa definitiva se fija al aprobar cada crédito.'}
+                            </p>
                         </div>
                     </div>
 
@@ -489,62 +502,8 @@ const CapacidadBetaPage = () => {
                 </div>
             </div>
 
-            {/* Préstamos vigentes con cronograma expandible */}
-            {analysis.prestamosVigentes?.length > 0 && (
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                    <div className="px-5 py-4 border-b border-gray-100">
-                        <h2 className="text-sm font-bold text-gray-800">Mis créditos vigentes</h2>
-                        <p className="text-[11px] text-gray-400">Toca un crédito para ver el cronograma de sus cuotas pendientes</p>
-                    </div>
-                    <div className="divide-y divide-gray-50">
-                        {analysis.prestamosVigentes.map(loan => {
-                            const abierto = expandedVm === loan.idVm;
-                            const cuotasOrdenadas = [...(loan.cuotasDetalle || [])].sort((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')));
-                            return (
-                                <div key={loan.idVm}>
-                                    <button
-                                        onClick={() => setExpandedVm(abierto ? null : loan.idVm)}
-                                        className="w-full px-5 py-3.5 flex items-center gap-3 hover:bg-gray-50 transition-colors text-left min-h-[44px]"
-                                    >
-                                        {abierto ? <ChevronDown className="h-4 w-4 text-gray-400 shrink-0" /> : <ChevronRight className="h-4 w-4 text-gray-400 shrink-0" />}
-                                        <div className="min-w-0 flex-1">
-                                            <p className="text-sm font-bold text-gray-800">{loan.idVm}
-                                                {loan.enMoraEP && <span className="ml-2 text-[10px] font-black uppercase bg-red-100 text-red-600 px-2 py-0.5 rounded-full">Mora ×{loan.cuotasMoraEPCount}</span>}
-                                            </p>
-                                            <p className="text-[11px] text-gray-400">
-                                                {loan.cuotasPendientesCount + loan.cuotasMoraEPCount} cuota(s) pendiente(s){loan.cuotas ? ` de ${loan.cuotas}` : ''}
-                                                {loan.interesMensual > 0 ? ` · ${loan.interesMensual.toFixed(2).replace('.', ',')}% mensual` : ''}
-                                                {loan.fechaUltimaCuota ? ` · termina ${loan.fechaUltimaCuota}` : ''}
-                                            </p>
-                                        </div>
-                                        <div className="text-right shrink-0">
-                                            <p className="text-sm font-black text-gray-800 tabular-nums">{fmt(loan.saldoPendiente)}</p>
-                                            <p className="text-[10px] text-gray-400">saldo pendiente</p>
-                                        </div>
-                                    </button>
-                                    {abierto && (
-                                        <div className="px-5 pb-4 bg-gray-50/60">
-                                            <div className="rounded-xl border border-gray-100 bg-white overflow-hidden">
-                                                {cuotasOrdenadas.map((q, i) => (
-                                                    <div key={i} className={`flex items-center gap-3 px-4 py-2 text-xs ${i > 0 ? 'border-t border-gray-50' : ''}`}>
-                                                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${q.esMora ? 'bg-red-500' : 'bg-amber-400'}`} />
-                                                        <span className="text-gray-600 capitalize">{q.mes || '—'}</span>
-                                                        <span className="text-gray-400">{q.fecha ? String(q.fecha).split('T')[0] : ''}</span>
-                                                        <span className={`ml-auto font-bold tabular-nums ${q.esMora ? 'text-red-600' : 'text-gray-700'}`}>{fmt(q.valor)}</span>
-                                                        <span className={`text-[10px] font-black uppercase px-1.5 py-0.5 rounded ${q.esMora ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-700'}`}>
-                                                            {q.esMora ? 'Vencida' : 'Por vencer'}
-                                                        </span>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
+            {/* Lista Estado Préstamos: la MISMA tabla que ve el admin */}
+            <EstadoPrestamosSection payments={payments} loans={loans} loading={loading} />
 
             {/* Definiciones */}
             <div className="bg-gray-50 rounded-2xl border border-gray-100 p-4 flex items-start gap-3">

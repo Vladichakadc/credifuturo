@@ -163,7 +163,7 @@ const UserDashboardLayout = ({ user, onLogout }) => {
                 { icon: List, label: 'Lista de Préstamos', path: '/dashboard/loans' },
                 { icon: List, label: 'Lista de Pagos', path: '/dashboard/payments' },
                 { icon: Scale, label: 'Analizador de Capacidad', path: '/dashboard/loan-capacity' },
-                { icon: Gauge, label: 'Capacidad (beta)', path: '/dashboard/loan-capacity-beta' }
+                { icon: Gauge, label: 'Simulador de Préstamo', path: '/dashboard/loan-capacity-beta' }
             ]
         },
         {

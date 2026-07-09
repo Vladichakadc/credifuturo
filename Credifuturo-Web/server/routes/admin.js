@@ -834,6 +834,11 @@ async function getLoanCapacityAnalysis(clientId) {
         // Parámetros del comité: el cliente (calcScore/simulador) los usa en lugar de constantes
         referenteConstancia,
         tasasVigentes,
+        // Tasa mensual asignada al socio (regla de devoluciones: 1,6% si retiró
+        // ahorros el año anterior, 1,4% si no). En %, ej. 1.6; null si no está fijada.
+        tasaAsignada: client.porcentajePrestamo
+            ? Number((Number(client.porcentajePrestamo) * 100).toFixed(2))
+            : null,
         definicionAhorro: 'neto', // el cupo 3× se calcula sobre ahorro neto de recargos
         // Resolución vigente del fondo (mostrada al socio y al admin)
         resolucionVigente: {

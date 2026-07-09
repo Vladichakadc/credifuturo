@@ -7,6 +7,10 @@ import ChartExpandModal, { analyzeMonthlyTrend, analyzeSavingsComposition } from
 import { AccountSummaryChart, MonthlySavingsTrendChart } from '../admin/SavingsSummaryPage';
 import * as XLSX from 'xlsx';
 import {
+    ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+    Tooltip as RTooltip, LabelList, LineChart, Line, ReferenceLine
+} from 'recharts';
+import {
     PiggyBank,
     FileSpreadsheet,
     Scale,
@@ -362,6 +366,33 @@ const DetalleCuentaPage = () => {
 
     const trendHeight = trendInfo.years.length > 1 && yearFilter === 'Todos' ? 420 : 350;
 
+    // ── Tendencia mensual (últimos 12 meses, por fecha de consignación) ──
+    const trend12 = useMemo(() => {
+        const buckets = {};
+        movimientos.filter(r => r.tipo !== 'aporte' && r.fecha).forEach(r => {
+            const key = `${r.fecha.getFullYear()}-${String(r.fecha.getMonth() + 1).padStart(2, '0')}`;
+            buckets[key] = (buckets[key] || 0) + r.neto;
+        });
+        const rows = Object.entries(buckets)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .slice(-12)
+            .map(([k, v]) => ({ mes: k.slice(2).replace('-', '/'), valor: v }));
+        const positivos = rows.filter(r => r.valor > 0);
+        const avg = positivos.length ? positivos.reduce((s, r) => s + r.valor, 0) / positivos.length : 0;
+        const latest = rows[rows.length - 1]?.valor || 0;
+        return { rows, avg, deltaPct: avg > 0 ? ((latest - avg) / avg) * 100 : 0 };
+    }, [movimientos]);
+
+    // ── Evolución de ahorros por año (neto acreditado por año de consignación) ──
+    const porAnio = useMemo(() => {
+        const buckets = {};
+        movimientos.filter(r => r.tipo !== 'aporte' && r.fecha).forEach(r => {
+            const y = r.fecha.getFullYear();
+            buckets[y] = (buckets[y] || 0) + r.neto;
+        });
+        return Object.keys(buckets).sort((a, b) => a - b).map(y => ({ name: String(y), ahorros: buckets[y] }));
+    }, [movimientos]);
+
     if (loading) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[300px] gap-4">
@@ -580,6 +611,58 @@ const DetalleCuentaPage = () => {
             >
                 <MonthlySavingsTrendChart data={trendInfo.rows} availableYears={trendInfo.years} selectedYear={yearFilter} />
             </ChartExpandModal>
+
+            {/* Tendencia 12 meses + Evolución por año (siempre historial completo) */}
+            {(trend12.rows.length > 1 || porAnio.length > 0) && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 w-full">
+                    {trend12.rows.length > 1 && (
+                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col" style={{ height: 300 }}>
+                            <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                                <h2 className="text-base font-bold text-brand-primary flex items-center gap-2">
+                                    <Activity className="h-5 w-5" /> Tendencia Mensual · últimos {trend12.rows.length} meses
+                                </h2>
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${trend12.deltaPct >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800'}`}>
+                                    Último mes: {trend12.deltaPct >= 0 ? '+' : ''}{trend12.deltaPct.toFixed(0)}% vs promedio
+                                </span>
+                            </div>
+                            <div className="flex-1 min-h-[180px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={trend12.rows} margin={{ top: 26, right: 24, left: 8, bottom: 4 }}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                                        <XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 11 }} />
+                                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#9ca3af', fontSize: 10 }} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} width={52} />
+                                        <RTooltip formatter={(v) => fmt(v)} labelFormatter={(l) => `Mes ${l}`} contentStyle={{ borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 12 }} />
+                                        {trend12.avg > 0 && <ReferenceLine y={trend12.avg} stroke="#94a3b8" strokeDasharray="4 4" label={{ value: `Prom: ${fmt(trend12.avg)}`, position: 'insideTopRight', fill: '#94a3b8', fontSize: 10 }} />}
+                                        <Line type="monotone" dataKey="valor" name="Neto acreditado" stroke="#166534" strokeWidth={2.5} dot={{ fill: '#166534', r: 4 }} activeDot={{ r: 6 }} />
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            </div>
+                            <p className="text-[10px] text-gray-400 mt-1">Capital neto acreditado mes a mes (fecha de consignación). La línea punteada es tu promedio del período.</p>
+                        </div>
+                    )}
+                    {porAnio.length > 0 && (
+                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col" style={{ height: 300 }}>
+                            <h2 className="text-base font-bold text-brand-primary flex items-center gap-2 mb-2">
+                                <BarChart3 className="h-5 w-5" /> Evolución de Ahorros por Año
+                            </h2>
+                            <div className="flex-1 min-h-[180px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={porAnio} margin={{ top: 26, right: 20, left: 8, bottom: 4 }}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 12 }} />
+                                        <YAxis axisLine={false} tickLine={false} tickFormatter={v => v > 0 ? `$${(v / 1000000).toFixed(1)}M` : '$0'} tick={{ fill: '#9ca3af', fontSize: 10 }} width={48} />
+                                        <RTooltip formatter={(v) => [fmt(v), 'Ahorros']} cursor={{ fill: 'rgba(22,101,52,0.06)' }} contentStyle={{ borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 12 }} />
+                                        <Bar dataKey="ahorros" fill="#166534" radius={[4, 4, 0, 0]}>
+                                            <LabelList dataKey="ahorros" position="top" fill="#052e16" fontSize={10} fontWeight="bold" formatter={(v) => fmt(v)} />
+                                        </Bar>
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                            <p className="text-[10px] text-gray-400 mt-1">Ahorro neto acreditado por año (incluye devoluciones en negativo). Unidad: $ COP.</p>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Extracto de movimientos con saldo corrido */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
