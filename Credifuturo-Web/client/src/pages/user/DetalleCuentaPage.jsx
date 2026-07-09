@@ -726,13 +726,17 @@ const DetalleCuentaPage = () => {
                     </p>
                     {utilidades && (
                         <div className="mt-3 pt-3 border-t border-gray-50">
-                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Tu participación estimada en las utilidades</p>
+                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                Tu participación estimada en las utilidades {utilidades.anio || ''}
+                            </p>
                             <p className="text-lg font-black text-amber-600 tabular-nums">
                                 {fmt(utilidades.valorEstimado)}
                                 <span className="ml-2 text-xs font-bold text-gray-400">({utilidades.participacionPct.toFixed(2).replace('.', ',')}% de {fmt(utilidades.utilidades)})</span>
                             </p>
                             <p className="text-[10px] text-gray-400 mt-0.5 leading-snug">
-                                Proporcional a tu ahorro mensual neto · valor definido por el comité · estimación, no constituye promesa de pago.
+                                Proporcional a tu ahorro neto abonado en {utilidades.anio || 'el año'} · referencia: ganancia total del fondo a la fecha
+                                {utilidades.componentes && ` (intereses ${fmt(utilidades.componentes.intereses)} + Cta. NU ${fmt(utilidades.componentes.rentabilidadNU)} + recargos ${fmt(utilidades.componentes.recargos)})`}
+                                {' '}· estimación, no constituye promesa de pago.
                             </p>
                         </div>
                     )}

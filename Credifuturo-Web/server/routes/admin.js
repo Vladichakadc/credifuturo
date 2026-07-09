@@ -3761,26 +3761,40 @@ router.get('/logs/access', async (req, res) => {
 // ENDPOINTS PARA SOCIOS (SOLO LECTURA)
 // ─────────────────────────────────────────────
 
-// GET /my/utilidades-estimadas — participación estimada del socio en las utilidades
-// a distribuir (decisión #4 del plan: visible al socio como estimación declarada).
-// Base del reparto: ahorro mensual neto de todos los socios activos (misma regla
-// que el Ranking). El valor de utilidades es el del comité en AppSettings; si no
-// está definido, se responde null y el cliente no muestra la sección.
+// GET /my/utilidades-estimadas — participación estimada del socio en la ganancia
+// del fondo del AÑO ACTUAL. La referencia es la "Ganancia Total" del panel
+// principal (misma composición y período por defecto que /dashboard-stats):
+// intereses pagados + rendimiento Cta. NU (AppSettings) + recargos por mora.
+// Base del reparto: ahorro mensual neto del año actual (por año ABONADO) de
+// todos los socios activos. Sin ganancia o sin base, se responde null.
 router.get('/my/utilidades-estimadas', verifyToken, requireFreshPassword, requireRole('user'), async (req, res) => {
     try {
         const { Op } = require('sequelize');
         const AppSetting = require('../models/AppSetting');
-        const setting = await AppSetting.findOne({ where: { key: 'utilidadesADistribuir' } });
-        const utilidades = setting && Number(setting.value) > 0 ? Number(setting.value) : null;
-        if (!utilidades) return res.json({ ok: true, data: null });
+        const currentYear = new Date().getFullYear();
 
+        // ── Ganancia total del fondo (réplica del panel: año actual + siguiente en intereses) ──
+        const interesesPagados = await LoanPayment.sum('valorInteresesAmortizados', {
+            where: {
+                estado: 'Pago',
+                esPrepago: { [Op.ne]: true },
+                fechaPagoMax: { [Op.between]: [`${currentYear}-01-01`, `${currentYear + 1}-12-31`] }
+            }
+        }) || 0;
+        const recargosMora = await Saving.sum('valorAPenalizar', { where: { year: currentYear } }) || 0;
+        const nuSetting = await AppSetting.findOne({ where: { key: 'rentabilidadCajaNU' } });
+        const rentabilidadNU = nuSetting ? Number(nuSetting.value) : 543815;
+        const utilidades = Math.round(interesesPagados + rentabilidadNU + recargosMora);
+        if (utilidades <= 0) return res.json({ ok: true, data: null });
+
+        // ── Base del reparto: ahorro neto del año actual de socios activos ──
         const activos = await Client.findAll({ where: { estatus: 'Activo' }, attributes: ['id'] });
         const rows = await Saving.findAll({
             where: {
                 type: { [Op.ne]: 'Aporte Inicial' },
                 clientId: { [Op.in]: activos.map(c => c.id) }
             },
-            attributes: ['clientId', 'amount', 'valorAhorrado']
+            attributes: ['clientId', 'amount', 'valorAhorrado', 'anioAbonado', 'year']
         });
         const val = (s) => {
             const v = parseFloat(s.valorAhorrado);
@@ -3788,15 +3802,26 @@ router.get('/my/utilidades-estimadas', verifyToken, requireFreshPassword, requir
         };
         let base = 0, propio = 0;
         for (const s of rows) {
+            // Año abonado primero (período que cubre el pago); year como respaldo
+            const yr = Number(s.anioAbonado || s.year);
+            if (yr !== currentYear) continue;
             const x = val(s);
             base += x;
             if (s.clientId === req.user.id) propio += x;
         }
-        const participacion = base > 0 ? propio / base : 0;
+        if (base <= 0) return res.json({ ok: true, data: null });
+
+        const participacion = propio / base;
         res.json({
             ok: true,
             data: {
+                anio: currentYear,
                 utilidades,
+                componentes: {
+                    intereses: Math.round(interesesPagados),
+                    rentabilidadNU: Math.round(rentabilidadNU),
+                    recargos: Math.round(recargosMora)
+                },
                 participacionPct: participacion * 100,
                 valorEstimado: Math.round(participacion * utilidades)
             }
