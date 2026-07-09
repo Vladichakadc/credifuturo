@@ -10,7 +10,9 @@
       "Bash(git stash *)",
       "Bash(grep -n \"const [A-Z]\\\\|^const \\\\|function \\\\|=> {$\" Credifuturo-Web/client/src/pages/admin/SavingsSummaryPage.jsx)",
       "Bash(git rm *)",
-      "Bash(npx eslint *)"
+      "Bash(npx eslint *)",
+      "Bash(node --check routes/admin.js)",
+      "Bash(node verify_utilidades.js)"
     ]
   }
 }
