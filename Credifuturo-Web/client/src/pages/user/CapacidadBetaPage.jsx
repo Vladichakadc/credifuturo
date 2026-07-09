@@ -513,6 +513,7 @@ const CapacidadBetaPage = () => {
                     loading={false}
                     title="Lista Estado Préstamos (Simulación)"
                     subtitle={`Cronograma simulado: ${fmt(sim.monto)} a ${sim.n} cuota(s) con tasa ${tasa.toFixed(1).replace('.', ',')}% mensual — no es un préstamo real`}
+                    showInterestColumn
                 />
             )}
 

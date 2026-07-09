@@ -78,7 +78,10 @@ const fullMonthsLower = ["enero", "febrero", "marzo", "abril", "mayo", "junio", 
 
 const EstadoPrestamosSection = ({
     payments = [], loans = [], loading = false, socioName = '',
-    title = 'Lista Estado Préstamos (Cuotas)', subtitle = null
+    title = 'Lista Estado Préstamos (Cuotas)', subtitle = null,
+    // El admin no muestra este desglose (se mantiene idéntico); el simulador
+    // sí lo activa para explicar cuánto de cada cuota es interés.
+    showInterestColumn = false
 }) => {
     const [paymentYearFilter, setPaymentYearFilter] = useState('Todos');
     const [paymentStatusFilter, setPaymentStatusFilter] = useState('Todos');
@@ -261,6 +264,9 @@ const EstadoPrestamosSection = ({
                                     { key: 'estado',              label: 'Estado',       align: '' },
                                     { key: 'fechaPagoMax',        label: 'Fecha Máx',    align: '' },
                                     { key: 'valorCuotaVariable',  label: 'Valor Cuota',  align: 'text-right' },
+                                    ...(showInterestColumn
+                                        ? [{ key: 'valorInteresesAmortizados', label: 'Interés', align: 'text-right' }]
+                                        : []),
                                     { key: 'valorCuotaPago',      label: 'Valor Pagado', align: 'text-right' },
                                     { key: 'saldoFinal',          label: 'Saldo Final',  align: 'text-right' },
                                 ].map(col => (
@@ -312,6 +318,11 @@ const EstadoPrestamosSection = ({
                                         <td className="px-3 py-2.5 whitespace-nowrap text-right font-bold text-gray-800 tabular-nums">
                                             {payment.valorCuotaVariable ? `$${Math.round(Number(payment.valorCuotaVariable)).toLocaleString('es-CO')}` : '—'}
                                         </td>
+                                        {showInterestColumn && (
+                                            <td className="px-3 py-2.5 whitespace-nowrap text-right font-bold text-amber-600 tabular-nums">
+                                                {payment.valorInteresesAmortizados ? `$${Math.round(Number(payment.valorInteresesAmortizados)).toLocaleString('es-CO')}` : '—'}
+                                            </td>
+                                        )}
                                         <td className="px-3 py-2.5 whitespace-nowrap text-right font-bold text-emerald-600 tabular-nums">
                                             {payment.valorCuotaPago && Number(payment.valorCuotaPago) > 0 ? `$${Math.round(Number(payment.valorCuotaPago)).toLocaleString('es-CO')}` : '—'}
                                         </td>

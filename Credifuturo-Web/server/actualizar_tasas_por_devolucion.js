@@ -21,11 +21,14 @@ const TASA_SIN_DEVOLUCION = 0.014;
     const anioAnterior = new Date().getFullYear() - 1;
     console.log(`BD: ${storage}\nAño de referencia (devoluciones): ${anioAnterior}${dryRun ? ' · DRY-RUN' : ''}\n`);
 
-    // Devolución = registro de ahorro con estado 'Devolucion...' o monto negativo
+    // Devolución = MISMO criterio del menú admin "Devoluciones de Ahorros"
+    // (DevolucionesAhorrosPage: STATUS_DEVOLUCION exacto). TRIM porque los
+    // datos importados traen espacio final. NO incluye "Descuento Total Anual
+    // Penalizacion" (eso es una multa, no un retiro de ahorros).
     const conDevolucion = await db.query(
         `SELECT DISTINCT c.id, c.name FROM Savings s
          JOIN Clients c ON c.id = s.clientId AND c.role = 'user'
-         WHERE (s.status LIKE '%evolucion%' OR CAST(s.amount AS REAL) < 0)
+         WHERE TRIM(s.status) = 'Devolucion Total Intereses Ahorros Mensuales'
            AND CAST(s.year AS INTEGER) = :anio`,
         { type: QueryTypes.SELECT, replacements: { anio: anioAnterior } }
     );
