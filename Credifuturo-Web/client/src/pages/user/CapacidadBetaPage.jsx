@@ -78,8 +78,6 @@ const CapacidadBetaPage = () => {
     const { toast } = useUi();
     const [analysis, setAnalysis] = useState(null);
     const [scoreHistory, setScoreHistory] = useState([]);
-    const [payments, setPayments] = useState([]);
-    const [loans, setLoans] = useState([]);
     const [loading, setLoading] = useState(true);
     const [montoRaw, setMontoRaw] = useState('');
     const [plazo, setPlazo] = useState(6);
@@ -88,11 +86,9 @@ const CapacidadBetaPage = () => {
     useEffect(() => {
         const fetchAll = async () => {
             try {
-                const [capRes, histRes, payRes, loanRes] = await Promise.allSettled([
+                const [capRes, histRes] = await Promise.allSettled([
                     api.get('/admin/my/loan-capacity'),
                     api.get('/admin/my/score-history'),
-                    api.get('/admin/my/payments'),
-                    api.get('/admin/my/loans'),
                 ]);
                 if (capRes.status === 'fulfilled') {
                     setAnalysis(capRes.value.data);
@@ -109,8 +105,6 @@ const CapacidadBetaPage = () => {
                 if (histRes.status === 'fulfilled') {
                     setScoreHistory(histRes.value.data?.data || []);
                 }
-                if (payRes.status === 'fulfilled') setPayments(payRes.value.data?.data || []);
-                if (loanRes.status === 'fulfilled') setLoans(loanRes.value.data?.data || []);
             } finally {
                 setLoading(false);
             }
@@ -124,13 +118,6 @@ const CapacidadBetaPage = () => {
     }, []);
 
     const v = useMemo(() => analysis ? calcVerdict(analysis, { audience: 'user' }) : null, [analysis]);
-
-    // Tasas del comité (AppSettings vía backend); respaldo local si no llegan
-    const tasas = useMemo(() => (
-        Array.isArray(analysis?.tasasVigentes) && analysis.tasasVigentes.length > 0
-            ? analysis.tasasVigentes
-            : TASAS_FALLBACK
-    ), [analysis]);
 
     // Evolución del score: cada snapshot guarda los INSUMOS y acá se recalcula
     // con calcScore (misma fórmula que el score actual — fuente única)
@@ -182,6 +169,31 @@ const CapacidadBetaPage = () => {
             compromisoNoRetiro, estado, titulo, detalle,
         };
     }, [montoRaw, plazo, tasa, v, analysis, hoy]);
+
+    // ── Cuotas del préstamo SIMULADO, con la forma de LoanPayment para
+    // renderizarlas en la misma tabla "Lista Estado Préstamos" del admin ──
+    const cuotasSimuladas = useMemo(() => {
+        if (!sim) return [];
+        const t = tasa / 100;
+        return Array.from({ length: sim.n }, (_, k) => {
+            const i = k + 1;
+            const interes = (sim.monto - sim.abono * k) * t;
+            const f = new Date(hoy.getFullYear(), hoy.getMonth() + i, hoy.getDate());
+            return {
+                id: `sim-${i}`,
+                externalId: `SIM_${String(i).padStart(2, '0')}`,
+                idVm: 'SIMULADO',
+                itemQuantity: i,
+                cuotasPrestamo: sim.n,
+                estado: 'Pendiente',
+                fechaPagoMax: f.toISOString().split('T')[0],
+                valorCuotaVariable: sim.abono + interes,
+                valorCuotaPago: 0,
+                valorInteresesAmortizados: interes,
+                saldoFinal: Math.max(0, sim.monto - sim.abono * i),
+            };
+        });
+    }, [sim, tasa, hoy]);
 
     // ── Coach: componentes con puntos por ganar, ordenados por potencial ──
     const coach = useMemo(() => {
@@ -348,21 +360,12 @@ const CapacidadBetaPage = () => {
 
                         <div>
                             <label className="text-[11px] font-black uppercase tracking-widest text-gray-500">Tasa mensual</label>
-                            <div className="flex gap-2 mt-1.5">
-                                {[...new Set([...(analysis?.tasaAsignada > 0 ? [analysis.tasaAsignada] : []), ...tasas])].sort((a, b) => a - b).map(t => (
-                                    <button key={t} onClick={() => setTasa(t)}
-                                        className={`flex-1 py-2.5 rounded-xl text-sm font-black transition-all min-h-[44px] ${
-                                            tasa === t ? 'bg-brand-primary text-white shadow-md' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                                        }`}>
-                                        {t.toFixed(1).replace('.', ',')}% mensual
-                                        {analysis?.tasaAsignada === t && <span className="block text-[9px] font-bold opacity-80">tu tasa</span>}
-                                    </button>
-                                ))}
+                            <div className="mt-1.5 py-2.5 px-4 rounded-xl bg-brand-primary text-white text-sm font-black flex items-center justify-between min-h-[44px]">
+                                <span>{tasa.toFixed(1).replace('.', ',')}% mensual</span>
+                                <span className="text-[10px] font-bold uppercase tracking-wider bg-white/20 px-2 py-0.5 rounded-full">Tu tasa asignada</span>
                             </div>
                             <p className="text-[10px] text-gray-400 mt-1.5">
-                                {analysis?.tasaAsignada > 0
-                                    ? `Tu tasa asignada es ${analysis.tasaAsignada.toFixed(1).replace('.', ',')}% (regla de devoluciones: 1,4% si mantuviste tus ahorros el año anterior, 1,6% si los retiraste). Puedes comparar con las demás tasas.`
-                                    : 'Tasas definidas por el comité. La tasa definitiva se fija al aprobar cada crédito.'}
+                                Tasa fijada por la regla de devoluciones del fondo: 1,4% si mantuviste tus ahorros el año anterior; 1,6% si los retiraste. La define el comité y no es editable en la simulación.
                             </p>
                         </div>
                     </div>
@@ -502,8 +505,16 @@ const CapacidadBetaPage = () => {
                 </div>
             </div>
 
-            {/* Lista Estado Préstamos: la MISMA tabla que ve el admin */}
-            <EstadoPrestamosSection payments={payments} loans={loans} loading={loading} />
+            {/* Cuotas simuladas en la MISMA tabla "Lista Estado Préstamos" del admin */}
+            {sim && (
+                <EstadoPrestamosSection
+                    payments={cuotasSimuladas}
+                    loans={[{ idVm: 'SIMULADO', valorPrestado: sim.monto, estado: 'Vigente' }]}
+                    loading={false}
+                    title="Lista Estado Préstamos (Simulación)"
+                    subtitle={`Cronograma simulado: ${fmt(sim.monto)} a ${sim.n} cuota(s) con tasa ${tasa.toFixed(1).replace('.', ',')}% mensual — no es un préstamo real`}
+                />
+            )}
 
             {/* Definiciones */}
             <div className="bg-gray-50 rounded-2xl border border-gray-100 p-4 flex items-start gap-3">

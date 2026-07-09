@@ -76,7 +76,10 @@ const PillSelect = ({ icon: Icon, value, onChange, options, width = 'w-44' }) =>
 
 const fullMonthsLower = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 
-const EstadoPrestamosSection = ({ payments = [], loans = [], loading = false, socioName = '' }) => {
+const EstadoPrestamosSection = ({
+    payments = [], loans = [], loading = false, socioName = '',
+    title = 'Lista Estado Préstamos (Cuotas)', subtitle = null
+}) => {
     const [paymentYearFilter, setPaymentYearFilter] = useState('Todos');
     const [paymentStatusFilter, setPaymentStatusFilter] = useState('Todos');
     const [paymentLoanStatusFilter, setPaymentLoanStatusFilter] = useState('Todos');
@@ -214,10 +217,10 @@ const EstadoPrestamosSection = ({ payments = [], loans = [], loading = false, so
         <div className="w-full mt-5 bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
             <div className="flex flex-col mb-4">
                 <h2 className="text-lg font-bold text-brand-primary flex items-center gap-2 mb-1">
-                    <Activity className="h-5 w-5" /> Lista Estado Préstamos (Cuotas)
+                    <Activity className="h-5 w-5" /> {title}
                 </h2>
                 <p className="text-xs text-gray-400">
-                    {payments.length} cuota{payments.length !== 1 ? 's' : ''} registrada{payments.length !== 1 ? 's' : ''}{socioName ? ` · ${socioName}` : ''}
+                    {subtitle || `${payments.length} cuota${payments.length !== 1 ? 's' : ''} registrada${payments.length !== 1 ? 's' : ''}${socioName ? ` · ${socioName}` : ''}`}
                 </p>
             </div>
 
