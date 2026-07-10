@@ -62,10 +62,11 @@ function App() {
         }
     }, []);
 
-    const ProtectedRoute = ({ children, role }) => {
+    const ProtectedRoute = ({ children, role, roles }) => {
         if (!user) return <Navigate to="/login" />;
         if (user.mustChangePassword) return <Navigate to="/change-password" />;
-        if (role && user.role !== role) return <Navigate to="/" />;
+        const permitidos = roles || (role ? [role] : null);
+        if (permitidos && !permitidos.includes(user.role)) return <Navigate to="/" />;
         return children;
     };
 
@@ -120,8 +121,10 @@ function App() {
                     <Route path="legacy" element={<AdminDashboard />} />
                 </Route>
 
+                {/* El módulo del socio también es accesible para el admin (vistas de
+                    lectura auto-referidas: ve SUS propios datos como socio del fondo) */}
                 <Route path="/dashboard" element={
-                    <ProtectedRoute role="user">
+                    <ProtectedRoute roles={['user', 'admin']}>
                         <UserDashboardLayout user={user} onLogout={handleLogout} />
                     </ProtectedRoute>
                 }>

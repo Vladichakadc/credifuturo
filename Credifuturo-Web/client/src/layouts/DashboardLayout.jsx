@@ -22,7 +22,10 @@ import {
     Scale,
     AlertTriangle,
     Banknote,
-    History
+    History,
+    UserRound,
+    Gauge,
+    Wallet
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import api, { apiWithRetry } from '../config/api';
@@ -156,7 +159,7 @@ const DashboardLayout = ({ user, onLogout }) => {
     const [syncStats, setSyncStats] = useState(null);
     const [showSummary, setShowSummary] = useState(false);
     const [syncAttempt, setSyncAttempt] = useState(0);
-    const [openSubmenus, setOpenSubmenus] = useState({ inicio: true, estatutos: false, socios: false, prestamos: false, ahorros: false, aportes: false, informes: false });
+    const [openSubmenus, setOpenSubmenus] = useState({ inicio: true, estatutos: false, socios: false, prestamos: false, ahorros: false, aportes: false, informes: false, micuenta: false });
     const [informesList, setInformesList] = useState([]);
     const [informesSearch, setInformesSearch] = useState('');
     const location = useLocation();
@@ -303,6 +306,21 @@ const DashboardLayout = ({ user, onLogout }) => {
                 { icon: Banknote, label: 'Devoluciones Ahorros', path: '/admin/savings/devoluciones' },
                 { icon: List, label: 'Lista de Aportes', path: '/admin/initial-contributions/list' },
                 { icon: PlusCircle, label: 'Nuevo Aporte', path: '/admin/initial-contributions/new' },
+            ]
+        },
+        {
+            type: 'submenu',
+            key: 'micuenta',
+            icon: UserRound,
+            label: 'Mi Cuenta de Socio',
+            children: [
+                { icon: LayoutDashboard, label: 'Mi Panel', path: '/dashboard' },
+                { icon: PiggyBank, label: 'Ahorros', path: '/dashboard/cuenta' },
+                { icon: Gauge, label: 'Simulador de Préstamo', path: '/dashboard/loan-capacity-beta' },
+                { icon: List, label: 'Lista de Préstamos', path: '/dashboard/loans' },
+                { icon: List, label: 'Lista de Pagos', path: '/dashboard/payments' },
+                { icon: Scale, label: 'Analizador de Capacidad', path: '/dashboard/loan-capacity' },
+                { icon: Wallet, label: 'Aportes', path: '/dashboard/contributions' },
             ]
         },
         { type: 'link', icon: FileText, label: 'Copias de Seguridad', path: '/admin/reports' },

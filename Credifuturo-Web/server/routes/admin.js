@@ -3772,7 +3772,7 @@ router.get('/logs/access', async (req, res) => {
 // intereses pagados + rendimiento Cta. NU (AppSettings) + recargos por mora.
 // Base del reparto: ahorro mensual neto del año actual (por año ABONADO) de
 // todos los socios activos. Sin ganancia o sin base, se responde null.
-router.get('/my/utilidades-estimadas', verifyToken, requireFreshPassword, requireRole('user'), async (req, res) => {
+router.get('/my/utilidades-estimadas', verifyToken, requireFreshPassword, requireRole('user', 'admin'), async (req, res) => {
     try {
         const { Op } = require('sequelize');
         const AppSetting = require('../models/AppSetting');
@@ -3839,7 +3839,7 @@ router.get('/my/utilidades-estimadas', verifyToken, requireFreshPassword, requir
 
 // GET /my/score-history — últimos 12 snapshots mensuales de los insumos del score.
 // El cliente recalcula cada score con calcScore() (fuente única de la fórmula).
-router.get('/my/score-history', verifyToken, requireFreshPassword, requireRole('user'), async (req, res) => {
+router.get('/my/score-history', verifyToken, requireFreshPassword, requireRole('user', 'admin'), async (req, res) => {
     try {
         const ScoreSnapshot = require('../models/ScoreSnapshot');
         const rows = await ScoreSnapshot.findAll({
@@ -3859,7 +3859,7 @@ router.get('/my/score-history', verifyToken, requireFreshPassword, requireRole('
     }
 });
 
-router.get('/my/loan-capacity', verifyToken, requireFreshPassword, requireRole('user'), async (req, res) => {
+router.get('/my/loan-capacity', verifyToken, requireFreshPassword, requireRole('user', 'admin'), async (req, res) => {
     try {
         const analysis = await getLoanCapacityAnalysis(req.user.id);
         res.json(analysis);
@@ -3873,7 +3873,7 @@ router.get('/my/loan-capacity', verifyToken, requireFreshPassword, requireRole('
     }
 });
 
-router.get('/my/profile', verifyToken, requireFreshPassword, requireRole('user'), async (req, res) => {
+router.get('/my/profile', verifyToken, requireFreshPassword, requireRole('user', 'admin'), async (req, res) => {
     try {
         const client = await Client.findByPk(req.user.id, {
             attributes: { exclude: ['password'] }
@@ -3885,7 +3885,7 @@ router.get('/my/profile', verifyToken, requireFreshPassword, requireRole('user')
     }
 });
 
-router.get('/my/loans', verifyToken, requireFreshPassword, requireRole('user'), async (req, res) => {
+router.get('/my/loans', verifyToken, requireFreshPassword, requireRole('user', 'admin'), async (req, res) => {
     try {
         const loans = await DisbursedLoan.findAll({
             where: { clientId: req.user.id },
@@ -3909,7 +3909,7 @@ router.get('/my/loans', verifyToken, requireFreshPassword, requireRole('user'), 
     }
 });
 
-router.get('/my/savings', verifyToken, requireFreshPassword, requireRole('user'), async (req, res) => {
+router.get('/my/savings', verifyToken, requireFreshPassword, requireRole('user', 'admin'), async (req, res) => {
     try {
         const { Op } = require('sequelize');
         const savings = await Saving.findAll({
@@ -3934,7 +3934,7 @@ router.get('/my/savings', verifyToken, requireFreshPassword, requireRole('user')
     }
 });
 
-router.get('/my/initial-contributions', verifyToken, requireFreshPassword, requireRole('user'), async (req, res) => {
+router.get('/my/initial-contributions', verifyToken, requireFreshPassword, requireRole('user', 'admin'), async (req, res) => {
     try {
         const contributions = await Saving.findAll({
             where: { clientId: req.user.id, type: 'Aporte Inicial' },
@@ -3958,7 +3958,7 @@ router.get('/my/initial-contributions', verifyToken, requireFreshPassword, requi
     }
 });
 
-router.get('/my/payments', verifyToken, requireFreshPassword, requireRole('user'), async (req, res) => {
+router.get('/my/payments', verifyToken, requireFreshPassword, requireRole('user', 'admin'), async (req, res) => {
     try {
         const payments = await LoanPayment.findAll({
             where: { clientId: req.user.id },
@@ -3983,7 +3983,7 @@ router.get('/my/payments', verifyToken, requireFreshPassword, requireRole('user'
     }
 });
 
-router.get('/my/balance', verifyToken, requireFreshPassword, requireRole('user'), async (req, res) => {
+router.get('/my/balance', verifyToken, requireFreshPassword, requireRole('user', 'admin'), async (req, res) => {
     try {
         const clientId = req.user.id;
         const totalSavings = await Saving.sum('amount', { where: { clientId } }) || 0;

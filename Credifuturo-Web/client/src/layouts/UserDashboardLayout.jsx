@@ -14,7 +14,8 @@ import {
     DollarSign,
     FileText,
     Landmark,
-    Gauge
+    Gauge,
+    ShieldCheck
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { Button } from '../components/ui/Button';
@@ -134,6 +135,13 @@ const UserDashboardLayout = ({ user, onLogout }) => {
     };
 
     const navItems = [
+        // Cuando el admin navega su vista de socio, tiene un regreso directo
+        ...(user?.role === 'admin' ? [{
+            type: 'link',
+            icon: ShieldCheck,
+            label: 'Panel de Administración',
+            path: '/admin'
+        }] : []),
         {
             type: 'submenu',
             key: 'inicio',

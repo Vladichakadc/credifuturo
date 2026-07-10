@@ -4,7 +4,7 @@
  *    retiraron sus ahorros, pierden el beneficio de tasa.
  *  - Socios SIN devolución en el año anterior → 1,4% (0.014):
  *    mantuvieron sus ahorros, conservan el beneficio.
- * Solo toca registros role='user'. Idempotente: se puede re-ejecutar.
+ * Cubre role user y admin (el admin también es socio). Idempotente: se puede re-ejecutar.
  * Uso: node actualizar_tasas_por_devolucion.js [--dry-run]
  */
 const { Sequelize, QueryTypes } = require('sequelize');
@@ -27,7 +27,7 @@ const TASA_SIN_DEVOLUCION = 0.014;
     // Penalizacion" (eso es una multa, no un retiro de ahorros).
     const conDevolucion = await db.query(
         `SELECT DISTINCT c.id, c.name FROM Savings s
-         JOIN Clients c ON c.id = s.clientId AND c.role = 'user'
+         JOIN Clients c ON c.id = s.clientId AND c.role IN ('user', 'admin')
          WHERE TRIM(s.status) = 'Devolucion Total Intereses Ahorros Mensuales'
            AND CAST(s.year AS INTEGER) = :anio`,
         { type: QueryTypes.SELECT, replacements: { anio: anioAnterior } }
@@ -35,7 +35,7 @@ const TASA_SIN_DEVOLUCION = 0.014;
     const idsCon = conDevolucion.map(r => r.id);
 
     const todos = await db.query(
-        `SELECT id, name, estatus, porcentajePrestamo FROM Clients WHERE role = 'user' ORDER BY id`,
+        `SELECT id, name, estatus, porcentajePrestamo FROM Clients WHERE role IN ('user', 'admin') ORDER BY id`,
         { type: QueryTypes.SELECT }
     );
 

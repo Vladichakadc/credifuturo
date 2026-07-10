@@ -21,10 +21,12 @@ const verifyToken = (req, res, next) => {
     }
 };
 
-const requireRole = (role) => {
+// Acepta uno o varios roles: requireRole('admin') o requireRole('user', 'admin').
+// Compatible con todos los usos existentes de un solo rol.
+const requireRole = (...roles) => {
     return (req, res, next) => {
-        if (!req.user || req.user.role !== role) {
-            return res.status(403).json({ error: `Acceso denegado. Se requiere rol: ${role}` });
+        if (!req.user || !roles.includes(req.user.role)) {
+            return res.status(403).json({ error: `Acceso denegado. Se requiere rol: ${roles.join(' o ')}` });
         }
         next();
     };
