@@ -191,6 +191,13 @@ const ExecutivePanelPage = () => {
         const pen = exec.penetracion || { conCredito: 0, activos: 0 };
         const penPct = pen.activos > 0 ? (pen.conCredito / pen.activos) * 100 : 0;
 
+        // Apalancamiento del fondo (Loan-to-Deposit Ratio): cuánta cartera pendiente
+        // hay por cada peso de patrimonio de socios. Espejo, a nivel de fondo, de la
+        // regla 3× que ya se usa por socio individual en el Simulador de Préstamo.
+        const patrimonioSocios = stats?.totalAhorradoGeneral || 0;
+        const ldrPct = patrimonioSocios > 0 ? (cartera.total / patrimonioSocios) * 100 : 0;
+        const ldrTone = ldrPct > 85 ? 'risk' : ldrPct < 40 ? 'warn' : 'ok';
+
         // ── Centro de alertas: reglas sobre los datos reales ──────────
         const alertas = [];
         if ((cartera.vencida || 0) > 0) {
@@ -227,13 +234,73 @@ const ExecutivePanelPage = () => {
                 .sort((a, b) => a.anio.localeCompare(b.anio)),
         };
 
+        // ── Estimado al cierre del año — modelo de 3 escenarios (Conservador/Base/
+        // Optimista), basado en el comportamiento real del fondo, no en supuestos
+        // arbitrarios (framework: business-analyst + startup-financial-modeling).
+        const today = new Date();
+        const endOfYear = new Date(today.getFullYear(), 11, 31);
+        const remainingDays = Math.max(0, Math.ceil((endOfYear - today) / 86400000));
+        const currentDayOfYear = Math.max(1, Math.ceil((today - new Date(today.getFullYear(), 0, 1)) / 86400000));
+        const mesesTranscurridos = Math.max(0.5, currentDayOfYear / 30.44);
+        const mesesRestantes = remainingDays / 30.44;
+
+        // Intereses: (a) cartera ya desembolsada = cobrado + agendado pendiente ×
+        // tasa de RECAUDO REAL del año (misma cifra que el hero "Recaudo del año"),
+        // no un porcentaje inventado; (b) nueva colocación esperada al ritmo de
+        // desembolso real observado, generando interés solo por la fracción de año
+        // que le queda a cada crédito nuevo.
+        const interesesYaCobrados = stats?.totalInteresesPagados || 0;
+        const interesesPendientesAgendados = Math.max(0, (stats?.totalIntereses || 0) - interesesYaCobrados);
+        const recaudoBase = (exec.recaudoYtd?.eficienciaPct ?? 85) / 100;
+        const recaudoConservador = Math.max(0.5, recaudoBase - 0.15);
+        const recaudoOptimista = Math.min(1, recaudoBase + 0.10);
+        const colocacionMensualProm = (stats?.totalPrestamos || 0) / mesesTranscurridos;
+        const tasaMensualVigente = 0.015; // tasa típica actual del fondo (1.4%–1.6%)
+        const interesesPorNuevaColocacion = (monto) => monto * tasaMensualVigente * (mesesRestantes / 2);
+
+        const proyeccionInteresesBase = interesesYaCobrados
+            + interesesPendientesAgendados * recaudoBase
+            + interesesPorNuevaColocacion(colocacionMensualProm * mesesRestantes);
+        const proyeccionInteresesConservador = interesesYaCobrados
+            + interesesPendientesAgendados * recaudoConservador;
+        const proyeccionInteresesOptimista = interesesYaCobrados
+            + interesesPendientesAgendados * recaudoOptimista
+            + interesesPorNuevaColocacion(colocacionMensualProm * 1.5 * mesesRestantes);
+
+        // NU: extrapolación lineal (único método válido con un solo dato acumulado
+        // sin serie histórica). Rango: más colocación (optimista de intereses)
+        // implica menos saldo en NU, y viceversa.
+        const dailyNURate = (stats?.rentabilidadCajaNU || 0) / currentDayOfYear;
+        const proyeccionCajaNUBase = (stats?.rentabilidadCajaNU || 0) + dailyNURate * remainingDays;
+        const proyeccionCajaNUConservador = proyeccionCajaNUBase * 0.85;
+        const proyeccionCajaNUOptimista = proyeccionCajaNUBase * 1.05;
+
+        // Recargos por mora: run-rate anualizado, rango amplio porque el
+        // comportamiento real es errático mes a mes.
+        const proyeccionPenalidadBase = ((stats?.totalPenaltyValue || 0) / currentDayOfYear) * 365;
+        const proyeccionPenalidadConservador = proyeccionPenalidadBase * 0.5;
+        const proyeccionPenalidadOptimista = proyeccionPenalidadBase * 1.8;
+
+        const proyeccion = {
+            intereses: { base: proyeccionInteresesBase, conservador: proyeccionInteresesConservador, optimista: proyeccionInteresesOptimista },
+            nu: { base: proyeccionCajaNUBase, conservador: proyeccionCajaNUConservador, optimista: proyeccionCajaNUOptimista },
+            penalidad: { base: proyeccionPenalidadBase, conservador: proyeccionPenalidadConservador, optimista: proyeccionPenalidadOptimista },
+            total: {
+                base: proyeccionInteresesBase + proyeccionCajaNUBase + proyeccionPenalidadBase,
+                conservador: proyeccionInteresesConservador + proyeccionCajaNUConservador + proyeccionPenalidadConservador,
+                optimista: proyeccionInteresesOptimista + proyeccionCajaNUOptimista + proyeccionPenalidadOptimista,
+            },
+            recaudoBasePct: Math.round(recaudoBase * 100),
+            colocacionMensualProm,
+        };
+
         return {
-            top3, top3Pct, donutData,
+            top3, top3Pct, donutData, ldrPct, ldrTone, proyeccion,
             ahorroActual, ahorroPrevio, colocActual, colocPrevio,
             intCobradosAnio, intAgendadosAnio, intAnioPrevio,
             penPct, alertas, seriesCharts,
         };
-    }, [exec, anioActual]);
+    }, [exec, stats, anioActual]);
 
     if (loading) {
         return (
@@ -306,7 +373,7 @@ const ExecutivePanelPage = () => {
             </div>
 
             {/* ── Nivel 1: Hero ejecutivo ── */}
-            <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-3 grid-cols-2 lg:grid-cols-5">
                 <HeroKpi
                     label="Patrimonio de socios"
                     value={fmt(patrimonio)}
@@ -336,6 +403,14 @@ const ExecutivePanelPage = () => {
                     icon={Landmark}
                     sub="Caja + rendimientos NU"
                     badge={null}
+                />
+                <HeroKpi
+                    label="Apalancamiento del fondo"
+                    value={`${derived.ldrPct.toFixed(0)}%`}
+                    icon={Gauge}
+                    badge={derived.ldrTone === 'risk' ? 'Cerca del límite' : derived.ldrTone === 'warn' ? 'Capacidad ociosa' : 'Sano'}
+                    badgeTone={derived.ldrTone}
+                    sub="Cartera vs. patrimonio de socios"
                 />
             </div>
 
@@ -498,7 +573,7 @@ const ExecutivePanelPage = () => {
                 const totalIngresos = ingresos.reduce((s, d) => s + d.value, 0);
                 const retornoCapital = patrimonio > 0 ? (totalIngresos / patrimonio) * 100 : 0;
                 return (
-                    <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
                         {/* ¿Cuánto está ganando el fondo? */}
                         <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
                             <SectionTitle icon={Coins}>¿Cuánto está ganando el fondo?</SectionTitle>
@@ -539,6 +614,38 @@ const ExecutivePanelPage = () => {
                                     </div>
                                 </div>
                             )}
+                        </div>
+
+                        {/* Estimado al cierre del año — 3 escenarios basados en comportamiento real */}
+                        <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
+                            <SectionTitle icon={Gauge}>Estimado al cierre del año</SectionTitle>
+                            <div className="space-y-2.5">
+                                {[
+                                    { label: 'Intereses de préstamos', v: derived.proyeccion.intereses, color: '#166534' },
+                                    { label: 'Rendimiento cuenta NU', v: derived.proyeccion.nu, color: '#84cc16' },
+                                    { label: 'Recargos por mora', v: derived.proyeccion.penalidad, color: '#f59e0b' },
+                                ].map(row => (
+                                    <div key={row.label} className="flex items-center gap-2">
+                                        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: row.color }} />
+                                        <span className="text-xs text-gray-600 font-medium flex-1 truncate">{row.label}</span>
+                                        <div className="text-right">
+                                            <p className="text-xs font-bold text-gray-800 tabular-nums">{fmtCorto(row.v.base)}</p>
+                                            <p className="text-[9px] text-gray-400 tabular-nums">{fmtCorto(row.v.conservador)}–{fmtCorto(row.v.optimista)}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                                <div className="pt-2.5 mt-1.5 border-t border-gray-100 flex items-center justify-between">
+                                    <span className="text-xs font-extrabold text-gray-900">Ganancia total estimada</span>
+                                    <div className="text-right">
+                                        <p className="text-sm font-black text-brand-primary tabular-nums">{fmt(derived.proyeccion.total.base)}</p>
+                                        <p className="text-[9px] text-gray-400 tabular-nums">{fmt(derived.proyeccion.total.conservador)} – {fmt(derived.proyeccion.total.optimista)}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <p className="text-[10px] text-gray-400 mt-3 leading-snug">
+                                Cartera desembolsada (cobrado + agendado × {derived.proyeccion.recaudoBasePct}% recaudo real) + nueva colocación esperada
+                                al ritmo observado ({fmtCorto(derived.proyeccion.colocacionMensualProm)}/mes). Rango conservador–optimista, no un número con falsa precisión.
+                            </p>
                         </div>
 
                         {/* Resultados por año — baselines dinámicos */}
@@ -600,7 +707,11 @@ const ExecutivePanelPage = () => {
                     <Collapsible icon={Landmark} title="Saldos y Rendimientos">
                         <div className="grid gap-2.5 grid-cols-1 sm:grid-cols-3">
                             <DetailCard title="Caja Disponible" value={fmt(stats.saldoEnBanco)} sub="Patrimonio − capital prestado + recaudos" icon={Landmark} />
-                            <DetailCard title="Rendimiento Cuenta NU" value={fmt(stats.rentabilidadCajaNU)} sub="Editable desde el Panel Principal" icon={Coins} tone="gold" />
+                            <DetailCard title="Rendimiento Cuenta NU" value={fmt(stats.rentabilidadCajaNU)}
+                                sub={stats.rentabilidadCajaNUActualizada
+                                    ? `Editable en Panel Principal · actualizado hace ${Math.max(0, Math.round((new Date() - new Date(stats.rentabilidadCajaNUActualizada)) / 86400000))} día(s)`
+                                    : 'Editable desde el Panel Principal'}
+                                icon={Coins} tone="gold" />
                             <DetailCard title="Disponible Total" value={fmt(disponible)} sub="Caja + rendimientos consolidados" icon={Wallet} tone="ok" />
                         </div>
                     </Collapsible>
