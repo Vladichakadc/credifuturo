@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../config/api';
-import { Download, FileText, TrendingUp, Users, DollarSign, AlertTriangle, PiggyBank, Archive, CheckCircle, Loader, Calendar, HardDrive, Clock, FolderOpen, RefreshCw, Database } from 'lucide-react';
+import { Download, FileText, TrendingUp, Users, DollarSign, AlertTriangle, PiggyBank, Archive, CheckCircle, Loader, Calendar, HardDrive, Clock, FolderOpen, RefreshCw, Database, UploadCloud, Upload } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card';
 import { exportToExcel, formatDate } from '../../utils/excelUtils';
@@ -11,6 +11,8 @@ const ReportsPage = () => {
     const [loading, setLoading] = useState(true);
     const [backingUp, setBackingUp] = useState(false);
     const [backingUpFull, setBackingUpFull] = useState(false);
+    const [restoring, setRestoring] = useState(false);
+    const [restoreFile, setRestoreFile] = useState(null);
     const [lastBackup, setLastBackup] = useState(null);
     const [lastFullBackup, setLastFullBackup] = useState(null);
     const [backupHistory, setBackupHistory] = useState([]);
@@ -101,6 +103,38 @@ const ReportsPage = () => {
             toast.error('Error al generar backup completo: ' + (err.response?.data?.error || err.message));
         } finally {
             setBackingUpFull(false);
+        }
+    };
+
+    // --- Restaurar Base de Datos (Solo Localhost) ---
+    const handleRestoreDatabase = async () => {
+        if (!restoreFile) {
+            toast.error('Por favor, selecciona un archivo database.sqlite');
+            return;
+        }
+        
+        if (!window.confirm('¡CUIDADO! Esto sobrescribirá la base de datos actual y reiniciará el servidor. Asegúrate de que el archivo es correcto. ¿Continuar?')) {
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('database', restoreFile);
+
+        setRestoring(true);
+        try {
+            const res = await api.post('/admin/backup/restore', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            toast.success(res.data.message || 'Restauración iniciada.');
+            setTimeout(() => {
+                window.location.reload();
+            }, 3000);
+        } catch (err) {
+            console.error('Error al restaurar:', err);
+            toast.error('Error al restaurar: ' + (err.response?.data?.error || err.message));
+        } finally {
+            setRestoring(false);
+            setRestoreFile(null);
         }
     };
 
@@ -443,6 +477,48 @@ const ReportsPage = () => {
                                 <><Database className="h-4 w-4" /> Backup Completo</>
                             )}
                         </button>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Restaurar Base de Datos (Solo Localhost) ───────────────────────── */}
+            {(window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && (
+                <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-pink-700 p-6 text-white shadow-xl">
+                    <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
+                    <div className="relative flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                        <div className="flex items-start gap-4">
+                            <div className="shrink-0 flex h-12 w-12 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm">
+                                <UploadCloud className="h-6 w-6" />
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-bold">Restaurar Base de Datos</h2>
+                                <p className="text-sm text-white/80 mt-0.5">
+                                    Sube el archivo <code>database.sqlite</code> desde <strong className="text-yellow-200">C:\Credifuturo\Backups</strong>.
+                                </p>
+                                <p className="mt-1 text-xs text-white/90 bg-red-900/40 px-2 py-1 rounded inline-block">
+                                    ⚠️ ¡Atención! Esto sobrescribirá la base de datos actual y forzará un reinicio del servidor.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-2 shrink-0">
+                            <input 
+                                type="file" 
+                                accept=".sqlite,.db" 
+                                className="text-sm text-white/80 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-white file:text-red-700 hover:file:bg-red-50 cursor-pointer"
+                                onChange={(e) => setRestoreFile(e.target.files[0])}
+                            />
+                            <button
+                                onClick={handleRestoreDatabase}
+                                disabled={restoring || loading || !restoreFile}
+                                className="w-full flex justify-center items-center gap-2 rounded-xl bg-white text-red-700 font-bold px-6 py-2.5 text-sm shadow-lg hover:bg-red-50 active:scale-95 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                            >
+                                {restoring ? (
+                                    <><Loader className="h-4 w-4 animate-spin" /> Restaurando...</>
+                                ) : (
+                                    <><Upload className="h-4 w-4" /> Restaurar DB</>
+                                )}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

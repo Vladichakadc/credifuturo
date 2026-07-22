@@ -3634,6 +3634,53 @@ router.get('/backup-history/:folderName/download', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
+// RESTAURACIÓN DE BASE DE DATOS (Solo Localhost)
+// ─────────────────────────────────────────────
+const restoreUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 100 * 1024 * 1024 } // 100 MB max for DB
+});
+
+router.post('/backup/restore', restoreUpload.single('database'), async (req, res) => {
+    try {
+        // Restringir a localhost
+        if (req.hostname !== 'localhost' && req.hostname !== '127.0.0.1') {
+            return res.status(403).json({ error: 'La restauración solo está permitida en localhost.' });
+        }
+
+        if (!req.file) {
+            return res.status(400).json({ error: 'No se envió ningún archivo.' });
+        }
+
+        console.log(`[RESTORE] Archivo recibido: ${req.file.originalname} (${Math.round(req.file.size / 1024)} KB)`);
+
+        // Ruta de la BD principal
+        const mainDbPath = path.join(__dirname, '..', '..', 'database.sqlite');
+        
+        // 1. Cerrar conexión de Sequelize
+        const sequelize = require('../config/database');
+        await sequelize.close();
+        console.log('[RESTORE] Conexión a la base de datos cerrada.');
+
+        // 2. Sobrescribir archivo database.sqlite
+        fs.writeFileSync(mainDbPath, req.file.buffer);
+        console.log('[RESTORE] Archivo database.sqlite reemplazado exitosamente.');
+
+        res.json({ message: 'Base de datos restaurada. El servidor se reiniciará en unos segundos.' });
+
+        // 3. Forzar reinicio del proceso (pm2/nodemon lo levantarán de nuevo)
+        setTimeout(() => {
+            console.log('[RESTORE] Reiniciando servidor para reconectar BD...');
+            process.exit(0);
+        }, 1500);
+
+    } catch (err) {
+        console.error('Error al restaurar backup:', err);
+        res.status(500).json({ error: 'Error al restaurar la base de datos.' });
+    }
+});
+
+// ─────────────────────────────────────────────
 // INFORMES Y AUDITORÍAS (Markdown)
 // ─────────────────────────────────────────────
 const INFORMES_DIR = 'C:\\Credifuturo\\Informes';
