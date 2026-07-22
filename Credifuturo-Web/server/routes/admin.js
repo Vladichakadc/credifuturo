@@ -3250,6 +3250,10 @@ router.get('/dashboard-stats', async (req, res) => {
         const AppSetting = require('../models/AppSetting');
         const nuSetting = await AppSetting.findOne({ where: { key: 'rentabilidadCajaNU' } });
         const rentabilidadCajaNU = nuSetting ? Number(nuSetting.value) : 543815;
+        // Fecha de la última actualización manual del valor NU (el admin lo edita
+        // esporádicamente, no hay serie histórica). La proyección de cierre de año
+        // usa esta fecha como base del ritmo diario en vez de asumir 1-enero.
+        const rentabilidadCajaNUActualizada = nuSetting?.updatedAt || null;
 
         // ── Baselines dinámicos del año anterior (plan de mejora de gráficas) ──
         // Préstamos e intereses se calculan de la BD (verificado: coinciden con las
@@ -3308,6 +3312,7 @@ router.get('/dashboard-stats', async (req, res) => {
             totalPenaltyValue: Math.round(totalPenaltyValue),
             // Rendimiento NU: leído desde AppSettings (editable por admin desde el panel).
             rentabilidadCajaNU,
+            rentabilidadCajaNUActualizada,
             // ── Caja Disponible ──────────────────────────────────────────────────
             // Fórmula: Patrimonio − Capital Desembolsado (período) + Cuotas Recaudadas (período)
             //

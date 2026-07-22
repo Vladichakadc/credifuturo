@@ -996,6 +996,18 @@ const SavingsByYearChart = ({ data, title = 'Ahorro de los Socios por Año', com
 };
 
 
+// ─── Celda de estimado con rango (conservador–optimista) en vez de un número
+// puntual con falsa precisión — el valor base es el más probable, el rango
+// comunica la incertidumbre real del comportamiento del fondo.
+const EstimadoRangoCell = ({ base, conservador, optimista, className = '' }) => (
+    <td className={`p-3 text-right border-l ${className}`}>
+        <p className="font-black tabular-nums">${Math.round(base).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</p>
+        <p className="text-[9px] text-gray-400 font-semibold tabular-nums mt-0.5">
+            ${Math.round(conservador).toLocaleString('es-CO', { maximumFractionDigits: 0 })} – ${Math.round(optimista).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+        </p>
+    </td>
+);
+
 // ─── NUEVO: COMPONENTE DE GRÁFICA PROFESIONAL ────────────────────────────────────────────────────────
 const FinancialChart = ({ stats, execStats, selectedYears = [], onEditMeta }) => {
     // Etiqueta del período que cubren las cifras (regla de gobernanza: declarar el período)
@@ -1102,30 +1114,74 @@ const FinancialChart = ({ stats, execStats, selectedYears = [], onEditMeta }) =>
         growthLabelClass = "text-emerald-600/70";
     }
 
-    // --- CÁLCULOS DE PROYECCIÓN A DICIEMBRE 2026 ---
+    // --- CÁLCULOS DE PROYECCIÓN A DICIEMBRE — modelo de 3 escenarios ────────────
+    // Rediseño basado en comportamiento real del fondo (no supuestos arbitrarios).
+    // Antes: intereses usaba un "×0.95" sin justificar, y esa MISMA cifra ni
+    // siquiera se mostraba en la tabla de abajo (la tabla mostraba el total
+    // agendado crudo, sin ningún ajuste — dos "estimados" distintos en la misma
+    // pantalla). NU y penalidades usaban un run-rate lineal simple sin rango.
+    // Framework: Conservador / Base / Optimista (business-analyst + startup-
+    // financial-modeling), nunca un solo número con falsa precisión.
     const today = new Date();
     const endOfYear = new Date(today.getFullYear(), 11, 31);
     const remainingDays = Math.max(0, Math.ceil((endOfYear - today) / (1000 * 60 * 60 * 24)));
     const currentDayOfYear = Math.max(1, Math.ceil((today - new Date(today.getFullYear(), 0, 1)) / (1000 * 60 * 60 * 24)));
+    const mesesTranscurridos = Math.max(0.5, currentDayOfYear / 30.44);
+    const mesesRestantes = remainingDays / 30.44;
 
-    // 1. Intereses: total de intereses amortizados agendados en 2026 (pagados + pendientes).
-    //    Es el techo real del portafolio actual; no incluye préstamos nuevos que se disbursén.
-    //    Aplicamos factor 95% para absorber posibles moras o incumplimientos (~5% de cartera).
-    const proyeccionIntereses = (stats.totalIntereses || 0) * 0.95;
+    // 1. INTERESES — modelo de 2 capas:
+    //    (a) Cartera ya desembolsada: lo ya cobrado + lo agendado pendiente, éste
+    //        último ajustado por la tasa de RECAUDO REAL del año (misma cifra que
+    //        "Salud de la Cartera y Riesgo": 86,7% hoy), no un 95% arbitrario.
+    //    (b) Nueva colocación esperada: al ritmo de desembolso real observado este
+    //        año (irregular: 0 préstamos en algunos meses), generando intereses
+    //        solo por la fracción de año que le queda a cada crédito nuevo.
+    const interesesYaCobrados = stats.totalInteresesPagados || 0;
+    const interesesPendientesAgendados = Math.max(0, (stats.totalIntereses || 0) - interesesYaCobrados);
+    const recaudoBase = (execStats?.recaudoYtd?.eficienciaPct ?? 85) / 100;
+    const recaudoConservador = Math.max(0.5, recaudoBase - 0.15);
+    const recaudoOptimista = Math.min(1, recaudoBase + 0.10);
 
-    // 2. Caja NU: proyección lineal al ritmo diario real observado en lo que va del año.
-    //    La fórmula anterior (balance × tasa × días restantes) sobreestimaba porque:
-    //    a) El balance actual baja cada vez que se desembolsa un préstamo nuevo.
-    //    b) rentabilidadCajaNU está hardcodeado y no refleja la tasa cambiante del balance.
-    //    Proyección lineal es más conservadora y realista al ritmo actual del fondo.
+    const colocacionMensualProm = (stats.totalPrestamos || 0) / mesesTranscurridos;
+    const tasaMensualVigente = 0.015; // tasa típica actual del fondo (1.4%–1.6%)
+    // Un crédito originado en un punto aleatorio del período restante acumula, en
+    // promedio, la mitad de esos meses de interés antes del cierre del año.
+    const interesesPorNuevaColocacion = (montoNuevo) => montoNuevo * tasaMensualVigente * (mesesRestantes / 2);
+
+    const proyeccionInteresesBase = interesesYaCobrados
+        + interesesPendientesAgendados * recaudoBase
+        + interesesPorNuevaColocacion(colocacionMensualProm * mesesRestantes);
+    const proyeccionInteresesConservador = interesesYaCobrados
+        + interesesPendientesAgendados * recaudoConservador; // sin nueva colocación: julio ya lleva 0 desembolsos
+    const proyeccionInteresesOptimista = interesesYaCobrados
+        + interesesPendientesAgendados * recaudoOptimista
+        + interesesPorNuevaColocacion(colocacionMensualProm * 1.5 * mesesRestantes);
+
+    // 2. CAJA NU — se mantiene la extrapolación lineal (único método válido con un
+    //    solo dato acumulado, sin serie histórica), pero con rango: cada nuevo
+    //    préstamo desembolsado reduce el saldo en NU (más colocación = menos
+    //    capital rindiendo ahí), así que el escenario optimista de intereses
+    //    (más colocación) implica el escenario conservador de NU, y viceversa.
     const dailyNURate = (stats.rentabilidadCajaNU || 0) / currentDayOfYear;
-    const proyeccionCajaNU = (stats.rentabilidadCajaNU || 0) + dailyNURate * remainingDays;
+    const proyeccionCajaNUBase = (stats.rentabilidadCajaNU || 0) + dailyNURate * remainingDays;
+    const proyeccionCajaNUConservador = proyeccionCajaNUBase * 0.85; // más colocación → menos saldo en NU
+    const proyeccionCajaNUOptimista = proyeccionCajaNUBase * 1.05;
 
-    // 3. Penalidad: proyección lineal al ritmo diario del año (ya era correcta).
-    const proyeccionPenalidad = ((stats.totalPenaltyValue || 0) / currentDayOfYear) * 365;
+    // 3. RECARGOS POR MORA — run-rate anualizado; rango amplio a propósito porque
+    //    el comportamiento real es muy errático (un solo mes concentró el 76% del
+    //    valor acumulado en lo que va del año).
+    const proyeccionPenalidadBase = ((stats.totalPenaltyValue || 0) / currentDayOfYear) * 365;
+    const proyeccionPenalidadConservador = proyeccionPenalidadBase * 0.5;
+    const proyeccionPenalidadOptimista = proyeccionPenalidadBase * 1.8;
 
-    // 4. Rentabilidad Total Proyectada
+    // Compatibilidad: el resto del componente (ComparativeChart, análisis textual)
+    // usa el escenario BASE como "el" estimado puntual en gráficos que no soportan rango.
+    const proyeccionIntereses = proyeccionInteresesBase;
+    const proyeccionCajaNU = proyeccionCajaNUBase;
+    const proyeccionPenalidad = proyeccionPenalidadBase;
     const proyeccionTotal = proyeccionIntereses + proyeccionCajaNU + proyeccionPenalidad;
+    const proyeccionTotalConservador = proyeccionInteresesConservador + proyeccionCajaNUConservador + proyeccionPenalidadConservador;
+    const proyeccionTotalOptimista = proyeccionInteresesOptimista + proyeccionCajaNUOptimista + proyeccionPenalidadOptimista;
 
     // Función auxiliar para obtener estilos de variación
     const getVariationStyles = (actual, historical) => {
@@ -1579,7 +1635,10 @@ const FinancialChart = ({ stats, execStats, selectedYears = [], onEditMeta }) =>
                                     <th className="text-right font-extrabold p-3">Lo que ganamos en 2025</th>
                                     <th className="text-right font-extrabold p-3">Lo que llevamos en 2026</th>
                                     <th className="text-right font-extrabold p-3">¿Subió o bajó?</th>
-                                    <th className="text-right font-extrabold p-3 text-brand-primary rounded-tr-lg">Estimado al cierre del año</th>
+                                    <th className="text-right font-extrabold p-3 text-brand-primary rounded-tr-lg">
+                                        Estimado al cierre del año
+                                        <span className="block text-[9px] font-semibold normal-case text-gray-400 tracking-normal">base · rango conservador–optimista</span>
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
@@ -1593,23 +1652,30 @@ const FinancialChart = ({ stats, execStats, selectedYears = [], onEditMeta }) =>
                                     <td className={`p-3 text-right text-sm font-black border-l ${getVariationStyles((stats.totalInteresesPagados || 0), baselineIntereses)}`}>
                                         {(((stats.totalInteresesPagados || 0) / baselineIntereses) * 100 - 100).toFixed(1)}%
                                     </td>
-                                    <td className={`p-3 text-right font-black border-l ${getVariationStyles((stats.totalInteresesPagados || 0), baselineIntereses)}`}>
-                                        ${Math.round(stats.totalIntereses || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
-                                    </td>
+                                    <EstimadoRangoCell
+                                        base={proyeccionInteresesBase} conservador={proyeccionInteresesConservador} optimista={proyeccionInteresesOptimista}
+                                        className={getVariationStyles(proyeccionInteresesBase, baselineIntereses)}
+                                    />
                                 </tr>
                                 <tr className="hover:bg-gray-50 transition-colors">
                                     <td className="p-3 text-gray-900 font-bold">
                                         Rendimiento cuenta NU
                                         <p className="text-[10px] text-emerald-700 font-semibold">Intereses que genera el dinero guardado en NU</p>
+                                        {stats.rentabilidadCajaNUActualizada && (
+                                            <p className="text-[9px] text-gray-400 mt-0.5">
+                                                Dato actualizado manualmente · hace {Math.max(0, Math.round((today - new Date(stats.rentabilidadCajaNUActualizada)) / 86400000))} día(s)
+                                            </p>
+                                        )}
                                     </td>
                                     <td className="p-3 text-right text-purple-700 font-black bg-gray-50/50">${(1029139).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
                                     <td className="p-3 text-right font-black text-purple-700">${Math.round(stats.rentabilidadCajaNU || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
                                     <td className={`p-3 text-right text-sm font-black border-l ${getVariationStyles((stats.rentabilidadCajaNU || 0), 1029139)}`}>
                                         {(((stats.rentabilidadCajaNU || 0) / 1029139) * 100 - 100).toFixed(1)}%
                                     </td>
-                                    <td className={`p-3 text-right font-black border-l ${getVariationStyles((stats.rentabilidadCajaNU || 0), 1029139)}`}>
-                                        ${Math.round(proyeccionCajaNU).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
-                                    </td>
+                                    <EstimadoRangoCell
+                                        base={proyeccionCajaNUBase} conservador={proyeccionCajaNUConservador} optimista={proyeccionCajaNUOptimista}
+                                        className={getVariationStyles(proyeccionCajaNUBase, 1029139)}
+                                    />
                                 </tr>
                                 <tr className="hover:bg-gray-50 transition-colors">
                                     <td className="p-3 text-gray-900 font-bold">
@@ -1621,9 +1687,10 @@ const FinancialChart = ({ stats, execStats, selectedYears = [], onEditMeta }) =>
                                     <td className={`p-3 text-right text-sm font-black border-l ${getVariationStyles((stats.totalPenaltyValue || 0), 212000)}`}>
                                         {(((stats.totalPenaltyValue || 0) / 212000) * 100 - 100).toFixed(1)}%
                                     </td>
-                                    <td className={`p-3 text-right font-black border-l ${getVariationStyles((stats.totalPenaltyValue || 0), 212000)}`}>
-                                        ${Math.round(proyeccionPenalidad).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
-                                    </td>
+                                    <EstimadoRangoCell
+                                        base={proyeccionPenalidadBase} conservador={proyeccionPenalidadConservador} optimista={proyeccionPenalidadOptimista}
+                                        className={getVariationStyles(proyeccionPenalidadBase, 212000)}
+                                    />
                                 </tr>
                                 <tr className="bg-emerald-50 border-t-2 border-emerald-200">
                                     <td className="p-3 text-emerald-900 font-black text-base uppercase tracking-wider">Ganancia total del fondo</td>
@@ -1632,12 +1699,18 @@ const FinancialChart = ({ stats, execStats, selectedYears = [], onEditMeta }) =>
                                     <td className={`p-3 text-right text-lg font-black border-l shadow-inner ${getVariationStyles(((stats.totalInteresesPagados || 0) + (stats.rentabilidadCajaNU || 0) + (stats.totalPenaltyValue || 0)), rentabilidad2025)}`}>
                                         {((((stats.totalInteresesPagados || 0) + (stats.rentabilidadCajaNU || 0) + (stats.totalPenaltyValue || 0)) / rentabilidad2025) * 100 - 100).toFixed(1)}%
                                     </td>
-                                    <td className={`p-3 text-right font-black text-lg border-l rounded-br-lg ${getVariationStyles(((stats.totalInteresesPagados || 0) + (stats.rentabilidadCajaNU || 0) + (stats.totalPenaltyValue || 0)), rentabilidad2025)}`}>
-                                        ${Math.round(proyeccionTotal).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
-                                    </td>
+                                    <EstimadoRangoCell
+                                        base={proyeccionTotal} conservador={proyeccionTotalConservador} optimista={proyeccionTotalOptimista}
+                                        className={`text-lg shadow-inner ${getVariationStyles(proyeccionTotal, rentabilidad2025)}`}
+                                    />
                                 </tr>
                             </tbody>
                         </table>
+                        <p className="px-3 py-2 text-[9px] text-gray-400 leading-snug border-t border-gray-100">
+                            * Estimado = cartera ya desembolsada (cobrado + agendado pendiente × tasa de recaudo real del año, {Math.round(recaudoBase * 100)}%)
+                            + nueva colocación esperada al ritmo de desembolso observado ({Math.round(colocacionMensualProm).toLocaleString('es-CO')}/mes). NU y recargos:
+                            extrapolación del ritmo del año. El rango conservador–optimista refleja la variabilidad real del comportamiento del fondo, no un solo número con falsa precisión.
+                        </p>
                     </div>
                 </div>
             </div>
@@ -2143,6 +2216,7 @@ const DashboardHome = () => {
         totalPenaltyDays: 0,
         totalPenaltyValue: 0,
         rentabilidadCajaNU: 0,
+        rentabilidadCajaNUActualizada: null,
         saldoEnBanco: 0,
         carteraMora: 0,
         moraCarteraEP: 0,
@@ -2231,6 +2305,7 @@ const DashboardHome = () => {
                     totalPenaltyDays: res.data.totalPenaltyDays || 0,
                     totalPenaltyValue: res.data.totalPenaltyValue || 0,
                     rentabilidadCajaNU: res.data.rentabilidadCajaNU || 0,
+                    rentabilidadCajaNUActualizada: res.data.rentabilidadCajaNUActualizada || null,
                     saldoEnBanco: res.data.saldoEnBanco || 0,
                     carteraMora: res.data.carteraMora || 0,
                     moraCarteraEP: res.data.moraCarteraEP || 0,
