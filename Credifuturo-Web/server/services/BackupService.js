@@ -6,7 +6,28 @@ const Saving = require('../models/Saving');
 const DisbursedLoan = require('../models/DisbursedLoan');
 const LoanPayment = require('../models/LoanPayment');
 
-const BACKUP_BASE_DIR = process.env.BACKUP_DIR || path.join(__dirname, '..', '..', 'Backups');
+// Resolución de la carpeta de backups — ÚNICA fuente de verdad (BackupService y
+// admin.js /backup-history deben usar exactamente esta misma función).
+//
+// Bug corregido: antes, /backup-history tenía la ruta hardcodeada como
+// 'C:\\Credifuturo\\Backups' (una ruta de Windows). En producción (Railway,
+// contenedor Linux) esa ruta nunca existe, así que el historial siempre
+// aparecía vacío. Peor aún: sin BACKUP_DIR configurado en Railway, el
+// fallback relativo (__dirname/../../Backups) cae en el filesystem EFÍMERO
+// del contenedor — cualquier backup escrito ahí se pierde en el siguiente
+// redeploy, exactamente igual que le pasaría a la base de datos si no
+// existiera DATABASE_PATH apuntando al volumen persistente.
+//
+// Fix: anclar los backups al MISMO volumen persistente que ya usa la base de
+// datos (DATABASE_PATH), para que sobrevivan a redeploys igual que la BD.
+function getBackupBaseDir() {
+    if (process.env.BACKUP_DIR) return process.env.BACKUP_DIR;
+    const dbPath = process.env.DATABASE_PATH;
+    if (dbPath) return path.join(path.dirname(dbPath), 'Backups');
+    // Desarrollo local: comportamiento histórico sin cambios.
+    return path.join(__dirname, '..', '..', 'Backups');
+}
+const BACKUP_BASE_DIR = getBackupBaseDir();
 
 // Formatea fechas al formato dd-mm-aaaa para los Excel de backup
 const formatDate = (value) => {
@@ -273,4 +294,4 @@ async function generateAllBackups() {
     return { folder, files: savedPaths, timestamp: new Date().toISOString() };
 }
 
-module.exports = { generateAllBackups };
+module.exports = { generateAllBackups, getBackupBaseDir, BACKUP_BASE_DIR };

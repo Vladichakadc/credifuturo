@@ -39,7 +39,7 @@ const ReportsPage = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [resClients, resSavings, resDisbursed, resPayments] = await Promise.all([
+            const [resClients, resSavings, resDisbursed, resPayments, resSyncStatus] = await Promise.all([
                 api.get('/admin/clients'),
                 api.get('/admin/savings'),
                 api.get('/admin/disbursed-loans'),
@@ -101,6 +101,29 @@ const ReportsPage = () => {
             toast.error('Error al generar backup completo: ' + (err.response?.data?.error || err.message));
         } finally {
             setBackingUpFull(false);
+        }
+    };
+
+    // --- Descargar un backup del historial como ZIP ---
+    const [downloadingBackup, setDownloadingBackup] = useState(null);
+    const handleDownloadBackup = async (folderName) => {
+        setDownloadingBackup(folderName);
+        try {
+            const res = await api.get(`/admin/backup-history/${folderName}/download`, { responseType: 'blob' });
+            const url = window.URL.createObjectURL(new Blob([res.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `backup_${folderName}.zip`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+            toast.success('Backup descargado');
+        } catch (err) {
+            console.error('Error al descargar backup:', err);
+            toast.error('Error al descargar el backup');
+        } finally {
+            setDownloadingBackup(null);
         }
     };
 
@@ -378,8 +401,13 @@ const ReportsPage = () => {
                 </div>
             </div>
 
-            {/* ── Backup Completo (Excel + BD) ─────────────────────────── */}
-            {!isProduction && (
+            {/* ── Backup Completo (Excel + BD) ─────────────────────────────────────
+                Antes se ocultaba en producción (!isProduction) porque no persistía
+                correctamente ahí (ruta de Windows hardcodeada + filesystem efímero de
+                Railway). Con el fix de BackupService.js/getBackupBaseDir (ancla al
+                volumen persistente vía DATABASE_PATH) ya es seguro y útil en producción,
+                así que se muestra siempre. */}
+            {(
                 <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 p-6 text-white shadow-xl">
                     <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
                     <div className="relative flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -430,7 +458,7 @@ const ReportsPage = () => {
                                 </div>
                                 <div>
                                     <h2 className="text-base font-bold text-white">Historial de Backups</h2>
-                                    <p className="text-xs text-slate-400">{backupHistory.length} respaldos realizados · Carpeta: C:\Credifuturo\Backups</p>
+                                    <p className="text-xs text-slate-400">{backupHistory.length} respaldos realizados</p>
                                 </div>
                             </div>
                             <span className="text-xs font-semibold text-emerald-400 bg-emerald-400/10 px-3 py-1 rounded-full">
@@ -483,6 +511,18 @@ const ReportsPage = () => {
                                                 </span>
                                             </div>
                                         </div>
+                                        {/* Descargar */}
+                                        <button
+                                            onClick={() => handleDownloadBackup(bk.folderName)}
+                                            disabled={downloadingBackup === bk.folderName}
+                                            className="shrink-0 flex items-center gap-1.5 text-xs font-semibold text-brand-primary hover:text-brand-dark bg-brand-primary/10 hover:bg-brand-primary/20 px-3 py-2 rounded-lg transition-all disabled:opacity-50"
+                                            title="Descargar este backup como ZIP"
+                                        >
+                                            {downloadingBackup === bk.folderName
+                                                ? <Loader className="h-3.5 w-3.5 animate-spin" />
+                                                : <Download className="h-3.5 w-3.5" />}
+                                            Descargar
+                                        </button>
                                         {/* Status */}
                                         <div className="shrink-0">
                                             <CheckCircle className={`h-5 w-5 ${isLatest ? 'text-emerald-500' : 'text-gray-300'}`} />

@@ -3554,7 +3554,10 @@ router.post('/backup/full', async (req, res) => {
 // ─────────────────────────────────────────────
 // HISTORIAL DE BACKUPS
 // ─────────────────────────────────────────────
-const BACKUPS_DIR = 'C:\\Credifuturo\\Backups';
+// Antes: ruta de Windows hardcodeada ('C:\\Credifuturo\\Backups'), rota en
+// producción (Railway/Linux). Ahora usa la MISMA función que BackupService.js
+// (ancla al volumen persistente vía DATABASE_PATH cuando existe).
+const BACKUPS_DIR = require('../services/BackupService').getBackupBaseDir();
 const fs = require('fs');
 const path = require('path');
 
@@ -3598,6 +3601,35 @@ router.get('/backup-history', async (req, res) => {
     } catch (err) {
         console.error('Error al listar historial de backups:', err);
         res.status(500).json({ error: 'Error al listar historial de backups' });
+    }
+});
+
+// GET /backup-history/:folderName/download — descarga un backup como ZIP.
+// Antes no existía ninguna forma de bajar un backup generado en producción
+// (solo se podían abrir directamente en el disco de un Windows local).
+router.get('/backup-history/:folderName/download', async (req, res) => {
+    try {
+        const { folderName } = req.params;
+        // Reusa el mismo patrón de validación que ya filtra el listado, evita
+        // path traversal (folderName va directo a un path del filesystem).
+        if (!/^\d{4}-\d{2}-\d{2}(_\d{6})?$/.test(folderName)) {
+            return res.status(400).json({ error: 'Nombre de carpeta inválido' });
+        }
+        const folderPath = path.join(BACKUPS_DIR, folderName);
+        if (!fs.existsSync(folderPath)) {
+            return res.status(404).json({ error: 'Backup no encontrado' });
+        }
+        const archiver = require('archiver');
+        res.setHeader('Content-Type', 'application/zip');
+        res.setHeader('Content-Disposition', `attachment; filename="backup_${folderName}.zip"`);
+        const archive = archiver('zip', { zlib: { level: 9 } });
+        archive.on('error', (err) => { throw err; });
+        archive.pipe(res);
+        archive.directory(folderPath, false);
+        await archive.finalize();
+    } catch (err) {
+        console.error('Error al descargar backup:', err);
+        if (!res.headersSent) res.status(500).json({ error: 'Error al descargar el backup' });
     }
 });
 
