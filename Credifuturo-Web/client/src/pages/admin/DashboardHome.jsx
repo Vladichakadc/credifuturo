@@ -3,7 +3,8 @@ import api from '../../config/api';
 import {
     Users, DollarSign, AlertTriangle, PiggyBank, BarChart3,
     Save, CheckCircle, XCircle, AlertCircle, X, RefreshCw, Database, TrendingUp, Landmark, Activity,
-    ShieldCheck, ActivitySquare, FileDown, Clock, Calendar, ChevronDown, Maximize2, Edit2
+    ShieldCheck, ActivitySquare, FileDown, Clock, Calendar, ChevronDown, Maximize2, Edit2,
+    Percent, Target, CalendarClock, Wallet, ArrowUpRight, ArrowDownRight
 } from 'lucide-react';
 import ChartExpandModal, { analyzeComparativeChart, analyzeIncomeDistribution } from '../../components/ChartExpandModal';
 import jsPDF from 'jspdf';
@@ -996,7 +997,7 @@ const SavingsByYearChart = ({ data, title = 'Ahorro de los Socios por Año', com
 
 
 // ─── NUEVO: COMPONENTE DE GRÁFICA PROFESIONAL ────────────────────────────────────────────────────────
-const FinancialChart = ({ stats, selectedYears = [], onEditMeta }) => {
+const FinancialChart = ({ stats, execStats, selectedYears = [], onEditMeta }) => {
     // Etiqueta del período que cubren las cifras (regla de gobernanza: declarar el período)
     const periodoLabel = selectedYears.length > 0 ? selectedYears.join(' – ') : 'todos los años';
     const [expandDonut, setExpandDonut] = useState(false);
@@ -1036,6 +1037,38 @@ const FinancialChart = ({ stats, selectedYears = [], onEditMeta }) => {
 
     const riskIndex = total > 0 ? ((mora / total) * 100).toFixed(1) : 0;
     const liquidity = total > 0 ? ((disponible / total) * 100).toFixed(1) : 0;
+
+    // ── Salud de la Cartera y Riesgo ─────────────────────────────────────────
+    // IMPORTANTE — hallazgo de calidad de datos (verificado contra la BD): ~81 de
+    // 163 cuotas con mes_pago tienen su fecha_pago_max con mes/día invertido en el
+    // dato importado (ej. mes_pago="Julio" pero fecha_pago_max="2026-09-07", que en
+    // realidad es 07-09 = 9 de julio). moraCarteraEP (arriba, dashboard-stats) ya
+    // corrige esto cruzando con mes_pago; la comparación de fecha "cruda" que usa
+    // /executive-stats NO la corrige y subestima la mora real (probado: 6% vs el
+    // ~17% real con datos de hoy). Por eso el vencido/vigente y el apalancamiento
+    // de esta sección se calculan aquí con moraCarteraEP + carteraDia — las MISMAS
+    // cifras que ya se muestran arriba en "Préstamos y Cartera" — para que nunca
+    // aparezcan dos números de mora distintos en la misma pantalla. Concentración y
+    // penetración sí vienen de /executive-stats: no dependen de fecha de vencimiento,
+    // así que no las afecta este problema (verificado).
+    const carteraVencidaReal = stats.moraCarteraEP || 0;
+    const carteraVigenteReal = stats.carteraDia || 0;
+    const carteraTotalReal = carteraVigenteReal + carteraVencidaReal;
+    const parPctReal = carteraTotalReal > 0 ? (carteraVencidaReal / carteraTotalReal) * 100 : 0;
+    const carteraRiesgo = { total: carteraTotalReal, vigente: carteraVigenteReal, vencida: carteraVencidaReal, parPct: +parPctReal.toFixed(1) };
+    const recaudoAnio = execStats?.recaudoYtd || { eficienciaPct: null, pagadas: 0, exigidas: 0 };
+    const concentracionRanking = execStats?.concentracion || [];
+    const penetracionCredito = execStats?.penetracion || { conCredito: 0, activos: 0 };
+    const top3Deudores = concentracionRanking.slice(0, 3);
+    const top3DeudoresTotal = top3Deudores.reduce((s, d) => s + (d.saldo || 0), 0);
+    // % de concentración sobre el total real (mismo total que PAR/apalancamiento)
+    const top3Pct = carteraTotalReal > 0 ? (top3DeudoresTotal / carteraTotalReal) * 100 : 0;
+    const penetracionPct = penetracionCredito.activos > 0 ? (penetracionCredito.conCredito / penetracionCredito.activos) * 100 : 0;
+    const ldrPct = (stats.totalAhorradoGeneral || 0) > 0 ? (carteraTotalReal / stats.totalAhorradoGeneral) * 100 : 0;
+    const parTone = carteraRiesgo.parPct > 10 ? 'red' : carteraRiesgo.parPct > 5 ? 'amber' : 'emerald';
+    const recaudoTone = recaudoAnio.eficienciaPct == null ? 'gray' : recaudoAnio.eficienciaPct < 90 ? 'red' : recaudoAnio.eficienciaPct < 95 ? 'amber' : 'emerald';
+    const concTone = top3Pct > 60 ? 'red' : top3Pct > 40 ? 'amber' : 'emerald';
+    const ldrTone = ldrPct > 85 ? 'red' : ldrPct < 40 ? 'amber' : 'emerald';
 
     // Baselines del año anterior — calculados por el backend desde la BD y AppSettings
     // (plan de mejora de gráficas: sin cifras congeladas en el código; los valores
@@ -1700,6 +1733,143 @@ const FinancialChart = ({ stats, selectedYears = [], onEditMeta }) => {
                     <ComparativeChart compact title="Ganancias por Intereses" historic={baselineIntereses} current={stats.totalInteresesPagados || 0} color="#166534" labelHistoric={String(baselineAnio)} labelCurrent={String(baselineAnio + 1)} />
                 </ChartExpandModal>
 
+                {/* ── Salud de la Cartera y Riesgo — KPIs para decisión del comité ──
+                    Reutiliza /admin/executive-stats (PAR, recaudo, concentración,
+                    penetración ya calculados y probados en el Panel Ejecutivo beta);
+                    el apalancamiento (cartera/ahorro) se deriva aquí, es el único
+                    cálculo nuevo. */}
+                {(() => {
+                    if (!execStats) return null;
+                    const cartera = carteraRiesgo;
+                    const recaudo = recaudoAnio;
+                    const top3 = top3Deudores;
+                    const top3Total = top3DeudoresTotal;
+                    const penetracion = penetracionCredito;
+                    const penPct = penetracionPct;
+
+                    const toneClasses = {
+                        emerald: { bg: 'bg-emerald-50', border: 'border-emerald-100', text: 'text-emerald-700', badge: 'bg-emerald-100 text-emerald-700' },
+                        amber: { bg: 'bg-amber-50', border: 'border-amber-100', text: 'text-amber-700', badge: 'bg-amber-100 text-amber-700' },
+                        red: { bg: 'bg-red-50', border: 'border-red-100', text: 'text-red-700', badge: 'bg-red-100 text-red-700' },
+                        gray: { bg: 'bg-gray-50', border: 'border-gray-100', text: 'text-gray-500', badge: 'bg-gray-100 text-gray-500' },
+                    };
+
+                    const kpis = [
+                        { icon: AlertTriangle, label: 'Cartera en Riesgo (PAR)', value: `${cartera.parPct}%`, sub: `$${Number(cartera.vencida).toLocaleString('es-CO')} vencidos`, t: parTone },
+                        { icon: Percent, label: 'Tasa de Recaudo (año)', value: recaudo.eficienciaPct != null ? `${recaudo.eficienciaPct}%` : '—', sub: `${recaudo.pagadas}/${recaudo.exigidas} cuotas exigidas`, t: recaudoTone },
+                        { icon: Target, label: 'Concentración (top 3)', value: `${top3Pct.toFixed(0)}%`, sub: `$${Number(top3Total).toLocaleString('es-CO')} de la cartera`, t: concTone },
+                        { icon: Users, label: 'Penetración de Crédito', value: `${penPct.toFixed(0)}%`, sub: `${penetracion.conCredito} de ${penetracion.activos} socios activos`, t: penPct < 30 ? 'amber' : 'emerald' },
+                        { icon: Wallet, label: 'Apalancamiento del Fondo', value: `${ldrPct.toFixed(0)}%`, sub: 'Cartera vs. patrimonio de socios', t: ldrTone },
+                    ];
+
+                    return (
+                        <div className="mt-6 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden" data-pdf-section="true">
+                            <div className="px-6 py-4 bg-gradient-to-r from-slate-700 to-slate-900 flex items-center gap-3">
+                                <div className="bg-white/20 p-2 rounded-full backdrop-blur-sm flex-shrink-0">
+                                    <Target className="h-5 w-5 text-white" />
+                                </div>
+                                <div>
+                                    <h4 className="text-base font-black text-white">Salud de la Cartera y Riesgo</h4>
+                                    <p className="text-xs text-slate-300 font-semibold mt-0.5">Los 5 indicadores que un comité de crédito necesita antes de aprobar préstamos, ajustar tasas o repartir utilidades</p>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 lg:grid-cols-5 divide-y lg:divide-y-0 lg:divide-x divide-gray-100 border-b border-gray-100">
+                                {kpis.map((k, i) => {
+                                    const c = toneClasses[k.t];
+                                    const Icon = k.icon;
+                                    return (
+                                        <div key={i} className={`p-4 flex flex-col gap-1.5 ${c.bg}`}>
+                                            <div className="flex items-center justify-between">
+                                                <Icon className={`h-4 w-4 ${c.text}`} />
+                                                <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-full ${c.badge}`}>
+                                                    {k.t === 'emerald' ? 'SANO' : k.t === 'amber' ? 'VIGILAR' : k.t === 'red' ? 'ATENCIÓN' : '—'}
+                                                </span>
+                                            </div>
+                                            <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider leading-tight">{k.label}</p>
+                                            <p className={`text-xl font-black ${c.text} leading-none`}>{k.value}</p>
+                                            <p className="text-[9px] text-gray-500 font-semibold leading-tight">{k.sub}</p>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Concentración: quiénes son el top 3 y qué pasa si uno no paga */}
+                            {top3.length > 0 && (
+                                <div className="px-6 py-4 border-b border-gray-100">
+                                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-wider mb-2.5">Top 3 deudores — riesgo de concentración</p>
+                                    <div className="space-y-2">
+                                        {top3.map((d, i) => {
+                                            const pct = cartera.total > 0 ? ((d.saldo || 0) / cartera.total) * 100 : 0;
+                                            return (
+                                                <div key={d.clientId || i} className="flex items-center gap-3">
+                                                    <span className="text-[10px] font-black text-gray-400 w-4">{i + 1}º</span>
+                                                    <span className="text-xs font-semibold text-gray-700 w-32 truncate">{d.nombre}</span>
+                                                    <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                                                        <div className={`h-full rounded-full ${concTone === 'red' ? 'bg-red-400' : concTone === 'amber' ? 'bg-amber-400' : 'bg-slate-400'}`} style={{ width: `${Math.min(100, pct)}%` }} />
+                                                    </div>
+                                                    <span className="text-xs font-bold text-gray-600 tabular-nums w-14 text-right">{pct.toFixed(0)}%</span>
+                                                    <span className="text-[10px] text-gray-400 tabular-nums w-24 text-right">${Number(d.saldo).toLocaleString('es-CO')}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                    <p className="text-[10px] text-gray-400 mt-2.5 leading-snug">
+                                        {concTone === 'red'
+                                            ? `Alerta: si el socio #1 entra en mora, se compromete una porción crítica de la cartera. Priorizar diversificación antes de nuevas colocaciones grandes.`
+                                            : concTone === 'amber'
+                                            ? `El top 3 concentra una porción a vigilar de la cartera. Al aprobar el próximo préstamo grande, considerar el efecto en esta concentración.`
+                                            : `Cartera bien diversificada: ningún socio individual compromete una porción crítica del fondo.`}
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Próximos vencimientos + Actividad reciente — pulso del fondo */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-gray-100">
+                                <div className="p-5">
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <CalendarClock className="h-4 w-4 text-brand-primary" />
+                                        <p className="text-[10px] font-black text-gray-500 uppercase tracking-wider">Flujo esperado · próximos 30 días</p>
+                                    </div>
+                                    <p className="text-2xl font-black text-brand-primary leading-none">${Number(stats.proximosVencimientos30d?.monto || 0).toLocaleString('es-CO')}</p>
+                                    <p className="text-[11px] text-gray-500 font-semibold mt-1.5">
+                                        {stats.proximosVencimientos30d?.count || 0} cuota(s) de {stats.proximosVencimientos30d?.socios || 0} socio(s) vencen este mes. Este ingreso esperado alimenta directamente la liquidez disponible.
+                                    </p>
+                                </div>
+                                <div className="p-5">
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <Activity className="h-4 w-4 text-brand-primary" />
+                                        <p className="text-[10px] font-black text-gray-500 uppercase tracking-wider">Actividad reciente</p>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        {[...(stats.recentSavings || []).map(s => ({ ...s, kind: 'ahorro' })), ...(stats.recentPayments || []).map(p => ({ ...p, kind: 'pago' }))]
+                                            .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
+                                            .slice(0, 3)
+                                            .map((m, i) => (
+                                                <div key={i} className="flex items-center gap-2 text-[11px]">
+                                                    {m.kind === 'ahorro'
+                                                        ? <ArrowUpRight className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />
+                                                        : <ArrowDownRight className="h-3.5 w-3.5 text-blue-500 flex-shrink-0" />}
+                                                    <span className="text-gray-600 truncate flex-1">{m.client || 'Socio'} — {m.kind === 'ahorro' ? 'ahorró' : 'pagó cuota de'}</span>
+                                                    <span className="font-bold text-gray-800 tabular-nums flex-shrink-0">${Number(m.amount || 0).toLocaleString('es-CO')}</span>
+                                                </div>
+                                            ))}
+                                        {(stats.recentSavings || []).length === 0 && (stats.recentPayments || []).length === 0 && (
+                                            <p className="text-[11px] text-gray-400">Sin movimientos recientes.</p>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <p className="px-6 py-3 bg-gray-50 border-t border-gray-100 text-[10px] text-gray-400 leading-snug">
+                                * PAR, concentración y apalancamiento usan la mora ya validada del fondo (misma cifra que "Cartera en Mora" arriba en esta página).
+                                Tasa de recaudo y penetración vienen del cruce directo de fechas de vencimiento — algunos registros importados tienen el mes de la
+                                fecha límite invertido respecto al mes real de la cuota; se está revisando el impacto exacto en estas dos cifras específicas.
+                            </p>
+                        </div>
+                    );
+                })()}
+
                 {/* ── Diagnóstico Financiero — 3 Insight Cards ─────────────────── */}
                 {(() => {
                     const ahorroArr = stats.ahorroPorAnio || [];
@@ -1870,6 +2040,25 @@ const FinancialChart = ({ stats, selectedYears = [], onEditMeta }) => {
                                                 ? `Meta anual superada (${achievement.toFixed(0)}%). Evaluar distribución de excedentes.`
                                                 : `Se lleva el ${achievement.toFixed(0)}% de la meta con el ${pctYearElapsed}% del año. Mantener ritmo para alcanzar $${Number(rentabilidad2025).toLocaleString('es-CO')}.`
                                         },
+                                        ...(execStats ? [{
+                                            severity: concTone === 'red' ? 'high' : concTone === 'amber' ? 'medium' : 'low',
+                                            icon: '🎯',
+                                            title: 'Concentración de Cartera',
+                                            action: concTone === 'red'
+                                                ? `El top 3 de deudores concentra el ${top3Pct.toFixed(0)}% de la cartera pendiente. Un solo impago grande comprometería la liquidez — diversificar antes de aprobar créditos grandes nuevos.`
+                                                : concTone === 'amber'
+                                                ? `Concentración a vigilar: ${top3Pct.toFixed(0)}% de la cartera en 3 socios. Al evaluar el próximo préstamo grande, considerar el efecto en esta cifra.`
+                                                : `Cartera bien diversificada (top 3 = ${top3Pct.toFixed(0)}%). Sin acción requerida.`
+                                        }, {
+                                            severity: ldrTone === 'red' ? 'high' : ldrTone === 'amber' ? 'medium' : 'low',
+                                            icon: '⚖️',
+                                            title: 'Apalancamiento del Fondo',
+                                            action: ldrTone === 'red'
+                                                ? `El fondo tiene prestado el ${ldrPct.toFixed(0)}% del patrimonio de los socios — cerca del límite. Priorizar recaudo antes de nuevos desembolsos grandes.`
+                                                : ldrTone === 'amber'
+                                                ? `Apalancamiento en ${ldrPct.toFixed(0)}% — el fondo tiene capacidad ociosa. Evaluar impulsar la colocación de nuevos préstamos entre socios sin crédito vigente.`
+                                                : `Apalancamiento saludable (${ldrPct.toFixed(0)}% del patrimonio prestado). Balance adecuado entre colocación y reserva de liquidez.`
+                                        }] : []),
                                     ].map((item, i) => (
                                         <div key={i} className="flex items-start gap-3 px-4 py-3">
                                             <div className={`w-1 self-stretch rounded-full flex-shrink-0 ${item.severity === 'high' ? 'bg-red-500' : item.severity === 'medium' ? 'bg-amber-400' : 'bg-emerald-400'}`} />
@@ -1966,6 +2155,10 @@ const DashboardHome = () => {
         proximosVencimientos30d: { count: 0, monto: 0, socios: 0 },
         sociosAlDiaMes: { count: 0, total: 0 }
     });
+    // Indicadores de riesgo/cartera (PAR, recaudo, concentración, penetración) —
+    // ya calculados y probados en /admin/executive-stats (Panel Ejecutivo beta);
+    // se reutilizan aquí en vez de duplicar la lógica SQL.
+    const [execStats, setExecStats] = useState(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [lastUpdated, setLastUpdated] = useState(null);
@@ -2004,9 +2197,16 @@ const DashboardHome = () => {
         setLoading(true);
         try {
             const yearsParam = selectedYears.length > 0 ? `&years=${selectedYears.join(',')}` : '';
-            const res = await api.get(`/admin/dashboard-stats?status=${encodeURIComponent(statusFilter)}${yearsParam}`);
+            const [res, execRes] = await Promise.allSettled([
+                api.get(`/admin/dashboard-stats?status=${encodeURIComponent(statusFilter)}${yearsParam}`),
+                api.get('/admin/executive-stats'),
+            ]).then(([r1, r2]) => [
+                r1.status === 'fulfilled' ? r1.value : null,
+                r2.status === 'fulfilled' ? r2.value : null,
+            ]);
+            setExecStats(execRes?.data || null);
             // Updated setStats to include new fields
-            if (res.data) {
+            if (res?.data) {
                 setStats({
                     clientsCount: res.data.clientsCount || 0,
                     activeClientsCount: res.data.activeClientsCount || 0,
@@ -2044,6 +2244,8 @@ const DashboardHome = () => {
                     sociosAlDiaMes: res.data.sociosAlDiaMes || { count: 0, total: 0 },
                     timestamp: res.data.timestamp
                 });
+            } else {
+                toast.error('Error al cargar estadísticas del panel');
             }
         } catch (error) {
             console.error('Error fetching dashboard stats:', error);
@@ -2901,6 +3103,7 @@ const DashboardHome = () => {
                     <CardContent className="p-0 bg-white rounded-b-xl overflow-hidden">
                         <FinancialChart
                             stats={stats}
+                            execStats={execStats}
                             selectedYears={selectedYears}
                             onEditMeta={isAdmin ? () => {
                                 setMetaInputRaw(String(stats?.baselines?.metaGanancia || ''));
