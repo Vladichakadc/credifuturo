@@ -9,19 +9,6 @@ const { logSecurityEvent, getClientIp, LOG_FILE } = require('../services/securit
 const { getLastActivity } = require('../services/sessionActivity');
 const { verifyFileMagicBytes, sanitizeFilename } = require('../services/fileValidator');
 
-// --- Debug Routes ---
-router.get('/debug/lady', async (req, res) => {
-    try {
-        const { Op } = require('sequelize');
-        const clients = await Client.findAll({ where: { name: { [Op.like]: '%lady%' } } });
-        if (!clients.length) return res.json({ msg: "No lady" });
-        const savings = await Saving.findAll({ where: { clientId: clients[0].id } });
-        res.json({ client: clients[0], savings });
-    } catch (e) {
-        res.json({ error: e.message });
-    }
-});
-
 // --- Funciones de Utilidad ---
 /**
  * Formatea un string de fecha de AAAA-MM-DD a DD-MM-AAAA.
