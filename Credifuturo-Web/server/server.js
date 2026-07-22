@@ -4,6 +4,24 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+const fs = require('fs');
+
+// [RESTORE HOOK] Check for a pending restore before initializing Sequelize
+const dbPath = process.env.DATABASE_PATH || path.join(__dirname, '..', 'database.sqlite');
+const restorePath = dbPath + '.restore';
+if (fs.existsSync(restorePath)) {
+    try {
+        if (fs.existsSync(dbPath)) {
+            // Optional: Backup the current one just in case
+            fs.copyFileSync(dbPath, dbPath + '.bak_pre_restore');
+        }
+        fs.renameSync(restorePath, dbPath);
+        console.log('✅ [RESTORE] Base de datos reemplazada exitosamente durante el inicio.');
+    } catch (e) {
+        console.error('❌ [RESTORE] Error reemplazando base de datos:', e);
+    }
+}
+
 const sequelize = require('./config/database');
 const bcrypt = require('bcryptjs');
 const cron = require('node-cron');

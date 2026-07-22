@@ -3654,29 +3654,25 @@ router.post('/backup/restore', restoreUpload.single('database'), async (req, res
 
         console.log(`[RESTORE] Archivo recibido: ${req.file.originalname} (${Math.round(req.file.size / 1024)} KB)`);
 
-        // Ruta de la BD principal
-        const mainDbPath = path.join(__dirname, '..', '..', 'database.sqlite');
-        
-        // 1. Cerrar conexión de Sequelize
-        const sequelize = require('../config/database');
-        await sequelize.close();
-        console.log('[RESTORE] Conexión a la base de datos cerrada.');
+        // Escribir el archivo como .restore para que server.js lo reemplace al reiniciar
+        // Esto evita el error EBUSY (File Locked) en Windows.
+        const restoreDbPath = path.join(__dirname, '..', '..', 'database.sqlite.restore');
+        fs.writeFileSync(restoreDbPath, req.file.buffer);
+        console.log('[RESTORE] Archivo temporal .restore escrito exitosamente.');
 
-        // 2. Sobrescribir archivo database.sqlite
-        fs.writeFileSync(mainDbPath, req.file.buffer);
-        console.log('[RESTORE] Archivo database.sqlite reemplazado exitosamente.');
+        res.json({ message: 'Base de datos subida. El servidor se reiniciará para aplicar los cambios.' });
 
-        res.json({ message: 'Base de datos restaurada. El servidor se reiniciará en unos segundos.' });
-
-        // 3. Forzar reinicio del proceso (pm2/nodemon lo levantarán de nuevo)
+        // Forzar reinicio del proceso (pm2/nodemon lo levantarán de nuevo)
         setTimeout(() => {
-            console.log('[RESTORE] Reiniciando servidor para reconectar BD...');
+            console.log('[RESTORE] Reiniciando servidor para aplicar nueva BD...');
             process.exit(0);
         }, 1500);
 
     } catch (err) {
         console.error('Error al restaurar backup:', err);
-        res.status(500).json({ error: 'Error al restaurar la base de datos.' });
+        const logPath = path.join(__dirname, '..', '..', 'restore_error.txt');
+        require('fs').writeFileSync(logPath, err.stack || err.message);
+        res.status(500).json({ error: 'Error al restaurar la base de datos: ' + err.message });
     }
 });
 
