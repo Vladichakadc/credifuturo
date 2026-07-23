@@ -4,6 +4,28 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+const fs = require('fs');
+
+// [RESTORE] Si hay una BD subida pendiente de aplicar (POST /admin/backup/restore,
+// solo disponible fuera de producción), reemplazarla antes de que Sequelize se
+// conecte. Nunca corre en producción — la restauración de la BD de Railway usa
+// el mecanismo dedicado y auditado /api/setup/restore-db (gated por SETUP_KEY).
+if (process.env.NODE_ENV !== 'production') {
+    const dbPathForRestore = process.env.DATABASE_PATH || path.join(__dirname, '..', 'database.sqlite');
+    const restorePendingPath = dbPathForRestore + '.restore';
+    if (fs.existsSync(restorePendingPath)) {
+        try {
+            if (fs.existsSync(dbPathForRestore)) {
+                fs.copyFileSync(dbPathForRestore, dbPathForRestore + '.bak_pre_restore');
+            }
+            fs.renameSync(restorePendingPath, dbPathForRestore);
+            console.log('✅ [RESTORE] Base de datos local reemplazada exitosamente durante el inicio.');
+        } catch (e) {
+            console.error('❌ [RESTORE] Error reemplazando base de datos local:', e);
+        }
+    }
+}
+
 const sequelize = require('./config/database');
 const bcrypt = require('bcryptjs');
 const cron = require('node-cron');

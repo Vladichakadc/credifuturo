@@ -3634,6 +3634,51 @@ router.get('/backup-history/:folderName/download', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
+// RESTAURAR BASE DE DATOS (solo fuera de producción)
+// ─────────────────────────────────────────────
+// Comodidad de desarrollo: sube un database.sqlite y reemplaza la BD local
+// activa. Deliberadamente restringido a NODE_ENV !== 'production' — el
+// gate real es esta variable de entorno (fijada en el despliegue), no un
+// header de la petición como Host/hostname, que un cliente puede manipular.
+// La restauración en Railway ya tiene su propio mecanismo dedicado y
+// auditado: /api/setup/restore-db, gated por SETUP_KEY (ver server.js).
+const restoreUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 100 * 1024 * 1024 } // 100 MB
+});
+
+router.post('/backup/restore', restoreUpload.single('database'), async (req, res) => {
+    if (process.env.NODE_ENV === 'production') {
+        return res.status(403).json({ error: 'Restauración deshabilitada en producción. Usa /api/setup/restore-db.' });
+    }
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No se envió ningún archivo.' });
+        }
+        if (!/\.(sqlite|db)$/i.test(req.file.originalname)) {
+            return res.status(400).json({ error: 'El archivo debe tener extensión .sqlite o .db' });
+        }
+
+        const dbPath = process.env.DATABASE_PATH || path.join(__dirname, '..', '..', 'database.sqlite');
+        // Se escribe como .restore y se aplica al reiniciar (ver server.js), en
+        // vez de sobrescribir en caliente: evita el error EBUSY de Windows por
+        // el archivo bloqueado mientras Sequelize mantiene la conexión abierta.
+        fs.writeFileSync(dbPath + '.restore', req.file.buffer);
+        console.log(`[RESTORE] Archivo recibido (${Math.round(req.file.size / 1024)} KB) — pendiente de aplicar al reiniciar el servidor.`);
+
+        res.json({ message: 'Base de datos subida. El servidor se reiniciará para aplicarla.' });
+
+        setTimeout(() => {
+            console.log('[RESTORE] Reiniciando servidor para aplicar la base de datos restaurada...');
+            process.exit(0);
+        }, 1500);
+    } catch (err) {
+        console.error('Error al restaurar backup:', err);
+        if (!res.headersSent) res.status(500).json({ error: 'Error al restaurar la base de datos: ' + err.message });
+    }
+});
+
+// ─────────────────────────────────────────────
 // INFORMES Y AUDITORÍAS (Markdown)
 // ─────────────────────────────────────────────
 const INFORMES_DIR = 'C:\\Credifuturo\\Informes';
