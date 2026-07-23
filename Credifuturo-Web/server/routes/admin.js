@@ -4032,8 +4032,40 @@ router.get('/my/payments', verifyToken, requireFreshPassword, requireRole('user'
         const payments = await LoanPayment.findAll({
             where: { clientId: req.user.id },
             include: [{ model: Client, attributes: ['customerId', 'name', 'surname1', 'surname2', 'cedula'] }],
-            order: [['fechaPagoMax', 'DESC']]
         });
+
+        // ── Corrección día/mes invertido en fechaPagoMax ────────────────────
+        // Import histórico: ~81/163 cuotas del fondo tienen fechaPagoMax con
+        // día y mes intercambiados respecto a mesPago (ej. mesPago="Agosto"
+        // pero fechaPagoMax="2026-09-08" en vez de "2026-08-09"). Ya existe
+        // esta misma corrección para moraCarteraEP/carteraDia (ver
+        // getLoanCapacityAnalysis y /dashboard-stats) pero nunca se aplicaba
+        // a la fecha cruda que este endpoint devuelve — por eso "próxima
+        // cuota" en Mi Panel podía mostrar el mes equivocado aunque la cuota
+        // identificada como "próxima" fuera la correcta.
+        const monthsLower = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+        const safeParseDate = (dateVal, mesRef) => {
+            if (!dateVal) return null;
+            let dateStr = dateVal instanceof Date ? dateVal.toISOString().split('T')[0] : String(dateVal);
+            if (dateStr.includes('T')) dateStr = dateStr.split('T')[0];
+            const parts = dateStr.split('-');
+            if (parts.length !== 3) return new Date(dateStr + 'T00:00:00');
+            const [y, m, d] = parts.map(Number);
+            if (mesRef) {
+                const targetIdx = monthsLower.indexOf(mesRef.toLowerCase().trim()) + 1;
+                if (targetIdx > 0) {
+                    if (m === targetIdx) return new Date(y, m - 1, d);
+                    if (d === targetIdx) return new Date(y, d - 1, m); // día/mes invertidos
+                }
+            }
+            return new Date(dateStr + 'T00:00:00');
+        };
+        const toISODate = (d) => {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
+        };
 
         const normalizedData = payments.map(p => {
             const raw = p.toJSON();
@@ -4042,9 +4074,19 @@ router.get('/my/payments', verifyToken, requireFreshPassword, requireRole('user'
             normalized.clientName = c ? `${c.name || ''} ${c.surname1 || ''} ${c.surname2 || ''}`.trim() : '';
             normalized.clientCedula = c ? c.cedula : '';
             normalized.clientCustomerId = c ? c.customerId : '';
-            normalized.fechaPago = raw.fechaPagoMax; // Ensure frontend gets fechaPago
+
+            const fechaCorregida = safeParseDate(raw.fechaPagoMax, raw.mesPago);
+            if (fechaCorregida) {
+                normalized.fechaPagoMax = toISODate(fechaCorregida);
+            }
+            normalized.fechaPago = normalized.fechaPagoMax; // Ensure frontend gets fechaPago
+
             return normalized;
         });
+
+        // Reordenar por la fecha YA corregida (el orden crudo de la BD podía
+        // quedar mal si el intercambio día/mes alteraba el orden relativo).
+        normalizedData.sort((a, b) => new Date(b.fechaPagoMax || 0) - new Date(a.fechaPagoMax || 0));
 
         res.json({ ok: true, data: normalizedData, total: normalizedData.length });
     } catch (err) {
