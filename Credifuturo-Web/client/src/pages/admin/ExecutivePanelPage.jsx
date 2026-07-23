@@ -206,7 +206,7 @@ const ExecutivePanelPage = () => {
         if (top3Pct > 60) {
             alertas.push({ tone: 'risk', icon: AlertTriangle, texto: `Concentración crítica: el top 3 de deudores acumula el ${top3Pct.toFixed(0)}% de la cartera.` });
         } else if (top3Pct > 40) {
-            alertas.push({ tone: 'warn', icon: Info, texto: `Concentración a vigilar: el top 3 de deudores acumula el ${top3Pct.toFixed(0)}% de la cartera (${fmt(top3)}). Diversificar próximas colocaciones.` });
+            alertas.push({ tone: 'warn', icon: Info, texto: `Concentración a vigilar: el top 3 de deudores acumula el ${top3Pct.toFixed(0)}% de la cartera (${fmt(top3)}). Diversificar los próximos préstamos.` });
         }
         const efic = exec.recaudoYtd?.eficienciaPct;
         if (efic != null && efic < 90) {
@@ -519,7 +519,7 @@ const ExecutivePanelPage = () => {
                                     </div>
                                 </div>
                                 <p className="text-[10px] text-gray-400 mt-3 leading-snug">
-                                    Cartera desembolsada (cobrado + agendado × {derived.proyeccion.recaudoBasePct}% recaudo real) + nueva colocación esperada
+                                    Cartera desembolsada (cobrado + agendado × {derived.proyeccion.recaudoBasePct}% recaudo real) + nuevos préstamos esperados
                                     al ritmo observado ({fmtCorto(derived.proyeccion.colocacionMensualProm)}/mes). Rango conservador–optimista, no un número con falsa precisión.
                                 </p>
                             </div>
@@ -529,7 +529,7 @@ const ExecutivePanelPage = () => {
                                 <SectionTitle icon={BarChart3}>Resultados por año</SectionTitle>
                                 <div className="grid grid-cols-3 gap-2">
                                     <MiniYearBars title="Ahorro" data={derived.seriesCharts.ahorro} currentYear={anioActual} />
-                                    <MiniYearBars title="Colocación" data={derived.seriesCharts.colocacion} currentYear={anioActual} />
+                                    <MiniYearBars title="Préstamos" data={derived.seriesCharts.colocacion} currentYear={anioActual} />
                                     <MiniYearBars title="Intereses" data={derived.seriesCharts.intereses} currentYear={anioActual} />
                                 </div>
                                 <p className="text-[10px] text-gray-400 mt-2">
@@ -636,7 +636,7 @@ const ExecutivePanelPage = () => {
                 <h2 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
                     <Activity className="h-4 w-4 text-brand-primary" />
                     Actividad y Crecimiento
-                    <span className="text-[11px] font-semibold text-gray-400">penetración de crédito, intereses, colocación y ahorro del año</span>
+                    <span className="text-[11px] font-semibold text-gray-400">penetración de crédito, intereses, préstamos y ahorro del año</span>
                 </h2>
             <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
                 <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4">
@@ -664,7 +664,7 @@ const ExecutivePanelPage = () => {
                 </div>
                 <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4">
                     <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
-                        <Wallet className="h-3.5 w-3.5" /> Colocación {anioActual}
+                        <Wallet className="h-3.5 w-3.5" /> Préstamos {anioActual}
                     </p>
                     <p className="text-xl font-extrabold text-gray-900 mt-1.5 tabular-nums">
                         {fmt(derived.colocActual?.total || 0)}
@@ -700,7 +700,7 @@ const ExecutivePanelPage = () => {
                         <span className="text-[11px] font-semibold text-gray-400">indicadores del Panel Principal, para consulta bajo demanda</span>
                     </h2>
 
-                    <Collapsible icon={PiggyBank} title="Socios y Ahorros" sub={`${stats.activeClientsCount || 0} socios activos`} defaultOpen={false}>
+                    <Collapsible icon={PiggyBank} title="Socios y Ahorros" sub={`${stats.activeClientsCount || 0} socios activos`}>
                         <div className="grid gap-2.5 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                             <DetailCard title="Socios del Fondo" value={stats.clientsCount || 0}
                                 sub={`${stats.activeClientsCount || 0} activos · ${stats.inactiveClientsCount || 0} inactivos`} icon={Users} />
@@ -713,7 +713,7 @@ const ExecutivePanelPage = () => {
                         </div>
                     </Collapsible>
 
-                    <Collapsible icon={Activity} title="Préstamos e Intereses" sub={`${stats.totalPrestamosCount || 0} créditos entregados`} defaultOpen={false}>
+                    <Collapsible icon={Activity} title="Préstamos e Intereses" sub={`${stats.totalPrestamosCount || 0} créditos entregados`}>
                         <div className="grid gap-2.5 grid-cols-2 lg:grid-cols-4">
                             <DetailCard title="Capital Desembolsado" value={fmt(stats.totalPrestamos)}
                                 sub={`${stats.totalPrestamosCount || 0} préstamos entregados`} icon={DollarSign} tone="ok" />
@@ -731,7 +731,7 @@ const ExecutivePanelPage = () => {
                         </div>
                     </Collapsible>
 
-                    <Collapsible icon={Landmark} title="Saldos y Rendimientos" defaultOpen={false}>
+                    <Collapsible icon={Landmark} title="Saldos y Rendimientos">
                         <div className="grid gap-2.5 grid-cols-1 sm:grid-cols-3">
                             <DetailCard title="Caja Disponible" value={fmt(stats.saldoEnBanco)} sub="Patrimonio − capital prestado + recaudos" icon={Landmark} />
                             <DetailCard title="Rendimiento Cuenta NU" value={fmt(stats.rentabilidadCajaNU)}
