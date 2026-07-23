@@ -98,13 +98,13 @@ const Login = ({ setUser }) => {
                 </div>
 
                 <div className="relative z-10">
-                    <div className="flex items-center gap-3">
-                        <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center shadow-lg p-1.5">
+                    <div className="flex items-center gap-4">
+                        <div className="w-24 h-24 bg-white rounded-2xl flex items-center justify-center shadow-lg p-2">
                             <img src={logo} alt="Credifuturo" className="w-full h-full object-contain rounded-xl" />
                         </div>
                         <div>
-                            <p className="text-white text-lg font-extrabold tracking-tight leading-none">Credifuturo</p>
-                            <p className="text-white/50 text-[11px] font-semibold uppercase tracking-widest mt-1">Fondo Familiar</p>
+                            <p className="text-white text-3xl font-extrabold tracking-tight leading-none">Credifuturo</p>
+                            <p className="text-white/50 text-xs font-semibold uppercase tracking-widest mt-1.5">Fondo Familiar</p>
                         </div>
                     </div>
                 </div>
