@@ -75,7 +75,7 @@ const Login = ({ setUser }) => {
 
             {/* ── Panel izquierdo: identidad del fondo (oculto en mobile) ── */}
             <div
-                className="hidden lg:flex lg:flex-col lg:justify-between relative overflow-hidden px-14 py-14"
+                className="hidden lg:flex lg:flex-col relative overflow-hidden px-14 py-14"
                 style={{ background: 'linear-gradient(160deg, #052e16 0%, #166534 58%, #14532d 100%)' }}
             >
                 {/* Decorativo: blobs + grid, igual identidad visual del resto de la app */}
@@ -97,19 +97,20 @@ const Login = ({ setUser }) => {
                     />
                 </div>
 
-                <div className="relative z-10">
+                {/* Bloque de contenido centrado como un conjunto en la mitad vertical del panel */}
+                <div className="relative z-10 flex-1 flex flex-col justify-center">
                     <div className="flex items-center gap-4">
                         <div className="w-32 h-32 bg-white rounded-2xl shadow-lg overflow-hidden flex-shrink-0">
                             {/* El archivo trae el wordmark "CREDIFUTURO" impreso debajo del árbol
                                 y bastante margen en blanco alrededor — como el nombre ya se
                                 muestra al lado como texto real, recortamos visualmente para
-                                mostrar solo el emblema (árbol + alcancía + raíces), centrado
-                                y llenando el marco en vez de verse diminuto. */}
+                                mostrar solo el emblema (árbol + alcancía + raíces), centrado,
+                                con margen de respiro para que no se vea cortado en los bordes. */}
                             <img
                                 src={logo}
                                 alt="Credifuturo"
                                 className="w-full h-full object-cover"
-                                style={{ transform: 'scale(1.71)', transformOrigin: '50% 44%' }}
+                                style={{ transform: 'scale(1.45)', transformOrigin: '50% 30%' }}
                             />
                         </div>
                         <div>
@@ -117,30 +118,30 @@ const Login = ({ setUser }) => {
                             <p className="text-white/50 text-xs font-semibold uppercase tracking-widest mt-1.5">Fondo Familiar</p>
                         </div>
                     </div>
+
+                    <div className="max-w-md mt-10">
+                        <h1 className="text-white text-[34px] font-extrabold leading-[1.15] tracking-tight text-balance">
+                            El fondo de ahorro y crédito de la familia.
+                        </h1>
+                        <p className="text-white/60 text-[15px] mt-3 leading-relaxed">
+                            Un solo lugar para ver tu ahorro, tus préstamos y las decisiones del fondo — con las cuentas claras, siempre.
+                        </p>
+
+                        <ul className="mt-8 space-y-4">
+                            {VALUE_PROPS.map(({ icon: Icon, text }) => (
+                                <li key={text} className="flex items-start gap-3">
+                                    <span className="mt-0.5 flex-shrink-0 w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
+                                        <Icon className="h-4 w-4 text-brand-gold" />
+                                    </span>
+                                    <span className="text-white/75 text-sm leading-snug pt-1">{text}</span>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
                 </div>
 
-                <div className="relative z-10 max-w-md">
-                    <h1 className="text-white text-[34px] font-extrabold leading-[1.15] tracking-tight text-balance">
-                        El fondo de ahorro y crédito de la familia.
-                    </h1>
-                    <p className="text-white/60 text-[15px] mt-3 leading-relaxed">
-                        Un solo lugar para ver tu ahorro, tus préstamos y las decisiones del fondo — con las cuentas claras, siempre.
-                    </p>
-
-                    <ul className="mt-8 space-y-4">
-                        {VALUE_PROPS.map(({ icon: Icon, text }) => (
-                            <li key={text} className="flex items-start gap-3">
-                                <span className="mt-0.5 flex-shrink-0 w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
-                                    <Icon className="h-4 w-4 text-brand-gold" />
-                                </span>
-                                <span className="text-white/75 text-sm leading-snug pt-1">{text}</span>
-                            </li>
-                        ))}
-                    </ul>
-                </div>
-
-                <p className="relative z-10 text-white/35 text-xs tracking-wide">
-                    Fondo Familiar Credifuturo &middot; constituido en 2024
+                <p className="relative z-10 text-white/35 text-xs tracking-wide text-center">
+                    Fondo Familiar Credifuturo &copy; {new Date().getFullYear()} &middot; constituido en 2024
                 </p>
             </div>
 
@@ -162,7 +163,7 @@ const Login = ({ setUser }) => {
                                 src={logo}
                                 alt="Credifuturo"
                                 className="w-full h-full object-cover"
-                                style={{ transform: 'scale(1.71)', transformOrigin: '50% 44%' }}
+                                style={{ transform: 'scale(1.45)', transformOrigin: '50% 30%' }}
                             />
                         </div>
                         <p className="text-brand-primary text-xl font-extrabold tracking-tight">Credifuturo</p>
