@@ -99,8 +99,18 @@ const Login = ({ setUser }) => {
 
                 <div className="relative z-10">
                     <div className="flex items-center gap-4">
-                        <div className="w-24 h-24 bg-white rounded-2xl flex items-center justify-center shadow-lg p-2">
-                            <img src={logo} alt="Credifuturo" className="w-full h-full object-contain rounded-xl" />
+                        <div className="w-32 h-32 bg-white rounded-2xl shadow-lg overflow-hidden flex-shrink-0">
+                            {/* El archivo trae el wordmark "CREDIFUTURO" impreso debajo del árbol
+                                y bastante margen en blanco alrededor — como el nombre ya se
+                                muestra al lado como texto real, recortamos visualmente para
+                                mostrar solo el emblema (árbol + alcancía + raíces), centrado
+                                y llenando el marco en vez de verse diminuto. */}
+                            <img
+                                src={logo}
+                                alt="Credifuturo"
+                                className="w-full h-full object-cover"
+                                style={{ transform: 'scale(1.71)', transformOrigin: '50% 44%' }}
+                            />
                         </div>
                         <div>
                             <p className="text-white text-3xl font-extrabold tracking-tight leading-none">Credifuturo</p>
@@ -147,8 +157,13 @@ const Login = ({ setUser }) => {
                 <div className="w-full max-w-sm relative animate-scale-in">
                     {/* Encabezado de marca — solo visible en mobile, donde no hay panel izquierdo */}
                     <div className="lg:hidden flex flex-col items-center text-center mb-6">
-                        <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-card ring-1 ring-gray-100 p-1.5 mb-3">
-                            <img src={logo} alt="Credifuturo" className="w-full h-full object-contain rounded-xl" />
+                        <div className="w-20 h-20 bg-white rounded-2xl shadow-card ring-1 ring-gray-100 overflow-hidden mb-3">
+                            <img
+                                src={logo}
+                                alt="Credifuturo"
+                                className="w-full h-full object-cover"
+                                style={{ transform: 'scale(1.71)', transformOrigin: '50% 44%' }}
+                            />
                         </div>
                         <p className="text-brand-primary text-xl font-extrabold tracking-tight">Credifuturo</p>
                         <p className="text-gray-400 text-xs font-semibold uppercase tracking-widest mt-0.5">Fondo Familiar</p>
