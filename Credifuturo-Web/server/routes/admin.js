@@ -3634,6 +3634,49 @@ router.get('/backup-history/:folderName/download', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
+// RESTAURACIÓN DE BASE DE DATOS (Solo Localhost)
+// ─────────────────────────────────────────────
+const restoreUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 100 * 1024 * 1024 } // 100 MB max for DB
+});
+
+router.post('/backup/restore', restoreUpload.single('database'), async (req, res) => {
+    try {
+        // Restringir a localhost
+        if (req.hostname !== 'localhost' && req.hostname !== '127.0.0.1') {
+            return res.status(403).json({ error: 'La restauración solo está permitida en localhost.' });
+        }
+
+        if (!req.file) {
+            return res.status(400).json({ error: 'No se envió ningún archivo.' });
+        }
+
+        console.log(`[RESTORE] Archivo recibido: ${req.file.originalname} (${Math.round(req.file.size / 1024)} KB)`);
+
+        // Escribir el archivo como .restore para que server.js lo reemplace al reiniciar
+        // Esto evita el error EBUSY (File Locked) en Windows.
+        const restoreDbPath = path.join(__dirname, '..', '..', 'database.sqlite.restore');
+        fs.writeFileSync(restoreDbPath, req.file.buffer);
+        console.log('[RESTORE] Archivo temporal .restore escrito exitosamente.');
+
+        res.json({ message: 'Base de datos subida. El servidor se reiniciará para aplicar los cambios.' });
+
+        // Forzar reinicio del proceso (pm2/nodemon lo levantarán de nuevo)
+        setTimeout(() => {
+            console.log('[RESTORE] Reiniciando servidor para aplicar nueva BD...');
+            process.exit(0);
+        }, 1500);
+
+    } catch (err) {
+        console.error('Error al restaurar backup:', err);
+        const logPath = path.join(__dirname, '..', '..', 'restore_error.txt');
+        require('fs').writeFileSync(logPath, err.stack || err.message);
+        res.status(500).json({ error: 'Error al restaurar la base de datos: ' + err.message });
+    }
+});
+
+// ─────────────────────────────────────────────
 // INFORMES Y AUDITORÍAS (Markdown)
 // ─────────────────────────────────────────────
 const INFORMES_DIR = 'C:\\Credifuturo\\Informes';
