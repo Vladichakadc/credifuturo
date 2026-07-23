@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../../config/api';
 import {
     ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -60,18 +61,31 @@ const SectionTitle = ({ icon: Icon, children }) => (
     </h2>
 );
 
-// Tarjeta compacta del detalle operativo (equivalente a las StatCard del Panel Principal)
-const DetailCard = ({ title, value, sub, icon: Icon, tone = 'neutral' }) => {
+// Tarjeta compacta del detalle operativo, con los mismos colores e interacciones
+// (hover, click-through a la lista filtrada) que las StatCard del Panel Principal
+const DetailCard = ({ title, value, sub, icon: Icon, tone = 'neutral', customBg, onClick }) => {
     const tones = {
         neutral: 'text-gray-900',
         ok: 'text-brand-primary',
         gold: 'text-amber-600',
         risk: 'text-red-600',
+        info: 'text-blue-600',
+    };
+    const iconTones = {
+        neutral: 'text-gray-400',
+        ok: 'text-brand-primary',
+        gold: 'text-amber-500',
+        risk: 'text-red-500',
+        info: 'text-blue-500',
     };
     return (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-card p-3.5">
+        <div
+            onClick={onClick}
+            className={`bg-white rounded-xl border border-gray-200 shadow-card p-3.5 transition-all duration-200 ${onClick ? 'cursor-pointer hover:shadow-md hover:border-brand-primary/20 active:scale-[0.98]' : ''}`}
+            style={customBg ? { background: customBg, border: 'none' } : {}}
+        >
             <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
-                {Icon && <Icon className="h-3.5 w-3.5 flex-shrink-0" />}
+                {Icon && <Icon className={`h-3.5 w-3.5 flex-shrink-0 ${iconTones[tone]}`} />}
                 <span className="truncate">{title}</span>
             </p>
             <p className={`text-lg font-extrabold mt-1 tabular-nums ${tones[tone]}`}>{value}</p>
@@ -130,10 +144,19 @@ const Collapsible = ({ icon: Icon, title, sub, children, defaultOpen = true }) =
 };
 
 const ExecutivePanelPage = () => {
+    const navigate = useNavigate();
     const [exec, setExec] = useState(null);
     const [stats, setStats] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+
+    // Mismo click-through que las StatCard del Panel Principal: navega a la lista
+    // filtrada correspondiente en vez de quedarse solo como dato de consulta.
+    const goTo = (path, params = {}) => {
+        const queryParams = new URLSearchParams(params);
+        const qs = queryParams.toString();
+        navigate(qs ? `${path}?${qs}` : path);
+    };
 
     useEffect(() => {
         const fetchAll = async () => {
@@ -206,7 +229,7 @@ const ExecutivePanelPage = () => {
         if (top3Pct > 60) {
             alertas.push({ tone: 'risk', icon: AlertTriangle, texto: `Concentración crítica: el top 3 de deudores acumula el ${top3Pct.toFixed(0)}% de la cartera.` });
         } else if (top3Pct > 40) {
-            alertas.push({ tone: 'warn', icon: Info, texto: `Concentración a vigilar: el top 3 de deudores acumula el ${top3Pct.toFixed(0)}% de la cartera (${fmt(top3)}). Diversificar próximas colocaciones.` });
+            alertas.push({ tone: 'warn', icon: Info, texto: `Concentración a vigilar: el top 3 de deudores acumula el ${top3Pct.toFixed(0)}% de la cartera (${fmt(top3)}). Diversificar los próximos préstamos.` });
         }
         const efic = exec.recaudoYtd?.eficienciaPct;
         if (efic != null && efic < 90) {
@@ -519,7 +542,7 @@ const ExecutivePanelPage = () => {
                                     </div>
                                 </div>
                                 <p className="text-[10px] text-gray-400 mt-3 leading-snug">
-                                    Cartera desembolsada (cobrado + agendado × {derived.proyeccion.recaudoBasePct}% recaudo real) + nueva colocación esperada
+                                    Cartera desembolsada (cobrado + agendado × {derived.proyeccion.recaudoBasePct}% recaudo real) + nuevos préstamos esperados
                                     al ritmo observado ({fmtCorto(derived.proyeccion.colocacionMensualProm)}/mes). Rango conservador–optimista, no un número con falsa precisión.
                                 </p>
                             </div>
@@ -529,7 +552,7 @@ const ExecutivePanelPage = () => {
                                 <SectionTitle icon={BarChart3}>Resultados por año</SectionTitle>
                                 <div className="grid grid-cols-3 gap-2">
                                     <MiniYearBars title="Ahorro" data={derived.seriesCharts.ahorro} currentYear={anioActual} />
-                                    <MiniYearBars title="Colocación" data={derived.seriesCharts.colocacion} currentYear={anioActual} />
+                                    <MiniYearBars title="Préstamos" data={derived.seriesCharts.colocacion} currentYear={anioActual} />
                                     <MiniYearBars title="Intereses" data={derived.seriesCharts.intereses} currentYear={anioActual} />
                                 </div>
                                 <p className="text-[10px] text-gray-400 mt-2">
@@ -636,7 +659,7 @@ const ExecutivePanelPage = () => {
                 <h2 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
                     <Activity className="h-4 w-4 text-brand-primary" />
                     Actividad y Crecimiento
-                    <span className="text-[11px] font-semibold text-gray-400">penetración de crédito, intereses, colocación y ahorro del año</span>
+                    <span className="text-[11px] font-semibold text-gray-400">penetración de crédito, intereses, préstamos y ahorro del año</span>
                 </h2>
             <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
                 <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4">
@@ -664,7 +687,7 @@ const ExecutivePanelPage = () => {
                 </div>
                 <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4">
                     <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
-                        <Wallet className="h-3.5 w-3.5" /> Colocación {anioActual}
+                        <Wallet className="h-3.5 w-3.5" /> Préstamos {anioActual}
                     </p>
                     <p className="text-xl font-extrabold text-gray-900 mt-1.5 tabular-nums">
                         {fmt(derived.colocActual?.total || 0)}
@@ -700,46 +723,65 @@ const ExecutivePanelPage = () => {
                         <span className="text-[11px] font-semibold text-gray-400">indicadores del Panel Principal, para consulta bajo demanda</span>
                     </h2>
 
-                    <Collapsible icon={PiggyBank} title="Socios y Ahorros" sub={`${stats.activeClientsCount || 0} socios activos`} defaultOpen={false}>
+                    <Collapsible icon={PiggyBank} title="Socios y Ahorros" sub={`${stats.activeClientsCount || 0} socios activos`}>
                         <div className="grid gap-2.5 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                             <DetailCard title="Socios del Fondo" value={stats.clientsCount || 0}
-                                sub={`${stats.activeClientsCount || 0} activos · ${stats.inactiveClientsCount || 0} inactivos`} icon={Users} />
-                            <DetailCard title="Ahorros Mensuales" value={fmt(stats.totalSavings)} sub="Abonos acumulados · activos" icon={PiggyBank} tone="ok" />
-                            <DetailCard title="Base Patrimonial" value={fmt(stats.totalInitialContributions)} sub="Aportes iniciales" icon={Database} tone="gold" />
-                            <DetailCard title="Patrimonio de Socios" value={fmt(stats.totalAhorradoGeneral)} sub="Ahorros + aportes" icon={Landmark} tone="ok" />
+                                sub={`${stats.activeClientsCount || 0} activos · ${stats.inactiveClientsCount || 0} inactivos`} icon={Users} tone="info"
+                                onClick={() => goTo('/admin/clients/list')} />
+                            <DetailCard title="Ahorros Mensuales" value={fmt(stats.totalSavings)} sub="Abonos acumulados · activos" icon={PiggyBank} tone="ok"
+                                onClick={() => goTo('/admin/savings/list', { type: 'Mensual' })} />
+                            <DetailCard title="Base Patrimonial" value={fmt(stats.totalInitialContributions)} sub="Aportes iniciales" icon={Database} tone="gold"
+                                onClick={() => goTo('/admin/contributions/initial-list')} />
+                            <DetailCard title="Patrimonio de Socios" value={fmt(stats.totalAhorradoGeneral)} sub="Ahorros + aportes" icon={Landmark} tone="ok"
+                                onClick={() => goTo('/admin/savings/list')} />
                             <DetailCard title="Días en Retraso" value={stats.totalPenaltyDays || 0} sub="Mora en ahorros · año en curso"
-                                icon={Clock} tone={(stats.totalPenaltyDays || 0) > 0 ? 'risk' : 'neutral'} />
-                            <DetailCard title="Recargos por Mora" value={fmt(stats.totalPenaltyValue)} sub="Cobrados en el año" icon={DollarSign} tone="gold" />
+                                icon={Clock} tone={(stats.totalPenaltyDays || 0) > 0 ? 'risk' : 'neutral'}
+                                onClick={() => goTo('/admin/savings/list', { status: 'Penalizacion' })} />
+                            <DetailCard title="Recargos por Mora" value={fmt(stats.totalPenaltyValue)} sub="Cobrados en el año" icon={DollarSign} tone="gold"
+                                customBg="linear-gradient(135deg, #FEFDE8 0%, #FEF9C3 100%)"
+                                onClick={() => goTo('/admin/savings/list', { status: 'Penalizacion' })} />
                         </div>
                     </Collapsible>
 
-                    <Collapsible icon={Activity} title="Préstamos e Intereses" sub={`${stats.totalPrestamosCount || 0} créditos entregados`} defaultOpen={false}>
+                    <Collapsible icon={Activity} title="Préstamos e Intereses" sub={`${stats.totalPrestamosCount || 0} créditos entregados`}>
                         <div className="grid gap-2.5 grid-cols-2 lg:grid-cols-4">
                             <DetailCard title="Capital Desembolsado" value={fmt(stats.totalPrestamos)}
-                                sub={`${stats.totalPrestamosCount || 0} préstamos entregados`} icon={DollarSign} tone="ok" />
+                                sub={`${stats.totalPrestamosCount || 0} préstamos entregados`} icon={DollarSign} tone="ok"
+                                onClick={() => goTo('/admin/disbursed-loans/list')} />
                             <DetailCard title="Cartera al Día" value={fmt(stats.carteraDia)}
-                                sub={`${stats.carteraDiaCount || 0} cuotas vigentes`} icon={TrendingUp} tone="ok" />
+                                sub={`${stats.carteraDiaCount || 0} cuotas vigentes`} icon={TrendingUp} tone="ok"
+                                onClick={() => goTo('/admin/payments/list', { estadoPrestamo: 'Activo' })} />
                             <DetailCard title="Cuotas Recaudadas" value={fmt(stats.totalCuotasPagadas)}
-                                sub={`${stats.recaudoCuotasCount || 0} pagos completados`} icon={CheckCircle2} />
+                                sub={`${stats.recaudoCuotasCount || 0} pagos completados`} icon={CheckCircle2} tone="info"
+                                onClick={() => goTo('/admin/payments/list')} />
                             <DetailCard title="Mora de Cartera" value={fmt(stats.moraCarteraEP)} sub="Vencimiento superado"
-                                icon={AlertTriangle} tone={(stats.moraCarteraEP || 0) > 0 ? 'risk' : 'neutral'} />
+                                icon={AlertTriangle} tone={(stats.moraCarteraEP || 0) > 0 ? 'risk' : 'neutral'}
+                                customBg={(stats.moraCarteraEP || 0) > 0 ? 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)' : undefined}
+                                onClick={() => goTo('/admin/payments/list', { estado: 'Mora' })} />
                             <DetailCard title="Cartera Total" value={fmt(stats.totalPrestamosMasIntereses)} sub="Capital + intereses del portafolio" icon={Activity} />
-                            <DetailCard title="Intereses Proyectados" value={fmt(stats.totalIntereses)} sub="Todo el portafolio (incluye años futuros)" icon={BarChart3} />
-                            <DetailCard title="Intereses Cobrados" value={fmt(stats.totalInteresesPagados)} sub="Ingreso por cartera" icon={TrendingUp} tone="ok" />
+                            <DetailCard title="Intereses Proyectados" value={fmt(stats.totalIntereses)} sub="Todo el portafolio (incluye años futuros)" icon={BarChart3}
+                                onClick={() => goTo('/admin/payments/list')} />
+                            <DetailCard title="Intereses Cobrados" value={fmt(stats.totalInteresesPagados)} sub="Ingreso por cartera" icon={TrendingUp} tone="ok"
+                                onClick={() => goTo('/admin/payments/list', { estado: 'Pago' })} />
                             <DetailCard title="Intereses Pendientes" value={fmt(Math.max(0, (stats.totalIntereses || 0) - (stats.totalInteresesPagados || 0)))}
-                                sub="Por recaudar del portafolio" icon={Clock} />
+                                sub="Por recaudar del portafolio" icon={Clock}
+                                customBg="linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)"
+                                onClick={() => goTo('/admin/payments/list', { estado: 'Pendiente' })} />
                         </div>
                     </Collapsible>
 
-                    <Collapsible icon={Landmark} title="Saldos y Rendimientos" defaultOpen={false}>
+                    <Collapsible icon={Landmark} title="Saldos y Rendimientos">
                         <div className="grid gap-2.5 grid-cols-1 sm:grid-cols-3">
-                            <DetailCard title="Caja Disponible" value={fmt(stats.saldoEnBanco)} sub="Patrimonio − capital prestado + recaudos" icon={Landmark} />
+                            <DetailCard title="Caja Disponible" value={fmt(stats.saldoEnBanco)} sub="Patrimonio − capital prestado + recaudos" icon={Landmark}
+                                customBg="linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)" />
                             <DetailCard title="Rendimiento Cuenta NU" value={fmt(stats.rentabilidadCajaNU)}
                                 sub={stats.rentabilidadCajaNUActualizada
                                     ? `Editable en Panel Principal · actualizado hace ${Math.max(0, Math.round((new Date() - new Date(stats.rentabilidadCajaNUActualizada)) / 86400000))} día(s)`
                                     : 'Editable desde el Panel Principal'}
-                                icon={Coins} tone="gold" />
-                            <DetailCard title="Disponible Total" value={fmt(disponible)} sub="Caja + rendimientos consolidados" icon={Wallet} tone="ok" />
+                                icon={Coins} tone="gold"
+                                customBg="linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)" />
+                            <DetailCard title="Disponible Total" value={fmt(disponible)} sub="Caja + rendimientos consolidados" icon={Wallet} tone="ok"
+                                customBg="linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)" />
                         </div>
                     </Collapsible>
                 </div>
