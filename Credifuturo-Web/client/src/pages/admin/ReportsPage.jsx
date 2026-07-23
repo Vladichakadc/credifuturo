@@ -15,6 +15,8 @@ const ReportsPage = () => {
     const [lastFullBackup, setLastFullBackup] = useState(null);
     const [backupHistory, setBackupHistory] = useState([]);
     const [isProduction, setIsProduction] = useState(false);
+    const [restoreFile, setRestoreFile] = useState(null);
+    const [restoring, setRestoring] = useState(false);
 
     // Raw Data for exports
     const [clients, setClients] = useState([]);
@@ -124,6 +126,38 @@ const ReportsPage = () => {
             toast.error('Error al descargar el backup');
         } finally {
             setDownloadingBackup(null);
+        }
+    };
+
+    // --- Restaurar Base de Datos (Solo Localhost) ---
+    const handleRestoreDatabase = async () => {
+        if (!restoreFile) {
+            toast.error('Por favor, selecciona un archivo database.sqlite');
+            return;
+        }
+        
+        if (!window.confirm('¡CUIDADO! Esto sobrescribirá la base de datos actual y reiniciará el servidor. Asegúrate de que el archivo es correcto. ¿Continuar?')) {
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('database', restoreFile);
+
+        setRestoring(true);
+        try {
+            const res = await api.post('/admin/backup/restore', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            toast.success(res.data.message || 'Restauración iniciada.');
+            setTimeout(() => {
+                window.location.reload();
+            }, 3000);
+        } catch (err) {
+            console.error('Error al restaurar:', err);
+            toast.error('Error al restaurar: ' + (err.response?.data?.error || err.message));
+        } finally {
+            setRestoring(false);
+            setRestoreFile(null);
         }
     };
 
@@ -443,6 +477,51 @@ const ReportsPage = () => {
                                 <><Database className="h-4 w-4" /> Backup Completo</>
                             )}
                         </button>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Restaurar Base de Datos (deshabilitado en producción) ──────────
+                 isProduction viene de /admin/sync-status (backend), no del
+                 hostname del navegador — es el mismo gate real que el endpoint
+                 usa server-side (NODE_ENV), así que UI y backend nunca divergen. */}
+            {!isProduction && (
+                <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-pink-700 p-6 text-white shadow-xl mt-6">
+                    <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 80% 50%, white 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
+                    <div className="relative flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                        <div className="flex items-start gap-4">
+                            <div className="shrink-0 flex h-12 w-12 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm">
+                                <Database className="h-6 w-6" />
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-bold">Restaurar Base de Datos (Solo Localhost)</h2>
+                                <p className="text-sm text-white/80 mt-0.5">
+                                    Sube un archivo <strong className="text-white">database.sqlite</strong> para reemplazar la base de datos actual.
+                                </p>
+                                <p className="mt-1 text-xs text-yellow-200">
+                                    ⚠️ Peligro: Esto sobrescribirá todos los datos actuales irremediablemente.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+                            <input 
+                                type="file" 
+                                accept=".sqlite,.db" 
+                                onChange={(e) => setRestoreFile(e.target.files[0])}
+                                className="block w-full text-sm text-white file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-white/20 file:text-white hover:file:bg-white/30 cursor-pointer"
+                            />
+                            <button
+                                onClick={handleRestoreDatabase}
+                                disabled={restoring || !restoreFile}
+                                className="shrink-0 flex items-center gap-2 rounded-xl bg-white text-red-600 font-semibold px-6 py-3 text-sm shadow-lg hover:bg-red-50 active:scale-95 transition-all disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto justify-center"
+                            >
+                                {restoring ? (
+                                    <><Loader className="h-4 w-4 animate-spin" /> Restaurando...</>
+                                ) : (
+                                    <><RefreshCw className="h-4 w-4" /> Restaurar DB</>
+                                )}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
