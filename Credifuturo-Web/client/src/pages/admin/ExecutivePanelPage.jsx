@@ -416,6 +416,10 @@ const ExecutivePanelPage = () => {
 
             {/* ── Centro de alertas ── */}
             <div className="space-y-2">
+                <h2 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 text-brand-primary" />
+                    Centro de Alertas
+                </h2>
                 {derived.alertas.map((a, i) => {
                     const AIcon = a.icon;
                     return (
@@ -427,7 +431,123 @@ const ExecutivePanelPage = () => {
                 })}
             </div>
 
-            {/* ── Nivel 2: Flujo y concentración ── */}
+            {/* ── Rentabilidad del Fondo (promovida: responde la pregunta central del
+                 comité — cuánto está ganando el fondo — justo después de las alertas,
+                 en vez de quedar enterrada al final de la página) ── */}
+            {stats && (() => {
+                const ingresos = [
+                    { name: 'Intereses de préstamos', value: Number(stats.totalInteresesPagados || 0), color: '#166534' },
+                    { name: 'Rendimientos NU', value: Number(stats.rentabilidadCajaNU || 0), color: '#84cc16' },
+                    { name: 'Recargos por mora', value: Number(stats.totalPenaltyValue || 0), color: '#f59e0b' },
+                ].filter(d => d.value > 0);
+                const totalIngresos = ingresos.reduce((s, d) => s + d.value, 0);
+                const retornoCapital = patrimonio > 0 ? (totalIngresos / patrimonio) * 100 : 0;
+                return (
+                    <div className="space-y-3">
+                        <h2 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
+                            <TrendingUp className="h-4 w-4 text-brand-primary" />
+                            Rentabilidad del Fondo
+                            <span className="text-[11px] font-semibold text-gray-400">ingresos reales, estimado de cierre y evolución anual</span>
+                        </h2>
+                        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+                            {/* ¿Cuánto está ganando el fondo? */}
+                            <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
+                                <SectionTitle icon={Coins}>¿Cuánto está ganando el fondo?</SectionTitle>
+                                {ingresos.length === 0 ? (
+                                    <div className="h-[200px] flex items-center justify-center text-sm text-gray-400">Sin ingresos registrados</div>
+                                ) : (
+                                    <div className="flex items-center gap-4">
+                                        <div className="relative w-[170px] h-[190px] flex-shrink-0">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <PieChart>
+                                                    <Pie data={ingresos} cx="50%" cy="50%" innerRadius="58%" outerRadius="88%"
+                                                        paddingAngle={3} dataKey="value" isAnimationActive={false} stroke="none">
+                                                        {ingresos.map((d, i) => <Cell key={i} fill={d.color} />)}
+                                                    </Pie>
+                                                    <RechartsTooltip formatter={(v) => fmt(v)} />
+                                                </PieChart>
+                                            </ResponsiveContainer>
+                                            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                                <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400">Total</span>
+                                                <span className="text-sm font-black text-gray-800 tabular-nums">{fmtCorto(totalIngresos)}</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex-1 min-w-0 space-y-2">
+                                            {ingresos.map(d => (
+                                                <div key={d.name} className="flex items-center gap-2">
+                                                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
+                                                    <span className="text-xs text-gray-600 font-medium flex-1 truncate">{d.name}</span>
+                                                    <span className="text-xs text-gray-800 font-bold tabular-nums">{fmtCorto(d.value)}</span>
+                                                </div>
+                                            ))}
+                                            <div className="pt-2 mt-1 border-t border-gray-100">
+                                                <p className="text-[11px] text-gray-500">
+                                                    Retorno del capital: <b className={retornoCapital >= 5 ? 'text-emerald-600' : retornoCapital >= 2 ? 'text-amber-600' : 'text-gray-600'}>
+                                                        {retornoCapital.toFixed(1)}%
+                                                    </b> del patrimonio de socios
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Estimado al cierre del año — 3 escenarios basados en comportamiento real */}
+                            <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
+                                <SectionTitle icon={Gauge}>Estimado al cierre del año</SectionTitle>
+                                <div className="space-y-2.5">
+                                    {[
+                                        { label: 'Intereses de préstamos', v: derived.proyeccion.intereses, color: '#166534' },
+                                        { label: 'Rendimiento cuenta NU', v: derived.proyeccion.nu, color: '#84cc16' },
+                                        { label: 'Recargos por mora', v: derived.proyeccion.penalidad, color: '#f59e0b' },
+                                    ].map(row => (
+                                        <div key={row.label} className="flex items-center gap-2">
+                                            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: row.color }} />
+                                            <span className="text-xs text-gray-600 font-medium flex-1 truncate">{row.label}</span>
+                                            <div className="text-right">
+                                                <p className="text-xs font-bold text-gray-800 tabular-nums">{fmtCorto(row.v.base)}</p>
+                                                <p className="text-[9px] text-gray-400 tabular-nums">{fmtCorto(row.v.conservador)}–{fmtCorto(row.v.optimista)}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    <div className="pt-2.5 mt-1.5 border-t border-gray-100 flex items-center justify-between">
+                                        <span className="text-xs font-extrabold text-gray-900">Ganancia total estimada</span>
+                                        <div className="text-right">
+                                            <p className="text-sm font-black text-brand-primary tabular-nums">{fmt(derived.proyeccion.total.base)}</p>
+                                            <p className="text-[9px] text-gray-400 tabular-nums">{fmt(derived.proyeccion.total.conservador)} – {fmt(derived.proyeccion.total.optimista)}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <p className="text-[10px] text-gray-400 mt-3 leading-snug">
+                                    Cartera desembolsada (cobrado + agendado × {derived.proyeccion.recaudoBasePct}% recaudo real) + nueva colocación esperada
+                                    al ritmo observado ({fmtCorto(derived.proyeccion.colocacionMensualProm)}/mes). Rango conservador–optimista, no un número con falsa precisión.
+                                </p>
+                            </div>
+
+                            {/* Resultados por año — baselines dinámicos */}
+                            <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
+                                <SectionTitle icon={BarChart3}>Resultados por año</SectionTitle>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <MiniYearBars title="Ahorro" data={derived.seriesCharts.ahorro} currentYear={anioActual} />
+                                    <MiniYearBars title="Colocación" data={derived.seriesCharts.colocacion} currentYear={anioActual} />
+                                    <MiniYearBars title="Intereses" data={derived.seriesCharts.intereses} currentYear={anioActual} />
+                                </div>
+                                <p className="text-[10px] text-gray-400 mt-2">
+                                    $ COP · año en curso en verde · calculado por año desde la base de datos (sin cifras fijas)
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
+            {/* ── Riesgo de Cartera y Flujo de Caja ── */}
+            <div className="space-y-3">
+                <h2 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-brand-primary" />
+                    Riesgo de Cartera y Flujo de Caja
+                    <span className="text-[11px] font-semibold text-gray-400">vencimientos próximos y concentración por deudor</span>
+                </h2>
             <div className="grid gap-4 lg:grid-cols-2">
                 {/* Calendario de vencimientos */}
                 <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
@@ -509,8 +629,15 @@ const ExecutivePanelPage = () => {
                     )}
                 </div>
             </div>
+            </div>
 
-            {/* ── Nivel 3: rendimiento del año ── */}
+            {/* ── Actividad y Crecimiento ── */}
+            <div className="space-y-3">
+                <h2 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
+                    <Activity className="h-4 w-4 text-brand-primary" />
+                    Actividad y Crecimiento
+                    <span className="text-[11px] font-semibold text-gray-400">penetración de crédito, intereses, colocación y ahorro del año</span>
+                </h2>
             <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
                 <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4">
                     <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
@@ -562,118 +689,18 @@ const ExecutivePanelPage = () => {
                     </p>
                 </div>
             </div>
+            </div>
 
-            {/* ── Nivel 4: Ingresos del fondo + Resultados por año ── */}
-            {stats && (() => {
-                const ingresos = [
-                    { name: 'Intereses de préstamos', value: Number(stats.totalInteresesPagados || 0), color: '#166534' },
-                    { name: 'Rendimientos NU', value: Number(stats.rentabilidadCajaNU || 0), color: '#84cc16' },
-                    { name: 'Recargos por mora', value: Number(stats.totalPenaltyValue || 0), color: '#f59e0b' },
-                ].filter(d => d.value > 0);
-                const totalIngresos = ingresos.reduce((s, d) => s + d.value, 0);
-                const retornoCapital = patrimonio > 0 ? (totalIngresos / patrimonio) * 100 : 0;
-                return (
-                    <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-                        {/* ¿Cuánto está ganando el fondo? */}
-                        <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
-                            <SectionTitle icon={Coins}>¿Cuánto está ganando el fondo?</SectionTitle>
-                            {ingresos.length === 0 ? (
-                                <div className="h-[200px] flex items-center justify-center text-sm text-gray-400">Sin ingresos registrados</div>
-                            ) : (
-                                <div className="flex items-center gap-4">
-                                    <div className="relative w-[170px] h-[190px] flex-shrink-0">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <PieChart>
-                                                <Pie data={ingresos} cx="50%" cy="50%" innerRadius="58%" outerRadius="88%"
-                                                    paddingAngle={3} dataKey="value" isAnimationActive={false} stroke="none">
-                                                    {ingresos.map((d, i) => <Cell key={i} fill={d.color} />)}
-                                                </Pie>
-                                                <RechartsTooltip formatter={(v) => fmt(v)} />
-                                            </PieChart>
-                                        </ResponsiveContainer>
-                                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                                            <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400">Total</span>
-                                            <span className="text-sm font-black text-gray-800 tabular-nums">{fmtCorto(totalIngresos)}</span>
-                                        </div>
-                                    </div>
-                                    <div className="flex-1 min-w-0 space-y-2">
-                                        {ingresos.map(d => (
-                                            <div key={d.name} className="flex items-center gap-2">
-                                                <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
-                                                <span className="text-xs text-gray-600 font-medium flex-1 truncate">{d.name}</span>
-                                                <span className="text-xs text-gray-800 font-bold tabular-nums">{fmtCorto(d.value)}</span>
-                                            </div>
-                                        ))}
-                                        <div className="pt-2 mt-1 border-t border-gray-100">
-                                            <p className="text-[11px] text-gray-500">
-                                                Retorno del capital: <b className={retornoCapital >= 5 ? 'text-emerald-600' : retornoCapital >= 2 ? 'text-amber-600' : 'text-gray-600'}>
-                                                    {retornoCapital.toFixed(1)}%
-                                                </b> del patrimonio de socios
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Estimado al cierre del año — 3 escenarios basados en comportamiento real */}
-                        <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
-                            <SectionTitle icon={Gauge}>Estimado al cierre del año</SectionTitle>
-                            <div className="space-y-2.5">
-                                {[
-                                    { label: 'Intereses de préstamos', v: derived.proyeccion.intereses, color: '#166534' },
-                                    { label: 'Rendimiento cuenta NU', v: derived.proyeccion.nu, color: '#84cc16' },
-                                    { label: 'Recargos por mora', v: derived.proyeccion.penalidad, color: '#f59e0b' },
-                                ].map(row => (
-                                    <div key={row.label} className="flex items-center gap-2">
-                                        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: row.color }} />
-                                        <span className="text-xs text-gray-600 font-medium flex-1 truncate">{row.label}</span>
-                                        <div className="text-right">
-                                            <p className="text-xs font-bold text-gray-800 tabular-nums">{fmtCorto(row.v.base)}</p>
-                                            <p className="text-[9px] text-gray-400 tabular-nums">{fmtCorto(row.v.conservador)}–{fmtCorto(row.v.optimista)}</p>
-                                        </div>
-                                    </div>
-                                ))}
-                                <div className="pt-2.5 mt-1.5 border-t border-gray-100 flex items-center justify-between">
-                                    <span className="text-xs font-extrabold text-gray-900">Ganancia total estimada</span>
-                                    <div className="text-right">
-                                        <p className="text-sm font-black text-brand-primary tabular-nums">{fmt(derived.proyeccion.total.base)}</p>
-                                        <p className="text-[9px] text-gray-400 tabular-nums">{fmt(derived.proyeccion.total.conservador)} – {fmt(derived.proyeccion.total.optimista)}</p>
-                                    </div>
-                                </div>
-                            </div>
-                            <p className="text-[10px] text-gray-400 mt-3 leading-snug">
-                                Cartera desembolsada (cobrado + agendado × {derived.proyeccion.recaudoBasePct}% recaudo real) + nueva colocación esperada
-                                al ritmo observado ({fmtCorto(derived.proyeccion.colocacionMensualProm)}/mes). Rango conservador–optimista, no un número con falsa precisión.
-                            </p>
-                        </div>
-
-                        {/* Resultados por año — baselines dinámicos */}
-                        <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
-                            <SectionTitle icon={BarChart3}>Resultados por año</SectionTitle>
-                            <div className="grid grid-cols-3 gap-2">
-                                <MiniYearBars title="Ahorro" data={derived.seriesCharts.ahorro} currentYear={anioActual} />
-                                <MiniYearBars title="Colocación" data={derived.seriesCharts.colocacion} currentYear={anioActual} />
-                                <MiniYearBars title="Intereses" data={derived.seriesCharts.intereses} currentYear={anioActual} />
-                            </div>
-                            <p className="text-[10px] text-gray-400 mt-2">
-                                $ COP · año en curso en verde · calculado por año desde la base de datos (sin cifras fijas)
-                            </p>
-                        </div>
-                    </div>
-                );
-            })()}
-
-            {/* ── Nivel 5: Detalle operativo (todo lo del Panel Principal) ── */}
+            {/* ── Detalle operativo (todo lo del Panel Principal) ── */}
             {stats && (
                 <div className="space-y-3">
                     <h2 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
                         <Gauge className="h-4 w-4 text-brand-primary" />
                         Detalle operativo
-                        <span className="text-[11px] font-semibold text-gray-400">los indicadores del Panel Principal, organizados por nivel</span>
+                        <span className="text-[11px] font-semibold text-gray-400">indicadores del Panel Principal, para consulta bajo demanda</span>
                     </h2>
 
-                    <Collapsible icon={PiggyBank} title="Socios y Ahorros" sub={`${stats.activeClientsCount || 0} socios activos`}>
+                    <Collapsible icon={PiggyBank} title="Socios y Ahorros" sub={`${stats.activeClientsCount || 0} socios activos`} defaultOpen={false}>
                         <div className="grid gap-2.5 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                             <DetailCard title="Socios del Fondo" value={stats.clientsCount || 0}
                                 sub={`${stats.activeClientsCount || 0} activos · ${stats.inactiveClientsCount || 0} inactivos`} icon={Users} />
@@ -686,7 +713,7 @@ const ExecutivePanelPage = () => {
                         </div>
                     </Collapsible>
 
-                    <Collapsible icon={Activity} title="Préstamos e Intereses" sub={`${stats.totalPrestamosCount || 0} créditos entregados`}>
+                    <Collapsible icon={Activity} title="Préstamos e Intereses" sub={`${stats.totalPrestamosCount || 0} créditos entregados`} defaultOpen={false}>
                         <div className="grid gap-2.5 grid-cols-2 lg:grid-cols-4">
                             <DetailCard title="Capital Desembolsado" value={fmt(stats.totalPrestamos)}
                                 sub={`${stats.totalPrestamosCount || 0} préstamos entregados`} icon={DollarSign} tone="ok" />
@@ -704,7 +731,7 @@ const ExecutivePanelPage = () => {
                         </div>
                     </Collapsible>
 
-                    <Collapsible icon={Landmark} title="Saldos y Rendimientos">
+                    <Collapsible icon={Landmark} title="Saldos y Rendimientos" defaultOpen={false}>
                         <div className="grid gap-2.5 grid-cols-1 sm:grid-cols-3">
                             <DetailCard title="Caja Disponible" value={fmt(stats.saldoEnBanco)} sub="Patrimonio − capital prestado + recaudos" icon={Landmark} />
                             <DetailCard title="Rendimiento Cuenta NU" value={fmt(stats.rentabilidadCajaNU)}
