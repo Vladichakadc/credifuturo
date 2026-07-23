@@ -8,9 +8,9 @@ import { Button } from '../components/ui/Button';
 import { Lock, Fingerprint, AlertCircle, X, Eye, EyeOff, ShieldCheck, PiggyBank, HandCoins, ScrollText } from 'lucide-react';
 
 const VALUE_PROPS = [
-    { icon: PiggyBank, text: 'Ahorro mensual con rendimiento real, no solo una cuenta guardada' },
-    { icon: HandCoins, text: 'Préstamos entre socios a tasas justas, definidas en comité' },
-    { icon: ScrollText, text: 'Transparencia total: estatutos, resoluciones y tu estado de cuenta siempre a la vista' },
+    { icon: PiggyBank, text: 'Ahorro mensual con rendimiento real, no solo dinero guardado' },
+    { icon: HandCoins, text: 'Préstamos entre socios a tasas justas, decididas en comité' },
+    { icon: ScrollText, text: 'Estatutos, resoluciones y tu estado de cuenta, siempre a la vista' },
 ];
 
 const Login = ({ setUser }) => {
@@ -99,35 +99,26 @@ const Login = ({ setUser }) => {
 
                 {/* Bloque de contenido centrado como un conjunto en la mitad vertical del panel */}
                 <div className="relative z-10 flex-1 flex flex-col justify-center">
-                    <div className="flex items-center gap-4">
-                        <div className="w-32 h-32 bg-white rounded-2xl shadow-lg overflow-hidden flex-shrink-0">
-                            {/* El archivo trae el wordmark "CREDIFUTURO" impreso debajo del árbol
-                                y bastante margen en blanco alrededor — como el nombre ya se
-                                muestra al lado como texto real, recortamos visualmente para
-                                mostrar solo el emblema (árbol + alcancía + raíces), centrado,
-                                con margen de respiro para que no se vea cortado en los bordes. */}
+                    <div className="flex flex-col items-center text-center">
+                        <div className="w-56 h-56 bg-white rounded-3xl shadow-lg overflow-hidden flex-shrink-0">
                             <img
                                 src={logo}
                                 alt="Credifuturo"
-                                className="w-full h-full object-cover"
-                                style={{ transform: 'scale(1.45)', transformOrigin: '50% 30%' }}
+                                className="w-full h-full object-contain"
                             />
                         </div>
-                        <div>
-                            <p className="text-white text-3xl font-extrabold tracking-tight leading-none">Credifuturo</p>
-                            <p className="text-white/50 text-xs font-semibold uppercase tracking-widest mt-1.5">Fondo Familiar</p>
-                        </div>
+                        <p className="text-white text-lg font-bold uppercase tracking-widest mt-4">Fondo Familiar</p>
                     </div>
 
-                    <div className="max-w-md mt-10">
+                    <div className="max-w-md mx-auto mt-10 text-center">
                         <h1 className="text-white text-[34px] font-extrabold leading-[1.15] tracking-tight text-balance">
-                            El fondo de ahorro y crédito de la familia.
+                            Fondo de ahorro y crédito familiar.
                         </h1>
                         <p className="text-white/60 text-[15px] mt-3 leading-relaxed">
-                            Un solo lugar para ver tu ahorro, tus préstamos y las decisiones del fondo — con las cuentas claras, siempre.
+                            Un solo lugar para ver tu ahorro, tus préstamos y las decisiones del fondo, con las cuentas siempre claras.
                         </p>
 
-                        <ul className="mt-8 space-y-4">
+                        <ul className="mt-8 space-y-4 text-left">
                             {VALUE_PROPS.map(({ icon: Icon, text }) => (
                                 <li key={text} className="flex items-start gap-3">
                                     <span className="mt-0.5 flex-shrink-0 w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
@@ -142,6 +133,9 @@ const Login = ({ setUser }) => {
 
                 <p className="relative z-10 text-white/35 text-xs tracking-wide text-center">
                     Fondo Familiar Credifuturo &copy; {new Date().getFullYear()} &middot; constituido en 2024
+                </p>
+                <p className="relative z-10 text-white/25 text-[10px] tracking-wide text-center mt-1.5">
+                    Hecho con IA: Claude y Antigravity
                 </p>
             </div>
 
@@ -158,16 +152,14 @@ const Login = ({ setUser }) => {
                 <div className="w-full max-w-sm relative animate-scale-in">
                     {/* Encabezado de marca — solo visible en mobile, donde no hay panel izquierdo */}
                     <div className="lg:hidden flex flex-col items-center text-center mb-6">
-                        <div className="w-20 h-20 bg-white rounded-2xl shadow-card ring-1 ring-gray-100 overflow-hidden mb-3">
+                        <div className="w-40 h-40 bg-white rounded-3xl shadow-card ring-1 ring-gray-100 overflow-hidden mb-3">
                             <img
                                 src={logo}
                                 alt="Credifuturo"
-                                className="w-full h-full object-cover"
-                                style={{ transform: 'scale(1.45)', transformOrigin: '50% 30%' }}
+                                className="w-full h-full object-contain"
                             />
                         </div>
-                        <p className="text-brand-primary text-xl font-extrabold tracking-tight">Credifuturo</p>
-                        <p className="text-gray-400 text-xs font-semibold uppercase tracking-widest mt-0.5">Fondo Familiar</p>
+                        <p className="text-gray-400 text-xs font-semibold uppercase tracking-widest">Fondo Familiar</p>
                     </div>
 
                     <Card className="border-0 shadow-2xl lg:shadow-card ring-1 ring-gray-900/5 overflow-hidden">
@@ -268,6 +260,9 @@ const Login = ({ setUser }) => {
 
                     <p className="lg:hidden text-center text-gray-300 text-[11px] mt-5 tracking-wide">
                         Fondo Familiar Credifuturo &copy; {new Date().getFullYear()}
+                    </p>
+                    <p className="lg:hidden text-center text-gray-300 text-[10px] mt-1 tracking-wide">
+                        Hecho con IA: Claude y Antigravity
                     </p>
                 </div>
             </div>
