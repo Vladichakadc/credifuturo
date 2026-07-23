@@ -279,6 +279,10 @@ const MiPanelPage = () => {
     const nombre = profile?.name || 'Socio';
     const anioIngreso = profile?.fechaIngreso ? String(profile.fechaIngreso).slice(0, 4) : null;
 
+    // Socio nuevo (< 3 meses): aún no puede pedir préstamo (Resolución #13) y
+    // se beneficia de un resumen de las reglas más relevantes de sus primeros meses.
+    const esSocioNuevo = capacity?.mesesComoSocio != null && capacity.mesesComoSocio < 3;
+
     if (loading) {
         return (
             <div className="space-y-4 max-w-5xl mx-auto">
@@ -311,6 +315,36 @@ const MiPanelPage = () => {
                     </p>
                 </div>
             </div>
+
+            {/* 0 · Bienvenida (solo socios con menos de 3 meses en el fondo) */}
+            {esSocioNuevo && (
+                <div className="rounded-2xl border border-brand-primary/20 bg-brand-primary/5 shadow-card p-4 lg:p-5">
+                    <p className="text-sm font-extrabold text-gray-900 flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-brand-primary" />
+                        Bienvenido al fondo, {nombre}
+                    </p>
+                    <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                        Llevas {capacity.mesesComoSocio === 0 ? 'menos de un mes' : `${capacity.mesesComoSocio} mes${capacity.mesesComoSocio === 1 ? '' : 'es'}`} como socio. Esto es lo que debes saber por ahora:
+                    </p>
+                    <ul className="mt-2.5 space-y-1.5 text-xs text-gray-600">
+                        <li className="flex items-start gap-2">
+                            <CalendarClock className="h-3.5 w-3.5 text-brand-primary mt-0.5 flex-shrink-0" />
+                            Tu aporte mensual se paga dentro de los primeros 10 días del mes — desde el día 11 el fondo cobra recargo por mora.
+                        </li>
+                        <li className="flex items-start gap-2">
+                            <Scale className="h-3.5 w-3.5 text-brand-primary mt-0.5 flex-shrink-0" />
+                            Puedes solicitar tu primer préstamo a partir del mes 3 como socio (Resolución #13).
+                        </li>
+                        <li className="flex items-start gap-2">
+                            <ShieldCheck className="h-3.5 w-3.5 text-brand-primary mt-0.5 flex-shrink-0" />
+                            Todas las reglas vigentes del fondo están en Estatutos y Resoluciones — vale la pena leerlas.
+                        </li>
+                    </ul>
+                    <Link to="/dashboard/resolutions" className="inline-flex items-center gap-1 text-xs font-bold text-brand-primary hover:text-brand-dark mt-3 transition-colors">
+                        Ver Estatutos y Resoluciones <ChevronRight className="h-3.5 w-3.5" />
+                    </Link>
+                </div>
+            )}
 
             {/* 1 · Mi Patrimonio */}
             <div className="rounded-2xl overflow-hidden shadow-card relative"
@@ -492,6 +526,11 @@ const MiPanelPage = () => {
                                 <span>Cupo 3× tu ahorro: <b className="text-gray-700">{fmt(veredicto.montoMaxSinVotacion)}</b></span>
                                 <span>Deuda: <b className="text-gray-700">{fmt(capacity?.totalDeudaPendiente || 0)}</b></span>
                             </div>
+                            {capacity?.tasaAsignada > 0 && (
+                                <p className="text-[11px] text-gray-500 mt-2 pt-2 border-t border-gray-100 leading-snug">
+                                    Tu tasa asignada: <b className="text-gray-700">{capacity.tasaAsignada}% mensual</b> — regla de devoluciones del fondo: menor si mantuviste tu ahorro el año anterior, mayor si lo retiraste.
+                                </p>
+                            )}
                             <Link
                                 to="/dashboard/loan-capacity"
                                 className="inline-flex items-center gap-1.5 mt-3 border border-brand-primary text-brand-primary hover:bg-brand-primary/5 text-xs font-bold px-4 py-2 rounded-lg transition-colors min-h-[38px]"
