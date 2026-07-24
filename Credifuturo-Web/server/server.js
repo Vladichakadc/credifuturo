@@ -40,6 +40,7 @@ const Soporte = require('./models/Soporte'); // Tabla de soportes de pago
 const PasswordResetRequest = require('./models/PasswordResetRequest');
 const AppSetting = require('./models/AppSetting');
 const ScoreSnapshot = require('./models/ScoreSnapshot'); // Foto mensual de insumos del score crediticio
+const LoanRequest = require('./models/LoanRequest'); // Solicitudes de préstamo pendientes de aprobación del gerente
 
 const app = express();
 const PORT = process.env.PORT || 3000;

@@ -20,6 +20,7 @@ import AccountDetailPage from './pages/admin/AccountDetailPage';
 import SavingsSummaryPage from './pages/admin/SavingsSummaryPage';
 import DevolucionesAhorrosPage from './pages/admin/DevolucionesAhorrosPage';
 import LoanAnalyzerPage from './pages/admin/LoanAnalyzerPage';
+import LoanApprovalsPage from './pages/admin/LoanApprovalsPage';
 import OrphanLoansPage from './pages/admin/OrphanLoansPage';
 import AccessLogsPage from './pages/admin/AccessLogsPage';
 import ExecutivePanelPage from './pages/admin/ExecutivePanelPage';
@@ -97,6 +98,7 @@ function App() {
                     <Route path="loans" element={<LoansPage />} />
                     <Route path="loans/list" element={<LoansListPage />} />
                     <Route path="loans/analyzer" element={<LoanAnalyzerPage />} />
+                    <Route path="loans/approvals" element={<LoanApprovalsPage />} />
                     <Route path="loans/orphans" element={<OrphanLoansPage />} />
                     <Route path="savings" element={<SavingsPage />} />
                     <Route path="savings/list" element={<SavingsListPage />} />

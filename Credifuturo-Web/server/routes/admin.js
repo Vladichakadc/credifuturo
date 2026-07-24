@@ -3942,6 +3942,64 @@ router.get('/my/loan-capacity', verifyToken, requireFreshPassword, requireRole('
     }
 });
 
+// Crear una solicitud de préstamo a partir de la simulación (socio)
+router.post('/my/loan-requests', verifyToken, requireFreshPassword, requireRole('user', 'admin'), async (req, res) => {
+    try {
+        const LoanRequest = require('../models/LoanRequest');
+        const { Op } = require('sequelize');
+
+        const existing = await LoanRequest.findOne({ where: { clientId: req.user.id, status: 'pending' } });
+        if (existing) {
+            return res.status(409).json({ error: 'Ya tienes una solicitud de préstamo pendiente de revisión.' });
+        }
+
+        const {
+            amount, installments, monthlyRate,
+            firstInstallment, lastInstallment, totalInterest, totalToPay, estimatedEndDate,
+            scoreAtRequest, availableCapacityAtRequest, requiresVote
+        } = req.body;
+
+        if (!amount || !installments || !monthlyRate) {
+            return res.status(400).json({ error: 'Monto, plazo y tasa son obligatorios.' });
+        }
+
+        const client = await Client.findByPk(req.user.id);
+        if (!client) return res.status(404).json({ error: 'Socio no encontrado.' });
+
+        const request = await LoanRequest.create({
+            clientId: req.user.id,
+            amount, installments, monthlyRate,
+            firstInstallment, lastInstallment, totalInterest, totalToPay, estimatedEndDate,
+            scoreAtRequest, availableCapacityAtRequest, requiresVote: !!requiresVote
+        });
+
+        const { sendLoanRequestNotification } = require('../services/EmailService');
+        sendLoanRequestNotification(client, request).catch(err =>
+            console.error('[EmailService] Error enviando notificación de solicitud de préstamo:', err.message)
+        );
+
+        res.status(201).json({ ok: true, data: request });
+    } catch (err) {
+        console.error('my/loan-requests POST error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Listar mis solicitudes de préstamo (socio)
+router.get('/my/loan-requests', verifyToken, requireFreshPassword, requireRole('user', 'admin'), async (req, res) => {
+    try {
+        const LoanRequest = require('../models/LoanRequest');
+        const requests = await LoanRequest.findAll({
+            where: { clientId: req.user.id },
+            order: [['createdAt', 'DESC']]
+        });
+        res.json({ ok: true, data: requests });
+    } catch (err) {
+        console.error('my/loan-requests GET error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 router.get('/my/profile', verifyToken, requireFreshPassword, requireRole('user', 'admin'), async (req, res) => {
     try {
         const client = await Client.findByPk(req.user.id, {
@@ -4335,6 +4393,91 @@ router.put('/password-reset-requests/:id/reject', verifyToken, requireRole('admi
         if (!request) return res.status(404).json({ error: 'Solicitud no encontrada.' });
         await request.update({ status: 'rejected' });
         res.json({ ok: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── Solicitudes de préstamo (módulo de aprobaciones del gerente) ────────────
+
+// Listar solicitudes de préstamo (admin)
+router.get('/loan-requests', verifyToken, requireRole('admin'), async (req, res) => {
+    try {
+        const LoanRequest = require('../models/LoanRequest');
+        const { status } = req.query;
+        const whereClause = status ? { status } : { status: 'pending' };
+        const requests = await LoanRequest.findAll({
+            where: whereClause,
+            include: [{ model: Client, attributes: ['id', 'name', 'surname1', 'surname2', 'cedula', 'email', 'customerId'] }],
+            order: [['createdAt', 'DESC']]
+        });
+        res.json({ ok: true, data: requests, total: requests.length });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Detalle de una solicitud de préstamo (admin)
+router.get('/loan-requests/:id', verifyToken, requireRole('admin'), async (req, res) => {
+    try {
+        const LoanRequest = require('../models/LoanRequest');
+        const request = await LoanRequest.findByPk(req.params.id, {
+            include: [{ model: Client, attributes: ['id', 'name', 'surname1', 'surname2', 'cedula', 'email', 'customerId'] }]
+        });
+        if (!request) return res.status(404).json({ error: 'Solicitud no encontrada.' });
+        res.json({ ok: true, data: request });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Aprobar una solicitud de préstamo (admin/gerente)
+router.put('/loan-requests/:id/approve', verifyToken, requireRole('admin'), async (req, res) => {
+    try {
+        const LoanRequest = require('../models/LoanRequest');
+        const request = await LoanRequest.findByPk(req.params.id, { include: [{ model: Client }] });
+        if (!request) return res.status(404).json({ error: 'Solicitud no encontrada.' });
+        if (request.status !== 'pending') return res.status(400).json({ error: 'Esta solicitud ya fue revisada.' });
+
+        await request.update({
+            status: 'approved',
+            reviewedBy: req.user.id,
+            reviewedAt: new Date(),
+            reviewNote: req.body?.reviewNote || null
+        });
+
+        const { sendLoanApprovalNotification } = require('../services/EmailService');
+        sendLoanApprovalNotification(request.Client, request).catch(err =>
+            console.error('[EmailService] Error enviando notificación de aprobación de préstamo:', err.message)
+        );
+
+        res.json({ ok: true, data: request });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Rechazar una solicitud de préstamo (admin/gerente)
+router.put('/loan-requests/:id/reject', verifyToken, requireRole('admin'), async (req, res) => {
+    try {
+        const LoanRequest = require('../models/LoanRequest');
+        const request = await LoanRequest.findByPk(req.params.id, { include: [{ model: Client }] });
+        if (!request) return res.status(404).json({ error: 'Solicitud no encontrada.' });
+        if (request.status !== 'pending') return res.status(400).json({ error: 'Esta solicitud ya fue revisada.' });
+
+        await request.update({
+            status: 'rejected',
+            reviewedBy: req.user.id,
+            reviewedAt: new Date(),
+            reviewNote: req.body?.reviewNote || null
+        });
+
+        const { sendLoanRejectionNotification } = require('../services/EmailService');
+        sendLoanRejectionNotification(request.Client, request).catch(err =>
+            console.error('[EmailService] Error enviando notificación de rechazo de préstamo:', err.message)
+        );
+
+        res.json({ ok: true, data: request });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
