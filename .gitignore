@@ -38,3 +38,6 @@ temp_token.json
 # Scripts de sincronizacion Railway (locales, no deben ir a produccion)
 sincronizar_desde_railway_auto.bat
 sincronizar_desde_railway.bat
+
+# Skills de Claude Code (herramientas locales, no parte del app)
+.claude/skills/
