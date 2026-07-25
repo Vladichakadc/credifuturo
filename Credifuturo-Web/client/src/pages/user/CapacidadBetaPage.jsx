@@ -19,7 +19,10 @@ import {
     Lock,
     Target,
     Info,
-    Vote
+    Vote,
+    Send,
+    Clock,
+    XCircle
 } from 'lucide-react';
 
 const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
@@ -82,6 +85,17 @@ const CapacidadBetaPage = () => {
     const [montoRaw, setMontoRaw] = useState('');
     const [plazo, setPlazo] = useState(6);
     const [tasa, setTasa] = useState(TASAS_FALLBACK[0]);
+    const [loanRequests, setLoanRequests] = useState([]);
+    const [submittingRequest, setSubmittingRequest] = useState(false);
+
+    const fetchLoanRequests = async () => {
+        try {
+            const res = await api.get('/admin/my/loan-requests');
+            setLoanRequests(res.data?.data || []);
+        } catch (err) {
+            console.error(err);
+        }
+    };
 
     useEffect(() => {
         const fetchAll = async () => {
@@ -110,6 +124,7 @@ const CapacidadBetaPage = () => {
             }
         };
         fetchAll();
+        fetchLoanRequests();
     }, [toast]);
 
     const hoy = useMemo(() => {
@@ -217,6 +232,38 @@ const CapacidadBetaPage = () => {
             return { meses: m, cupo: Math.max(0, cupoFuturo), delta: cupoFuturo - v.capacidadDisponible };
         });
     }, [analysis, v]);
+
+    // Tasa Efectiva Anual: equivalente anualizado de la tasa mensual (interés compuesto)
+    const tasaEfectivaAnual = (Math.pow(1 + tasa / 100, 12) - 1) * 100;
+
+    const pendingRequest = loanRequests.find(r => r.status === 'pending');
+    const latestRequest = loanRequests[0] || null;
+
+    const handleSolicitarPrestamo = async () => {
+        if (!sim) return;
+        setSubmittingRequest(true);
+        try {
+            await api.post('/admin/my/loan-requests', {
+                amount: sim.monto,
+                installments: sim.n,
+                monthlyRate: tasa,
+                firstInstallment: sim.primeraCuota,
+                lastInstallment: sim.ultimaCuota,
+                totalInterest: sim.totalIntereses,
+                totalToPay: sim.totalPagar,
+                estimatedEndDate: sim.fechaFin.toISOString().split('T')[0],
+                scoreAtRequest: v?.score?.score ?? null,
+                availableCapacityAtRequest: v?.capacidadDisponible ?? null,
+                requiresVote: sim.estado === 'votacion',
+            });
+            toast.success('Tu solicitud fue enviada. Vladimir Escobar, gerente del fondo, la revisará pronto.');
+            await fetchLoanRequests();
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'No se pudo enviar la solicitud.');
+        } finally {
+            setSubmittingRequest(false);
+        }
+    };
 
     const c = v ? (colorMap[v.color] || colorMap.green) : null;
 
@@ -364,7 +411,10 @@ const CapacidadBetaPage = () => {
                                 <span>{tasa.toFixed(1).replace('.', ',')}% mensual</span>
                                 <span className="text-[10px] font-bold uppercase tracking-wider bg-white/20 px-2 py-0.5 rounded-full">Tu tasa asignada</span>
                             </div>
-                            <p className="text-[10px] text-gray-400 mt-1.5">
+                            <p className="text-[11px] text-emerald-700 font-semibold mt-1.5">
+                                Equivale a {tasaEfectivaAnual.toFixed(2).replace('.', ',')}% efectivo anual (E.A.)
+                            </p>
+                            <p className="text-[10px] text-gray-400 mt-1">
                                 Tasa fijada por la regla de devoluciones del fondo: 1,4% si mantuviste tus ahorros el año anterior; 1,6% si los retiraste. La define el comité y no es editable en la simulación.
                             </p>
                         </div>
@@ -444,8 +494,54 @@ const CapacidadBetaPage = () => {
                                 )}
 
                                 <p className="text-[10px] text-gray-400 italic">
-                                    Simulación informativa — no constituye aprobación. Los valores definitivos los establece el comité al estudiar la solicitud.
+                                    Simulación informativa, no constituye aprobación. Los valores definitivos los establece el comité al estudiar la solicitud.
                                 </p>
+
+                                {/* Solicitar préstamo / estado de la última solicitud */}
+                                <div className="pt-1">
+                                    {pendingRequest ? (
+                                        <div className="rounded-xl border-2 border-amber-200 bg-amber-50 p-3 flex items-start gap-2.5">
+                                            <Clock className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                                            <div>
+                                                <p className="text-xs font-black text-amber-800">Solicitud en revisión</p>
+                                                <p className="text-[11px] text-amber-700 mt-0.5 leading-snug">
+                                                    Enviaste una solicitud de {fmt(pendingRequest.amount)} a {pendingRequest.installments} cuota(s) el {fmtFecha(new Date(pendingRequest.createdAt))}. Vladimir Escobar, gerente del fondo, la está revisando.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    ) : latestRequest?.status === 'approved' ? (
+                                        <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50 p-3 flex items-start gap-2.5">
+                                            <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                                            <div>
+                                                <p className="text-xs font-black text-emerald-800">Tu último préstamo fue aprobado</p>
+                                                <p className="text-[11px] text-emerald-700 mt-0.5 leading-snug">
+                                                    {fmt(latestRequest.amount)} a {latestRequest.installments} cuota(s). El gerente se pondrá en contacto para coordinar el desembolso.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    ) : latestRequest?.status === 'rejected' ? (
+                                        <div className="rounded-xl border-2 border-gray-200 bg-gray-50 p-3 flex items-start gap-2.5">
+                                            <XCircle className="h-4 w-4 text-gray-500 shrink-0 mt-0.5" />
+                                            <div>
+                                                <p className="text-xs font-black text-gray-700">Tu última solicitud no fue aprobada</p>
+                                                {latestRequest.reviewNote && (
+                                                    <p className="text-[11px] text-gray-600 mt-0.5 leading-snug">{latestRequest.reviewNote}</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ) : null}
+
+                                    {!pendingRequest && (
+                                        <button
+                                            onClick={handleSolicitarPrestamo}
+                                            disabled={submittingRequest}
+                                            className="mt-3 w-full h-12 rounded-xl bg-brand-primary hover:bg-brand-dark disabled:opacity-60 text-white text-sm font-bold flex items-center justify-center gap-2 transition-colors"
+                                        >
+                                            {submittingRequest ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                                            {submittingRequest ? 'Enviando...' : 'Solicitar este préstamo'}
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         )}
                     </div>

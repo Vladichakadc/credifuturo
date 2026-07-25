@@ -505,15 +505,14 @@ const LoansPage = () => {
             {!loading && disbursedLoans.length > 0 && (() => {
                 const activos = disbursedLoans.filter(l => l.estado === 'Activo' || l.estado === 'Pendiente');
                 const cancelados = disbursedLoans.filter(l => l.estado === 'Cancelado');
-                const totalCapital = disbursedLoans.reduce((s, l) => s + parseFloat(l.valorPrestado || 0), 0);
-                const prestamoProm = totalCapital / disbursedLoans.length;
+                const capitalVigente = activos.reduce((s, l) => s + parseFloat(l.valorPrestado || 0), 0);
                 const tasaCancelacion = disbursedLoans.length > 0 ? (cancelados.length / disbursedLoans.length) * 100 : 0;
 
                 const kpis = [
                     {
-                        label: 'Préstamo Promedio',
-                        value: `$${Math.round(prestamoProm).toLocaleString('es-CO')}`,
-                        sub: `${disbursedLoans.length} préstamos en portafolio`,
+                        label: 'Capital Vigente',
+                        value: `$${Math.round(capitalVigente).toLocaleString('es-CO')}`,
+                        sub: `${activos.length} préstamos activos`,
                         color: 'border-l-blue-400', icon: '💵',
                     },
                     {

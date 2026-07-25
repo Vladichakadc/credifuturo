@@ -25,7 +25,8 @@ import {
     History,
     UserRound,
     Gauge,
-    Wallet
+    Wallet,
+    Inbox
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import api, { apiWithRetry } from '../config/api';
@@ -290,6 +291,7 @@ const DashboardLayout = ({ user, onLogout }) => {
                 { icon: List, label: 'Lista de Pagos', path: '/admin/payments/list' },
                 { icon: ClipboardCheck, label: 'Registrar Pago', path: '/admin/payments?action=new' },
                 { icon: Scale, label: 'Analizador', path: '/admin/loans/analyzer' },
+                { icon: Inbox, label: 'Aprobaciones de Préstamos', path: '/admin/loans/approvals' },
                 { icon: AlertTriangle, label: 'Préstamos sin asignar', path: '/admin/loans/orphans' },
             ]
         },
