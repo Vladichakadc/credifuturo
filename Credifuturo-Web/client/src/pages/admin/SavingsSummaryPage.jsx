@@ -345,7 +345,6 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
     const [ranking, setRanking] = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
-    const [devolucionTotal, setDevolucionTotal] = useState(0);
     const [utilidadesDistribuir, setUtilidadesDistribuir] = useState('');
     const [guardandoUtilidades, setGuardandoUtilidades] = useState(false);
     const [utilidadesGuardadas, setUtilidadesGuardadas] = useState(false);
@@ -390,7 +389,6 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
                     }).sort((a, b) => b.saldoPromedio - a.saldoPromedio);
 
                     setRanking(processedRanking);
-                    setDevolucionTotal(d.totalDevolucionIntereses || 0);
                     // Prioridad: (1) valor del comité en AppSettings (siempre que NO sea el valor legacy erróneo),
                     // (2) ganancia real del fondo (fuente correcta del dashboard),
                     // (3) devoluciones históricas como último fallback.
@@ -457,7 +455,6 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
     const filtered = search ? ranking.filter(r => r.fullName.toLowerCase().includes(search.toLowerCase())) : ranking;
     const top3 = ranking.slice(0, 3);
     const rest = ranking.slice(3);
-    const gapVsReal = gananciaRealFondo - utilidadesParsed;
     const pctDistribuido = gananciaRealFondo > 0 ? Math.round((utilidadesParsed / gananciaRealFondo) * 100) : 0;
     const toggleExpand = (id) => setExpandedId(prev => prev === id ? null : id);
 
@@ -820,13 +817,11 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
                                             <div className="flex items-center gap-2 text-xs font-bold text-gray-600">
                                                 <CheckCircle className="h-4 w-4 text-emerald-500" />
                                                 Total a distribuir: <span className="text-emerald-700 font-black">{fmt(utilidadesParsed)}</span>
-                                                {gananciaRealFondo > 0 && (
-                                                    <span className="text-gray-400 font-normal">
-                                                        · retiene <span className="text-gray-700 font-bold">{fmt(gapVsReal)}</span> ({100 - pctDistribuido}%)
-                                                    </span>
-                                                )}
                                             </div>
-                                            <div className="text-[10px] text-gray-400">Estimación · no constituye promesa de pago{devolucionTotal > 0 ? ` · hist. devuelto: ${fmt(devolucionTotal)}` : ''}</div>
+                                            <div className="flex items-center gap-1.5 text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
+                                                <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
+                                                Estimación, no constituye promesa de pago
+                                            </div>
                                         </div>
                                     </div>
                                 )}
