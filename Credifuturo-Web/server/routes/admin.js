@@ -1344,6 +1344,16 @@ router.post('/savings', async (req, res) => {
         }, null, 2));
 
         const saving = await Saving.create(savingData);
+
+        const { createNotification } = require('../services/NotificationService');
+        await createNotification({
+            clientId: saving.clientId,
+            type: 'saving_registered',
+            title: 'Se registró un nuevo ahorro',
+            message: `Se registró un ahorro de $${Math.round(Number(saving.amount || 0)).toLocaleString('es-CO')} a tu cuenta.`,
+            link: '/dashboard/cuenta'
+        });
+
         res.status(201).json(saving);
 
     } catch (err) {
@@ -2093,6 +2103,16 @@ router.post('/disbursed-loans', async (req, res) => {
         }
 
         await t.commit();
+
+        const { createNotification } = require('../services/NotificationService');
+        await createNotification({
+            clientId: loan.clientId,
+            type: 'loan_disbursed',
+            title: 'Se registró tu préstamo',
+            message: `Tu préstamo de $${Math.round(Number(loan.valorPrestado)).toLocaleString('es-CO')} (${loan.idVm}) fue registrado.`,
+            link: '/dashboard/loans'
+        });
+
         return res.status(201).json({ loan, schedule, refinanciacion });
 
     } catch (err) {
@@ -3956,11 +3976,15 @@ router.post('/my/loan-requests', verifyToken, requireFreshPassword, requireRole(
         const {
             amount, installments, monthlyRate,
             firstInstallment, lastInstallment, totalInterest, totalToPay, estimatedEndDate,
-            scoreAtRequest, availableCapacityAtRequest, requiresVote
+            scoreAtRequest, availableCapacityAtRequest, requiresVote,
+            banco, cuentaAhorros
         } = req.body;
 
         if (!amount || !installments || !monthlyRate) {
             return res.status(400).json({ error: 'Monto, plazo y tasa son obligatorios.' });
+        }
+        if (!banco || !cuentaAhorros) {
+            return res.status(400).json({ error: 'Banco y número de cuenta de ahorros son obligatorios.' });
         }
 
         const client = await Client.findByPk(req.user.id);
@@ -3970,13 +3994,22 @@ router.post('/my/loan-requests', verifyToken, requireFreshPassword, requireRole(
             clientId: req.user.id,
             amount, installments, monthlyRate,
             firstInstallment, lastInstallment, totalInterest, totalToPay, estimatedEndDate,
-            scoreAtRequest, availableCapacityAtRequest, requiresVote: !!requiresVote
+            scoreAtRequest, availableCapacityAtRequest, requiresVote: !!requiresVote,
+            banco, cuentaAhorros
         });
 
         const { sendLoanRequestNotification } = require('../services/EmailService');
         sendLoanRequestNotification(client, request).catch(err =>
             console.error('[EmailService] Error enviando notificación de solicitud de préstamo:', err.message)
         );
+
+        const { notifyAdmins } = require('../services/NotificationService');
+        await notifyAdmins({
+            type: 'loan_request_submitted',
+            title: 'Nueva solicitud de préstamo',
+            message: `${client.name} ${client.surname1 || ''} solicitó $${Math.round(Number(request.amount)).toLocaleString('es-CO')} a ${request.installments} cuota(s).`.trim(),
+            link: '/admin/loans/approvals'
+        });
 
         res.status(201).json({ ok: true, data: request });
     } catch (err) {
@@ -3996,6 +4029,58 @@ router.get('/my/loan-requests', verifyToken, requireFreshPassword, requireRole('
         res.json({ ok: true, data: requests });
     } catch (err) {
         console.error('my/loan-requests GET error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── Notificaciones en la app (campana) ──────────────────────────────────────
+
+router.get('/my/notifications', verifyToken, requireFreshPassword, requireRole('user', 'admin'), async (req, res) => {
+    try {
+        const Notification = require('../models/Notification');
+        const notifications = await Notification.findAll({
+            where: { clientId: req.user.id },
+            order: [['createdAt', 'DESC']],
+            limit: 30
+        });
+        const unreadCount = await Notification.count({ where: { clientId: req.user.id, isRead: false } });
+        res.json({ ok: true, data: notifications, unreadCount });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.get('/my/notifications/unread-count', verifyToken, requireFreshPassword, requireRole('user', 'admin'), async (req, res) => {
+    try {
+        const Notification = require('../models/Notification');
+        const unreadCount = await Notification.count({ where: { clientId: req.user.id, isRead: false } });
+        res.json({ ok: true, unreadCount });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.put('/my/notifications/:id/read', verifyToken, requireFreshPassword, requireRole('user', 'admin'), async (req, res) => {
+    try {
+        const Notification = require('../models/Notification');
+        const notification = await Notification.findOne({ where: { id: req.params.id, clientId: req.user.id } });
+        if (!notification) return res.status(404).json({ error: 'Notificación no encontrada.' });
+        if (!notification.isRead) await notification.update({ isRead: true, readAt: new Date() });
+        res.json({ ok: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.put('/my/notifications/read-all', verifyToken, requireFreshPassword, requireRole('user', 'admin'), async (req, res) => {
+    try {
+        const Notification = require('../models/Notification');
+        const [updated] = await Notification.update(
+            { isRead: true, readAt: new Date() },
+            { where: { clientId: req.user.id, isRead: false } }
+        );
+        res.json({ ok: true, updated });
+    } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
@@ -4400,15 +4485,28 @@ router.put('/password-reset-requests/:id/reject', verifyToken, requireRole('admi
 
 // ── Solicitudes de préstamo (módulo de aprobaciones del gerente) ────────────
 
-// Listar solicitudes de préstamo (admin)
+// Listar solicitudes de préstamo (admin). status: 'pending' (default), 'all', un valor,
+// o varios separados por coma (ej. 'approved,rejected,disbursed' para el historial).
 router.get('/loan-requests', verifyToken, requireRole('admin'), async (req, res) => {
     try {
         const LoanRequest = require('../models/LoanRequest');
+        const DisbursedLoan = require('../models/DisbursedLoan');
+        const { Op } = require('sequelize');
         const { status } = req.query;
-        const whereClause = status ? { status } : { status: 'pending' };
+
+        let whereClause;
+        if (!status) whereClause = { status: 'pending' };
+        else if (status === 'all') whereClause = {};
+        else if (status.includes(',')) whereClause = { status: { [Op.in]: status.split(',').map(s => s.trim()).filter(Boolean) } };
+        else whereClause = { status };
+
         const requests = await LoanRequest.findAll({
             where: whereClause,
-            include: [{ model: Client, attributes: ['id', 'name', 'surname1', 'surname2', 'cedula', 'email', 'customerId'] }],
+            include: [
+                { model: Client, as: 'Client', attributes: ['id', 'name', 'surname1', 'surname2', 'cedula', 'email', 'customerId'] },
+                { model: Client, as: 'Reviewer', attributes: ['id', 'name', 'surname1'] },
+                { model: DisbursedLoan, as: 'DisbursedLoan', attributes: ['id', 'idVm', 'estado'] }
+            ],
             order: [['createdAt', 'DESC']]
         });
         res.json({ ok: true, data: requests, total: requests.length });
@@ -4422,7 +4520,7 @@ router.get('/loan-requests/:id', verifyToken, requireRole('admin'), async (req, 
     try {
         const LoanRequest = require('../models/LoanRequest');
         const request = await LoanRequest.findByPk(req.params.id, {
-            include: [{ model: Client, attributes: ['id', 'name', 'surname1', 'surname2', 'cedula', 'email', 'customerId'] }]
+            include: [{ model: Client, as: 'Client', attributes: ['id', 'name', 'surname1', 'surname2', 'cedula', 'email', 'customerId'] }]
         });
         if (!request) return res.status(404).json({ error: 'Solicitud no encontrada.' });
         res.json({ ok: true, data: request });
@@ -4435,7 +4533,7 @@ router.get('/loan-requests/:id', verifyToken, requireRole('admin'), async (req, 
 router.put('/loan-requests/:id/approve', verifyToken, requireRole('admin'), async (req, res) => {
     try {
         const LoanRequest = require('../models/LoanRequest');
-        const request = await LoanRequest.findByPk(req.params.id, { include: [{ model: Client }] });
+        const request = await LoanRequest.findByPk(req.params.id, { include: [{ model: Client, as: 'Client' }] });
         if (!request) return res.status(404).json({ error: 'Solicitud no encontrada.' });
         if (request.status !== 'pending') return res.status(400).json({ error: 'Esta solicitud ya fue revisada.' });
 
@@ -4451,6 +4549,15 @@ router.put('/loan-requests/:id/approve', verifyToken, requireRole('admin'), asyn
             console.error('[EmailService] Error enviando notificación de aprobación de préstamo:', err.message)
         );
 
+        const { createNotification } = require('../services/NotificationService');
+        await createNotification({
+            clientId: request.clientId,
+            type: 'loan_request_approved',
+            title: 'Tu préstamo fue aprobado',
+            message: `Se aprobó tu solicitud de $${Math.round(Number(request.amount)).toLocaleString('es-CO')} a ${request.installments} cuota(s).`,
+            link: '/dashboard/loan-capacity-beta'
+        });
+
         res.json({ ok: true, data: request });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -4461,7 +4568,7 @@ router.put('/loan-requests/:id/approve', verifyToken, requireRole('admin'), asyn
 router.put('/loan-requests/:id/reject', verifyToken, requireRole('admin'), async (req, res) => {
     try {
         const LoanRequest = require('../models/LoanRequest');
-        const request = await LoanRequest.findByPk(req.params.id, { include: [{ model: Client }] });
+        const request = await LoanRequest.findByPk(req.params.id, { include: [{ model: Client, as: 'Client' }] });
         if (!request) return res.status(404).json({ error: 'Solicitud no encontrada.' });
         if (request.status !== 'pending') return res.status(400).json({ error: 'Esta solicitud ya fue revisada.' });
 
@@ -4477,6 +4584,41 @@ router.put('/loan-requests/:id/reject', verifyToken, requireRole('admin'), async
             console.error('[EmailService] Error enviando notificación de rechazo de préstamo:', err.message)
         );
 
+        const { createNotification } = require('../services/NotificationService');
+        await createNotification({
+            clientId: request.clientId,
+            type: 'loan_request_rejected',
+            title: 'Novedades sobre tu solicitud de préstamo',
+            message: request.reviewNote || 'Tu solicitud de préstamo no fue aprobada por ahora.',
+            link: '/dashboard/loan-capacity-beta'
+        });
+
+        res.json({ ok: true, data: request });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Vincular una solicitud aprobada con el desembolso ya creado (cierre del flujo aprobar → desembolsar)
+router.put('/loan-requests/:id/mark-disbursed', verifyToken, requireRole('admin'), async (req, res) => {
+    try {
+        const LoanRequest = require('../models/LoanRequest');
+        const { disbursedLoanId } = req.body;
+        if (!disbursedLoanId) return res.status(400).json({ error: 'disbursedLoanId es requerido.' });
+
+        const request = await LoanRequest.findByPk(req.params.id);
+        if (!request) return res.status(404).json({ error: 'Solicitud no encontrada.' });
+        if (request.status !== 'approved') {
+            return res.status(400).json({ error: 'Solo se pueden vincular solicitudes ya aprobadas.' });
+        }
+
+        const disbursedLoan = await DisbursedLoan.findByPk(disbursedLoanId);
+        if (!disbursedLoan) return res.status(404).json({ error: 'El préstamo desembolsado no existe.' });
+        if (disbursedLoan.clientId !== request.clientId) {
+            return res.status(400).json({ error: 'El préstamo desembolsado pertenece a otro socio distinto al de la solicitud.' });
+        }
+
+        await request.update({ status: 'disbursed', disbursedLoanId });
         res.json({ ok: true, data: request });
     } catch (err) {
         res.status(500).json({ error: err.message });

@@ -40,6 +40,9 @@ const LoansPage = () => {
     // Alerta de préstamo activo para refinanciación
     const [activeLoanWarning, setActiveLoanWarning] = useState(null);
 
+    // Prellenado desde una solicitud de préstamo aprobada (Aprobaciones de Préstamos → Desembolsar)
+    const [prefillRequestId, setPrefillRequestId] = useState(null);
+
     // Filtro por socio en la tabla de desembolsos
     const [filterClientId, setFilterClientId] = useState('');
     const [clientSearch, setClientSearch] = useState('');
@@ -90,6 +93,29 @@ const LoansPage = () => {
             setSearchParams({}, { replace: true });
         }
     }, [searchParams, loading, clients]);
+
+    // AUTO-PREFILL: When navigated from Aprobaciones de Préstamos → "Desembolsar" (?prefillRequestId=N)
+    useEffect(() => {
+        const prefillId = searchParams.get('prefillRequestId');
+        if (prefillId && !loading && clients.length > 0) {
+            api.get(`/admin/loan-requests/${prefillId}`)
+                .then(res => {
+                    const request = res.data?.data;
+                    if (!request) return;
+                    setPrefillRequestId(request.id);
+                    handleOpenDisbursedModal(null, {
+                        clientId: request.clientId,
+                        valorPrestado: request.amount,
+                        cuotas: request.installments,
+                        interesMensual: request.monthlyRate,
+                        banco: request.banco || '',
+                        cuentaAhorros: request.cuentaAhorros || ''
+                    });
+                })
+                .catch(err => { console.error(err); toast.error('No se pudo cargar la solicitud para prellenar el formulario.'); });
+            setSearchParams({}, { replace: true });
+        }
+    }, [searchParams, loading, clients]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const fetchData = async () => {
         setLoading(true);
@@ -169,7 +195,7 @@ const LoansPage = () => {
             .catch(() => {}); // silencioso; no bloquea el formulario
     }, [disbursedForm.clientId, clients, isEditing]);
 
-    const handleOpenDisbursedModal = (loan = null) => {
+    const handleOpenDisbursedModal = (loan = null, overrides = null) => {
         const today = new Date().toISOString().split('T')[0];
         if (loan) {
             setIsEditing(true);
@@ -202,7 +228,8 @@ const LoansPage = () => {
                 banco: '',
                 numeroTransaccion: '',
                 cuentaAhorros: '',
-                observaciones: ''
+                observaciones: '',
+                ...(overrides || {})
             });
         }
         setActiveLoanWarning(null);
@@ -295,6 +322,18 @@ const LoansPage = () => {
                     );
                 } else {
                     toast.success(`Préstamo registrado: ${cuotas} cuotas generadas automáticamente`);
+                }
+                if (prefillRequestId) {
+                    try {
+                        await api.put(`/admin/loan-requests/${prefillRequestId}/mark-disbursed`, {
+                            disbursedLoanId: res.data.loan.id
+                        });
+                    } catch (linkErr) {
+                        console.error('Error linking loan request to disbursed loan:', linkErr);
+                        toast.error('El préstamo se registró pero no se pudo vincular con la solicitud original.');
+                    } finally {
+                        setPrefillRequestId(null);
+                    }
                 }
             }
             setActiveLoanWarning(null);
@@ -680,12 +719,21 @@ const LoansPage = () => {
                                 {isEditing ? 'Editar Préstamo' : 'Registrar Nuevo Desembolso'}
                             </h2>
                             <button
-                                onClick={() => setIsModalOpen(false)}
+                                onClick={() => { setIsModalOpen(false); setPrefillRequestId(null); }}
                                 className="text-gray-400 hover:text-gray-600 transition-colors"
                             >
                                 <X className="h-6 w-6" />
                             </button>
                         </div>
+
+                        {prefillRequestId && (
+                            <div className="mx-6 mt-4 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-start gap-2.5">
+                                <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                                <p className="text-xs text-emerald-800">
+                                    Formulario prellenado desde una solicitud aprobada. Verifica los datos y confirma para completar el desembolso.
+                                </p>
+                            </div>
+                        )}
 
                         <form onSubmit={handleSubmitDisbursed} className="p-6 space-y-6">
                             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-gray-50 p-4 rounded-lg border border-gray-100">
@@ -857,7 +905,7 @@ const LoansPage = () => {
                             </FormField>
 
                             <div className="flex justify-end gap-3 pt-6 border-t border-gray-200">
-                                <Button type="button" variant="ghost" onClick={() => setIsModalOpen(false)}>
+                                <Button type="button" variant="ghost" onClick={() => { setIsModalOpen(false); setPrefillRequestId(null); }}>
                                     Cancelar
                                 </Button>
                                 <Button type="submit" size="lg">

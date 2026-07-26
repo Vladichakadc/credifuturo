@@ -1,6 +1,7 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 const Client = require('./Client');
+const DisbursedLoan = require('./DisbursedLoan');
 
 const LoanRequest = sequelize.define('LoanRequest', {
     id: {
@@ -28,6 +29,10 @@ const LoanRequest = sequelize.define('LoanRequest', {
     totalToPay: { type: DataTypes.DECIMAL(12, 2), allowNull: true },
     estimatedEndDate: { type: DataTypes.DATEONLY, allowNull: true },
 
+    // ── A dónde desembolsar (mismos nombres de campo que DisbursedLoan, para prellenado 1:1) ──
+    banco: { type: DataTypes.STRING, allowNull: true },
+    cuentaAhorros: { type: DataTypes.STRING, allowNull: true },
+
     // ── Foto del perfil del socio en el momento de pedir ──
     scoreAtRequest: { type: DataTypes.INTEGER, allowNull: true },
     availableCapacityAtRequest: { type: DataTypes.DECIMAL(12, 2), allowNull: true },
@@ -35,19 +40,22 @@ const LoanRequest = sequelize.define('LoanRequest', {
 
     // ── Decisión del gerente ──
     status: {
-        type: DataTypes.ENUM('pending', 'approved', 'rejected'),
+        type: DataTypes.ENUM('pending', 'approved', 'rejected', 'disbursed'),
         defaultValue: 'pending',
         allowNull: false
     },
     reviewedBy: { type: DataTypes.INTEGER, allowNull: true },
     reviewedAt: { type: DataTypes.DATE, allowNull: true },
-    reviewNote: { type: DataTypes.TEXT, allowNull: true }
+    reviewNote: { type: DataTypes.TEXT, allowNull: true },
+    disbursedLoanId: { type: DataTypes.INTEGER, allowNull: true }
 }, {
     tableName: 'LoanRequests',
     timestamps: true
 });
 
-LoanRequest.belongsTo(Client, { foreignKey: 'clientId' });
+LoanRequest.belongsTo(Client, { as: 'Client', foreignKey: 'clientId' });
 Client.hasMany(LoanRequest, { foreignKey: 'clientId' });
+LoanRequest.belongsTo(Client, { as: 'Reviewer', foreignKey: 'reviewedBy' });
+LoanRequest.belongsTo(DisbursedLoan, { as: 'DisbursedLoan', foreignKey: 'disbursedLoanId' });
 
 module.exports = LoanRequest;

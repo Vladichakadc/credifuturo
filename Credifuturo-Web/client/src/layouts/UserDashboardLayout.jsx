@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { Button } from '../components/ui/Button';
+import NotificationBell from '../components/NotificationBell';
 import logo from '../assets/logo.jpg';
 
 // ——— Bottom nav items (mobile only) ———
@@ -274,6 +275,7 @@ const UserDashboardLayout = ({ user, onLogout }) => {
                             <p className="text-sm font-semibold text-white truncate">{userName}</p>
                             <p className="text-xs text-white/40 truncate">{user?.cedula ? `C.C. ${user.cedula}` : 'Socio'}</p>
                         </div>
+                        <NotificationBell variant="sidebar" />
                     </div>
                     <button
                         onClick={onLogout}
@@ -304,8 +306,11 @@ const UserDashboardLayout = ({ user, onLogout }) => {
                             <span className="font-bold text-brand-primary text-base">Credifuturo</span>
                         </div>
                     </div>
-                    <div className="w-9 h-9 rounded-full bg-brand-primary flex items-center justify-center font-bold text-sm text-white flex-shrink-0">
-                        {userInitial}
+                    <div className="flex items-center gap-1">
+                        <NotificationBell variant="mobile" />
+                        <div className="w-9 h-9 rounded-full bg-brand-primary flex items-center justify-center font-bold text-sm text-white flex-shrink-0">
+                            {userInitial}
+                        </div>
                     </div>
                 </header>
 
