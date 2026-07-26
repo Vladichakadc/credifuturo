@@ -8,7 +8,6 @@ import {
     Menu,
     X,
     LogOut,
-    List,
     ChevronDown,
     Scale,
     DollarSign,
@@ -132,7 +131,7 @@ const SidebarSubmenu = ({ icon: Icon, label, children, isOpen, onToggle, locatio
 
 const UserDashboardLayout = ({ user, onLogout }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
-    const [openSubmenus, setOpenSubmenus] = useState({ inicio: true, estatutos: false, prestamos: false });
+    const [openSubmenus, setOpenSubmenus] = useState({ estatutos: true, prestamos: true, propuestas: true });
     const [propuestasEnabled, setPropuestasEnabled] = useState(false);
     const location = useLocation();
 
@@ -160,36 +159,20 @@ const UserDashboardLayout = ({ user, onLogout }) => {
             path: '/admin'
         }] : []),
         {
-            type: 'submenu',
-            key: 'inicio',
+            type: 'label',
+            label: 'FINANZAS'
+        },
+        {
+            type: 'link',
             icon: LayoutDashboard,
-            label: 'Inicio',
-            children: [
-                { icon: LayoutDashboard, label: 'Mi Panel', path: '/dashboard' },
-                { icon: Landmark, label: 'Nuestro Fondo', path: '/dashboard/fondo' },
-            ]
+            label: 'Mi Panel',
+            path: '/dashboard'
         },
         {
-            type: 'submenu',
-            key: 'estatutos',
-            icon: Scale,
-            label: 'Estatutos',
-            children: [
-                { icon: Scale, label: 'Estatutos Generales', path: '/dashboard/statutes' },
-                { icon: FileText, label: 'Resoluciones', path: '/dashboard/resolutions' }
-            ]
-        },
-        {
-            type: 'submenu',
-            key: 'prestamos',
-            icon: DollarSign,
-            label: 'Préstamos y Pagos',
-            children: [
-                { icon: List, label: 'Lista de Préstamos', path: '/dashboard/loans' },
-                { icon: List, label: 'Lista de Pagos', path: '/dashboard/payments' },
-                { icon: Scale, label: 'Analizador de Capacidad', path: '/dashboard/loan-capacity' },
-                { icon: Gauge, label: 'Simulador de Préstamo', path: '/dashboard/loan-capacity-beta' }
-            ]
+            type: 'link',
+            icon: Landmark,
+            label: 'Nuestro Fondo',
+            path: '/dashboard/fondo'
         },
         {
             type: 'link',
@@ -203,6 +186,21 @@ const UserDashboardLayout = ({ user, onLogout }) => {
             label: 'Aportes',
             path: '/dashboard/contributions'
         },
+        {
+            type: 'submenu',
+            key: 'prestamos',
+            icon: DollarSign,
+            label: 'Préstamos y Pagos',
+            children: [
+                { icon: CreditCard, label: 'Mis Créditos', path: '/dashboard/mis-creditos' },
+                { icon: Scale, label: 'Analizador de Capacidad', path: '/dashboard/loan-capacity' },
+                { icon: Gauge, label: 'Simulador de Préstamo', path: '/dashboard/loan-capacity-beta' }
+            ]
+        },
+        {
+            type: 'label',
+            label: 'COMUNIDAD'
+        },
         ...((propuestasEnabled && isBetaTester) || user?.role === 'admin' ? [{
             type: 'submenu',
             key: 'propuestas',
@@ -212,7 +210,17 @@ const UserDashboardLayout = ({ user, onLogout }) => {
                 { icon: TrendingUp, label: 'Ranking de Ahorro (BETA)', path: '/dashboard/ranking-ahorro' },
                 { icon: MessageSquareMore, label: 'Buzón de Propuestas (BETA)', path: '/dashboard/propuestas' }
             ]
-        }] : [])
+        }] : []),
+        {
+            type: 'submenu',
+            key: 'estatutos',
+            icon: Scale,
+            label: 'Estatutos',
+            children: [
+                { icon: Scale, label: 'Estatutos Generales', path: '/dashboard/statutes' },
+                { icon: FileText, label: 'Resoluciones', path: '/dashboard/resolutions' }
+            ]
+        }
     ];
 
     // Abre automáticamente el submenú que contiene la ruta activa,
@@ -268,8 +276,15 @@ const UserDashboardLayout = ({ user, onLogout }) => {
 
                 {/* Navigation */}
                 <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
-                    {navItems.map((item) => (
-                        item.type === 'submenu' ? (
+                    {navItems.map((item, idx) => {
+                        if (item.type === 'label') {
+                            return (
+                                <div key={`label-${idx}`} className={`px-3 pb-2 pt-4 ${idx === 0 ? 'pt-0' : ''}`}>
+                                    <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{item.label}</p>
+                                </div>
+                            );
+                        }
+                        return item.type === 'submenu' ? (
                             <SidebarSubmenu
                                 key={item.key}
                                 {...item}
@@ -285,8 +300,8 @@ const UserDashboardLayout = ({ user, onLogout }) => {
                                 isActive={location.pathname === item.path}
                                 collapsed={false}
                             />
-                        )
-                    ))}
+                        );
+                    })}
                 </nav>
 
                 {/* User footer */}

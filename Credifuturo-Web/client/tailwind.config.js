@@ -49,11 +49,15 @@ export default {
                     '0%': { transform: 'scale(0.96)', opacity: '0' },
                     '100%': { transform: 'scale(1)', opacity: '1' },
                 },
+                'shimmer': {
+                    '100%': { backgroundPosition: '200% 0' },
+                }
             },
             animation: {
                 'slide-up': 'slide-up 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
                 'fade-in': 'fade-in 0.2s ease-out',
                 'scale-in': 'scale-in 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+                'shimmer': 'shimmer 1.5s infinite',
             },
             borderRadius: {
                 'xl': '0.75rem',

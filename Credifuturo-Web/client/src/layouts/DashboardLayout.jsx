@@ -331,8 +331,7 @@ const DashboardLayout = ({ user, onLogout }) => {
                 { icon: LayoutDashboard, label: 'Mi Panel', path: '/dashboard' },
                 { icon: PiggyBank, label: 'Ahorros', path: '/dashboard/cuenta' },
                 { icon: Gauge, label: 'Simulador de Préstamo', path: '/dashboard/loan-capacity-beta' },
-                { icon: List, label: 'Lista de Préstamos', path: '/dashboard/loans' },
-                { icon: List, label: 'Lista de Pagos', path: '/dashboard/payments' },
+                { icon: CreditCard, label: 'Mis Créditos', path: '/dashboard/mis-creditos' },
                 { icon: Scale, label: 'Analizador de Capacidad', path: '/dashboard/loan-capacity' },
                 { icon: Wallet, label: 'Aportes', path: '/dashboard/contributions' },
             ]

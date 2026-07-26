@@ -32,9 +32,8 @@ import PropuestasPage from './pages/admin/PropuestasPage';
 import UserDashboardLayout from './layouts/UserDashboardLayout';
 import UserDashboardHome from './pages/user/UserDashboardHome';
 import MiPanelPage from './pages/user/MiPanelPage';
-import UserLoansListPage from './pages/user/UserLoansListPage';
+import MisCreditosPage from './pages/user/MisCreditosPage';
 import UserContributionsListPage from './pages/user/UserContributionsListPage';
-import UserPaymentsListPage from './pages/user/UserPaymentsListPage';
 import UserAccountDetailsPage from './pages/user/UserAccountDetailsPage';
 import UserStatutesPage from './pages/user/UserStatutesPage';
 import UserResolutionsPage from './pages/user/UserResolutionsPage';
@@ -141,10 +140,12 @@ function App() {
                     <Route path="fondo" element={<DashboardHome />} />
                     {/* UserDashboardHome queda accesible en /dashboard/mi-resumen */}
                     <Route path="mi-resumen" element={<UserDashboardHome />} />
-                    <Route path="loans" element={<UserLoansListPage />} />
+                    <Route path="mis-creditos" element={<MisCreditosPage />} />
+                    {/* Rutas antiguas: redirigen a la vista unificada Mis Créditos */}
+                    <Route path="loans" element={<Navigate to="/dashboard/mis-creditos" replace />} />
                     <Route path="savings" element={<Navigate to="/dashboard/cuenta" replace />} />
                     <Route path="contributions" element={<UserContributionsListPage />} />
-                    <Route path="payments" element={<UserPaymentsListPage />} />
+                    <Route path="payments" element={<Navigate to="/dashboard/mis-creditos?tab=cuotas" replace />} />
                     <Route path="account-details" element={<UserAccountDetailsPage />} />
                     <Route path="statutes" element={<UserStatutesPage />} />
                     <Route path="resolutions" element={<UserResolutionsPage />} />
