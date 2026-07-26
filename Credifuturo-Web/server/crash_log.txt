@@ -331,3 +331,39 @@
     at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
     at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
 ---
+[2026-07-26T14:41:46.805Z] TrendingUp is not defined
+
+    at UserDashboardLayout (http://localhost:5173/src/layouts/UserDashboardLayout.jsx:219:32)
+    at ProtectedRoute (http://localhost:5173/src/App.jsx:80:29)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1f90b8ac:4122:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1f90b8ac:4592:5)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1f90b8ac:4535:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1f90b8ac:5273:5)
+    at App (http://localhost:5173/src/App.jsx:73:27)
+    at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
+    at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
+---
+[2026-07-26T14:58:30.736Z] TrendingUp is not defined
+
+    at UserDashboardLayout (http://localhost:5173/src/layouts/UserDashboardLayout.jsx:219:32)
+    at ProtectedRoute (http://localhost:5173/src/App.jsx:80:29)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1f90b8ac:4122:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1f90b8ac:4592:5)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1f90b8ac:4535:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1f90b8ac:5273:5)
+    at App (http://localhost:5173/src/App.jsx:73:27)
+    at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
+    at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
+---
+[2026-07-26T14:59:45.491Z] TrendingUp is not defined
+
+    at UserDashboardLayout (http://localhost:5173/src/layouts/UserDashboardLayout.jsx:219:32)
+    at ProtectedRoute (http://localhost:5173/src/App.jsx:80:29)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1f90b8ac:4122:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1f90b8ac:4592:5)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1f90b8ac:4535:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1f90b8ac:5273:5)
+    at App (http://localhost:5173/src/App.jsx:73:27)
+    at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
+    at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
+---
