@@ -1,18 +1,27 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../../config/api';
 import { useUi } from '../../context/UiContext';
 import LoanCapacityWidget from '../../components/admin/LoanCapacityWidget';
 import { Button } from '../../components/ui/Button';
 import {
     ClipboardCheck, Loader2, Clock, Users, Calendar,
-    Vote, Calculator, CheckCircle, XCircle, Inbox
+    Vote, Calculator, CheckCircle, XCircle, Inbox, History, Banknote
 } from 'lucide-react';
 
 const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
 const fmtFecha = (d) => d ? new Date(d).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 
+const ESTADO_BADGE = {
+    approved: { label: 'Aprobada', className: 'bg-emerald-100 text-emerald-700' },
+    disbursed: { label: 'Desembolsada', className: 'bg-blue-100 text-blue-700' },
+    rejected: { label: 'Rechazada', className: 'bg-red-100 text-red-700' },
+};
+
 const LoanApprovalsPage = () => {
+    const navigate = useNavigate();
     const { toast } = useUi();
+    const [viewMode, setViewMode] = useState('pending'); // 'pending' | 'history'
     const [requests, setRequests] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedId, setSelectedId] = useState(null);
@@ -24,7 +33,8 @@ const LoanApprovalsPage = () => {
     const fetchRequests = async (keepSelection = true) => {
         setLoading(true);
         try {
-            const res = await api.get('/admin/loan-requests', { params: { status: 'pending' } });
+            const statusParam = viewMode === 'pending' ? 'pending' : 'approved,rejected,disbursed';
+            const res = await api.get('/admin/loan-requests', { params: { status: statusParam } });
             const data = res.data?.data || [];
             setRequests(data);
             setSelectedId(prev => (keepSelection && prev && data.some(r => r.id === prev)) ? prev : (data[0]?.id ?? null));
@@ -36,12 +46,12 @@ const LoanApprovalsPage = () => {
         }
     };
 
-    useEffect(() => { fetchRequests(false); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => { fetchRequests(false); }, [viewMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const selected = requests.find(r => r.id === selectedId) || null;
 
     useEffect(() => {
-        if (!selected) { setAnalysis(null); return; }
+        if (!selected || viewMode !== 'pending') { setAnalysis(null); return; }
         setAnalysis(null);
         setLoadingAnalysis(true);
         setReviewNote('');
@@ -49,7 +59,7 @@ const LoanApprovalsPage = () => {
             .then(res => setAnalysis(res.data))
             .catch(() => {})
             .finally(() => setLoadingAnalysis(false));
-    }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [selected?.id, viewMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleDecision = async (decision) => {
         if (!selected) return;
@@ -83,10 +93,87 @@ const LoanApprovalsPage = () => {
                     Aprobaciones de Préstamos
                 </h1>
                 <p className="text-gray-500 text-sm mt-1">
-                    Solicitudes enviadas por los socios desde el Simulador de Préstamo, pendientes de tu decisión.
+                    {viewMode === 'pending'
+                        ? 'Solicitudes enviadas por los socios desde el Simulador de Préstamo, pendientes de tu decisión.'
+                        : 'Solicitudes ya revisadas: quién las aprobó o rechazó, cuándo, y con qué nota.'}
                 </p>
             </div>
 
+            <div className="inline-flex rounded-xl border border-gray-200 bg-gray-50 p-1">
+                <button onClick={() => setViewMode('pending')}
+                    className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${viewMode === 'pending' ? 'bg-white text-brand-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                    Pendientes
+                </button>
+                <button onClick={() => setViewMode('history')}
+                    className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center gap-1.5 ${viewMode === 'history' ? 'bg-white text-brand-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                    <History className="h-3.5 w-3.5" /> Historial
+                </button>
+            </div>
+
+            {viewMode === 'history' ? (
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                    {loading ? (
+                        <div className="flex items-center justify-center py-12 gap-2 text-brand-primary">
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                            <span className="text-sm">Cargando...</span>
+                        </div>
+                    ) : requests.length === 0 ? (
+                        <div className="text-center py-12 text-gray-400 px-4">
+                            <History className="h-10 w-10 mx-auto mb-2 opacity-30" />
+                            <p className="text-sm font-medium">Aún no hay solicitudes revisadas.</p>
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                                    <tr>
+                                        <th className="px-4 py-3 text-left">Socio</th>
+                                        <th className="px-4 py-3 text-right">Monto</th>
+                                        <th className="px-4 py-3 text-center">Cuotas</th>
+                                        <th className="px-4 py-3 text-center">Estado</th>
+                                        <th className="px-4 py-3 text-left">Revisado por</th>
+                                        <th className="px-4 py-3 text-left">Fecha decisión</th>
+                                        <th className="px-4 py-3 text-left">Nota</th>
+                                        <th className="px-4 py-3 text-center">Acción</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-50">
+                                    {requests.map(r => {
+                                        const badge = ESTADO_BADGE[r.status] || ESTADO_BADGE.rejected;
+                                        return (
+                                            <tr key={r.id} className="hover:bg-gray-50/60">
+                                                <td className="px-4 py-3 font-semibold text-gray-800">{nombreSocio(r)}</td>
+                                                <td className="px-4 py-3 text-right tabular-nums">{fmt(r.amount)}</td>
+                                                <td className="px-4 py-3 text-center tabular-nums">{r.installments}</td>
+                                                <td className="px-4 py-3 text-center">
+                                                    <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full ${badge.className}`}>
+                                                        {badge.label}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 text-gray-600">
+                                                    {r.Reviewer ? `${r.Reviewer.name} ${r.Reviewer.surname1 || ''}`.trim() : '—'}
+                                                </td>
+                                                <td className="px-4 py-3 text-gray-500">{fmtFecha(r.reviewedAt)}</td>
+                                                <td className="px-4 py-3 text-gray-500 max-w-xs truncate" title={r.reviewNote || ''}>{r.reviewNote || '—'}</td>
+                                                <td className="px-4 py-3 text-center">
+                                                    {r.status === 'approved' && (
+                                                        <Button size="sm" onClick={() => navigate(`/admin/loans?prefillRequestId=${r.id}`)}>
+                                                            <Banknote className="mr-1.5 h-3.5 w-3.5" /> Desembolsar
+                                                        </Button>
+                                                    )}
+                                                    {r.status === 'disbursed' && r.DisbursedLoan?.idVm && (
+                                                        <span className="text-[11px] font-semibold text-blue-600">{r.DisbursedLoan.idVm}</span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            ) : (
             <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-5">
                 {/* ── Lista de solicitudes pendientes ── */}
                 <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
@@ -251,6 +338,7 @@ const LoanApprovalsPage = () => {
                     )}
                 </div>
             </div>
+            )}
         </div>
     );
 };

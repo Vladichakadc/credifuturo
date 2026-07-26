@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../config/api';
 import { calcVerdict, calcScore, colorMap } from '../../utils/loanCapacity';
+import { COLOMBIAN_BANKS_WITH_OTHER } from '../../utils/banks';
 import { useUi } from '../../context/UiContext';
 import EstadoPrestamosSection from '../../components/EstadoPrestamosSection';
 import {
@@ -87,6 +88,8 @@ const CapacidadBetaPage = () => {
     const [tasa, setTasa] = useState(TASAS_FALLBACK[0]);
     const [loanRequests, setLoanRequests] = useState([]);
     const [submittingRequest, setSubmittingRequest] = useState(false);
+    const [banco, setBanco] = useState('');
+    const [cuentaAhorros, setCuentaAhorros] = useState('');
 
     const fetchLoanRequests = async () => {
         try {
@@ -241,6 +244,10 @@ const CapacidadBetaPage = () => {
 
     const handleSolicitarPrestamo = async () => {
         if (!sim) return;
+        if (!banco || !cuentaAhorros.trim()) {
+            toast.error('Selecciona tu banco e ingresa tu número de cuenta de ahorros.');
+            return;
+        }
         setSubmittingRequest(true);
         try {
             await api.post('/admin/my/loan-requests', {
@@ -255,8 +262,9 @@ const CapacidadBetaPage = () => {
                 scoreAtRequest: v?.score?.score ?? null,
                 availableCapacityAtRequest: v?.capacidadDisponible ?? null,
                 requiresVote: sim.estado === 'votacion',
+                banco, cuentaAhorros: cuentaAhorros.trim(),
             });
-            toast.success('Tu solicitud fue enviada. Vladimir Escobar, gerente del fondo, la revisará pronto.');
+            toast.success('Tu solicitud fue enviada. El comité del fondo la revisará pronto.');
             await fetchLoanRequests();
         } catch (err) {
             toast.error(err.response?.data?.error || 'No se pudo enviar la solicitud.');
@@ -505,7 +513,7 @@ const CapacidadBetaPage = () => {
                                             <div>
                                                 <p className="text-xs font-black text-amber-800">Solicitud en revisión</p>
                                                 <p className="text-[11px] text-amber-700 mt-0.5 leading-snug">
-                                                    Enviaste una solicitud de {fmt(pendingRequest.amount)} a {pendingRequest.installments} cuota(s) el {fmtFecha(new Date(pendingRequest.createdAt))}. Vladimir Escobar, gerente del fondo, la está revisando.
+                                                    Enviaste una solicitud de {fmt(pendingRequest.amount)} a {pendingRequest.installments} cuota(s) el {fmtFecha(new Date(pendingRequest.createdAt))}. El comité del fondo la está revisando.
                                                 </p>
                                             </div>
                                         </div>
@@ -516,6 +524,16 @@ const CapacidadBetaPage = () => {
                                                 <p className="text-xs font-black text-emerald-800">Tu último préstamo fue aprobado</p>
                                                 <p className="text-[11px] text-emerald-700 mt-0.5 leading-snug">
                                                     {fmt(latestRequest.amount)} a {latestRequest.installments} cuota(s). El gerente se pondrá en contacto para coordinar el desembolso.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    ) : latestRequest?.status === 'disbursed' ? (
+                                        <div className="rounded-xl border-2 border-blue-200 bg-blue-50 p-3 flex items-start gap-2.5">
+                                            <CheckCircle className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+                                            <div>
+                                                <p className="text-xs font-black text-blue-800">Tu último préstamo fue desembolsado</p>
+                                                <p className="text-[11px] text-blue-700 mt-0.5 leading-snug">
+                                                    {fmt(latestRequest.amount)} a {latestRequest.installments} cuota(s) ya fueron desembolsados a tu cuenta.
                                                 </p>
                                             </div>
                                         </div>
@@ -532,14 +550,37 @@ const CapacidadBetaPage = () => {
                                     ) : null}
 
                                     {!pendingRequest && (
-                                        <button
-                                            onClick={handleSolicitarPrestamo}
-                                            disabled={submittingRequest}
-                                            className="mt-3 w-full h-12 rounded-xl bg-brand-primary hover:bg-brand-dark disabled:opacity-60 text-white text-sm font-bold flex items-center justify-center gap-2 transition-colors"
-                                        >
-                                            {submittingRequest ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                                            {submittingRequest ? 'Enviando...' : 'Solicitar este préstamo'}
-                                        </button>
+                                        <div className="mt-3 space-y-2.5">
+                                            <div>
+                                                <label className="text-[11px] font-black uppercase tracking-widest text-gray-500">Banco para el desembolso</label>
+                                                <select
+                                                    value={banco}
+                                                    onChange={e => setBanco(e.target.value)}
+                                                    className="w-full mt-1 h-11 rounded-xl border-2 border-gray-200 focus:border-brand-primary focus:outline-none px-3 text-sm font-semibold text-gray-700 bg-white"
+                                                >
+                                                    <option value="">Selecciona tu banco...</option>
+                                                    {COLOMBIAN_BANKS_WITH_OTHER.map(b => <option key={b} value={b}>{b}</option>)}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="text-[11px] font-black uppercase tracking-widest text-gray-500">Número de cuenta de ahorros</label>
+                                                <input
+                                                    type="text"
+                                                    value={cuentaAhorros}
+                                                    onChange={e => setCuentaAhorros(e.target.value)}
+                                                    placeholder="Ej: 1234567890"
+                                                    className="w-full mt-1 h-11 rounded-xl border-2 border-gray-200 focus:border-brand-primary focus:outline-none px-3 text-sm font-semibold text-gray-700"
+                                                />
+                                            </div>
+                                            <button
+                                                onClick={handleSolicitarPrestamo}
+                                                disabled={submittingRequest || !banco || !cuentaAhorros.trim()}
+                                                className="w-full h-12 rounded-xl bg-brand-primary hover:bg-brand-dark disabled:opacity-60 text-white text-sm font-bold flex items-center justify-center gap-2 transition-colors"
+                                            >
+                                                {submittingRequest ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                                                {submittingRequest ? 'Enviando...' : 'Solicitar este préstamo'}
+                                            </button>
+                                        </div>
                                     )}
                                 </div>
                             </div>
