@@ -337,7 +337,26 @@ const RankingModal = ({ onClose }) => {
 
                 if (rankRes.status === 'fulfilled' && rankRes.value.data.ok) {
                     const d = rankRes.value.data;
-                    setRanking(d.data);
+                    
+                    // Cálculo de Ahorro Ponderado (Time-Weighted Balance)
+                    const processedRanking = (d.data || []).map(socio => {
+                        let ahorroPonderado = 0;
+                        if (socio.monthlyData && socio.monthlyData.length > 0) {
+                            socio.monthlyData.forEach(aporte => {
+                                // Peso basado en el mes: Enero (1) -> 12, Diciembre (12) -> 1
+                                // Fórmula: 13 - mes
+                                const mes = aporte.monthInt || 12;
+                                const peso = 13 - mes;
+                                ahorroPonderado += (aporte.amount || 0) * peso;
+                            });
+                        } else {
+                            // Fallback de seguridad
+                            ahorroPonderado = socio.totalNetSavings || 0;
+                        }
+                        return { ...socio, ahorroPonderado };
+                    }).sort((a, b) => b.ahorroPonderado - a.ahorroPonderado); // Re-ordenar por puntaje ponderado
+                    
+                    setRanking(processedRanking);
                     setDevolucionTotal(d.totalDevolucionIntereses || 0);
                     // Prioridad: (1) valor del comité en AppSettings (siempre que NO sea el valor legacy erróneo),
                     // (2) ganancia real del fondo (fuente correcta del dashboard),
@@ -396,8 +415,9 @@ const RankingModal = ({ onClose }) => {
     const fmt = (v) => `$${Math.round(Number(v) || 0).toLocaleString('es-CO')}`;
     const fmtCorto = (v) => { const n = Number(v) || 0; if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1).replace('.', ',')}M`; if (n >= 1_000) return `$${Math.round(n / 1_000)}k`; return `$${n}`; };
 
-    const total = ranking.reduce((sum, r) => sum + Number(r.totalNetSavings), 0);
-    const maxVal = ranking.length > 0 ? Number(ranking[0].totalNetSavings) : 1;
+    const totalAhorroNeto = ranking.reduce((sum, r) => sum + Number(r.totalNetSavings), 0);
+    const totalPonderado = ranking.reduce((sum, r) => sum + Number(r.ahorroPonderado), 0);
+    const maxValPonderado = ranking.length > 0 ? Number(ranking[0].ahorroPonderado) : 1;
     const utilidadesParsed = Number(String(utilidadesDistribuir).replace(/\D/g, '')) || 0;
     const filtered = search ? ranking.filter(r => r.fullName.toLowerCase().includes(search.toLowerCase())) : ranking;
     const top3 = ranking.slice(0, 3);
@@ -407,9 +427,10 @@ const RankingModal = ({ onClose }) => {
 
     const renderRow = (entry, globalIndex) => {
         const pos = globalIndex + 1;
-        const pctFloat = total > 0 ? (Number(entry.totalNetSavings) / total) : 0;
+        // La distribución se hace sobre el Ahorro Ponderado, no sobre el Ahorro Bruto
+        const pctFloat = totalPonderado > 0 ? (Number(entry.ahorroPonderado) / totalPonderado) : 0;
         const pct = (pctFloat * 100).toFixed(2);
-        const barWidth = maxVal > 0 ? Math.round((Number(entry.totalNetSavings) / maxVal) * 100) : 0;
+        const barWidth = maxValPonderado > 0 ? Math.round((Number(entry.ahorroPonderado) / maxValPonderado) * 100) : 0;
         const gananciaEstimada = pctFloat * utilidadesParsed;
         const isTop = pos <= 3;
         const cfg = isTop ? MEDAL_CONFIGS[pos - 1] : null;
@@ -439,8 +460,8 @@ const RankingModal = ({ onClose }) => {
                     </div>
                 </div>
                 <div className="text-right flex-shrink-0 hidden sm:block">
-                    <div className="text-sm font-black text-gray-800 tabular-nums">{fmt(entry.totalNetSavings)}</div>
-                    <div className="text-[10px] font-bold text-gray-400">{pct}% del total</div>
+                    <div className="text-sm font-black text-gray-800 tabular-nums" title="Ahorro Neto Real">{fmt(entry.totalNetSavings)}</div>
+                    <div className="text-[10px] font-bold text-gray-400" title="Puntaje Ponderado por Tiempo">pts: {fmtCorto(entry.ahorroPonderado)}</div>
                 </div>
                 <div className={`flex-shrink-0 min-w-[7rem] text-right rounded-xl px-3 py-2 border ${
                     isTop ? 'bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-200/60' : 'bg-white border-gray-100'
@@ -469,9 +490,9 @@ const RankingModal = ({ onClose }) => {
                             <div className="w-14 h-14 bg-gradient-to-br from-emerald-500 to-green-700 rounded-2xl flex items-center justify-center text-3xl shadow-lg shadow-emerald-500/25 ring-4 ring-white flex-shrink-0">🏆</div>
                             <div>
                                 <h2 className="text-2xl font-black tracking-tight text-gray-900">Ranking de Ahorro</h2>
-                                <p className="text-xs font-semibold text-gray-500 mt-0.5 flex items-center gap-1.5">
+                                <p className="text-xs font-semibold text-gray-500 mt-0.5 flex items-center gap-1.5" title={`Ahorro neto total: ${fmt(totalAhorroNeto)}`}>
                                     <CheckCircle className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-                                    Base de reparto: {fmt(total)} · ahorro neto de socios activos
+                                    Reparto por Ahorro Ponderado en el Tiempo
                                 </p>
                             </div>
                         </div>
@@ -513,9 +534,9 @@ const RankingModal = ({ onClose }) => {
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
                             {[
                                 { label: 'Socios en ranking', value: ranking.length, sub: 'activos con ahorro', icon: '👥' },
-                                { label: 'Ahorro neto total', value: fmtCorto(total), sub: 'base de distribución', icon: '💵' },
+                                { label: 'Ahorro neto total', value: fmtCorto(totalAhorroNeto), sub: 'depositado en el año', icon: '💵' },
                                 { label: 'A distribuir', value: fmtCorto(utilidadesParsed), sub: `${pctDistribuido}% de ganancia real`, icon: '📊' },
-                                { label: 'Promedio por socio', value: fmtCorto(utilidadesParsed / (ranking.length || 1)), sub: 'utilidad estimada', icon: '📈' },
+                                { label: 'Total Ponderado', value: fmtCorto(totalPonderado), sub: 'base de distribución', icon: '⚖️' },
                             ].map(m => (
                                 <div key={m.label} className="bg-white/80 backdrop-blur-sm rounded-xl px-3 py-2.5 border border-white shadow-sm flex items-center gap-2.5">
                                     <span className="text-xl leading-none flex-shrink-0">{m.icon}</span>
@@ -558,7 +579,7 @@ const RankingModal = ({ onClose }) => {
                                         {[1, 0, 2].map((realIdx) => {
                                             const entry = top3[realIdx];
                                             const cfg = MEDAL_CONFIGS[realIdx];
-                                            const pctFloat = total > 0 ? (Number(entry.totalNetSavings) / total) : 0;
+                                            const pctFloat = totalPonderado > 0 ? (Number(entry.ahorroPonderado) / totalPonderado) : 0;
                                             const pct = (pctFloat * 100).toFixed(1);
                                             const ganancia = pctFloat * utilidadesParsed;
                                             const heights = ['h-24', 'h-16', 'h-14'];
@@ -571,9 +592,9 @@ const RankingModal = ({ onClose }) => {
                                                     </div>
                                                     <div className="bg-white rounded-2xl shadow-md border border-gray-100/80 px-4 py-2.5 flex flex-col items-center -mt-3 pt-4 z-0 relative w-32 sm:w-36">
                                                         <div className="text-center text-xs font-black text-gray-800 leading-tight w-full" style={{ display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' }}>{entry.fullName}</div>
-                                                        <div className="text-[11px] font-black text-emerald-700 mt-1 tabular-nums">{fmt(entry.totalNetSavings)}</div>
+                                                        <div className="text-[11px] font-black text-emerald-700 mt-1 tabular-nums" title="Ahorro Neto Real">{fmt(entry.totalNetSavings)}</div>
                                                         <div className={`text-[10px] font-black px-2 py-0.5 rounded-full mt-1 ${cfg.badgeBg} ${cfg.labelColor}`}>+{fmtCorto(ganancia)}</div>
-                                                        <div className="text-[9px] text-gray-400 mt-0.5">{pct}% del total</div>
+                                                        <div className="text-[9px] text-gray-400 mt-0.5">{pct}% (ponderado)</div>
                                                     </div>
                                                     <div className={`w-28 sm:w-36 rounded-t-2xl bg-gradient-to-b ${cfg.podiumGrad} ${heights[realIdx]} flex flex-col items-center justify-end pb-2 shadow-inner opacity-90`}>
                                                         <span className="text-2xl font-black text-white/50">{realIdx + 1}</span>
