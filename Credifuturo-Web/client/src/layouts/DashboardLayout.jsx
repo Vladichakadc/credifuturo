@@ -252,26 +252,24 @@ const DashboardLayout = ({ user, onLogout }) => {
 
     const navItems = [
         {
-            type: 'submenu',
-            key: 'inicio',
-            icon: LayoutDashboard,
-            label: 'Inicio',
-            children: [
-                { icon: LayoutDashboard, label: 'Panel Principal', path: '/admin' },
-                { icon: BarChart2, label: 'Panel Ejecutivo (beta)', path: '/admin/executive' },
-                { icon: CreditCard, label: 'Detalle de Cuenta', path: '/admin/account-detail' },
-                { icon: TrendingUp, label: 'Resumen Total Socio', path: '/admin/savings/summary?view=total' },
-            ]
+            type: 'label',
+            label: 'GENERAL'
         },
         {
-            type: 'submenu',
-            key: 'estatutos',
-            icon: Scale,
-            label: 'Estatutos',
-            children: [
-                { icon: Scale, label: 'Estatutos Generales', path: '/admin/statutes' },
-                { icon: FileText, label: 'Resoluciones', path: '/admin/resolutions' },
-            ]
+            type: 'link',
+            icon: LayoutDashboard,
+            label: 'Panel Principal',
+            path: '/admin'
+        },
+        {
+            type: 'link',
+            icon: BarChart2,
+            label: 'Panel Ejecutivo (beta)',
+            path: '/admin/executive'
+        },
+        {
+            type: 'label',
+            label: 'GESTIÓN PRINCIPAL'
         },
         {
             type: 'submenu',
@@ -283,6 +281,7 @@ const DashboardLayout = ({ user, onLogout }) => {
                 { icon: UserPlus, label: 'Nuevo Socio', path: '/admin/clients' },
             ]
         },
+
         {
             type: 'submenu',
             key: 'prestamos',
@@ -310,6 +309,8 @@ const DashboardLayout = ({ user, onLogout }) => {
                 { icon: Banknote, label: 'Devoluciones Ahorros', path: '/admin/savings/devoluciones' },
                 { icon: List, label: 'Lista de Aportes', path: '/admin/initial-contributions/list' },
                 { icon: PlusCircle, label: 'Nuevo Aporte', path: '/admin/initial-contributions/new' },
+                { icon: CreditCard, label: 'Detalle de Cuenta (Visor)', path: '/admin/account-detail' },
+                { icon: TrendingUp, label: 'Resumen Total Socio', path: '/admin/savings/summary?view=total' },
             ]
         },
         {
@@ -336,8 +337,10 @@ const DashboardLayout = ({ user, onLogout }) => {
                 { icon: Wallet, label: 'Aportes', path: '/dashboard/contributions' },
             ]
         },
-        { type: 'link', icon: FileText, label: 'Copias de Seguridad', path: '/admin/reports' },
-        { type: 'link', icon: History, label: 'Logs', path: '/admin/logs' },
+        {
+            type: 'label',
+            label: 'SISTEMA & REPORTES'
+        },
         {
             type: 'submenu',
             key: 'informes',
@@ -359,6 +362,18 @@ const DashboardLayout = ({ user, onLogout }) => {
                 if (informesSearch.trim()) return [{ icon: Search, label: 'Sin resultados', path: '#' }];
                 return [{ icon: FileText, label: 'No hay informes', path: '#' }];
             })()
+        },
+        { type: 'link', icon: FileText, label: 'Copias de Seguridad', path: '/admin/reports' },
+        { type: 'link', icon: History, label: 'Logs del Sistema', path: '/admin/logs' },
+        {
+            type: 'submenu',
+            key: 'estatutos',
+            icon: Scale,
+            label: 'Estatutos',
+            children: [
+                { icon: Scale, label: 'Estatutos Generales', path: '/admin/statutes' },
+                { icon: FileText, label: 'Resoluciones', path: '/admin/resolutions' },
+            ]
         }
     ];
 
@@ -487,7 +502,14 @@ const DashboardLayout = ({ user, onLogout }) => {
 
                 {/* Navigation */}
                 <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
-                    {navItems.map((item) => {
+                    {navItems.map((item, idx) => {
+                        if (item.type === 'label') {
+                            return (
+                                <div key={`label-${idx}`} className={`px-3 pb-2 pt-4 ${idx === 0 ? 'pt-0' : ''}`}>
+                                    <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{item.label}</p>
+                                </div>
+                            );
+                        }
                         if (item.type === 'submenu') {
                             return (
                                 <SidebarSubmenu

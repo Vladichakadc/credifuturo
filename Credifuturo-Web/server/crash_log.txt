@@ -367,3 +367,27 @@
     at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
     at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
 ---
+[2026-07-26T16:36:53.103Z] collapsed is not defined
+
+    at DashboardLayout (http://localhost:5173/src/layouts/DashboardLayout.jsx?t=1785083743005:268:28)
+    at ProtectedRoute (http://localhost:5173/src/App.jsx?t=1785082925448:80:29)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:4122:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:4592:5)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:4535:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:5273:5)
+    at App (http://localhost:5173/src/App.jsx?t=1785082925448:73:27)
+    at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
+    at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
+---
+[2026-07-26T16:37:20.100Z] collapsed is not defined
+
+    at DashboardLayout (http://localhost:5173/src/layouts/DashboardLayout.jsx:268:28)
+    at ProtectedRoute (http://localhost:5173/src/App.jsx:80:29)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:4122:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:4592:5)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:4535:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:5273:5)
+    at App (http://localhost:5173/src/App.jsx:73:27)
+    at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
+    at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
+---

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import api from '../../config/api';
 import {
     Search, RefreshCw, CreditCard, Inbox, Download, X, Hash, TrendingUp,
@@ -128,6 +129,7 @@ const MisCreditosPage = () => {
 
     const [loans, setLoans] = useState([]);
     const [payments, setPayments] = useState([]);
+    const [tasaAsignada, setTasaAsignada] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
@@ -147,9 +149,10 @@ const MisCreditosPage = () => {
         setLoading(true);
         setError(null);
         try {
-            const [loanRes, payRes] = await Promise.allSettled([
+            const [loanRes, payRes, capRes] = await Promise.allSettled([
                 api.get('/admin/my/loans'),
                 api.get('/admin/my/payments'),
+                api.get('/admin/my/loan-capacity'),
             ]);
             if (loanRes.status === 'fulfilled' && loanRes.value.data?.ok) {
                 setLoans(loanRes.value.data.data);
@@ -157,6 +160,9 @@ const MisCreditosPage = () => {
                 throw new Error(loanRes.value?.data?.error || 'Error del servidor al cargar préstamos');
             }
             setPayments(payRes.status === 'fulfilled' && payRes.value.data?.ok ? (payRes.value.data.data || []) : []);
+            // Tasa mensual actual que el comité tiene fijada para este socio (no es un
+            // promedio histórico: es la tasa vigente, la misma que usa el Simulador).
+            setTasaAsignada(capRes.status === 'fulfilled' ? (capRes.value.data?.tasaAsignada ?? null) : null);
         } catch (err) {
             setError(err.message || 'Error al conectar');
             setLoans([]);
@@ -284,12 +290,18 @@ const MisCreditosPage = () => {
 
     if (error) return <div className="p-8 text-center text-red-500">{error}</div>;
 
+    const kpiContainerVariants = { hidden: {}, visible: { transition: { staggerChildren: 0.06 } } };
+    const kpiItemVariants = { hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.16, 1, 0.3, 1] } } };
+
     return (
         <div className="space-y-6">
-            <style>{`@keyframes tabFadeIn { from { opacity:0; transform: translateY(8px); } to { opacity:1; transform: translateY(0); } }`}</style>
-
             {/* ── HERO ── */}
-            <div className="relative rounded-3xl overflow-hidden shadow-xl bg-gradient-to-br from-brand-dark via-brand-primary to-brand-dark text-white p-6 sm:p-8">
+            <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                className="relative rounded-3xl overflow-hidden shadow-xl bg-gradient-to-br from-brand-dark via-brand-primary to-brand-dark text-white p-6 sm:p-8"
+            >
                 <div className="absolute -top-16 -right-16 w-56 h-56 bg-white/10 rounded-full blur-3xl pointer-events-none" />
                 <div className="absolute -bottom-10 -left-10 w-48 h-48 bg-brand-gold/10 rounded-full blur-3xl pointer-events-none" />
 
@@ -304,54 +316,90 @@ const MisCreditosPage = () => {
                         </div>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
-                        <button onClick={handleExport} className="flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/15 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-all">
+                        <motion.button
+                            whileHover={{ scale: 1.03 }}
+                            whileTap={{ scale: 0.96 }}
+                            onClick={handleExport}
+                            className="flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/15 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-colors"
+                        >
                             <Download className="h-4 w-4" /> Exportar
-                        </button>
-                        <button onClick={fetchAll} className="p-2.5 bg-white/10 hover:bg-white/20 border border-white/15 rounded-xl transition-all">
+                        </motion.button>
+                        <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.92, rotate: 180 }}
+                            onClick={fetchAll}
+                            className="p-2.5 bg-white/10 hover:bg-white/20 border border-white/15 rounded-xl transition-colors"
+                        >
                             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                        </button>
+                        </motion.button>
                     </div>
                 </div>
 
                 {/* Resumen combinado — visible sin importar la pestaña activa */}
                 {!loading && (loans.length > 0 || payments.length > 0) && (
-                    <div className="relative grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-6">
+                    <motion.div
+                        initial="hidden"
+                        animate="visible"
+                        variants={kpiContainerVariants}
+                        className="relative grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-6"
+                    >
                         {[
                             { label: 'Total Desembolsado', value: fmtCorto(loanStats.totalPrestado), sub: `${loanStats.count} préstamo${loanStats.count !== 1 ? 's' : ''}`, icon: '💰' },
                             { label: 'Cartera Activa', value: fmtCorto(resumen.carteraActiva), sub: 'cuotas pendientes', icon: '📊' },
                             { label: 'Recaudo Total', value: fmtCorto(resumen.totalRecaudo), sub: 'cuotas pagadas', icon: '✅' },
                             { label: 'Cuotas', value: `${resumen.cuotasPagadas}/${resumen.cuotasTotal}`, sub: 'pagadas del total', icon: '🎯' },
                         ].map(m => (
-                            <div key={m.label} className="bg-white/10 backdrop-blur-sm rounded-xl px-3 py-2.5 border border-white/10 flex items-center gap-2.5 hover:bg-white/15 transition-colors">
+                            <motion.div
+                                key={m.label}
+                                variants={kpiItemVariants}
+                                whileHover={{ y: -3, backgroundColor: 'rgba(255,255,255,0.15)' }}
+                                className="bg-white/10 backdrop-blur-sm rounded-xl px-3 py-2.5 border border-white/10 flex items-center gap-2.5"
+                            >
                                 <span className="text-xl leading-none flex-shrink-0">{m.icon}</span>
                                 <div className="min-w-0">
                                     <div className="text-[9px] font-bold uppercase tracking-widest text-white/50 truncate">{m.label}</div>
                                     <div className="text-sm font-black text-white tabular-nums truncate">{m.value}</div>
                                     <div className="text-[9px] text-white/40 truncate">{m.sub}</div>
                                 </div>
-                            </div>
+                            </motion.div>
                         ))}
-                    </div>
+                    </motion.div>
                 )}
 
-                {/* Selector de pestañas */}
+                {/* Selector de pestañas — pill deslizante (layoutId compartido entre botones) */}
                 <div className="relative inline-flex bg-white/10 backdrop-blur rounded-2xl p-1 border border-white/15 mt-6">
                     {TABS.map(tab => {
                         const Icon = tab.icon;
                         const isActive = activeTab === tab.key;
                         return (
                             <button key={tab.key} onClick={() => changeTab(tab.key)}
-                                className={`relative flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${isActive ? 'bg-white text-brand-dark shadow-lg' : 'text-white/70 hover:text-white'}`}>
-                                <Icon className="h-4 w-4" />
-                                {tab.label}
+                                className={`relative flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl text-sm font-bold transition-colors duration-200 ${isActive ? 'text-brand-dark' : 'text-white/70 hover:text-white'}`}>
+                                {isActive && (
+                                    <motion.div
+                                        layoutId="misCreditosActivePill"
+                                        className="absolute inset-0 bg-white rounded-xl shadow-lg"
+                                        transition={{ type: 'spring', stiffness: 500, damping: 34 }}
+                                    />
+                                )}
+                                <span className="relative z-10 flex items-center gap-2">
+                                    <Icon className="h-4 w-4" />
+                                    {tab.label}
+                                </span>
                             </button>
                         );
                     })}
                 </div>
-            </div>
+            </motion.div>
 
             {/* ── CONTENIDO POR PESTAÑA ── */}
-            <div key={activeTab} style={{ animation: 'tabFadeIn 0.25s ease both' }}>
+            <AnimatePresence mode="wait">
+                <motion.div
+                    key={activeTab}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                >
                 {loading ? (
                     <div className="p-12 text-center text-gray-400 animate-pulse">Cargando...</div>
                 ) : activeTab === 'cuotas' ? (
@@ -415,48 +463,56 @@ const MisCreditosPage = () => {
 
                         {/* KPI Row */}
                         {loans.length > 0 && (
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                <Card className="border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-                                    <div className="p-4">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Saldo Pendiente</p>
-                                            <Wallet className="h-4 w-4 text-amber-600" />
+                            <motion.div initial="hidden" animate="visible" variants={kpiContainerVariants} className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <motion.div variants={kpiItemVariants} whileHover={{ y: -3 }}>
+                                    <Card className="border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                                        <div className="p-4">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Saldo Pendiente</p>
+                                                <Wallet className="h-4 w-4 text-amber-600" />
+                                            </div>
+                                            <p className="text-xl font-black text-amber-700 tabular-nums leading-tight">{fmtCOP(loanStats.saldoPendienteAprox)}</p>
+                                            <p className="text-[10px] text-gray-500 mt-1 leading-tight">Capital por amortizar en créditos vigentes</p>
                                         </div>
-                                        <p className="text-xl font-black text-amber-700 tabular-nums leading-tight">{fmtCOP(loanStats.saldoPendienteAprox)}</p>
-                                        <p className="text-[10px] text-gray-500 mt-1 leading-tight">Capital por amortizar en créditos vigentes</p>
-                                    </div>
-                                </Card>
-                                <Card className="border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-                                    <div className="p-4">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Ticket Promedio</p>
-                                            <Calculator className="h-4 w-4 text-emerald-700" />
+                                    </Card>
+                                </motion.div>
+                                <motion.div variants={kpiItemVariants} whileHover={{ y: -3 }}>
+                                    <Card className="border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                                        <div className="p-4">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Ticket Promedio</p>
+                                                <Calculator className="h-4 w-4 text-emerald-700" />
+                                            </div>
+                                            <p className="text-xl font-black text-emerald-800 tabular-nums leading-tight">{fmtCOP(loanStats.ticketPromedio)}</p>
+                                            <p className="text-[10px] text-gray-500 mt-1 leading-tight">Monto promedio por crédito desembolsado</p>
                                         </div>
-                                        <p className="text-xl font-black text-emerald-800 tabular-nums leading-tight">{fmtCOP(loanStats.ticketPromedio)}</p>
-                                        <p className="text-[10px] text-gray-500 mt-1 leading-tight">Monto promedio por crédito desembolsado</p>
-                                    </div>
-                                </Card>
-                                <Card className="border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-                                    <div className="p-4">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Plazo Promedio</p>
-                                            <Calendar className="h-4 w-4 text-emerald-500" />
+                                    </Card>
+                                </motion.div>
+                                <motion.div variants={kpiItemVariants} whileHover={{ y: -3 }}>
+                                    <Card className="border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                                        <div className="p-4">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Plazo Promedio</p>
+                                                <Calendar className="h-4 w-4 text-emerald-500" />
+                                            </div>
+                                            <p className="text-xl font-black text-emerald-600 tabular-nums leading-tight">{loanStats.plazoPromedio.toFixed(1)} <span className="text-sm font-bold">cuotas</span></p>
+                                            <p className="text-[10px] text-gray-500 mt-1 leading-tight">Duración media en meses por crédito</p>
                                         </div>
-                                        <p className="text-xl font-black text-emerald-600 tabular-nums leading-tight">{loanStats.plazoPromedio.toFixed(1)} <span className="text-sm font-bold">cuotas</span></p>
-                                        <p className="text-[10px] text-gray-500 mt-1 leading-tight">Duración media en meses por crédito</p>
-                                    </div>
-                                </Card>
-                                <Card className="border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-                                    <div className="p-4">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Tasa Promedio</p>
-                                            <TrendingUp className="h-4 w-4 text-amber-500" />
+                                    </Card>
+                                </motion.div>
+                                <motion.div variants={kpiItemVariants} whileHover={{ y: -3 }}>
+                                    <Card className="border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                                        <div className="p-4">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">{tasaAsignada != null ? 'Tasa Actual' : 'Tasa Promedio'}</p>
+                                                <TrendingUp className="h-4 w-4 text-amber-500" />
+                                            </div>
+                                            <p className="text-xl font-black text-amber-700 tabular-nums leading-tight">{(tasaAsignada != null ? tasaAsignada : loanStats.tasaPromedio).toFixed(2)}<span className="text-sm font-bold">% m</span></p>
+                                            <p className="text-[10px] text-gray-500 mt-1 leading-tight">{tasaAsignada != null ? 'Tasa mensual vigente definida por el comité' : 'Interés mensual promedio del portafolio (sin tasa vigente definida)'}</p>
                                         </div>
-                                        <p className="text-xl font-black text-amber-700 tabular-nums leading-tight">{loanStats.tasaPromedio.toFixed(2)}<span className="text-sm font-bold">% m</span></p>
-                                        <p className="text-[10px] text-gray-500 mt-1 leading-tight">Interés mensual promedio del portafolio</p>
-                                    </div>
-                                </Card>
-                            </div>
+                                    </Card>
+                                </motion.div>
+                            </motion.div>
                         )}
 
                         {/* Análisis económico avanzado */}
@@ -691,7 +747,8 @@ const MisCreditosPage = () => {
                         })()}
                     </div>
                 )}
-            </div>
+                </motion.div>
+            </AnimatePresence>
         </div>
     );
 };
