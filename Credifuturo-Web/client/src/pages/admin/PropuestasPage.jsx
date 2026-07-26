@@ -11,7 +11,7 @@ const CATEGORIAS = ['Todas', 'Ahorro', 'Préstamos', 'Eventos', 'Tecnología', '
 const CATEGORIA_COLORS = {
     'Ahorro': 'bg-emerald-100 text-emerald-700 border-emerald-200',
     'Préstamos': 'bg-blue-100 text-blue-700 border-blue-200',
-    'Eventos': 'bg-purple-100 text-purple-700 border-purple-200',
+    'Eventos': 'bg-lime-100 text-lime-700 border-lime-200',
     'Tecnología': 'bg-amber-100 text-amber-700 border-amber-200',
     'Otro': 'bg-gray-100 text-gray-600 border-gray-200',
 };
@@ -67,7 +67,7 @@ const PropuestaCard = ({ propuesta, isAdmin, onVote, onEstadoChange, onDelete, e
             <div className="p-4">
                 {/* Header de la tarjeta */}
                 <div className="flex items-start gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center text-white text-lg flex-shrink-0 shadow-md">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-primary to-brand-dark flex items-center justify-center text-white text-lg flex-shrink-0 shadow-md">
                         {CATEGORIA_ICONS[propuesta.categoria] || '💡'}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -145,7 +145,7 @@ const PropuestaCard = ({ propuesta, isAdmin, onVote, onEstadoChange, onDelete, e
                 {isExpanded && isAdmin && (
                     <div className="mt-4 pt-4 border-t border-gray-100 space-y-3" style={{ animation: 'fadeSlideIn 0.15s ease both' }}>
                         <div className="text-[9px] font-black uppercase tracking-widest text-gray-400 flex items-center gap-2">
-                            <div className="w-1 h-3 bg-gradient-to-b from-violet-400 to-purple-600 rounded-full" />
+                            <div className="w-1 h-3 bg-gradient-to-b from-brand-primary to-brand-dark rounded-full" />
                             Gestionar Propuesta
                         </div>
                         {/* Selector de estado */}
@@ -227,7 +227,7 @@ const FormularioPropuesta = ({ onCreated, onCancel }) => {
             <div className="relative bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden border border-white/30"
                 style={{ animation: 'fadeSlideIn 0.2s ease both' }}>
                 {/* Header */}
-                <div className="bg-gradient-to-br from-violet-600 to-purple-800 px-6 pt-6 pb-8 text-white relative overflow-hidden">
+                <div className="bg-gradient-to-br from-brand-dark to-brand-primary px-6 pt-6 pb-8 text-white relative overflow-hidden">
                     <div className="absolute -top-8 -right-8 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
                     <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-3">
@@ -283,7 +283,7 @@ const FormularioPropuesta = ({ onCreated, onCancel }) => {
                                 onChange={e => setTitulo(e.target.value)}
                                 maxLength={200}
                                 placeholder="Resumen en una frase..."
-                                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-violet-400 focus:ring-4 focus:ring-violet-100 transition-all font-semibold"
+                                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10 transition-all font-semibold"
                             />
                             <div className="text-right text-[10px] text-gray-300 mt-1">{titulo.length}/200</div>
                         </div>
@@ -297,7 +297,7 @@ const FormularioPropuesta = ({ onCreated, onCancel }) => {
                                 maxLength={2000}
                                 rows={4}
                                 placeholder="Explica tu idea con detalle: ¿qué problema resuelve? ¿cómo beneficia al fondo?"
-                                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:border-violet-400 focus:ring-4 focus:ring-violet-100 transition-all"
+                                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10 transition-all"
                             />
                             <div className="text-right text-[10px] text-gray-300 mt-0.5">{descripcion.length}/2000</div>
                         </div>
@@ -305,7 +305,7 @@ const FormularioPropuesta = ({ onCreated, onCancel }) => {
                         {/* Anónima */}
                         <label className="flex items-center gap-3 cursor-pointer group">
                             <div className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all
-                                ${anonima ? 'bg-violet-500 border-violet-500' : 'border-gray-300 group-hover:border-violet-400'}`}
+                                ${anonima ? 'bg-brand-primary border-brand-primary' : 'border-gray-300 group-hover:border-brand-primary/60'}`}
                                 onClick={() => setAnonima(prev => !prev)}>
                                 {anonima && <CheckCircle className="w-3.5 h-3.5 text-white" />}
                             </div>
@@ -327,7 +327,7 @@ const FormularioPropuesta = ({ onCreated, onCancel }) => {
                                 Cancelar
                             </button>
                             <button type="submit" disabled={enviando}
-                                className="flex-1 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-purple-700 text-white text-sm font-black hover:opacity-90 transition-all disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg shadow-violet-500/30">
+                                className="flex-1 py-3 rounded-xl bg-gradient-to-r from-brand-primary to-brand-dark text-white text-sm font-black hover:opacity-90 transition-all disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg shadow-brand-primary/30">
                                 {enviando ? 'Enviando...' : <><Rocket className="w-4 h-4" /> Enviar Propuesta</>}
                             </button>
                         </div>
@@ -440,7 +440,7 @@ const PropuestasPage = () => {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-violet-50/30 to-purple-50/20 p-4 sm:p-6">
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-emerald-50/30 to-amber-50/20 p-4 sm:p-6">
             <style>{`
                 @keyframes fadeSlideIn {
                     from { opacity: 0; transform: translateY(8px); }
@@ -449,9 +449,9 @@ const PropuestasPage = () => {
             `}</style>
 
             {/* ── HEADER ── */}
-            <div className="relative bg-gradient-to-br from-violet-600 via-purple-700 to-indigo-800 rounded-3xl p-6 sm:p-8 mb-6 overflow-hidden shadow-2xl shadow-violet-500/20">
+            <div className="relative bg-gradient-to-br from-brand-dark via-brand-primary to-brand-dark rounded-3xl p-6 sm:p-8 mb-6 overflow-hidden shadow-2xl shadow-brand-primary/20">
                 <div className="absolute -top-16 -right-16 w-48 h-48 bg-white/10 rounded-full blur-3xl" />
-                <div className="absolute -bottom-12 -left-12 w-40 h-40 bg-violet-300/20 rounded-full blur-3xl" />
+                <div className="absolute -bottom-12 -left-12 w-40 h-40 bg-brand-gold/10 rounded-full blur-3xl" />
                 <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div className="flex items-center gap-4">
                         <div className="w-14 h-14 bg-white/20 backdrop-blur rounded-2xl flex items-center justify-center text-3xl shadow-lg">💡</div>
@@ -474,7 +474,7 @@ const PropuestasPage = () => {
                     </div>
                     <button
                         onClick={() => setShowForm(true)}
-                        className="flex items-center gap-2 bg-white text-violet-700 font-black px-5 py-3 rounded-2xl hover:bg-violet-50 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 text-sm">
+                        className="flex items-center gap-2 bg-white text-brand-primary font-black px-5 py-3 rounded-2xl hover:bg-emerald-50 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 text-sm">
                         <Plus className="w-4 h-4" /> Nueva Propuesta
                     </button>
                 </div>
@@ -506,7 +506,7 @@ const PropuestasPage = () => {
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                         <input value={search} onChange={e => setSearch(e.target.value)}
                             placeholder="Buscar propuesta..."
-                            className="w-full pl-9 pr-4 py-2.5 text-sm border-2 border-gray-100 rounded-xl bg-gray-50 focus:outline-none focus:border-violet-400 focus:bg-white focus:ring-4 focus:ring-violet-100 transition-all font-semibold text-gray-700" />
+                            className="w-full pl-9 pr-4 py-2.5 text-sm border-2 border-gray-100 rounded-xl bg-gray-50 focus:outline-none focus:border-brand-primary focus:bg-white focus:ring-4 focus:ring-brand-primary/10 transition-all font-semibold text-gray-700" />
                     </div>
                     {/* Categorías */}
                     <div className="flex flex-wrap gap-1.5">
@@ -514,8 +514,8 @@ const PropuestasPage = () => {
                             <button key={cat} onClick={() => setFiltroCategoria(cat)}
                                 className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all
                                     ${filtroCategoria === cat
-                                        ? 'bg-violet-600 text-white border-violet-600 shadow-sm'
-                                        : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-violet-300 hover:text-violet-600'
+                                        ? 'bg-brand-primary text-white border-brand-primary shadow-sm'
+                                        : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-brand-primary/40 hover:text-brand-primary'
                                     }`}>
                                 {cat === 'Todas' ? '🔍 Todas' : `${CATEGORIA_ICONS[cat]} ${cat}`}
                             </button>
@@ -523,12 +523,12 @@ const PropuestasPage = () => {
                     </div>
                     {/* Estado y orden */}
                     <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)}
-                        className="text-xs font-bold border-2 border-gray-100 rounded-xl px-3 py-2.5 bg-gray-50 focus:outline-none focus:border-violet-400 text-gray-600">
+                        className="text-xs font-bold border-2 border-gray-100 rounded-xl px-3 py-2.5 bg-gray-50 focus:outline-none focus:border-brand-primary text-gray-600">
                         <option value="todas">Todos los estados</option>
                         {ESTADOS_ORDER.map(e => <option key={e} value={e}>{ESTADOS[e].label}</option>)}
                     </select>
                     <select value={orden} onChange={e => setOrden(e.target.value)}
-                        className="text-xs font-bold border-2 border-gray-100 rounded-xl px-3 py-2.5 bg-gray-50 focus:outline-none focus:border-violet-400 text-gray-600">
+                        className="text-xs font-bold border-2 border-gray-100 rounded-xl px-3 py-2.5 bg-gray-50 focus:outline-none focus:border-brand-primary text-gray-600">
                         <option value="votos">↑ Más votadas</option>
                         <option value="reciente">↑ Más recientes</option>
                         <option value="antiguo">↑ Más antiguas</option>
@@ -539,8 +539,8 @@ const PropuestasPage = () => {
             {/* ── CONTENIDO ── */}
             {loading ? (
                 <div className="flex flex-col items-center justify-center py-24 gap-4">
-                    <div className="w-12 h-12 border-4 border-violet-200 border-t-violet-600 rounded-full animate-spin" />
-                    <p className="text-violet-400 font-black text-xs uppercase tracking-widest">Cargando propuestas...</p>
+                    <div className="w-12 h-12 border-4 border-emerald-200 border-t-brand-primary rounded-full animate-spin" />
+                    <p className="text-brand-primary/70 font-black text-xs uppercase tracking-widest">Cargando propuestas...</p>
                 </div>
             ) : filtradas.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-24 gap-4 text-gray-400">
@@ -550,7 +550,7 @@ const PropuestasPage = () => {
                         <p className="text-sm text-gray-400 mt-1">{search ? `Sin resultados para "${search}"` : '¡Sé el primero en proponer una idea!'}</p>
                     </div>
                     <button onClick={() => setShowForm(true)}
-                        className="flex items-center gap-2 bg-gradient-to-r from-violet-600 to-purple-700 text-white font-black px-5 py-3 rounded-2xl hover:opacity-90 transition-all shadow-lg text-sm mt-2">
+                        className="flex items-center gap-2 bg-gradient-to-r from-brand-primary to-brand-dark text-white font-black px-5 py-3 rounded-2xl hover:opacity-90 transition-all shadow-lg text-sm mt-2">
                         <Sparkles className="w-4 h-4" /> Crear primera propuesta
                     </button>
                 </div>
