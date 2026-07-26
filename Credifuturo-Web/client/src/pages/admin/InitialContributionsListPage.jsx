@@ -5,7 +5,7 @@ import { notifyUpdate } from '../../utils/sync';
 import {
     Search, RefreshCw, AlertTriangle, Inbox, Download,
     Edit, Trash2, DollarSign, Users, Hash, TrendingUp,
-    ArrowUpRight, Filter, X
+    Filter, X
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { formatDate } from '../../utils/excelUtils';
@@ -72,7 +72,7 @@ const fmtCOP = (n, compact = false) => {
     return `$${val.toLocaleString('es-CO', { maximumFractionDigits: 0 })}`;
 };
 
-const MONTHS_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+const ITEMS_PER_PAGE = 25;
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
 const StatusBadge = ({ value }) => {
@@ -166,6 +166,9 @@ const InitialContributionsListPage = () => {
     const [error, setError] = useState(null);
     const [search, setSearch] = useState('');
     const [yearFilter, setYearFilter] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+
+    useEffect(() => { setCurrentPage(1); }, [search, yearFilter]);
 
     const fetchData = useCallback(async () => {
         setLoading(true); setError(null);
@@ -218,6 +221,9 @@ const InitialContributionsListPage = () => {
     }, [active]);
 
     const { sortedData, sortConfig, handleSort } = useSortTable(filtered);
+    const totalPages = Math.max(1, Math.ceil(sortedData.length / ITEMS_PER_PAGE));
+    const pageStartIdx = (currentPage - 1) * ITEMS_PER_PAGE;
+    const paginatedData = sortedData.slice(pageStartIdx, pageStartIdx + ITEMS_PER_PAGE);
 
     const handleDelete = async (id) => {
         if (!window.confirm('¿Eliminar este aporte? No se puede deshacer.')) return;
@@ -322,8 +328,8 @@ const InitialContributionsListPage = () => {
                                 Credifuturo · Finanzas
                             </span>
                         </div>
-                        <h1 className="text-2xl sm:text-3xl font-black tracking-tight">Aportes Iniciales</h1>
-                        <p className="text-white/60 text-sm mt-1">
+                        <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">Aportes Iniciales</h1>
+                        <p className="text-white/80 text-sm mt-1">
                             {stats.count} registros activos ·{' '}
                             <span className="text-green-300 font-semibold">{fmtCOP(stats.totalAmount)} en total</span>
                         </p>
@@ -505,11 +511,12 @@ const InitialContributionsListPage = () => {
                                     <tr>
                                         {TABLE_COLUMNS.map((col) => (
                                             <th key={col.key}
-                                                onClick={() => handleSort(col.key)}
+                                                onClick={col.key === 'actions' ? undefined : () => handleSort(col.key)}
                                                 style={{ textAlign: col.align, minWidth: col.minWidth }}
-                                                className="px-4 py-3.5 text-[10px] font-black uppercase tracking-[0.1em]
+                                                className={`px-4 py-3.5 text-[10px] font-black uppercase tracking-[0.1em]
                                                            text-gray-400 bg-gray-50/70 border-b border-gray-100
-                                                           cursor-pointer select-none hover:text-brand-primary transition-colors first:pl-6 last:pr-6">
+                                                           select-none transition-colors first:pl-6 last:pr-6
+                                                           ${col.key === 'actions' ? '' : 'cursor-pointer hover:text-brand-primary'}`}>
                                                 <span className="inline-flex items-center gap-1">
                                                     {col.label}
                                                     {col.label && <SortIcon colKey={col.key} sortConfig={sortConfig} />}
@@ -519,7 +526,7 @@ const InitialContributionsListPage = () => {
                                     </tr>
                                 </thead>
                                 <motion.tbody variants={staggerList} initial="hidden" animate="visible">
-                                    {sortedData.map((item, idx) => (
+                                    {paginatedData.map((item, idx) => (
                                         <motion.tr key={item.id} variants={rowVariant}
                                             className={`border-b border-gray-50 last:border-0 transition-colors duration-100 group
                                                 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}
@@ -538,10 +545,29 @@ const InitialContributionsListPage = () => {
                         </div>
 
                         {/* Table footer */}
-                        <div className="flex items-center justify-between px-6 py-3.5 border-t border-gray-50 bg-gray-50/40">
+                        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3.5 border-t border-gray-50 bg-gray-50/40">
                             <p className="text-[11px] text-gray-400 font-medium">
-                                Mostrando <span className="font-bold text-gray-700">{sortedData.length}</span> registros
+                                Mostrando <span className="font-bold text-gray-700">{pageStartIdx + 1}–{Math.min(pageStartIdx + ITEMS_PER_PAGE, sortedData.length)}</span> de <span className="font-bold text-gray-700">{sortedData.length}</span> registros
                             </p>
+                            {totalPages > 1 && (
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                        disabled={currentPage === 1}
+                                        className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-gray-500 hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-transparent transition-colors">
+                                        Anterior
+                                    </button>
+                                    <span className="text-[11px] text-gray-500 font-medium">
+                                        Página <span className="font-bold" style={{ color: BRAND.primary }}>{currentPage}</span> de {totalPages}
+                                    </span>
+                                    <button
+                                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                        disabled={currentPage === totalPages}
+                                        className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-gray-500 hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-transparent transition-colors">
+                                        Siguiente
+                                    </button>
+                                </div>
+                            )}
                             <div className="flex items-center gap-2">
                                 <span className="text-[11px] text-gray-400">Total activos:</span>
                                 <span className="text-sm font-black tabular-nums" style={{ color: BRAND.primary }}>

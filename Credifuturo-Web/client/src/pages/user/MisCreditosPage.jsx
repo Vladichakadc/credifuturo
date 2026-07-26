@@ -311,8 +311,8 @@ const MisCreditosPage = () => {
                             <CreditCard className="h-7 w-7 text-white" />
                         </div>
                         <div>
-                            <h1 className="text-2xl font-black tracking-tight leading-tight">Mis Créditos{nombre ? ` - ${nombre}` : ''}</h1>
-                            <p className="text-white/60 text-sm mt-0.5">Tus préstamos y el estado de tus cuotas, en un solo lugar</p>
+                            <h1 className="text-2xl font-black tracking-tight leading-tight text-white">Mis Créditos{nombre ? ` - ${nombre}` : ''}</h1>
+                            <p className="text-white/80 text-sm mt-0.5">Tus préstamos y el estado de tus cuotas, en un solo lugar</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
