@@ -462,6 +462,60 @@ const MisCreditosPage = () => {
                         </div>
 
 
+                        {/* KPI Row */}
+                        {loans.length > 0 && (
+                            <motion.div initial="hidden" animate="visible" variants={kpiContainerVariants} className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <motion.div variants={kpiItemVariants} whileHover={{ y: -3 }}>
+                                    <Card className="border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                                        <div className="p-4">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Saldo Pendiente</p>
+                                                <Wallet className="h-4 w-4 text-amber-600" />
+                                            </div>
+                                            <p className="text-xl font-black text-amber-700 tabular-nums leading-tight">{fmtCOP(loanStats.saldoPendienteAprox)}</p>
+                                            <p className="text-[10px] text-gray-500 mt-1 leading-tight">Capital por amortizar en créditos vigentes</p>
+                                        </div>
+                                    </Card>
+                                </motion.div>
+                                <motion.div variants={kpiItemVariants} whileHover={{ y: -3 }}>
+                                    <Card className="border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                                        <div className="p-4">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Ticket Promedio</p>
+                                                <Calculator className="h-4 w-4 text-emerald-700" />
+                                            </div>
+                                            <p className="text-xl font-black text-emerald-800 tabular-nums leading-tight">{fmtCOP(loanStats.ticketPromedio)}</p>
+                                            <p className="text-[10px] text-gray-500 mt-1 leading-tight">Monto promedio por crédito desembolsado</p>
+                                        </div>
+                                    </Card>
+                                </motion.div>
+                                <motion.div variants={kpiItemVariants} whileHover={{ y: -3 }}>
+                                    <Card className="border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                                        <div className="p-4">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Plazo Promedio</p>
+                                                <Calendar className="h-4 w-4 text-emerald-500" />
+                                            </div>
+                                            <p className="text-xl font-black text-emerald-600 tabular-nums leading-tight">{loanStats.plazoPromedio.toFixed(1)} <span className="text-sm font-bold">cuotas</span></p>
+                                            <p className="text-[10px] text-gray-500 mt-1 leading-tight">Duración media en meses por crédito</p>
+                                        </div>
+                                    </Card>
+                                </motion.div>
+                                <motion.div variants={kpiItemVariants} whileHover={{ y: -3 }}>
+                                    <Card className="border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                                        <div className="p-4">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">{tasaAsignada != null ? 'Tasa Actual' : 'Tasa Promedio'}</p>
+                                                <TrendingUp className="h-4 w-4 text-amber-500" />
+                                            </div>
+                                            <p className="text-xl font-black text-amber-700 tabular-nums leading-tight">{(tasaAsignada != null ? tasaAsignada : loanStats.tasaPromedio).toFixed(2)}<span className="text-sm font-bold">% m</span></p>
+                                            <p className="text-[10px] text-gray-500 mt-1 leading-tight">{tasaAsignada != null ? 'Tasa mensual vigente definida por el comité' : 'Interés mensual promedio del portafolio (sin tasa vigente definida)'}</p>
+                                        </div>
+                                    </Card>
+                                </motion.div>
+                            </motion.div>
+                        )}
+
 
                         {/* Análisis económico avanzado */}
                         {loans.length > 0 && loanStats.vigentesCount > 0 && (
