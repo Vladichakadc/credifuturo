@@ -15,7 +15,8 @@ import {
     FileText,
     Landmark,
     Gauge,
-    ShieldCheck
+    ShieldCheck,
+    Lightbulb
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { Button } from '../components/ui/Button';
@@ -186,6 +187,12 @@ const UserDashboardLayout = ({ user, onLogout }) => {
             icon: Wallet,
             label: 'Aportes',
             path: '/dashboard/contributions'
+        },
+        {
+            type: 'link',
+            icon: Lightbulb,
+            label: 'Mis Propuestas',
+            path: '/dashboard/propuestas'
         }
     ];
 

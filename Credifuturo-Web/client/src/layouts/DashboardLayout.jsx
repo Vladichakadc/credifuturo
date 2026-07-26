@@ -26,7 +26,9 @@ import {
     UserRound,
     Gauge,
     Wallet,
-    Inbox
+    Inbox,
+    Lightbulb,
+    MessageSquareMore
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import api, { apiWithRetry } from '../config/api';
@@ -161,7 +163,7 @@ const DashboardLayout = ({ user, onLogout }) => {
     const [syncStats, setSyncStats] = useState(null);
     const [showSummary, setShowSummary] = useState(false);
     const [syncAttempt, setSyncAttempt] = useState(0);
-    const [openSubmenus, setOpenSubmenus] = useState({ inicio: true, estatutos: false, socios: false, prestamos: false, ahorros: false, aportes: false, informes: false, micuenta: false });
+    const [openSubmenus, setOpenSubmenus] = useState({ inicio: true, estatutos: false, socios: false, prestamos: false, ahorros: false, aportes: false, informes: false, micuenta: false, propuestas: false });
     const [informesList, setInformesList] = useState([]);
     const [informesSearch, setInformesSearch] = useState('');
     const location = useLocation();
@@ -304,11 +306,20 @@ const DashboardLayout = ({ user, onLogout }) => {
             children: [
                 { icon: List, label: 'Lista de Ahorros', path: '/admin/savings/list' },
                 { icon: PlusCircle, label: 'Nuevo Ahorro', path: '/admin/savings?action=new' },
-                { icon: TrendingUp, label: 'Resumen Ahorros', path: '/admin/savings/summary' },
                 { icon: TrendingUp, label: 'Evolución Ahorros (beta)', path: '/admin/savings/evolution' },
                 { icon: Banknote, label: 'Devoluciones Ahorros', path: '/admin/savings/devoluciones' },
                 { icon: List, label: 'Lista de Aportes', path: '/admin/initial-contributions/list' },
                 { icon: PlusCircle, label: 'Nuevo Aporte', path: '/admin/initial-contributions/new' },
+            ]
+        },
+        {
+            type: 'submenu',
+            key: 'propuestas',
+            icon: Lightbulb,
+            label: 'Propuestas',
+            children: [
+                { icon: TrendingUp,         label: 'Ranking de Ahorro',  path: '/admin/savings/summary' },
+                { icon: MessageSquareMore,  label: 'Buzón de Propuestas', path: '/admin/propuestas' },
             ]
         },
         {

@@ -4643,6 +4643,167 @@ router.put('/settings/:key', verifyToken, requireFreshPassword, requireRole('adm
     }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// MÓDULO: BUZÓN DE PROPUESTAS
+// ─────────────────────────────────────────────────────────────────────────────
+const Propuesta = require('../models/Propuesta');
+const VotoPropuesta = require('../models/VotoPropuesta');
+
+// Sincronizar tablas si no existen
+(async () => {
+    try {
+        await Propuesta.sync({ alter: false });
+        await VotoPropuesta.sync({ alter: false });
+    } catch (e) {
+        // Si ya existen, no hace nada
+        try {
+            await Propuesta.sync({ force: false });
+            await VotoPropuesta.sync({ force: false });
+        } catch (e2) { /* silencio */ }
+    }
+})();
+
+// GET /propuestas — listar todas las propuestas (admin: todas; user: solo activas)
+router.get('/propuestas', verifyToken, requireFreshPassword, async (req, res) => {
+    try {
+        const { estado, categoria, orden = 'votos' } = req.query;
+        const where = {};
+        if (estado) where.estado = estado;
+        if (categoria) where.categoria = categoria;
+
+        const orderMap = {
+            votos: [['votos', 'DESC'], ['createdAt', 'DESC']],
+            reciente: [['createdAt', 'DESC']],
+            antiguo: [['createdAt', 'ASC']],
+        };
+
+        const propuestas = await Propuesta.findAll({
+            where,
+            order: orderMap[orden] || orderMap.votos,
+        });
+
+        // Para el usuario solicitante, marcar si ya votó
+        const clientId = req.user?.clientId || req.user?.id;
+        let misVotos = new Set();
+        if (clientId) {
+            const votos = await VotoPropuesta.findAll({ where: { clientId } });
+            votos.forEach(v => misVotos.add(v.propuestaId));
+        }
+
+        const data = propuestas.map(p => ({
+            ...p.toJSON(),
+            yaVote: misVotos.has(p.id),
+        }));
+
+        res.json({ ok: true, data });
+    } catch (err) {
+        console.error('Error GET /propuestas:', err.message);
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
+// POST /propuestas — crear nueva propuesta (cualquier usuario autenticado)
+router.post('/propuestas', verifyToken, requireFreshPassword, async (req, res) => {
+    try {
+        const { titulo, descripcion, categoria = 'Otro', anonima = false } = req.body;
+        if (!titulo || titulo.length < 5) return res.status(400).json({ ok: false, error: 'El título debe tener al menos 5 caracteres.' });
+        if (!descripcion || descripcion.length < 10) return res.status(400).json({ ok: false, error: 'La descripción debe tener al menos 10 caracteres.' });
+
+        const clientId = req.user?.clientId || req.user?.id;
+        // Obtener nombre del socio si no es anónima
+        let autorNombre = 'Anónimo';
+        if (!anonima && clientId) {
+            try {
+                const c = await Client.findByPk(clientId, { attributes: ['name', 'surname1'] });
+                if (c) autorNombre = `${c.name} ${c.surname1 || ''}`.trim();
+            } catch { /* fallback */ }
+        } else if (!anonima && req.user?.name) {
+            autorNombre = `${req.user.name} ${req.user.surname1 || ''}`.trim();
+        }
+
+        const propuesta = await Propuesta.create({
+            titulo: titulo.trim(),
+            descripcion: descripcion.trim(),
+            categoria,
+            clientId: anonima ? null : clientId,
+            autorNombre: anonima ? 'Anónimo' : autorNombre,
+            estado: 'pendiente',
+            votos: 0,
+            anonima
+        });
+
+        res.json({ ok: true, data: propuesta });
+    } catch (err) {
+        console.error('Error POST /propuestas:', err.message);
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
+// PUT /propuestas/:id/voto — toggle voto (1 voto por socio por propuesta)
+router.put('/propuestas/:id/voto', verifyToken, requireFreshPassword, async (req, res) => {
+    try {
+        const propuesta = await Propuesta.findByPk(req.params.id);
+        if (!propuesta) return res.status(404).json({ ok: false, error: 'Propuesta no encontrada.' });
+
+        const clientId = req.user?.clientId || req.user?.id;
+        if (!clientId) return res.status(401).json({ ok: false, error: 'No identificado.' });
+
+        const votoExistente = await VotoPropuesta.findOne({ where: { propuestaId: propuesta.id, clientId } });
+
+        if (votoExistente) {
+            // Quitar voto
+            await votoExistente.destroy();
+            await propuesta.update({ votos: Math.max(0, (propuesta.votos || 0) - 1) });
+            return res.json({ ok: true, votos: propuesta.votos - 1, yaVote: false });
+        } else {
+            // Agregar voto
+            await VotoPropuesta.create({ propuestaId: propuesta.id, clientId });
+            await propuesta.update({ votos: (propuesta.votos || 0) + 1 });
+            return res.json({ ok: true, votos: propuesta.votos + 1, yaVote: true });
+        }
+    } catch (err) {
+        console.error('Error PUT /propuestas/:id/voto:', err.message);
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
+// PUT /propuestas/:id/estado — cambiar estado + respuesta (solo admin)
+router.put('/propuestas/:id/estado', verifyToken, requireFreshPassword, requireRole('admin'), async (req, res) => {
+    try {
+        const propuesta = await Propuesta.findByPk(req.params.id);
+        if (!propuesta) return res.status(404).json({ ok: false, error: 'Propuesta no encontrada.' });
+
+        const { estado, respuestaAdmin } = req.body;
+        const estadosValidos = ['pendiente', 'en_revision', 'aprobada', 'rechazada'];
+        if (estado && !estadosValidos.includes(estado)) {
+            return res.status(400).json({ ok: false, error: 'Estado inválido.' });
+        }
+
+        await propuesta.update({
+            ...(estado ? { estado } : {}),
+            ...(respuestaAdmin !== undefined ? { respuestaAdmin } : {}),
+        });
+
+        res.json({ ok: true, data: propuesta });
+    } catch (err) {
+        console.error('Error PUT /propuestas/:id/estado:', err.message);
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
+// DELETE /propuestas/:id — eliminar propuesta (solo admin)
+router.delete('/propuestas/:id', verifyToken, requireFreshPassword, requireRole('admin'), async (req, res) => {
+    try {
+        const propuesta = await Propuesta.findByPk(req.params.id);
+        if (!propuesta) return res.status(404).json({ ok: false, error: 'Propuesta no encontrada.' });
+        await VotoPropuesta.destroy({ where: { propuestaId: propuesta.id } });
+        await propuesta.destroy();
+        res.json({ ok: true });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
 module.exports = router;
 // Reutilizada por el cron de snapshots de score en server.js
 module.exports.getLoanCapacityAnalysis = getLoanCapacityAnalysis;

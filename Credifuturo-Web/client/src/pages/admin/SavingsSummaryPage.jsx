@@ -306,6 +306,41 @@ const FullListModal = ({ title, columns, data, onClose, icon: Icon }) => (
     </div>
 );
 
+// ── Método de Saldo Promedio Ponderado (SFC/FIC Colombia) ─────────────────
+// Idéntico al usado por Fondos de Inversión Colectiva regulados por la SFC.
+// Cada aporte se pondera por los meses que estuvo invertido en el período.
+// Fórmula: saldoPromedio = Σ (aporte_mes × meses_restantes_en_período / N_meses)
+// Esto hace que el dinero depositado en Enero valga 12× más que el de Diciembre,
+// de forma proporcional y justa — exactamente como en fondos de inversión reales.
+const MESES_PERIODO = 12; // Período anual del fondo
+const NOMBRES_MES = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+// Calcula el saldo promedio de un socio dado su historial de aportes mensuales
+const calcSaldoPromedio = (monthlyData = []) => {
+    if (!monthlyData || monthlyData.length === 0) return { saldoPromedio: 0, desgloseMes: [] };
+    let saldoPromedio = 0;
+    const desgloseMes = [];
+    monthlyData.forEach(aporte => {
+        const mes = aporte.monthInt || 12;
+        const anio = aporte.year || new Date().getFullYear();
+        const monto = aporte.amount || 0;
+        // Meses que este aporte estuvo trabajando en el fondo durante el período
+        const mesesInvertidos = Math.max(MESES_PERIODO - mes + 1, 1);
+        const factor = mesesInvertidos / MESES_PERIODO; // e.g. Ene=1.0, Jun=0.583, Dic=0.083
+        const contribucion = monto * factor;
+        saldoPromedio += contribucion;
+        desgloseMes.push({
+            mes, anio,
+            mesNombre: `${NOMBRES_MES[mes] || `M${mes}`} ${anio}`,
+            mesNombreCorto: NOMBRES_MES[mes] || `M${mes}`,
+            monto, mesesInvertidos, factor, contribucion,
+        });
+    });
+    // Ordenar de más reciente a más antiguo (ej: Dic 2025 → Ene 2025)
+    desgloseMes.sort((a, b) => (b.anio * 12 + b.mes) - (a.anio * 12 + a.mes));
+    return { saldoPromedio, desgloseMes };
+};
+
 const RankingModal = ({ onClose }) => {
     const [ranking, setRanking] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -314,8 +349,8 @@ const RankingModal = ({ onClose }) => {
     const [utilidadesDistribuir, setUtilidadesDistribuir] = useState('');
     const [guardandoUtilidades, setGuardandoUtilidades] = useState(false);
     const [utilidadesGuardadas, setUtilidadesGuardadas] = useState(false);
-    // Ganancia real del fondo (del dashboard) para comparación y sugerencia
     const [gananciaRealFondo, setGananciaRealFondo] = useState(0);
+    const [expandedId, setExpandedId] = useState(null);
 
     useEffect(() => {
         const fetchAll = async () => {
@@ -338,24 +373,22 @@ const RankingModal = ({ onClose }) => {
                 if (rankRes.status === 'fulfilled' && rankRes.value.data.ok) {
                     const d = rankRes.value.data;
                     
-                    // Cálculo de Ahorro Ponderado (Time-Weighted Balance)
+                    // ── Saldo Promedio Ponderado (método FIC/SFC Colombia) ──
+                    // La distribución es proporcional al saldo promedio anual.
+                    // Cada aporte se pondera por: (meses invertidos / 12)
+                    // Enero = 12/12 = 100% del año · Julio = 6/12 = 50% · Dic = 1/12 ≈ 8%
                     const processedRanking = (d.data || []).map(socio => {
-                        let ahorroPonderado = 0;
-                        if (socio.monthlyData && socio.monthlyData.length > 0) {
-                            socio.monthlyData.forEach(aporte => {
-                                // Peso basado en el mes: Enero (1) -> 12, Diciembre (12) -> 1
-                                // Fórmula: 13 - mes
-                                const mes = aporte.monthInt || 12;
-                                const peso = 13 - mes;
-                                ahorroPonderado += (aporte.amount || 0) * peso;
-                            });
-                        } else {
-                            // Fallback de seguridad
-                            ahorroPonderado = socio.totalNetSavings || 0;
-                        }
-                        return { ...socio, ahorroPonderado };
-                    }).sort((a, b) => b.ahorroPonderado - a.ahorroPonderado); // Re-ordenar por puntaje ponderado
-                    
+                        const { saldoPromedio, desgloseMes } = calcSaldoPromedio(socio.monthlyData);
+                        return {
+                            ...socio,
+                            saldoPromedio,
+                            desgloseMes,
+                            // Alias para compatibilidad con variables existentes
+                            puntajeFinal: saldoPromedio,
+                            ahorroPonderado: saldoPromedio,
+                        };
+                    }).sort((a, b) => b.saldoPromedio - a.saldoPromedio);
+
                     setRanking(processedRanking);
                     setDevolucionTotal(d.totalDevolucionIntereses || 0);
                     // Prioridad: (1) valor del comité en AppSettings (siempre que NO sea el valor legacy erróneo),
@@ -416,60 +449,199 @@ const RankingModal = ({ onClose }) => {
     const fmtCorto = (v) => { const n = Number(v) || 0; if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1).replace('.', ',')}M`; if (n >= 1_000) return `$${Math.round(n / 1_000)}k`; return `$${n}`; };
 
     const totalAhorroNeto = ranking.reduce((sum, r) => sum + Number(r.totalNetSavings), 0);
-    const totalPonderado = ranking.reduce((sum, r) => sum + Number(r.ahorroPonderado), 0);
-    const maxValPonderado = ranking.length > 0 ? Number(ranking[0].ahorroPonderado) : 1;
+    // totalSaldoPromedio: suma de los saldos promedio de todos los socios.
+    // La participación de cada socio = su_saldoPromedio / totalSaldoPromedio
+    const totalSaldoPromedio = ranking.reduce((sum, r) => sum + (r.saldoPromedio || 0), 0);
+    const maxSaldo = ranking.length > 0 ? (ranking[0].saldoPromedio || 1) : 1;
     const utilidadesParsed = Number(String(utilidadesDistribuir).replace(/\D/g, '')) || 0;
     const filtered = search ? ranking.filter(r => r.fullName.toLowerCase().includes(search.toLowerCase())) : ranking;
     const top3 = ranking.slice(0, 3);
     const rest = ranking.slice(3);
     const gapVsReal = gananciaRealFondo - utilidadesParsed;
     const pctDistribuido = gananciaRealFondo > 0 ? Math.round((utilidadesParsed / gananciaRealFondo) * 100) : 0;
+    const toggleExpand = (id) => setExpandedId(prev => prev === id ? null : id);
 
     const renderRow = (entry, globalIndex) => {
         const pos = globalIndex + 1;
-        // La distribución se hace sobre el Ahorro Ponderado, no sobre el Ahorro Bruto
-        const pctFloat = totalPonderado > 0 ? (Number(entry.ahorroPonderado) / totalPonderado) : 0;
+        const saldo = entry.saldoPromedio || 0;
+        const pctFloat = totalSaldoPromedio > 0 ? saldo / totalSaldoPromedio : 0;
         const pct = (pctFloat * 100).toFixed(2);
-        const barWidth = maxValPonderado > 0 ? Math.round((Number(entry.ahorroPonderado) / maxValPonderado) * 100) : 0;
+        const barWidth = maxSaldo > 0 ? Math.round((saldo / maxSaldo) * 100) : 0;
         const gananciaEstimada = pctFloat * utilidadesParsed;
         const isTop = pos <= 3;
+        const isExpanded = expandedId === entry.customerId;
         const cfg = isTop ? MEDAL_CONFIGS[pos - 1] : null;
         const avatarGrad = cfg ? cfg.avatarGrad : (REST_COLORS[(globalIndex - 3) % REST_COLORS.length]);
         const barGrad = cfg ? cfg.barGrad : 'from-emerald-400 to-emerald-600';
+        const baseAhorro = Number(entry.totalNetSavings) || 0;
+        const desglose = entry.desgloseMes || [];
+        // Aporte más temprano y más tardío para contexto
+        const primerMes = desglose.length > 0 ? desglose[0] : null;
+        const eficienciaFactor = baseAhorro > 0 ? (saldo / baseAhorro) : 0; // qué fracción del año promedio estuvo el dinero
 
         return (
-            <div key={entry.customerId}
-                className={`group flex items-center gap-3 px-4 py-3 rounded-2xl transition-all duration-200
-                    hover:bg-white hover:shadow-lg hover:shadow-emerald-500/10 hover:-translate-y-px
-                    border border-transparent hover:border-emerald-100
-                    ${isTop ? 'bg-gradient-to-r from-emerald-50/60 to-transparent' : 'bg-gray-50/30'}`}>
-                {isTop
-                    ? <div className={`w-8 h-8 rounded-full flex items-center justify-center text-base flex-shrink-0 ${cfg.badgeBg}`}>{cfg.medal}</div>
-                    : <div className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center text-xs font-black text-gray-400 flex-shrink-0 shadow-sm">{pos}</div>
-                }
-                <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${avatarGrad} flex items-center justify-center text-white text-xs font-extrabold flex-shrink-0 shadow-md ring-2 ring-white`}>
-                    {getInitials(entry.fullName)}
-                </div>
-                <div className="flex-1 min-w-0">
-                    <div className="text-sm font-bold text-gray-900 leading-tight truncate group-hover:text-emerald-700 transition-colors">{entry.fullName}</div>
-                    <div className="flex items-center gap-1.5 mt-1">
-                        <div className="flex-1 h-1.5 bg-gray-200/60 rounded-full overflow-hidden max-w-[120px]">
-                            <div className={`h-full bg-gradient-to-r ${barGrad} rounded-full`} style={{ width: `${barWidth}%` }} />
+            <div key={entry.customerId} className="flex flex-col">
+                {/* ── Fila principal (clickeable) ── */}
+                <div
+                    onClick={() => toggleExpand(entry.customerId)}
+                    className={`group flex items-center gap-3 px-4 py-3 rounded-2xl transition-all duration-200 cursor-pointer select-none
+                        border ${ isExpanded
+                            ? 'bg-white shadow-lg shadow-emerald-500/10 border-emerald-200 rounded-b-none'
+                            : isTop
+                                ? 'bg-gradient-to-r from-emerald-50/60 to-transparent border-transparent hover:bg-white hover:shadow-lg hover:border-emerald-100'
+                                : 'bg-gray-50/30 border-transparent hover:bg-white hover:shadow-md hover:border-gray-100'
+                        }`}>
+                    {isTop
+                        ? <div className={`w-8 h-8 rounded-full flex items-center justify-center text-base flex-shrink-0 ${cfg.badgeBg}`}>{cfg.medal}</div>
+                        : <div className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center text-xs font-black text-gray-400 flex-shrink-0 shadow-sm">{pos}</div>
+                    }
+                    <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${avatarGrad} flex items-center justify-center text-white text-xs font-extrabold flex-shrink-0 shadow-md ring-2 ring-white`}>
+                        {getInitials(entry.fullName)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <div className={`text-sm font-bold leading-tight truncate transition-colors ${isExpanded ? 'text-emerald-700' : 'text-gray-900 group-hover:text-emerald-700'}`}>
+                            {entry.fullName}
                         </div>
-                        <span className="text-[10px] font-bold text-gray-400">{entry.customerId}</span>
+                        <div className="flex items-center gap-1.5 mt-1">
+                            <div className="flex-1 h-1.5 bg-gray-200/60 rounded-full overflow-hidden max-w-[120px]">
+                                <div className={`h-full bg-gradient-to-r ${barGrad} rounded-full`} style={{ width: `${barWidth}%` }} />
+                            </div>
+                            <span className="text-[10px] font-bold text-gray-400">
+                                {primerMes ? `desde ${primerMes.mesNombre}` : entry.customerId}
+                            </span>
+                        </div>
+                    </div>
+                    {/* Columna: Ahorrado vs Saldo Promedio */}
+                    <div className="text-right flex-shrink-0 hidden sm:flex flex-col items-end gap-0.5">
+                        <div className="text-sm font-black text-gray-800 tabular-nums">{fmt(baseAhorro)}</div>
+                        <div className="flex items-center gap-1">
+                            <span className="text-[9px] text-gray-400">prom:</span>
+                            <span className="text-[10px] font-black text-blue-600 tabular-nums">{fmt(saldo)}</span>
+                        </div>
+                    </div>
+                    {/* Columna: Utilidad estimada */}
+                    <div className={`flex-shrink-0 min-w-[7rem] text-right rounded-xl px-3 py-2 border ${
+                        isTop ? 'bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-200/60' : 'bg-white border-gray-100'
+                    }`}>
+                        <div className="text-[9px] font-black uppercase tracking-wider text-emerald-600">Utilidad est.</div>
+                        <div className={`text-sm font-black tabular-nums mt-0.5 ${isTop ? 'text-emerald-700' : 'text-gray-800'}`}>{fmt(gananciaEstimada)}</div>
+                        <div className="text-[9px] text-gray-400">{pct}%</div>
+                    </div>
+                    <div className={`flex-shrink-0 w-5 h-5 flex items-center justify-center transition-transform duration-200 text-gray-300 ${isExpanded ? 'rotate-180 text-emerald-500' : ''}`}>
+                        <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
+                            <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
                     </div>
                 </div>
-                <div className="text-right flex-shrink-0 hidden sm:block">
-                    <div className="text-sm font-black text-gray-800 tabular-nums" title="Ahorro Neto Real">{fmt(entry.totalNetSavings)}</div>
-                    <div className="text-[10px] font-bold text-gray-400" title="Puntaje Ponderado por Tiempo">pts: {fmtCorto(entry.ahorroPonderado)}</div>
-                </div>
-                <div className={`flex-shrink-0 min-w-[7rem] text-right rounded-xl px-3 py-2 border ${
-                    isTop ? 'bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-200/60' : 'bg-white border-gray-100'
-                }`}>
-                    <div className="text-[9px] font-black uppercase tracking-wider text-emerald-600">Utilidad estimada</div>
-                    <div className={`text-sm font-black tabular-nums mt-0.5 ${isTop ? 'text-emerald-700' : 'text-gray-800'}`}>{fmt(gananciaEstimada)}</div>
-                    <div className="text-[9px] text-gray-400">{pct}%</div>
-                </div>
+
+                {/* ── Panel de desglose (expandible) ── */}
+                {isExpanded && (
+                    <div className="bg-white border border-emerald-200 border-t-0 rounded-b-2xl px-5 py-5 shadow-lg shadow-emerald-500/10"
+                        style={{ animation: 'rankingFadeIn 0.15s ease both' }}>
+                        {/* Título y leyenda */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                            <div className="text-[9px] font-black uppercase tracking-widest text-gray-400 flex items-center gap-2">
+                                <div className="w-1 h-3 bg-gradient-to-b from-blue-400 to-blue-600 rounded-full" />
+                                Método Saldo Promedio Ponderado · Estándar FIC/SFC
+                            </div>
+                            <div className="text-[9px] text-gray-400 italic">Igual que un fondo de inversión colombiano</div>
+                        </div>
+
+                        {/* ── EXPLICACIÓN EN LENGUAJE CLARO ── */}
+                        <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-4 text-sm text-blue-900 leading-relaxed">
+                            <div className="font-black text-blue-700 mb-1.5 text-xs uppercase tracking-wider">💬 ¿Cómo se calcula tu participación en las utilidades?</div>
+                            <p>
+                                El fondo reparte las ganancias de forma <strong>justa y proporcional</strong>: no solo importa <em>cuánto</em> ahorraste,
+                                sino <em>cuándo</em> lo hiciste. Un peso que lleva todo el año en el fondo “trabajó” más que uno que entró en diciembre,
+                                exactamente como funciona en cualquier fondo de inversión real.
+                            </p>
+                            {desglose.length > 0 && (() => {
+                                // Ordenados de más antiguo a más reciente para la explicación
+                                const mej = [...desglose].sort((a, b) => (a.anio * 12 + a.mes) - (b.anio * 12 + b.mes))[0];
+                                const peor = [...desglose].sort((a, b) => (b.anio * 12 + b.mes) - (a.anio * 12 + a.mes))[0];
+                                const factorPct = (eficienciaFactor * 100).toFixed(0);
+                                let mensaje;
+                                if (eficienciaFactor >= 0.80) {
+                                    mensaje = `👏 Excelente. Tu dinero estuvo disponible para el fondo el <strong>${factorPct}% del año</strong> en promedio. Eso significa que has sido un socio muy constante y tu participación en las utilidades refleja ese compromiso.`;
+                                } else if (eficienciaFactor >= 0.50) {
+                                    mensaje = `❤️ Buen trabajo. Tu dinero estuvo en el fondo el <strong>${factorPct}% del año</strong> en promedio. Si el próximo año empiezas a ahorrar desde enero, tu participación aumentará considerablemente.`;
+                                } else {
+                                    mensaje = `📅 Ingresaste al fondo más adelante en el año, por eso tu dinero solo estuvo disponible el <strong>${factorPct}% del tiempo</strong>. Eso está bien — el próximo año, si ahorras desde enero, tu participación será mayor.`;
+                                }
+                                return (
+                                    <p className="mt-2" dangerouslySetInnerHTML={{ __html: mensaje }} />
+                                );
+                            })()}
+                            <p className="mt-2 text-blue-600 text-xs">
+                                Tu <strong>Saldo Promedio</strong> de <strong>{fmt(saldo)}</strong> es el número que representa cuánto “pesu00f3” tu ahorro durante el año.
+                                Tu porcentaje del fondo ({pct}%) es <em>tu Saldo Promedio dividido por el Saldo Promedio de todos los socios juntos</em>.
+                            </p>
+                        </div>
+
+                        {/* Resumen de 3 KPIs */}
+                        <div className="grid grid-cols-3 gap-2 mb-4">
+                            <div className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2.5 text-center">
+                                <div className="text-[9px] font-black uppercase tracking-wider text-gray-400">💰 Ahorrado</div>
+                                <div className="text-sm font-black text-gray-800 tabular-nums mt-0.5">{fmt(baseAhorro)}</div>
+                                <div className="text-[9px] text-gray-400">{desglose.length} aporte{desglose.length !== 1 ? 's' : ''}</div>
+                            </div>
+                            <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 text-center">
+                                <div className="text-[9px] font-black uppercase tracking-wider text-blue-500">⚖️ Saldo Promedio</div>
+                                <div className="text-sm font-black text-blue-700 tabular-nums mt-0.5">{fmt(saldo)}</div>
+                                <div className="text-[9px] text-blue-400">{(eficienciaFactor * 100).toFixed(0)}% del año con dinero invertido</div>
+                            </div>
+                            <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2.5 text-center">
+                                <div className="text-[9px] font-black uppercase tracking-wider text-emerald-600">💵 Utilidad</div>
+                                <div className="text-sm font-black text-emerald-700 tabular-nums mt-0.5">{fmt(gananciaEstimada)}</div>
+                                <div className="text-[9px] text-emerald-500">{pct}% del total</div>
+                            </div>
+                        </div>
+
+                        {/* Tabla de aportes mes a mes */}
+                        {desglose.length > 0 && (
+                            <div className="rounded-xl overflow-hidden border border-gray-100">
+                                <div className="grid grid-cols-5 bg-gray-50 px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-gray-400 border-b border-gray-100">
+                                    <div>Mes / Año</div>
+                                    <div className="text-right">Aportado</div>
+                                    <div className="text-right">Meses inv.</div>
+                                    <div className="text-right">Factor</div>
+                                    <div className="text-right">Contribución</div>
+                                </div>
+                                <div className="divide-y divide-gray-50 max-h-48 overflow-y-auto">
+                                    {desglose.map((d, i) => (
+                                        <div key={i} className="grid grid-cols-5 px-3 py-1.5 text-[10px] hover:bg-blue-50/40 transition-colors">
+                                            <div className="font-bold text-gray-700">{d.mesNombre}</div>
+                                            <div className="text-right text-gray-600 tabular-nums">{fmt(d.monto)}</div>
+                                            <div className="text-right font-bold text-blue-600">{d.mesesInvertidos} / {MESES_PERIODO}</div>
+                                            <div className="text-right text-gray-500">{(d.factor * 100).toFixed(1)}%</div>
+                                            <div className="text-right font-black text-blue-700 tabular-nums">{fmt(d.contribucion)}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="grid grid-cols-5 px-3 py-2 bg-blue-50 border-t border-blue-100 text-[10px]">
+                                    <div className="font-black text-blue-700 col-span-1">Total</div>
+                                    <div className="text-right font-black text-gray-800 tabular-nums">{fmt(baseAhorro)}</div>
+                                    <div />
+                                    <div />
+                                    <div className="text-right font-black text-blue-700 tabular-nums">{fmt(saldo)}</div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Fórmula y chip de resultado */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 mt-4 pt-3 border-t border-gray-100">
+                            <div className="text-[9px] text-gray-400 font-mono leading-relaxed">
+                                Participación = {fmt(saldo)} / {fmt(totalSaldoPromedio)} = {pct}%<br/>
+                                Utilidad = {pct}% × {fmt(utilidadesParsed)} = <span className="font-black text-gray-700">{fmt(gananciaEstimada)}</span>
+                            </div>
+                            <div className="bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-xl px-4 py-2.5 text-center shadow-md">
+                                <div className="text-[9px] font-black uppercase tracking-wider opacity-80">Utilidad Estimada</div>
+                                <div className="text-xl font-black tabular-nums">{fmt(gananciaEstimada)}</div>
+                                <div className="text-[9px] opacity-80">{pct}% de {fmt(utilidadesParsed)}</div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         );
     };
@@ -490,10 +662,11 @@ const RankingModal = ({ onClose }) => {
                             <div className="w-14 h-14 bg-gradient-to-br from-emerald-500 to-green-700 rounded-2xl flex items-center justify-center text-3xl shadow-lg shadow-emerald-500/25 ring-4 ring-white flex-shrink-0">🏆</div>
                             <div>
                                 <h2 className="text-2xl font-black tracking-tight text-gray-900">Ranking de Ahorro</h2>
-                                <p className="text-xs font-semibold text-gray-500 mt-0.5 flex items-center gap-1.5" title={`Ahorro neto total: ${fmt(totalAhorroNeto)}`}>
+                                <p className="text-xs font-semibold text-gray-500 mt-0.5 flex items-center gap-1.5">
                                     <CheckCircle className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-                                    Reparto por Ahorro Ponderado en el Tiempo
+                                    Saldo Promedio Ponderado · Método FIC/SFC Colombia
                                 </p>
+                                <p className="text-[10px] text-gray-400 mt-0.5">Haz clic en un socio para ver su desglose mes a mes</p>
                             </div>
                         </div>
                         <div className="flex items-center gap-2 bg-white rounded-2xl shadow-md border border-gray-100 p-1.5 flex-shrink-0">
@@ -534,9 +707,9 @@ const RankingModal = ({ onClose }) => {
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
                             {[
                                 { label: 'Socios en ranking', value: ranking.length, sub: 'activos con ahorro', icon: '👥' },
-                                { label: 'Ahorro neto total', value: fmtCorto(totalAhorroNeto), sub: 'depositado en el año', icon: '💵' },
+                                { label: 'Ahorro neto total', value: fmtCorto(totalAhorroNeto), sub: 'capital depositado', icon: '💵' },
                                 { label: 'A distribuir', value: fmtCorto(utilidadesParsed), sub: `${pctDistribuido}% de ganancia real`, icon: '📊' },
-                                { label: 'Total Ponderado', value: fmtCorto(totalPonderado), sub: 'base de distribución', icon: '⚖️' },
+                                { label: 'Saldo Prom. Total', value: fmtCorto(totalSaldoPromedio), sub: 'base del reparto (FIC)', icon: '⚖️' },
                             ].map(m => (
                                 <div key={m.label} className="bg-white/80 backdrop-blur-sm rounded-xl px-3 py-2.5 border border-white shadow-sm flex items-center gap-2.5">
                                     <span className="text-xl leading-none flex-shrink-0">{m.icon}</span>
@@ -579,7 +752,8 @@ const RankingModal = ({ onClose }) => {
                                         {[1, 0, 2].map((realIdx) => {
                                             const entry = top3[realIdx];
                                             const cfg = MEDAL_CONFIGS[realIdx];
-                                            const pctFloat = totalPonderado > 0 ? (Number(entry.ahorroPonderado) / totalPonderado) : 0;
+                                            const saldoEntry = entry.saldoPromedio || 0;
+                                            const pctFloat = totalSaldoPromedio > 0 ? (saldoEntry / totalSaldoPromedio) : 0;
                                             const pct = (pctFloat * 100).toFixed(1);
                                             const ganancia = pctFloat * utilidadesParsed;
                                             const heights = ['h-24', 'h-16', 'h-14'];

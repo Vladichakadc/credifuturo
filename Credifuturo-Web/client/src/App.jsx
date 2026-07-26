@@ -25,6 +25,7 @@ import OrphanLoansPage from './pages/admin/OrphanLoansPage';
 import AccessLogsPage from './pages/admin/AccessLogsPage';
 import ExecutivePanelPage from './pages/admin/ExecutivePanelPage';
 import SavingsEvolutionPage from './pages/admin/SavingsEvolutionPage';
+import PropuestasPage from './pages/admin/PropuestasPage';
 
 // User Pages
 import UserDashboardLayout from './layouts/UserDashboardLayout';
@@ -118,6 +119,7 @@ function App() {
                     <Route path="statutes" element={<UserStatutesPage />} />
                     <Route path="resolutions" element={<UserResolutionsPage />} />
                     <Route path="logs" element={<AccessLogsPage />} />
+                    <Route path="propuestas" element={<PropuestasPage />} />
 
                     {/* Ruta Legacy para acceder al dashboard antiguo si es necesario durante la migración */}
                     <Route path="legacy" element={<AdminDashboard />} />
@@ -150,6 +152,7 @@ function App() {
                     <Route path="savings/summary" element={<Navigate to="/dashboard/cuenta" replace />} />
                     <Route path="account-statement" element={<Navigate to="/dashboard/cuenta" replace />} />
                     <Route path="loan-capacity-beta" element={<CapacidadBetaPage />} />
+                    <Route path="propuestas" element={<PropuestasPage />} />
                 </Route>
 
                 <Route path="/" element={<Navigate to={user ? (user.role === 'admin' ? '/admin' : '/dashboard') : '/login'} />} />
