@@ -314,22 +314,41 @@ const RankingModal = ({ onClose }) => {
     const [utilidadesDistribuir, setUtilidadesDistribuir] = useState('');
     const [guardandoUtilidades, setGuardandoUtilidades] = useState(false);
     const [utilidadesGuardadas, setUtilidadesGuardadas] = useState(false);
+    // Ganancia real del fondo (del dashboard) para comparación y sugerencia
+    const [gananciaRealFondo, setGananciaRealFondo] = useState(0);
 
     useEffect(() => {
-        const fetchRanking = async () => {
+        const fetchAll = async () => {
             try {
-                const res = await api.get('/admin/savings/ranking');
-                if (res.data.ok && Array.isArray(res.data.data)) {
-                    setRanking(res.data.data);
-                    // totalDevolucionIntereses llega en valor absoluto desde el backend
-                    setDevolucionTotal(res.data.totalDevolucionIntereses || 0);
-                    // Valor del comité guardado en AppSettings; si no existe aún,
-                    // se sugiere la devolución histórica real. Sin valores fijos en código.
-                    const sugerido = Number(res.data.utilidadesADistribuir) > 0
-                        ? Number(res.data.utilidadesADistribuir)
-                        : (res.data.totalDevolucionIntereses || 0);
+                const [rankRes, statsRes] = await Promise.allSettled([
+                    api.get('/admin/savings/ranking'),
+                    api.get('/admin/dashboard-stats'),
+                ]);
+
+                // Ganancia real = intereses cobrados + NU + penalidades (idéntico al Executive Panel)
+                let gananciaReal = 0;
+                if (statsRes.status === 'fulfilled') {
+                    const s = statsRes.value.data;
+                    gananciaReal = (s.totalInteresesPagados || 0)
+                        + (s.rentabilidadCajaNU || 0)
+                        + (s.totalPenaltyValue || 0);
+                    setGananciaRealFondo(gananciaReal);
+                }
+
+                if (rankRes.status === 'fulfilled' && rankRes.value.data.ok) {
+                    const d = rankRes.value.data;
+                    setRanking(d.data);
+                    setDevolucionTotal(d.totalDevolucionIntereses || 0);
+                    // Prioridad: (1) valor del comité en AppSettings,
+                    // (2) ganancia real del fondo (fuente correcta del dashboard),
+                    // (3) devoluciones históricas como último fallback.
+                    const sugerido = Number(d.utilidadesADistribuir) > 0
+                        ? Number(d.utilidadesADistribuir)
+                        : gananciaReal > 0
+                            ? gananciaReal
+                            : (d.totalDevolucionIntereses || 0);
                     setUtilidadesDistribuir(sugerido > 0 ? sugerido.toLocaleString('es-CO') : '');
-                    setUtilidadesGuardadas(Number(res.data.utilidadesADistribuir) > 0);
+                    setUtilidadesGuardadas(Number(d.utilidadesADistribuir) > 0);
                 }
             } catch (err) {
                 console.error('Error fetching ranking:', err.message);
@@ -337,8 +356,9 @@ const RankingModal = ({ onClose }) => {
                 setLoading(false);
             }
         };
-        fetchRanking();
+        fetchAll();
     }, []);
+
 
     const guardarUtilidades = async () => {
         const valor = Number(String(utilidadesDistribuir).replace(/\D/g, '')) || 0;
@@ -354,233 +374,226 @@ const RankingModal = ({ onClose }) => {
         }
     };
 
-    const AVATAR_COLORS = [
-        'from-amber-400 to-yellow-600',
-        'from-slate-400 to-slate-600',
-        'from-amber-700 to-orange-900',
-        'from-green-500 to-emerald-700',
-        'from-sky-400 to-blue-600',
-        'from-violet-500 to-purple-700',
-        'from-pink-400 to-rose-600',
-        'from-orange-400 to-orange-600',
-        'from-teal-400 to-teal-600',
-        'from-slate-500 to-slate-700',
+    const MEDAL_CONFIGS = [
+        { medal: '🥇', ringColor: 'ring-amber-300', avatarGrad: 'from-amber-400 to-yellow-600', barGrad: 'from-amber-400 to-yellow-500', podiumGrad: 'from-amber-300 to-yellow-500', labelColor: 'text-amber-700', badgeBg: 'bg-amber-100' },
+        { medal: '🥈', ringColor: 'ring-slate-300', avatarGrad: 'from-slate-400 to-slate-600', barGrad: 'from-slate-400 to-slate-500', podiumGrad: 'from-slate-300 to-slate-500', labelColor: 'text-slate-600', badgeBg: 'bg-slate-100' },
+        { medal: '🥉', ringColor: 'ring-orange-300', avatarGrad: 'from-orange-500 to-amber-700', barGrad: 'from-orange-500 to-amber-600', podiumGrad: 'from-orange-400 to-amber-600', labelColor: 'text-orange-700', badgeBg: 'bg-orange-100' },
     ];
-    const BAR_COLORS = [
-        'from-amber-400 to-yellow-500',
-        'from-slate-400 to-slate-500',
-        'from-orange-600 to-amber-700',
-        'from-green-500 to-emerald-400',
-        'from-sky-500 to-blue-400',
-        'from-violet-500 to-purple-400',
-        'from-pink-500 to-rose-400',
-        'from-orange-400 to-orange-300',
-        'from-teal-500 to-teal-300',
-        'from-gray-400 to-gray-300',
+    const REST_COLORS = [
+        'from-green-500 to-emerald-700', 'from-sky-400 to-blue-600',
+        'from-violet-500 to-purple-700', 'from-pink-400 to-rose-600',
+        'from-teal-400 to-teal-600', 'from-indigo-400 to-indigo-600',
+        'from-cyan-400 to-cyan-600', 'from-lime-500 to-green-600',
+        'from-fuchsia-400 to-fuchsia-600', 'from-slate-500 to-slate-700',
     ];
-    const MEDALS = ['🥇', '🥈', '🥉'];
 
     const getInitials = (name) => name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase();
-    const fmt = (v) => `$${Number(v).toLocaleString('es-CO')}`;
+    const fmt = (v) => `$${Math.round(Number(v) || 0).toLocaleString('es-CO')}`;
+    const fmtCorto = (v) => { const n = Number(v) || 0; if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1).replace('.', ',')}M`; if (n >= 1_000) return `$${Math.round(n / 1_000)}k`; return `$${n}`; };
 
-    // Base del reparto = suma del ahorro neto de los socios activos. Cada participación
-    // se mide contra esta suma para que los porcentajes sumen 100% y la distribución
-    // reparta exactamente el valor definido (antes se usaba una base ajustada por
-    // devoluciones que dejaba el reparto incompleto).
     const total = ranking.reduce((sum, r) => sum + Number(r.totalNetSavings), 0);
-
     const maxVal = ranking.length > 0 ? Number(ranking[0].totalNetSavings) : 1;
-
-    const filtered = search
-        ? ranking.filter(r => r.fullName.toLowerCase().includes(search.toLowerCase()))
-        : ranking;
-
+    const utilidadesParsed = Number(String(utilidadesDistribuir).replace(/\D/g, '')) || 0;
+    const filtered = search ? ranking.filter(r => r.fullName.toLowerCase().includes(search.toLowerCase())) : ranking;
     const top3 = ranking.slice(0, 3);
-    const midEnd = Math.min(Math.max(3, Math.ceil(ranking.length * 0.6)), ranking.length);
-    const middleGroup = ranking.slice(3, midEnd);
-    const baseGroup = ranking.slice(midEnd);
-
-    const brechaTop = top3.length > 0 && middleGroup.length > 0
-        ? Math.round((1 - Number(middleGroup[0].totalNetSavings) / Number(top3[top3.length - 1].totalNetSavings)) * 100)
-        : 0;
-    const brechaBase = middleGroup.length > 0 && baseGroup.length > 0
-        ? Math.round((1 - Number(baseGroup[0].totalNetSavings) / Number(middleGroup[middleGroup.length - 1].totalNetSavings)) * 100)
-        : 0;
-
-    const utilidadesParsed = Number(utilidadesDistribuir.replace(/\D/g, '')) || 0;
+    const rest = ranking.slice(3);
+    const gapVsReal = gananciaRealFondo - utilidadesParsed;
+    const pctDistribuido = gananciaRealFondo > 0 ? Math.round((utilidadesParsed / gananciaRealFondo) * 100) : 0;
 
     const renderRow = (entry, globalIndex) => {
         const pos = globalIndex + 1;
         const pctFloat = total > 0 ? (Number(entry.totalNetSavings) / total) : 0;
         const pct = (pctFloat * 100).toFixed(2);
         const barWidth = maxVal > 0 ? Math.round((Number(entry.totalNetSavings) / maxVal) * 100) : 0;
-        const avatarColor = AVATAR_COLORS[globalIndex] || AVATAR_COLORS[AVATAR_COLORS.length - 1];
-        const barColor = BAR_COLORS[globalIndex] || BAR_COLORS[BAR_COLORS.length - 1];
         const gananciaEstimada = pctFloat * utilidadesParsed;
-
-        const posEl = pos <= 3
-            ? <div className={`w-8 h-8 rounded-full flex items-center justify-center text-base flex-shrink-0 ${['bg-amber-100','bg-slate-100','bg-orange-100'][pos-1]}`}>{MEDALS[pos-1]}</div>
-            : <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-500 flex-shrink-0">{pos}</div>;
+        const isTop = pos <= 3;
+        const cfg = isTop ? MEDAL_CONFIGS[pos - 1] : null;
+        const avatarGrad = cfg ? cfg.avatarGrad : (REST_COLORS[(globalIndex - 3) % REST_COLORS.length]);
+        const barGrad = cfg ? cfg.barGrad : 'from-emerald-400 to-emerald-600';
 
         return (
-            <div key={entry.customerId} className={`group flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-3 rounded-2xl transition-all hover:bg-white hover:shadow-lg hover:shadow-brand-primary/5 hover:-translate-y-0.5 border border-transparent hover:border-brand-primary/10 ${pos <= 3 ? 'bg-gradient-to-r from-green-50/50 to-emerald-50/10' : 'bg-gray-50/40'}`}>
-                <div className="flex items-center gap-3 w-full sm:w-auto flex-1">
-                    {posEl}
-                    <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${avatarColor} flex items-center justify-center text-white text-xs font-extrabold flex-shrink-0 shadow-md ring-2 ring-white`}>
-                        {getInitials(entry.fullName)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                        <div className="text-sm font-bold text-gray-900 leading-tight group-hover:text-brand-primary transition-colors">{entry.fullName}</div>
-                        <div className="text-xs text-gray-400 font-semibold">{entry.customerId}</div>
+            <div key={entry.customerId}
+                className={`group flex items-center gap-3 px-4 py-3 rounded-2xl transition-all duration-200
+                    hover:bg-white hover:shadow-lg hover:shadow-emerald-500/10 hover:-translate-y-px
+                    border border-transparent hover:border-emerald-100
+                    ${isTop ? 'bg-gradient-to-r from-emerald-50/60 to-transparent' : 'bg-gray-50/30'}`}>
+                {isTop
+                    ? <div className={`w-8 h-8 rounded-full flex items-center justify-center text-base flex-shrink-0 ${cfg.badgeBg}`}>{cfg.medal}</div>
+                    : <div className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center text-xs font-black text-gray-400 flex-shrink-0 shadow-sm">{pos}</div>
+                }
+                <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${avatarGrad} flex items-center justify-center text-white text-xs font-extrabold flex-shrink-0 shadow-md ring-2 ring-white`}>
+                    {getInitials(entry.fullName)}
+                </div>
+                <div className="flex-1 min-w-0">
+                    <div className="text-sm font-bold text-gray-900 leading-tight truncate group-hover:text-emerald-700 transition-colors">{entry.fullName}</div>
+                    <div className="flex items-center gap-1.5 mt-1">
+                        <div className="flex-1 h-1.5 bg-gray-200/60 rounded-full overflow-hidden max-w-[120px]">
+                            <div className={`h-full bg-gradient-to-r ${barGrad} rounded-full`} style={{ width: `${barWidth}%` }} />
+                        </div>
+                        <span className="text-[10px] font-bold text-gray-400">{entry.customerId}</span>
                     </div>
                 </div>
-                
-                <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end pl-11 sm:pl-0">
-                    <div className="flex flex-col sm:items-end flex-shrink-0">
-                        <div className="flex items-center gap-2">
-                            <div className="text-sm font-black text-gray-900 tabular-nums">{fmt(entry.totalNetSavings)}</div>
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-gray-200 text-gray-600">{pct}%</span>
-                        </div>
-                        <div className="w-full sm:w-24 mt-1">
-                            <div className="h-1.5 bg-gray-200/60 rounded-full overflow-hidden">
-                                <div className={`h-full bg-gradient-to-r ${barColor} rounded-full`} style={{ width: `${barWidth}%` }} />
-                            </div>
-                        </div>
-                    </div>
-                    <div className="text-right flex-shrink-0 w-28 bg-emerald-50/80 rounded-xl p-2 border border-emerald-100/50">
-                        <div className="text-[9px] font-black uppercase tracking-widest text-emerald-600 mb-0.5">Utilidad (+{pct}%)</div>
-                        <div className="text-sm font-black text-emerald-700 tabular-nums">{fmt(gananciaEstimada)}</div>
-                    </div>
+                <div className="text-right flex-shrink-0 hidden sm:block">
+                    <div className="text-sm font-black text-gray-800 tabular-nums">{fmt(entry.totalNetSavings)}</div>
+                    <div className="text-[10px] font-bold text-gray-400">{pct}% del total</div>
+                </div>
+                <div className={`flex-shrink-0 min-w-[7rem] text-right rounded-xl px-3 py-2 border ${
+                    isTop ? 'bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-200/60' : 'bg-white border-gray-100'
+                }`}>
+                    <div className="text-[9px] font-black uppercase tracking-wider text-emerald-600">Utilidad estimada</div>
+                    <div className={`text-sm font-black tabular-nums mt-0.5 ${isTop ? 'text-emerald-700' : 'text-gray-800'}`}>{fmt(gananciaEstimada)}</div>
+                    <div className="text-[9px] text-gray-400">{pct}%</div>
                 </div>
             </div>
         );
     };
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
-            <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
-            <div className="relative bg-[#f8fafc] w-full max-w-5xl h-[95vh] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-300 border border-white/20">
-                {/* Decoración de fondo */}
-                <div className="absolute top-0 inset-x-0 h-64 bg-gradient-to-b from-emerald-500/10 to-transparent pointer-events-none" />
-                <div className="absolute -top-48 -right-48 w-96 h-96 bg-brand-primary/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-6">
+            <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
+            <div className="relative bg-[#f0f4f8] w-full max-w-5xl h-[96vh] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border border-white/30"
+                style={{ animation: 'rankingFadeIn 0.25s ease both' }}>
+                <style>{`@keyframes rankingFadeIn { from { opacity:0; transform:scale(0.97) translateY(8px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
+                <div className="absolute -top-32 -right-32 w-80 h-80 bg-emerald-400/15 rounded-full blur-3xl pointer-events-none" />
+                <div className="absolute -bottom-24 -left-24 w-72 h-72 bg-blue-400/10 rounded-full blur-3xl pointer-events-none" />
 
-                {/* Header Pro Max */}
-                <div className="relative px-8 py-6 bg-white/60 backdrop-blur-xl border-b border-gray-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0 z-10">
-                    <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 bg-gradient-to-br from-green-500 to-emerald-700 rounded-2xl flex items-center justify-center text-3xl shadow-lg shadow-emerald-500/20 ring-4 ring-white">🏆</div>
-                        <div>
-                            <h2 className="text-2xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600">Ranking de Ahorro</h2>
-                            <p className="text-gray-500 text-xs font-bold mt-0.5 uppercase tracking-widest flex items-center gap-1.5">
-                                <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
-                                Base: {fmt(total)} · ahorro neto socios activos
-                            </p>
-                            <p className="text-gray-400 text-[10px] mt-0.5 normal-case">
-                                Reparto proporcional al ahorro neto · estimación, no constituye promesa de pago{devolucionTotal > 0 ? ` · devoluciones históricas: ${fmt(devolucionTotal)}` : ''}
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-3 bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
-                        <div className="px-3">
-                            <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-0.5">
-                                💰 Ganancia a Distribuir
-                                {utilidadesGuardadas && <span className="ml-1.5 text-emerald-500 normal-case tracking-normal">· del comité ✓</span>}
+                {/* ── HEADER ── */}
+                <div className="relative shrink-0 px-6 py-5 bg-white/70 backdrop-blur-xl border-b border-white/60 z-10">
+                    <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-center gap-4">
+                            <div className="w-14 h-14 bg-gradient-to-br from-emerald-500 to-green-700 rounded-2xl flex items-center justify-center text-3xl shadow-lg shadow-emerald-500/25 ring-4 ring-white flex-shrink-0">🏆</div>
+                            <div>
+                                <h2 className="text-2xl font-black tracking-tight text-gray-900">Ranking de Ahorro</h2>
+                                <p className="text-xs font-semibold text-gray-500 mt-0.5 flex items-center gap-1.5">
+                                    <CheckCircle className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                                    Base de reparto: {fmt(total)} · ahorro neto de socios activos
+                                </p>
                             </div>
-                            <input
-                                type="text"
-                                value={utilidadesDistribuir}
-                                onChange={(e) => {
-                                    const val = e.target.value.replace(/\D/g, '');
-                                    setUtilidadesDistribuir(val ? Number(val).toLocaleString('es-CO') : '');
-                                    setUtilidadesGuardadas(false);
-                                }}
-                                className="w-32 bg-transparent text-sm font-black text-emerald-600 outline-none placeholder:text-gray-300"
-                                placeholder="0"
-                            />
                         </div>
-                        <button
-                            onClick={guardarUtilidades}
-                            disabled={guardandoUtilidades || utilidadesGuardadas || utilidadesParsed <= 0}
-                            title="Guardar como valor oficial del comité (AppSettings)"
-                            className={`p-3 rounded-xl transition-colors ${utilidadesGuardadas ? 'bg-emerald-50 text-emerald-500' : 'bg-gray-50 hover:bg-emerald-50 hover:text-emerald-600 text-gray-400'} disabled:opacity-60`}
-                        >
-                            {guardandoUtilidades ? <Loader2 className="h-5 w-5 animate-spin" /> : utilidadesGuardadas ? <CheckCircle className="h-5 w-5" /> : <Save className="h-5 w-5" />}
-                        </button>
-                        <button onClick={onClose} className="p-3 bg-gray-50 hover:bg-red-50 hover:text-red-600 text-gray-400 rounded-xl transition-colors"><X className="h-5 w-5" /></button>
+                        <div className="flex items-center gap-2 bg-white rounded-2xl shadow-md border border-gray-100 p-1.5 flex-shrink-0">
+                            <div className="px-3 py-1">
+                                <div className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-0.5 flex items-center gap-1">
+                                    💰 Ganancia a Distribuir
+                                    {utilidadesGuardadas && <span className="text-emerald-500 normal-case tracking-normal font-bold">· del comité ✓</span>}
+                                </div>
+                                <input
+                                    type="text"
+                                    value={utilidadesDistribuir}
+                                    onChange={(e) => {
+                                        const val = e.target.value.replace(/\D/g, '');
+                                        setUtilidadesDistribuir(val ? Number(val).toLocaleString('es-CO') : '');
+                                        setUtilidadesGuardadas(false);
+                                    }}
+                                    className="w-32 bg-transparent text-base font-black text-emerald-600 outline-none placeholder:text-gray-300 focus:text-emerald-700"
+                                    placeholder="0"
+                                />
+                                {gananciaRealFondo > 0 && (
+                                    <div className="text-[9px] text-gray-400 leading-tight">
+                                        Ganancia real: <span className="font-bold text-emerald-600">{fmtCorto(gananciaRealFondo)}</span> · {pctDistribuido}% a distribuir
+                                    </div>
+                                )}
+                            </div>
+                            <div className="flex flex-col gap-1">
+                                <button onClick={guardarUtilidades} disabled={guardandoUtilidades || utilidadesGuardadas || utilidadesParsed <= 0}
+                                    title="Guardar como valor oficial del comité"
+                                    className={`p-2.5 rounded-xl transition-all ${utilidadesGuardadas ? 'bg-emerald-50 text-emerald-500' : 'bg-gray-50 hover:bg-emerald-50 hover:text-emerald-600 text-gray-400'} disabled:opacity-60`}>
+                                    {guardandoUtilidades ? <Loader2 className="h-4 w-4 animate-spin" /> : utilidadesGuardadas ? <CheckCircle className="h-4 w-4" /> : <Save className="h-4 w-4" />}
+                                </button>
+                                <button onClick={onClose} className="p-2.5 bg-gray-50 hover:bg-red-50 hover:text-red-500 text-gray-400 rounded-xl transition-all"><X className="h-4 w-4" /></button>
+                            </div>
+                        </div>
                     </div>
+                    {/* Strip de métricas */}
+                    {!loading && ranking.length > 0 && (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
+                            {[
+                                { label: 'Socios en ranking', value: ranking.length, sub: 'activos con ahorro', icon: '👥' },
+                                { label: 'Ahorro neto total', value: fmtCorto(total), sub: 'base de distribución', icon: '💵' },
+                                { label: 'A distribuir', value: fmtCorto(utilidadesParsed), sub: `${pctDistribuido}% de ganancia real`, icon: '📊' },
+                                { label: 'Promedio por socio', value: fmtCorto(utilidadesParsed / (ranking.length || 1)), sub: 'utilidad estimada', icon: '📈' },
+                            ].map(m => (
+                                <div key={m.label} className="bg-white/80 backdrop-blur-sm rounded-xl px-3 py-2.5 border border-white shadow-sm flex items-center gap-2.5">
+                                    <span className="text-xl leading-none flex-shrink-0">{m.icon}</span>
+                                    <div className="min-w-0">
+                                        <div className="text-[9px] font-bold uppercase tracking-widest text-gray-400 truncate">{m.label}</div>
+                                        <div className="text-sm font-black text-gray-900 tabular-nums">{m.value}</div>
+                                        <div className="text-[9px] text-gray-400 truncate">{m.sub}</div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
+                {/* ── BODY ── */}
                 <div className="flex-1 overflow-y-auto relative z-10">
                     {loading ? (
                         <div className="flex flex-col items-center justify-center h-full gap-4">
                             <div className="relative">
-                                <div className="absolute inset-0 bg-brand-primary/20 blur-xl rounded-full animate-pulse" />
-                                <Loader2 className="h-12 w-12 animate-spin text-brand-primary relative" />
+                                <div className="absolute inset-0 bg-emerald-400/20 blur-xl rounded-full animate-pulse" />
+                                <Loader2 className="h-12 w-12 animate-spin text-emerald-600 relative" />
                             </div>
-                            <p className="text-gray-400 font-bold animate-pulse uppercase tracking-widest text-xs">Calculando Posiciones...</p>
+                            <p className="text-gray-400 font-black uppercase tracking-widest text-xs animate-pulse">Calculando posiciones...</p>
                         </div>
                     ) : ranking.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-full gap-4 text-gray-400 font-bold uppercase tracking-widest">
+                        <div className="flex flex-col items-center justify-center h-full gap-4 text-gray-400">
                             <Users className="h-20 w-20 opacity-10" />
-                            No hay datos suficientes
+                            <p className="font-bold uppercase tracking-widest text-xs">Sin datos suficientes</p>
                         </div>
                     ) : (
-                        <div className="p-8 max-w-4xl mx-auto flex flex-col gap-8">
-
-                            {/* Podium Top 3 */}
+                        <div className="p-6 max-w-4xl mx-auto flex flex-col gap-6">
+                            {/* Podio Top 3 */}
                             {top3.length >= 3 && (
-                                <div className="flex items-end justify-center gap-2 sm:gap-6 pt-4 pb-8">
-                                    {[1, 0, 2].map((realIdx) => {
-                                        const entry = top3[realIdx];
-                                        const isFirst = realIdx === 0;
-                                        const blockH = ['h-24', 'h-16', 'h-12'][realIdx];
-                                        const blockGrad = ['from-amber-300 to-yellow-500', 'from-slate-300 to-slate-400', 'from-orange-300 to-amber-600'][realIdx];
-                                        const avGrad = AVATAR_COLORS[realIdx];
-                                        const pct = ((Number(entry.totalNetSavings) / total) * 100).toFixed(2);
-                                        const ganancia = (Number(entry.totalNetSavings) / total) * utilidadesParsed;
-
-                                        return (
-                                            <div key={entry.customerId} className="flex flex-col items-center gap-2 relative group">
-                                                {isFirst && <div className="absolute -top-10 text-4xl animate-bounce">👑</div>}
-                                                <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${avGrad} flex items-center justify-center text-white text-lg font-extrabold shadow-xl ring-4 ring-white z-10 group-hover:-translate-y-2 transition-transform duration-300`}>
-                                                    {getInitials(entry.fullName)}
+                                <div className="bg-white/70 backdrop-blur-md rounded-[1.5rem] border border-white shadow-xl shadow-gray-200/40 p-6">
+                                    <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 flex items-center gap-2 mb-6">
+                                        <div className="w-1.5 h-4 bg-gradient-to-b from-amber-400 to-yellow-600 rounded-full" />
+                                        Podio — Top 3
+                                    </div>
+                                    <div className="flex items-end justify-center gap-3 sm:gap-8">
+                                        {[1, 0, 2].map((realIdx) => {
+                                            const entry = top3[realIdx];
+                                            const cfg = MEDAL_CONFIGS[realIdx];
+                                            const pctFloat = total > 0 ? (Number(entry.totalNetSavings) / total) : 0;
+                                            const pct = (pctFloat * 100).toFixed(1);
+                                            const ganancia = pctFloat * utilidadesParsed;
+                                            const heights = ['h-24', 'h-16', 'h-14'];
+                                            const isFirst = realIdx === 0;
+                                            return (
+                                                <div key={entry.customerId} className="flex flex-col items-center gap-2 group">
+                                                    {isFirst && <div className="text-3xl mb-1 animate-bounce">👑</div>}
+                                                    <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${cfg.avatarGrad} flex items-center justify-center text-white ${isFirst ? 'text-lg' : 'text-sm'} font-extrabold shadow-xl ring-4 ring-white group-hover:-translate-y-2 transition-transform duration-300 z-10 relative`}>
+                                                        {getInitials(entry.fullName)}
+                                                    </div>
+                                                    <div className="bg-white rounded-2xl shadow-md border border-gray-100/80 px-4 py-2.5 flex flex-col items-center -mt-3 pt-4 z-0 relative w-32 sm:w-36">
+                                                        <div className="text-center text-xs font-black text-gray-800 leading-tight w-full" style={{ display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' }}>{entry.fullName}</div>
+                                                        <div className="text-[11px] font-black text-emerald-700 mt-1 tabular-nums">{fmt(entry.totalNetSavings)}</div>
+                                                        <div className={`text-[10px] font-black px-2 py-0.5 rounded-full mt-1 ${cfg.badgeBg} ${cfg.labelColor}`}>+{fmtCorto(ganancia)}</div>
+                                                        <div className="text-[9px] text-gray-400 mt-0.5">{pct}% del total</div>
+                                                    </div>
+                                                    <div className={`w-28 sm:w-36 rounded-t-2xl bg-gradient-to-b ${cfg.podiumGrad} ${heights[realIdx]} flex flex-col items-center justify-end pb-2 shadow-inner opacity-90`}>
+                                                        <span className="text-2xl font-black text-white/50">{realIdx + 1}</span>
+                                                        <span className="text-[9px] font-black text-white/70">{pct}%</span>
+                                                    </div>
                                                 </div>
-                                                <div className="bg-white px-3 py-1.5 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center -mt-4 pt-5 z-0">
-                                                    <div className={`text-center w-28 leading-tight font-bold text-gray-800 ${isFirst ? 'text-sm' : 'text-xs'} truncate`}>{entry.fullName}</div>
-                                                    <div className="font-black text-brand-primary text-xs mt-0.5">{fmt(entry.totalNetSavings)}</div>
-                                                    <div className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full mt-1">+{fmt(ganancia)}</div>
-                                                </div>
-                                                <div className={`w-28 sm:w-32 rounded-t-2xl bg-gradient-to-b ${blockGrad} ${blockH} flex flex-col items-center justify-end pb-2 shadow-inner`}>
-                                                    <span className="text-2xl font-black text-white/40 drop-shadow-sm">{realIdx + 1}</span>
-                                                    <span className="text-[10px] font-black text-white/60">{pct}%</span>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
+                                            );
+                                        })}
+                                    </div>
                                 </div>
                             )}
-
-                            {/* Full Ranking List */}
-                            <div className="bg-white/80 backdrop-blur-md border border-white rounded-[2rem] p-6 shadow-xl shadow-gray-200/50 flex flex-col gap-4">
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
-                                    <div className="text-xs font-black uppercase tracking-widest text-gray-400 flex items-center gap-2">
-                                        <div className="w-1.5 h-4 bg-brand-primary rounded-full" />
-                                        Clasificación Completa
+                            {/* Lista completa */}
+                            <div className="bg-white/80 backdrop-blur-md border border-white rounded-[1.5rem] shadow-xl shadow-gray-200/40 overflow-hidden">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-4 border-b border-gray-100/60">
+                                    <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 flex items-center gap-2">
+                                        <div className="w-1.5 h-4 bg-gradient-to-b from-emerald-500 to-green-700 rounded-full" />
+                                        Clasificación completa · {ranking.length} socios
                                     </div>
-                                    
-                                    <div className="relative w-full sm:w-72">
-                                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-                                        <input
-                                            type="text"
-                                            value={search}
-                                            onChange={e => setSearch(e.target.value)}
-                                            placeholder="Buscar socio..."
-                                            className="w-full pl-11 pr-4 py-2.5 text-sm border-2 border-gray-100 rounded-xl bg-white outline-none focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10 transition-all font-bold text-gray-700 placeholder:text-gray-300"
-                                        />
+                                    <div className="relative w-full sm:w-64">
+                                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+                                        <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar socio..."
+                                            className="w-full pl-9 pr-4 py-2.5 text-sm border-2 border-gray-100 rounded-xl bg-gray-50 outline-none focus:border-emerald-400 focus:bg-white focus:ring-4 focus:ring-emerald-400/10 transition-all font-semibold text-gray-700 placeholder:text-gray-300" />
                                     </div>
                                 </div>
-
-                                <div className="flex flex-col gap-2">
+                                <div className="flex flex-col gap-1 p-3">
                                     {search ? (
                                         filtered.length === 0
                                             ? <div className="text-center py-12 text-gray-400 text-sm font-semibold">Sin resultados para "{search}"</div>
@@ -588,35 +601,35 @@ const RankingModal = ({ onClose }) => {
                                     ) : (
                                         <>
                                             {top3.map((entry, i) => renderRow(entry, i))}
-
-                                            {middleGroup.length > 0 && (
+                                            {rest.length > 0 && (
                                                 <>
-                                                    {brechaTop > 10 && (
-                                                        <div className="flex items-center gap-3 py-4 opacity-70">
-                                                            <div className="flex-1 h-px bg-gradient-to-r from-transparent to-gray-300" />
-                                                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">⚡ Brecha de Rendimiento</span>
-                                                            <div className="flex-1 h-px bg-gradient-to-l from-transparent to-gray-300" />
-                                                        </div>
-                                                    )}
-                                                    {middleGroup.map((entry, i) => renderRow(entry, i + top3.length))}
-                                                </>
-                                            )}
-
-                                            {baseGroup.length > 0 && (
-                                                <>
-                                                    {brechaBase > 10 && (
-                                                        <div className="flex items-center gap-3 py-4 opacity-70">
-                                                            <div className="flex-1 h-px bg-gradient-to-r from-transparent to-gray-300" />
-                                                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">⚠️ Oportunidad de Mejora</span>
-                                                            <div className="flex-1 h-px bg-gradient-to-l from-transparent to-gray-300" />
-                                                        </div>
-                                                    )}
-                                                    {baseGroup.map((entry, i) => renderRow(entry, i + top3.length + middleGroup.length))}
+                                                    <div className="flex items-center gap-3 py-3 opacity-60">
+                                                        <div className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-300 to-transparent" />
+                                                        <span className="text-[9px] font-black uppercase tracking-widest text-gray-400 whitespace-nowrap">Resto del ranking</span>
+                                                        <div className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-300 to-transparent" />
+                                                    </div>
+                                                    {rest.map((entry, i) => renderRow(entry, i + 3))}
                                                 </>
                                             )}
                                         </>
                                     )}
                                 </div>
+                                {!search && utilidadesParsed > 0 && (
+                                    <div className="border-t border-gray-100 px-5 py-4 bg-gradient-to-r from-emerald-50/60 to-transparent">
+                                        <div className="flex flex-wrap items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2 text-xs font-bold text-gray-600">
+                                                <CheckCircle className="h-4 w-4 text-emerald-500" />
+                                                Total a distribuir: <span className="text-emerald-700 font-black">{fmt(utilidadesParsed)}</span>
+                                                {gananciaRealFondo > 0 && (
+                                                    <span className="text-gray-400 font-normal">
+                                                        · retiene <span className="text-gray-700 font-bold">{fmt(gapVsReal)}</span> ({100 - pctDistribuido}%)
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="text-[10px] text-gray-400">Estimación · no constituye promesa de pago{devolucionTotal > 0 ? ` · hist. devuelto: ${fmt(devolucionTotal)}` : ''}</div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
