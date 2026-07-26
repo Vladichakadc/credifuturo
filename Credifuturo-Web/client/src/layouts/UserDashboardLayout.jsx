@@ -16,7 +16,9 @@ import {
     Landmark,
     Gauge,
     ShieldCheck,
-    Lightbulb
+    Lightbulb,
+    TrendingUp,
+    MessageSquareMore
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { Button } from '../components/ui/Button';
@@ -141,6 +143,10 @@ const UserDashboardLayout = ({ user, onLogout }) => {
            .catch(err => console.error(err));
     }, []);
 
+    const betaUsers = ["LADY TORRES", "XIOMARA ROJAS", "LEONARDO ROJAS"];
+    const userFullName = `${user?.name || ''} ${user?.surname1 || ''}`.trim().toUpperCase();
+    const isBetaTester = betaUsers.includes(userFullName) || user?.role === 'admin';
+
     const toggleSubmenu = (key) => {
         setOpenSubmenus(prev => ({ ...prev, [key]: !prev[key] }));
     };
@@ -197,11 +203,15 @@ const UserDashboardLayout = ({ user, onLogout }) => {
             label: 'Aportes',
             path: '/dashboard/contributions'
         },
-        ...(propuestasEnabled || user?.role === 'admin' ? [{
-            type: 'link',
+        ...((propuestasEnabled && isBetaTester) || user?.role === 'admin' ? [{
+            type: 'submenu',
+            key: 'propuestas',
             icon: Lightbulb,
-            label: 'Mis Propuestas',
-            path: '/dashboard/propuestas'
+            label: 'Propuestas (BETA)',
+            children: [
+                { icon: TrendingUp, label: 'Ranking de Ahorro (BETA)', path: '/dashboard/ranking-ahorro' },
+                { icon: MessageSquareMore, label: 'Buzón de Propuestas (BETA)', path: '/dashboard/propuestas' }
+            ]
         }] : [])
     ];
 

@@ -3,8 +3,9 @@ import api from '../../config/api';
 import {
     Lightbulb, Plus, Heart, ChevronDown, ChevronUp, Filter, Search,
     Clock, CheckCircle, XCircle, Eye, Trash2, MessageSquare, Rocket,
-    TrendingUp, Users, Sparkles, X
+    TrendingUp, Users, Sparkles, X, Loader2, Lock
 } from 'lucide-react';
+import { BETA_USERS } from '../../utils/betaAccess';
 
 // ── Configuración de categorías ─────────────────────────────────────────
 const CATEGORIAS = ['Todas', 'Ahorro', 'Préstamos', 'Eventos', 'Tecnología', 'Otro'];
@@ -349,18 +350,28 @@ const PropuestasPage = () => {
     const [orden, setOrden] = useState('votos');
     const [expandedId, setExpandedId] = useState(null);
     const [isAdmin, setIsAdmin] = useState(false);
+    const [isBetaTester, setIsBetaTester] = useState(false);
     const [moduleEnabled, setModuleEnabled] = useState(false);
+    const [checkingAccess, setCheckingAccess] = useState(true);
     const [toggling, setToggling] = useState(false);
 
     useEffect(() => {
         const u = JSON.parse(localStorage.getItem('user') || '{}');
-        setIsAdmin(u.role === 'admin');
-        
+        const isAdminUser = u.role === 'admin';
+        setIsAdmin(isAdminUser);
+        const fullName = `${u.name || ''} ${u.surname1 || ''}`.trim().toUpperCase();
+        setIsBetaTester(BETA_USERS.includes(fullName));
+
         // Fetch config
         api.get('/admin/settings/propuestas_enabled').then(res => {
             setModuleEnabled(res.data.value === 'true');
-        }).catch(err => console.error(err));
+        }).catch(err => console.error(err)).finally(() => setCheckingAccess(false));
     }, []);
+
+    // El menú solo le muestra este submenú a los 3 socios beta (o al admin), pero eso
+    // no bloquea la ruta en sí — cualquier socio podría escribirla directo en la URL.
+    // Este bloqueo replica exactamente el mismo criterio del menú.
+    const accesoPermitido = isAdmin || (isBetaTester && moduleEnabled);
 
     const toggleModule = async () => {
         setToggling(true);
@@ -438,6 +449,24 @@ const PropuestasPage = () => {
         aprobadas: propuestas.filter(p => p.estado === 'aprobada').length,
         votos: propuestas.reduce((s, p) => s + (p.votos || 0), 0),
     };
+
+    if (checkingAccess) {
+        return (
+            <div className="min-h-screen flex items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-brand-primary" />
+            </div>
+        );
+    }
+
+    if (!accesoPermitido) {
+        return (
+            <div className="min-h-screen flex flex-col items-center justify-center gap-3 text-gray-400 p-6 text-center">
+                <Lock className="h-12 w-12 opacity-20" />
+                <p className="font-bold text-gray-500">Esta función todavía no está disponible para tu cuenta.</p>
+                <p className="text-sm max-w-sm">El Buzón de Propuestas está en fase beta con un grupo pequeño de socios. Pronto estará disponible para todos.</p>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 via-emerald-50/30 to-amber-50/20 p-4 sm:p-6">

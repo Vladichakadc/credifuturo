@@ -41,6 +41,7 @@ import UserResolutionsPage from './pages/user/UserResolutionsPage';
 import UserLoanAnalyzerPage from './pages/user/UserLoanAnalyzerPage';
 import DetalleCuentaPage from './pages/user/DetalleCuentaPage';
 import CapacidadBetaPage from './pages/user/CapacidadBetaPage';
+import UserRankingAhorroPage from './pages/user/RankingAhorroPage';
 
 import Navbar from './components/Navbar';
 import { useState, useEffect } from 'react';
@@ -155,6 +156,7 @@ function App() {
                     <Route path="account-statement" element={<Navigate to="/dashboard/cuenta" replace />} />
                     <Route path="loan-capacity-beta" element={<CapacidadBetaPage />} />
                     <Route path="propuestas" element={<PropuestasPage />} />
+                    <Route path="ranking-ahorro" element={<UserRankingAhorroPage />} />
                 </Route>
 
                 <Route path="/" element={<Navigate to={user ? (user.role === 'admin' ? '/admin' : '/dashboard') : '/login'} />} />
