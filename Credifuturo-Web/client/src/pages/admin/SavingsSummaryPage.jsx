@@ -331,9 +331,10 @@ const calcSaldoPromedio = (monthlyData = []) => {
         saldoPromedio += contribucion;
         desgloseMes.push({
             mes, anio,
-            mesNombre: `${NOMBRES_MES[mes] || `M${mes}`} ${anio}`,
-            mesNombreCorto: NOMBRES_MES[mes] || `M${mes}`,
+            mesNombre: aporte.esAperturaAnual ? `Saldo inicial ${anio}` : `${NOMBRES_MES[mes] || `M${mes}`} ${anio}`,
+            mesNombreCorto: aporte.esAperturaAnual ? 'Apertura' : (NOMBRES_MES[mes] || `M${mes}`),
             monto, mesesInvertidos, factor, contribucion,
+            esAperturaAnual: !!aporte.esAperturaAnual,
         });
     });
     // Ordenar de más reciente a más antiguo (ej: Dic 2025 → Ene 2025)
@@ -350,6 +351,7 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
     const [utilidadesGuardadas, setUtilidadesGuardadas] = useState(false);
     const [gananciaRealFondo, setGananciaRealFondo] = useState(0);
     const [expandedId, setExpandedId] = useState(null);
+    const [showExplainer, setShowExplainer] = useState(true);
 
     useEffect(() => {
         const fetchAll = async () => {
@@ -430,16 +432,16 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
     };
 
     const MEDAL_CONFIGS = [
-        { medal: '🥇', ringColor: 'ring-amber-300', avatarGrad: 'from-amber-400 to-yellow-600', barGrad: 'from-amber-400 to-yellow-500', podiumGrad: 'from-amber-300 to-yellow-500', labelColor: 'text-amber-700', badgeBg: 'bg-amber-100' },
+        { medal: '🥇', ringColor: 'ring-amber-300', avatarGrad: 'from-brand-gold to-amber-600', barGrad: 'from-brand-gold to-amber-500', podiumGrad: 'from-amber-300 to-brand-gold', labelColor: 'text-amber-700', badgeBg: 'bg-amber-100' },
         { medal: '🥈', ringColor: 'ring-slate-300', avatarGrad: 'from-slate-400 to-slate-600', barGrad: 'from-slate-400 to-slate-500', podiumGrad: 'from-slate-300 to-slate-500', labelColor: 'text-slate-600', badgeBg: 'bg-slate-100' },
         { medal: '🥉', ringColor: 'ring-orange-300', avatarGrad: 'from-orange-500 to-amber-700', barGrad: 'from-orange-500 to-amber-600', podiumGrad: 'from-orange-400 to-amber-600', labelColor: 'text-orange-700', badgeBg: 'bg-orange-100' },
     ];
     const REST_COLORS = [
-        'from-green-500 to-emerald-700', 'from-sky-400 to-blue-600',
-        'from-violet-500 to-purple-700', 'from-pink-400 to-rose-600',
-        'from-teal-400 to-teal-600', 'from-indigo-400 to-indigo-600',
-        'from-cyan-400 to-cyan-600', 'from-lime-500 to-green-600',
-        'from-fuchsia-400 to-fuchsia-600', 'from-slate-500 to-slate-700',
+        'from-brand-primary to-brand-dark', 'from-sky-400 to-blue-600',
+        'from-teal-400 to-teal-600', 'from-amber-400 to-brand-gold',
+        'from-emerald-400 to-emerald-700', 'from-cyan-400 to-cyan-700',
+        'from-lime-500 to-green-700', 'from-blue-400 to-blue-700',
+        'from-green-400 to-teal-700', 'from-slate-500 to-slate-700',
     ];
 
     const getInitials = (name) => name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase();
@@ -457,6 +459,18 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
     const rest = ranking.slice(3);
     const pctDistribuido = gananciaRealFondo > 0 ? Math.round((utilidadesParsed / gananciaRealFondo) * 100) : 0;
     const toggleExpand = (id) => setExpandedId(prev => prev === id ? null : id);
+
+    // Ejemplo real para la explicación del método (usa el propio historial del socio, sin inventar cifras)
+    const ejemploSocio = ranking.find(r => r.fullName.trim().toLowerCase().startsWith('vladimir escobar')) || ranking[0];
+    const ejemploFilas = (() => {
+        if (!ejemploSocio || !ejemploSocio.desgloseMes?.length) return [];
+        const porFactor = [...ejemploSocio.desgloseMes].sort((a, b) => b.factor - a.factor);
+        if (porFactor.length < 3) return porFactor;
+        const medio = porFactor[Math.floor(porFactor.length / 2)];
+        return [porFactor[0], medio, porFactor[porFactor.length - 1]];
+    })();
+    const ejemploPct = (ejemploSocio && totalSaldoPromedio > 0) ? (ejemploSocio.saldoPromedio / totalSaldoPromedio) * 100 : 0;
+    const ejemploUtilidad = (ejemploPct / 100) * utilidadesParsed;
 
     const renderRow = (entry, globalIndex) => {
         const pos = globalIndex + 1;
@@ -506,15 +520,17 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
                             <span className="text-[10px] font-bold text-gray-400">
                                 {primerMes ? `desde ${primerMes.mesNombre}` : entry.customerId}
                             </span>
+                            {entry.liquidadoPreviamente && (
+                                <span title={`Solicitó una Devolución Total de Intereses en ${NOMBRES_MES[entry.liquidacionMesAnio?.mes] || ''} ${entry.liquidacionMesAnio?.anio || ''}: se le devolvió lo ahorrado hasta esa fecha. Solo cuenta lo ahorrado después de esa fecha.`}
+                                    className="text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-1.5 py-0.5 flex items-center gap-0.5 cursor-help flex-shrink-0">
+                                    🔄 retiró ahorros previos
+                                </span>
+                            )}
                         </div>
                     </div>
-                    {/* Columna: Ahorrado vs Saldo Promedio */}
-                    <div className="text-right flex-shrink-0 hidden sm:flex flex-col items-end gap-0.5">
+                    {/* Columna: Ahorrado */}
+                    <div className="text-right flex-shrink-0 hidden sm:flex flex-col items-end justify-center">
                         <div className="text-sm font-black text-gray-800 tabular-nums">{fmt(baseAhorro)}</div>
-                        <div className="flex items-center gap-1">
-                            <span className="text-[9px] text-gray-400">prom:</span>
-                            <span className="text-[10px] font-black text-blue-600 tabular-nums">{fmt(saldo)}</span>
-                        </div>
                     </div>
                     {/* Columna: Utilidad estimada */}
                     <div className={`flex-shrink-0 min-w-[7rem] text-right rounded-xl px-3 py-2 border ${
@@ -544,6 +560,17 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
                             <div className="text-[9px] text-gray-400 italic">Igual que un fondo de inversión colombiano</div>
                         </div>
 
+                        {/* ── Aviso de liquidación previa (Devolución Total) ── */}
+                        {entry.liquidadoPreviamente && (
+                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 text-xs text-amber-900 leading-relaxed flex items-start gap-2">
+                                <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                                <p>
+                                    <strong>{entry.fullName}</strong> solicitó una <strong>Devolución Total de Intereses</strong> en {NOMBRES_MES[entry.liquidacionMesAnio?.mes] || ''} {entry.liquidacionMesAnio?.anio || ''} — se le devolvió lo ahorrado hasta esa fecha (el comité ya repartió utilidades sobre eso a todos los socios, así que no se cuenta de nuevo aquí).
+                                    Por eso su <strong>saldo inicial de este año</strong> es {fmt(entry.saldoAperturaAnio || 0)}: solo lo que le quedó después de esa devolución, más lo que ha ahorrado desde entonces.
+                                </p>
+                            </div>
+                        )}
+
                         {/* ── EXPLICACIÓN EN LENGUAJE CLARO ── */}
                         <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-4 text-sm text-blue-900 leading-relaxed">
                             <div className="font-black text-blue-700 mb-1.5 text-xs uppercase tracking-wider">💬 ¿Cómo se calcula tu participación en las utilidades?</div>
@@ -570,7 +597,7 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
                                 );
                             })()}
                             <p className="mt-2 text-blue-600 text-xs">
-                                Tu <strong>Saldo Promedio</strong> de <strong>{fmt(saldo)}</strong> es el número que representa cuánto “pesu00f3” tu ahorro durante el año.
+                                Tu <strong>Saldo Promedio</strong> de <strong>{fmt(saldo)}</strong> es la suma de cada aporte multiplicado por su Factor (ver tabla abajo) — así se mide cuánto "pesó" tu ahorro durante el año, no solo cuánto ahorraste.
                                 Tu porcentaje del fondo ({pct}%) es <em>tu Saldo Promedio dividido por el Saldo Promedio de todos los socios juntos</em>.
                             </p>
                         </div>
@@ -597,6 +624,9 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
                         {/* Tabla de aportes mes a mes */}
                         {desglose.length > 0 && (
                             <div className="rounded-xl overflow-hidden border border-gray-100">
+                                <div className="px-3 py-1.5 text-[9px] text-gray-400 bg-gray-50/60 border-b border-gray-100 leading-relaxed">
+                                    <strong className="text-gray-500">Meses inv.</strong> = meses del año que ese aporte estuvo en el fondo · <strong className="text-gray-500">Factor</strong> = Meses inv. ÷ 12 · <strong className="text-gray-500">Contribución</strong> = Aportado × Factor (esto es lo que suma a tu Saldo Promedio)
+                                </div>
                                 <div className="grid grid-cols-5 bg-gray-50 px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-gray-400 border-b border-gray-100">
                                     <div>Mes / Año</div>
                                     <div className="text-right">Aportado</div>
@@ -631,7 +661,7 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
                                 Participación = {fmt(saldo)} / {fmt(totalSaldoPromedio)} = {pct}%<br/>
                                 Utilidad = {pct}% × {fmt(utilidadesParsed)} = <span className="font-black text-gray-700">{fmt(gananciaEstimada)}</span>
                             </div>
-                            <div className="bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-xl px-4 py-2.5 text-center shadow-md">
+                            <div className="bg-gradient-to-r from-brand-primary to-brand-dark text-white rounded-xl px-4 py-2.5 text-center shadow-md">
                                 <div className="text-[9px] font-black uppercase tracking-wider opacity-80">Utilidad Estimada</div>
                                 <div className="text-xl font-black tabular-nums">{fmt(gananciaEstimada)}</div>
                                 <div className="text-[9px] opacity-80">{pct}% de {fmt(utilidadesParsed)}</div>
@@ -647,28 +677,28 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
         <div className={`relative bg-[#f0f4f8] w-full rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border border-white/30 ${embedded ? '' : 'max-w-5xl h-[96vh]'}`}
             style={embedded ? {} : { animation: 'rankingFadeIn 0.25s ease both' }}>
             <style>{`@keyframes rankingFadeIn { from { opacity:0; transform:scale(0.97) translateY(8px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
-            <div className="absolute -top-32 -right-32 w-80 h-80 bg-emerald-400/15 rounded-full blur-3xl pointer-events-none" />
-            <div className="absolute -bottom-24 -left-24 w-72 h-72 bg-blue-400/10 rounded-full blur-3xl pointer-events-none" />
 
                 {/* ── HEADER ── */}
-                <div className="relative shrink-0 px-6 py-5 bg-white/70 backdrop-blur-xl border-b border-white/60 z-10">
-                    <div className="flex items-start justify-between gap-4">
+                <div className="relative shrink-0 px-6 pt-6 pb-5 bg-gradient-to-br from-brand-dark via-brand-primary to-brand-dark text-white overflow-hidden z-10">
+                    <div className="absolute -top-16 -right-16 w-56 h-56 bg-white/10 rounded-full blur-3xl pointer-events-none" />
+                    <div className="absolute -bottom-10 -left-10 w-48 h-48 bg-brand-gold/10 rounded-full blur-3xl pointer-events-none" />
+                    <div className="relative flex items-start justify-between gap-4 flex-wrap">
                         <div className="flex items-center gap-4">
-                            <div className="w-14 h-14 bg-gradient-to-br from-emerald-500 to-green-700 rounded-2xl flex items-center justify-center text-3xl shadow-lg shadow-emerald-500/25 ring-4 ring-white flex-shrink-0">🏆</div>
+                            <div className="w-14 h-14 bg-white/15 backdrop-blur rounded-2xl flex items-center justify-center text-3xl shadow-lg ring-1 ring-white/20 flex-shrink-0">🏆</div>
                             <div>
-                                <h2 className="text-2xl font-black tracking-tight text-gray-900">Ranking de Ahorro</h2>
-                                <p className="text-xs font-semibold text-gray-500 mt-0.5 flex items-center gap-1.5">
-                                    <CheckCircle className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                                <h2 className="text-2xl font-black tracking-tight text-white">Ranking de Ahorro</h2>
+                                <p className="text-xs font-semibold text-white/70 mt-0.5 flex items-center gap-1.5">
+                                    <CheckCircle className="w-3.5 h-3.5 text-brand-gold flex-shrink-0" />
                                     Saldo Promedio Ponderado · Método FIC/SFC Colombia
                                 </p>
-                                <p className="text-[10px] text-gray-400 mt-0.5">Haz clic en un socio para ver su desglose mes a mes</p>
+                                <p className="text-[10px] text-white/50 mt-0.5">Haz clic en un socio para ver su desglose mes a mes</p>
                             </div>
                         </div>
-                        <div className="flex items-center gap-2 bg-white rounded-2xl shadow-md border border-gray-100 p-1.5 flex-shrink-0">
+                        <div className="flex items-center gap-2 bg-white/10 backdrop-blur rounded-2xl border border-white/15 p-1.5 flex-shrink-0">
                             <div className="px-3 py-1">
-                                <div className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-0.5 flex items-center gap-1">
+                                <div className="text-[9px] font-black uppercase tracking-widest text-brand-gold/90 mb-0.5 flex items-center gap-1">
                                     💰 Ganancia a Distribuir
-                                    {utilidadesGuardadas && <span className="text-emerald-500 normal-case tracking-normal font-bold">· del comité ✓</span>}
+                                    {utilidadesGuardadas && <span className="text-emerald-300 normal-case tracking-normal font-bold">· del comité ✓</span>}
                                 </div>
                                 <input
                                     type="text"
@@ -678,42 +708,42 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
                                         setUtilidadesDistribuir(val ? Number(val).toLocaleString('es-CO') : '');
                                         setUtilidadesGuardadas(false);
                                     }}
-                                    className="w-32 bg-transparent text-base font-black text-emerald-600 outline-none placeholder:text-gray-300 focus:text-emerald-700"
+                                    className="w-32 bg-transparent text-base font-black text-white outline-none placeholder:text-white/30 focus:text-brand-gold transition-colors"
                                     placeholder="0"
                                 />
                                 {gananciaRealFondo > 0 && (
-                                    <div className="text-[9px] text-gray-400 leading-tight">
-                                        Ganancia real: <span className="font-bold text-emerald-600">{fmtCorto(gananciaRealFondo)}</span> · {pctDistribuido}% a distribuir
+                                    <div className="text-[9px] text-white/50 leading-tight">
+                                        Ganancia real: <span className="font-bold text-brand-gold">{fmtCorto(gananciaRealFondo)}</span> · {pctDistribuido}% a distribuir
                                     </div>
                                 )}
                             </div>
                             <div className="flex flex-col gap-1">
                                 <button onClick={guardarUtilidades} disabled={guardandoUtilidades || utilidadesGuardadas || utilidadesParsed <= 0}
                                     title="Guardar como valor oficial del comité"
-                                    className={`p-2.5 rounded-xl transition-all ${utilidadesGuardadas ? 'bg-emerald-50 text-emerald-500' : 'bg-gray-50 hover:bg-emerald-50 hover:text-emerald-600 text-gray-400'} disabled:opacity-60`}>
+                                    className={`p-2.5 rounded-xl transition-all ${utilidadesGuardadas ? 'bg-emerald-400/20 text-emerald-300' : 'bg-white/10 hover:bg-brand-gold/20 hover:text-brand-gold text-white/70'} disabled:opacity-50`}>
                                     {guardandoUtilidades ? <Loader2 className="h-4 w-4 animate-spin" /> : utilidadesGuardadas ? <CheckCircle className="h-4 w-4" /> : <Save className="h-4 w-4" />}
                                 </button>
                                 {onClose && (
-                                    <button onClick={onClose} className="p-2.5 bg-gray-50 hover:bg-red-50 hover:text-red-500 text-gray-400 rounded-xl transition-all"><X className="h-4 w-4" /></button>
+                                    <button onClick={onClose} className="p-2.5 bg-white/10 hover:bg-red-400/20 hover:text-red-300 text-white/70 rounded-xl transition-all"><X className="h-4 w-4" /></button>
                                 )}
                             </div>
                         </div>
                     </div>
                     {/* Strip de métricas */}
                     {!loading && ranking.length > 0 && (
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
+                        <div className="relative grid grid-cols-2 sm:grid-cols-4 gap-2 mt-5">
                             {[
                                 { label: 'Socios en ranking', value: ranking.length, sub: 'activos con ahorro', icon: '👥' },
                                 { label: 'Ahorro neto total', value: fmtCorto(totalAhorroNeto), sub: 'capital depositado', icon: '💵' },
                                 { label: 'A distribuir', value: fmtCorto(utilidadesParsed), sub: `${pctDistribuido}% de ganancia real`, icon: '📊' },
                                 { label: 'Saldo Prom. Total', value: fmtCorto(totalSaldoPromedio), sub: 'base del reparto (FIC)', icon: '⚖️' },
                             ].map(m => (
-                                <div key={m.label} className="bg-white/80 backdrop-blur-sm rounded-xl px-3 py-2.5 border border-white shadow-sm flex items-center gap-2.5">
+                                <div key={m.label} className="bg-white/10 backdrop-blur-sm rounded-xl px-3 py-2.5 border border-white/10 flex items-center gap-2.5 hover:bg-white/15 transition-colors">
                                     <span className="text-xl leading-none flex-shrink-0">{m.icon}</span>
                                     <div className="min-w-0">
-                                        <div className="text-[9px] font-bold uppercase tracking-widest text-gray-400 truncate">{m.label}</div>
-                                        <div className="text-sm font-black text-gray-900 tabular-nums">{m.value}</div>
-                                        <div className="text-[9px] text-gray-400 truncate">{m.sub}</div>
+                                        <div className="text-[9px] font-bold uppercase tracking-widest text-white/50 truncate">{m.label}</div>
+                                        <div className="text-sm font-black text-white tabular-nums">{m.value}</div>
+                                        <div className="text-[9px] text-white/40 truncate">{m.sub}</div>
                                     </div>
                                 </div>
                             ))}
@@ -738,6 +768,90 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
                         </div>
                     ) : (
                         <div className="p-6 max-w-4xl mx-auto flex flex-col gap-6">
+                            {/* Explicación del método de cálculo */}
+                            <div className="bg-white/80 backdrop-blur-md border border-white rounded-[1.5rem] shadow-xl shadow-gray-200/40 overflow-hidden">
+                                <button onClick={() => setShowExplainer(v => !v)}
+                                    className="w-full flex items-center justify-between gap-3 px-5 py-4 hover:bg-blue-50/40 transition-colors text-left">
+                                    <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                        <div className="w-1.5 h-4 bg-gradient-to-b from-blue-400 to-blue-600 rounded-full" />
+                                        ¿Cómo se calcula el Saldo Promedio y tu % de participación?
+                                    </div>
+                                    <ChevronDown className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${showExplainer ? 'rotate-180' : ''}`} />
+                                </button>
+                                {showExplainer && (
+                                    <div className="px-5 pb-5 pt-1 space-y-4" style={{ animation: 'rankingFadeIn 0.15s ease both' }}>
+                                        <p className="text-sm text-gray-600 leading-relaxed">
+                                            El fondo reparte las utilidades de forma <strong>proporcional a cuánto y por cuánto tiempo</strong> tu dinero estuvo trabajando para el fondo, no solo por el monto total que ahorraste. Un peso que entró en enero "trabajó" los 12 meses del año; uno que entró en diciembre solo trabajó 1.
+                                        </p>
+                                        <p className="text-sm text-gray-600 leading-relaxed">
+                                            El comité ya repartió utilidades a todos los socios sobre lo ahorrado en años anteriores, así que este cálculo <strong>solo cuenta lo de este año</strong>: tu <strong>saldo de apertura</strong> (lo que ya tenías guardado y no retiraste, que cuenta a peso completo porque estuvo disponible todo el año) más lo nuevo que has ahorrado en estos meses. Por eso un socio que <strong>no</strong> pidió devolución de años anteriores empieza con más base que uno que sí la pidió.
+                                        </p>
+
+                                        {/* Glosario */}
+                                        <div className="rounded-xl overflow-hidden border border-gray-100">
+                                            <div className="grid grid-cols-[1fr_2fr] bg-gray-50 px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-gray-400 border-b border-gray-100">
+                                                <div>Término</div><div>Qué significa</div>
+                                            </div>
+                                            <div className="divide-y divide-gray-50">
+                                                {[
+                                                    ['Saldo de apertura', 'Lo que ya tenías ahorrado y NO retiraste. Cuenta a peso completo (factor 100%) porque estuvo disponible para el fondo desde el primer día del año.'],
+                                                    ['Meses invertidos', 'Para lo que ahorras ESTE año: cuántos meses de este año tu dinero estuvo disponible para el fondo (enero = 12, diciembre = 1).'],
+                                                    ['Factor', 'Meses invertidos ÷ 12. Es el "peso" de ese aporte específico dentro del año.'],
+                                                    ['Contribución', 'Lo que aportaste ese mes × su Factor. Es lo que ese aporte suma a tu Saldo Promedio.'],
+                                                    ['Saldo Promedio', 'Tu saldo de apertura + la suma de tus Contribuciones de este año. Es tu peso real dentro del fondo, para este reparto.'],
+                                                    ['% de Participación', 'Tu Saldo Promedio ÷ la suma del Saldo Promedio de todos los socios activos.'],
+                                                    ['Utilidad Estimada', 'Tu % de Participación × la Ganancia a Distribuir que define el comité. Es una estimación, no una promesa de pago.'],
+                                                ].map(([term, desc]) => (
+                                                    <div key={term} className="grid grid-cols-[1fr_2fr] px-3 py-2 gap-2 text-xs">
+                                                        <div className="font-black text-gray-800">{term}</div>
+                                                        <div className="text-gray-500 leading-snug">{desc}</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* Ejemplo real */}
+                                        {ejemploSocio && ejemploFilas.length > 0 && (
+                                            <div>
+                                                <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 flex items-center gap-2">
+                                                    <div className="w-1.5 h-4 bg-gradient-to-b from-brand-primary to-brand-dark rounded-full" />
+                                                    Ejemplo real: {ejemploSocio.fullName}
+                                                </div>
+                                                <div className="rounded-xl overflow-hidden border border-gray-100">
+                                                    <div className="grid grid-cols-5 bg-gray-50 px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-gray-400 border-b border-gray-100">
+                                                        <div>Mes</div><div className="text-right">Aportado</div><div className="text-right">Meses inv.</div><div className="text-right">Factor</div><div className="text-right">Contribución</div>
+                                                    </div>
+                                                    <div className="divide-y divide-gray-50">
+                                                        {ejemploFilas.map((f, i) => (
+                                                            <div key={i} className="grid grid-cols-5 px-3 py-1.5 text-[11px]">
+                                                                <div className="font-bold text-gray-700">{f.mesNombre}</div>
+                                                                <div className="text-right text-gray-600 tabular-nums">{fmt(f.monto)}</div>
+                                                                <div className="text-right font-bold text-blue-600">{f.mesesInvertidos} / {MESES_PERIODO}</div>
+                                                                <div className="text-right text-gray-500">{(f.factor * 100).toFixed(1)}%</div>
+                                                                <div className="text-right font-black text-blue-700 tabular-nums">{fmt(f.contribucion)}</div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    <div className="px-3 py-1.5 text-[9px] text-gray-400 italic bg-gray-50/60 border-t border-gray-100">
+                                                        ...y así con cada uno de sus {ejemploSocio.desgloseMes.length} aportes registrados hasta hoy.
+                                                    </div>
+                                                    <div className="grid grid-cols-5 px-3 py-2 bg-blue-50 border-t border-blue-100 text-[10px]">
+                                                        <div className="font-black text-blue-700 col-span-2">Saldo Promedio total (suma de todas sus Contribuciones)</div>
+                                                        <div /><div />
+                                                        <div className="text-right font-black text-blue-700 tabular-nums">{fmt(ejemploSocio.saldoPromedio)}</div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="mt-3 bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-[11px] font-mono text-emerald-800 leading-relaxed">
+                                                    % Participación = {fmt(ejemploSocio.saldoPromedio)} ÷ {fmt(totalSaldoPromedio)} = <strong>{ejemploPct.toFixed(2)}%</strong><br />
+                                                    Utilidad Estimada = {ejemploPct.toFixed(2)}% × {fmt(utilidadesParsed)} = <strong>{fmt(ejemploUtilidad)}</strong>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
                             {/* Podio Top 3 */}
                             {top3.length >= 3 && (
                                 <div className="bg-white/70 backdrop-blur-md rounded-[1.5rem] border border-white shadow-xl shadow-gray-200/40 p-6">
@@ -781,7 +895,7 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
                             <div className="bg-white/80 backdrop-blur-md border border-white rounded-[1.5rem] shadow-xl shadow-gray-200/40 overflow-hidden">
                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-4 border-b border-gray-100/60">
                                     <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 flex items-center gap-2">
-                                        <div className="w-1.5 h-4 bg-gradient-to-b from-emerald-500 to-green-700 rounded-full" />
+                                        <div className="w-1.5 h-4 bg-gradient-to-b from-brand-primary to-brand-dark rounded-full" />
                                         Clasificación completa · {ranking.length} socios
                                     </div>
                                     <div className="relative w-full sm:w-64">

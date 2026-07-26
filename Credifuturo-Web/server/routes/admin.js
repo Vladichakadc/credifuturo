@@ -108,7 +108,7 @@ async function validateAndFixLoanStatuses() {
 // /my/* lleva su propia auth por ruta. /dashboard-stats lo puede leer cualquier socio
 // autenticado (el panel de Inicio lo comparte). El resto exige rol admin.
 // A07: ademas exigimos que el usuario no tenga mustChangePassword pendiente.
-const READ_ONLY_FOR_ALL = new Set(['/dashboard-stats']);
+const READ_ONLY_FOR_ALL = new Set(['/dashboard-stats', '/savings/ranking']);
 const READ_ONLY_PREFIXES = ['/settings/'];
 router.use((req, res, next) => {
     if (req.path.startsWith('/my/')) return next();
@@ -1015,6 +1015,7 @@ router.get('/savings/list', async (req, res) => {
 router.get('/savings/ranking', async (req, res) => {
     try {
         const { Sequelize } = require('sequelize');
+        const CURRENT_YEAR = new Date().getFullYear();
 
         const clients = await Client.findAll({
             where: { estatus: 'Activo' },
@@ -1026,61 +1027,83 @@ router.get('/savings/ranking', async (req, res) => {
                 type: { [Sequelize.Op.ne]: 'Aporte Inicial' },
                 clientId: { [Sequelize.Op.in]: clients.map(c => c.id) }
             },
-            attributes: ['clientId', 'year', 'monthInt', 'mesAbonado', 'anioAbonado', 'valorAhorrado', 'amount'],
+            attributes: ['clientId', 'year', 'monthInt', 'mesAbonado', 'anioAbonado', 'valorAhorrado', 'amount', 'status'],
             order: [['anioAbonado', 'ASC'], ['mesAbonado', 'ASC']]
         });
 
-        // Agrupar ahorros por socio.
-        // Se usa mesAbonado/anioAbonado (el mes que CUBRE el ahorro) para que los socios
-        // que pagaron el año completo en un solo mes sean correctamente clasificados.
-        const savingsByClient = {};
+        // El comité ya repartió utilidades a TODOS los socios sobre lo ahorrado en años
+        // anteriores (contarlo de nuevo aquí sería pagarlo dos veces). Lo que sí sigue
+        // pesando para el fondo es el CAPITAL que cada socio conservó: quien no pidió
+        // devolución empezó este año con un saldo de apertura mayor que quien sí la pidió
+        // (total o parcial) — ese saldo de apertura cuenta a peso completo (estuvo los
+        // 12 meses trabajando para el fondo), y se calcula neto de cualquier devolución,
+        // así que también funciona correctamente para devoluciones parciales.
+        const priorNetByClient = {};    // clientId -> neto de todos los años anteriores al actual
+        const thisYearByClient = {};    // clientId -> [{year, monthInt, amount}] del año en curso
+        const devolucionByClient = {};  // clientId -> {mes, anio} de su última "Devolución Total Intereses" (solo informativo)
         for (const s of allSavings) {
             const val = parseFloat(s.valorAhorrado > 0 ? s.valorAhorrado : s.amount) || 0;
-            const effectiveYear = s.anioAbonado || s.year || 0;
-            const effectiveMonth = s.mesAbonado || s.monthInt || 0;
-            if (!savingsByClient[s.clientId]) savingsByClient[s.clientId] = [];
-            savingsByClient[s.clientId].push({
-                year: effectiveYear,
-                monthInt: effectiveMonth,
-                amount: val
-            });
-        }
+            // Number(...) es obligatorio: mesAbonado llega como string de la BD, y sumarlo
+            // directo con un número (año*12) haría concatenación de texto en vez de suma.
+            const effectiveYear = Number(s.anioAbonado || s.year || 0);
+            const effectiveMonth = Number(s.mesAbonado || s.monthInt || 0);
 
-        // Re-ordenar por mes cubierto (por si el fallback mezcló el orden)
-        for (const id of Object.keys(savingsByClient)) {
-            savingsByClient[id].sort((a, b) => a.year !== b.year ? a.year - b.year : a.monthInt - b.monthInt);
+            if (effectiveYear < CURRENT_YEAR) {
+                priorNetByClient[s.clientId] = (priorNetByClient[s.clientId] || 0) + val;
+            } else if (effectiveYear === CURRENT_YEAR) {
+                if (!thisYearByClient[s.clientId]) thisYearByClient[s.clientId] = [];
+                thisYearByClient[s.clientId].push({ year: effectiveYear, monthInt: effectiveMonth, amount: val });
+            }
+
+            if ((s.status || '').includes('Devolucion Total Intereses')) {
+                const prev = devolucionByClient[s.clientId];
+                if (!prev || (effectiveYear * 12 + effectiveMonth) > (prev.anio * 12 + prev.mes)) {
+                    devolucionByClient[s.clientId] = { mes: effectiveMonth, anio: effectiveYear };
+                }
+            }
+        }
+        for (const id of Object.keys(thisYearByClient)) {
+            thisYearByClient[id].sort((a, b) => a.monthInt - b.monthInt);
         }
 
         // Calcular métricas de comportamiento por socio
+        const mesActual = new Date().getMonth() + 1;
         const data = clients.map(c => {
-            const months = savingsByClient[c.id] || [];
-            const total = months.reduce((sum, m) => sum + m.amount, 0);
+            const saldoApertura = Math.max(priorNetByClient[c.id] || 0, 0);
+            const thisYear = thisYearByClient[c.id] || [];
+            const totalEsteAnio = thisYear.reduce((sum, m) => sum + m.amount, 0);
+            const total = saldoApertura + totalEsteAnio;
             if (total === 0) return null;
 
-            // Últimos 3 meses vs. 3 anteriores para tendencia
-            const recent = months.slice(-3).reduce((s, m) => s + m.amount, 0);
-            const prev = months.slice(-6, -3).reduce((s, m) => s + m.amount, 0);
+            // El saldo de apertura se modela como un aporte de enero del año en curso
+            // (peso completo, 12/12): representa capital que ya estaba en el fondo desde
+            // el primer día del año, disponible para prestar/generar rendimiento todo el año.
+            const months = saldoApertura > 0
+                ? [{ year: CURRENT_YEAR, monthInt: 1, amount: saldoApertura, esAperturaAnual: true }, ...thisYear]
+                : thisYear;
+
+            // Últimos 3 meses vs. 3 anteriores para tendencia (solo actividad del año en curso)
+            const recent = thisYear.slice(-3).reduce((s, m) => s + m.amount, 0);
+            const prev = thisYear.slice(-6, -3).reduce((s, m) => s + m.amount, 0);
             const trendPct = prev > 0 ? Math.round(((recent - prev) / prev) * 100) : 0;
 
-            // Consistencia: meses con ahorro / meses esperados desde el primero
-            let consistencyPct = 100;
-            const first = months[0];
-            const last = months[months.length - 1];
-            if (first && last && first.year && last.year) {
-                const totalMonths = (last.year - first.year) * 12 + (last.monthInt - first.monthInt) + 1;
-                consistencyPct = totalMonths > 0 ? Math.round((months.length / totalMonths) * 100) : 100;
-            }
+            // Consistencia: meses con ahorro este año / meses transcurridos del año
+            const consistencyPct = thisYear.length > 0 ? Math.round((thisYear.length / mesActual) * 100) : 100;
 
+            const devolucion = devolucionByClient[c.id];
             return {
                 id: c.id,
                 customerId: c.customerId,
                 fullName: `${c.name} ${c.surname1} ${c.surname2 || ''}`.trim(),
                 totalNetSavings: total,
-                monthsActive: months.length,
-                avgMonthly: months.length > 0 ? Math.round(total / months.length) : 0,
+                monthsActive: thisYear.length,
+                avgMonthly: thisYear.length > 0 ? Math.round(totalEsteAnio / thisYear.length) : 0,
                 trendPct,
                 consistencyPct,
-                monthlyData: months
+                monthlyData: months,
+                saldoAperturaAnio: saldoApertura,
+                liquidadoPreviamente: !!devolucion,
+                liquidacionMesAnio: devolucion || null
             };
         }).filter(Boolean).sort((a, b) => b.totalNetSavings - a.totalNetSavings);
 
