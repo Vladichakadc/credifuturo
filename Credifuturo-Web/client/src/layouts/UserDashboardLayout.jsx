@@ -22,6 +22,7 @@ import { cn } from '../utils/cn';
 import { Button } from '../components/ui/Button';
 import NotificationBell from '../components/NotificationBell';
 import logo from '../assets/logo.jpg';
+import api from '../config/api';
 
 // ——— Bottom nav items (mobile only) ———
 const USER_BOTTOM_NAV = [
@@ -130,7 +131,15 @@ const SidebarSubmenu = ({ icon: Icon, label, children, isOpen, onToggle, locatio
 const UserDashboardLayout = ({ user, onLogout }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [openSubmenus, setOpenSubmenus] = useState({ inicio: true, estatutos: false, prestamos: false });
+    const [propuestasEnabled, setPropuestasEnabled] = useState(false);
     const location = useLocation();
+
+    useEffect(() => {
+        // Fetch config
+        api.get('/admin/settings/propuestas_enabled')
+           .then(res => setPropuestasEnabled(res.data.value === 'true'))
+           .catch(err => console.error(err));
+    }, []);
 
     const toggleSubmenu = (key) => {
         setOpenSubmenus(prev => ({ ...prev, [key]: !prev[key] }));
@@ -188,12 +197,12 @@ const UserDashboardLayout = ({ user, onLogout }) => {
             label: 'Aportes',
             path: '/dashboard/contributions'
         },
-        {
+        ...(propuestasEnabled || user?.role === 'admin' ? [{
             type: 'link',
             icon: Lightbulb,
             label: 'Mis Propuestas',
             path: '/dashboard/propuestas'
-        }
+        }] : [])
     ];
 
     // Abre automáticamente el submenú que contiene la ruta activa,

@@ -109,9 +109,10 @@ async function validateAndFixLoanStatuses() {
 // autenticado (el panel de Inicio lo comparte). El resto exige rol admin.
 // A07: ademas exigimos que el usuario no tenga mustChangePassword pendiente.
 const READ_ONLY_FOR_ALL = new Set(['/dashboard-stats']);
+const READ_ONLY_PREFIXES = ['/settings/'];
 router.use((req, res, next) => {
     if (req.path.startsWith('/my/')) return next();
-    if (req.method === 'GET' && READ_ONLY_FOR_ALL.has(req.path)) {
+    if (req.method === 'GET' && (READ_ONLY_FOR_ALL.has(req.path) || READ_ONLY_PREFIXES.some(p => req.path.startsWith(p)))) {
         return verifyToken(req, res, () => requireFreshPassword(req, res, next));
     }
     verifyToken(req, res, () =>
@@ -4627,6 +4628,18 @@ router.put('/loan-requests/:id/mark-disbursed', verifyToken, requireRole('admin'
 
 // ── Configuración global (AppSettings) ──────────────────────────────────────
 
+// GET /settings/:key — lee una configuración global (disponible para todos autenticados si está en READ_ONLY_PREFIXES)
+router.get('/settings/:key', verifyToken, requireFreshPassword, async (req, res) => {
+    try {
+        const AppSetting = require('../models/AppSetting');
+        const { key } = req.params;
+        const setting = await AppSetting.findOne({ where: { key } });
+        res.json({ ok: true, key, value: setting ? setting.value : null });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // PUT /settings/:key — actualiza o crea una configuración global (solo admin)
 router.put('/settings/:key', verifyToken, requireFreshPassword, requireRole('admin'), async (req, res) => {
     try {
@@ -4709,15 +4722,18 @@ router.post('/propuestas', verifyToken, requireFreshPassword, async (req, res) =
         if (!titulo || titulo.length < 5) return res.status(400).json({ ok: false, error: 'El título debe tener al menos 5 caracteres.' });
         if (!descripcion || descripcion.length < 10) return res.status(400).json({ ok: false, error: 'La descripción debe tener al menos 10 caracteres.' });
 
-        const clientId = req.user?.clientId || req.user?.id;
-        // Obtener nombre del socio si no es anónima
-        let autorNombre = 'Anónimo';
-        if (!anonima && clientId) {
+        const isAdmin = req.user?.role === 'admin';
+        // Solo asignamos clientId si NO es admin (para evitar Foreign Key error)
+        const finalClientId = isAdmin ? null : (req.user?.clientId || req.user?.id || null);
+        
+        let autorNombre = isAdmin ? 'Comité Administrativo' : 'Anónimo';
+
+        if (!anonima && finalClientId) {
             try {
-                const c = await Client.findByPk(clientId, { attributes: ['name', 'surname1'] });
+                const c = await Client.findByPk(finalClientId, { attributes: ['name', 'surname1'] });
                 if (c) autorNombre = `${c.name} ${c.surname1 || ''}`.trim();
             } catch { /* fallback */ }
-        } else if (!anonima && req.user?.name) {
+        } else if (!anonima && req.user?.name && !isAdmin) {
             autorNombre = `${req.user.name} ${req.user.surname1 || ''}`.trim();
         }
 
@@ -4725,10 +4741,10 @@ router.post('/propuestas', verifyToken, requireFreshPassword, async (req, res) =
             titulo: titulo.trim(),
             descripcion: descripcion.trim(),
             categoria,
-            clientId: anonima ? null : clientId,
+            clientId: anonima ? null : finalClientId,
             autorNombre: anonima ? 'Anónimo' : autorNombre,
-            estado: 'pendiente',
-            votos: 0,
+            estado: isAdmin ? 'aprobada' : 'pendiente', // Si lo hace admin, entra aprobada
+            votos: isAdmin ? 1 : 0, // Admin arranca con 1 voto
             anonima
         });
 

@@ -349,11 +349,31 @@ const PropuestasPage = () => {
     const [orden, setOrden] = useState('votos');
     const [expandedId, setExpandedId] = useState(null);
     const [isAdmin, setIsAdmin] = useState(false);
+    const [moduleEnabled, setModuleEnabled] = useState(false);
+    const [toggling, setToggling] = useState(false);
 
     useEffect(() => {
         const u = JSON.parse(localStorage.getItem('user') || '{}');
         setIsAdmin(u.role === 'admin');
+        
+        // Fetch config
+        api.get('/admin/settings/propuestas_enabled').then(res => {
+            setModuleEnabled(res.data.value === 'true');
+        }).catch(err => console.error(err));
     }, []);
+
+    const toggleModule = async () => {
+        setToggling(true);
+        try {
+            const newValue = !moduleEnabled;
+            await api.put('/admin/settings/propuestas_enabled', { value: newValue.toString() });
+            setModuleEnabled(newValue);
+        } catch (err) {
+            console.error('Error toggling module:', err);
+        } finally {
+            setToggling(false);
+        }
+    };
 
     const fetchPropuestas = useCallback(async () => {
         setLoading(true);
@@ -436,7 +456,19 @@ const PropuestasPage = () => {
                     <div className="flex items-center gap-4">
                         <div className="w-14 h-14 bg-white/20 backdrop-blur rounded-2xl flex items-center justify-center text-3xl shadow-lg">💡</div>
                         <div>
-                            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">Buzón de Propuestas</h1>
+                            <div className="flex items-center gap-3">
+                                <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">Buzón de Propuestas</h1>
+                                {isAdmin && (
+                                    <button 
+                                        onClick={toggleModule} 
+                                        disabled={toggling}
+                                        className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded-lg border flex items-center gap-1.5 transition-all ${moduleEnabled ? 'bg-emerald-500/20 text-emerald-200 border-emerald-400/30 hover:bg-emerald-500/30' : 'bg-red-500/20 text-red-200 border-red-400/30 hover:bg-red-500/30'}`}
+                                    >
+                                        <div className={`w-2 h-2 rounded-full ${moduleEnabled ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-red-400 shadow-[0_0_8px_rgba(248,113,113,0.8)]'}`} />
+                                        {moduleEnabled ? 'Visible para socios' : 'Oculto para socios'}
+                                    </button>
+                                )}
+                            </div>
                             <p className="text-white/70 text-sm mt-0.5">Comparte tus ideas para mejorar el fondo</p>
                         </div>
                     </div>
