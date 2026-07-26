@@ -339,16 +339,21 @@ const RankingModal = ({ onClose }) => {
                     const d = rankRes.value.data;
                     setRanking(d.data);
                     setDevolucionTotal(d.totalDevolucionIntereses || 0);
-                    // Prioridad: (1) valor del comité en AppSettings,
+                    // Prioridad: (1) valor del comité en AppSettings (siempre que NO sea el valor legacy erróneo),
                     // (2) ganancia real del fondo (fuente correcta del dashboard),
                     // (3) devoluciones históricas como último fallback.
-                    const sugerido = Number(d.utilidadesADistribuir) > 0
-                        ? Number(d.utilidadesADistribuir)
+                    
+                    const valorGuardado = Number(d.utilidadesADistribuir) || 0;
+                    const esValorLegacyErroneo = valorGuardado > 0 && valorGuardado === (d.totalDevolucionIntereses || 0);
+                    
+                    const sugerido = (valorGuardado > 0 && !esValorLegacyErroneo)
+                        ? valorGuardado
                         : gananciaReal > 0
                             ? gananciaReal
                             : (d.totalDevolucionIntereses || 0);
+                            
                     setUtilidadesDistribuir(sugerido > 0 ? sugerido.toLocaleString('es-CO') : '');
-                    setUtilidadesGuardadas(Number(d.utilidadesADistribuir) > 0);
+                    setUtilidadesGuardadas(valorGuardado > 0 && !esValorLegacyErroneo);
                 }
             } catch (err) {
                 console.error('Error fetching ranking:', err.message);
