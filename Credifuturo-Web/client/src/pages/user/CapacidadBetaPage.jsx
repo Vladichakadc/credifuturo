@@ -90,6 +90,7 @@ const CapacidadBetaPage = () => {
     const [submittingRequest, setSubmittingRequest] = useState(false);
     const [banco, setBanco] = useState('');
     const [cuentaAhorros, setCuentaAhorros] = useState('');
+    const [observaciones, setObservaciones] = useState('');
 
     const fetchLoanRequests = async () => {
         try {
@@ -248,6 +249,10 @@ const CapacidadBetaPage = () => {
             toast.error('Selecciona tu banco e ingresa tu número de cuenta de ahorros.');
             return;
         }
+        if (!observaciones.trim()) {
+            toast.error('Por favor agrega una observación (ej: Cuenta de Ahorros, Cédula, etc.).');
+            return;
+        }
         setSubmittingRequest(true);
         try {
             await api.post('/admin/my/loan-requests', {
@@ -262,7 +267,9 @@ const CapacidadBetaPage = () => {
                 scoreAtRequest: v?.score?.score ?? null,
                 availableCapacityAtRequest: v?.capacidadDisponible ?? null,
                 requiresVote: sim.estado === 'votacion',
-                banco, cuentaAhorros: cuentaAhorros.trim(),
+                banco,
+                cuentaAhorros: cuentaAhorros.trim(),
+                observaciones: observaciones.trim(),
             });
             toast.success('Tu solicitud fue enviada. El comité del fondo la revisará pronto.');
             await fetchLoanRequests();
@@ -572,9 +579,20 @@ const CapacidadBetaPage = () => {
                                                     className="w-full mt-1 h-11 rounded-xl border-2 border-gray-200 focus:border-brand-primary focus:outline-none px-3 text-sm font-semibold text-gray-700"
                                                 />
                                             </div>
+                                            <div>
+                                                <label className="text-[11px] font-black uppercase tracking-widest text-gray-500">Observaciones</label>
+                                                <textarea
+                                                    value={observaciones}
+                                                    onChange={e => setObservaciones(e.target.value)}
+                                                    placeholder="Ej: Cuenta de Ahorros, Cédula, tipo de cuenta, información adicional..."
+                                                    rows={3}
+                                                    className="w-full mt-1 rounded-xl border-2 border-gray-200 focus:border-brand-primary focus:outline-none px-3 py-2.5 text-sm text-gray-700 resize-none"
+                                                />
+                                                <p className="text-[10px] text-gray-400 mt-1">Indica si es cuenta de ahorros, cédula u otra información relevante para el comité.</p>
+                                            </div>
                                             <button
                                                 onClick={handleSolicitarPrestamo}
-                                                disabled={submittingRequest || !banco || !cuentaAhorros.trim()}
+                                                disabled={submittingRequest || !banco || !cuentaAhorros.trim() || !observaciones.trim()}
                                                 className="w-full h-12 rounded-xl bg-brand-primary hover:bg-brand-dark disabled:opacity-60 text-white text-sm font-bold flex items-center justify-center gap-2 transition-colors"
                                             >
                                                 {submittingRequest ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
