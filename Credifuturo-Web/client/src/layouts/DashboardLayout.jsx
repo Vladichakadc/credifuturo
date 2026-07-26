@@ -318,7 +318,7 @@ const DashboardLayout = ({ user, onLogout }) => {
             icon: Lightbulb,
             label: 'Propuestas',
             children: [
-                { icon: TrendingUp,         label: 'Ranking de Ahorro',  path: '/admin/savings/summary' },
+                { icon: TrendingUp,         label: 'Ranking de Ahorro',  path: '/admin/savings/ranking' },
                 { icon: MessageSquareMore,  label: 'Buzón de Propuestas', path: '/admin/propuestas' },
             ]
         },

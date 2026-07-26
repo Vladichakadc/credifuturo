@@ -18,6 +18,7 @@ import InitialContributionsPage from './pages/admin/InitialContributionsPage'; /
 import InformesViewerPage from './pages/admin/InformesViewerPage';
 import AccountDetailPage from './pages/admin/AccountDetailPage';
 import SavingsSummaryPage from './pages/admin/SavingsSummaryPage';
+import RankingAhorroPage from './pages/admin/RankingAhorroPage';
 import DevolucionesAhorrosPage from './pages/admin/DevolucionesAhorrosPage';
 import LoanAnalyzerPage from './pages/admin/LoanAnalyzerPage';
 import LoanApprovalsPage from './pages/admin/LoanApprovalsPage';
@@ -104,6 +105,7 @@ function App() {
                     <Route path="savings" element={<SavingsPage />} />
                     <Route path="savings/list" element={<SavingsListPage />} />
                     <Route path="savings/summary" element={<SavingsSummaryPage />} />
+                    <Route path="savings/ranking" element={<RankingAhorroPage />} />
                     {/* Evolución de Ahorros (beta): tríada stock/flujo/composición con negativos visibles */}
                     <Route path="savings/evolution" element={<SavingsEvolutionPage />} />
                     <Route path="savings/devoluciones" element={<DevolucionesAhorrosPage />} />

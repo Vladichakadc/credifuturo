@@ -341,7 +341,7 @@ const calcSaldoPromedio = (monthlyData = []) => {
     return { saldoPromedio, desgloseMes };
 };
 
-const RankingModal = ({ onClose }) => {
+export const RankingBox = ({ onClose = null, embedded = false }) => {
     const [ranking, setRanking] = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
@@ -647,13 +647,11 @@ const RankingModal = ({ onClose }) => {
     };
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-6">
-            <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
-            <div className="relative bg-[#f0f4f8] w-full max-w-5xl h-[96vh] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border border-white/30"
-                style={{ animation: 'rankingFadeIn 0.25s ease both' }}>
-                <style>{`@keyframes rankingFadeIn { from { opacity:0; transform:scale(0.97) translateY(8px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
-                <div className="absolute -top-32 -right-32 w-80 h-80 bg-emerald-400/15 rounded-full blur-3xl pointer-events-none" />
-                <div className="absolute -bottom-24 -left-24 w-72 h-72 bg-blue-400/10 rounded-full blur-3xl pointer-events-none" />
+        <div className={`relative bg-[#f0f4f8] w-full rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border border-white/30 ${embedded ? '' : 'max-w-5xl h-[96vh]'}`}
+            style={embedded ? {} : { animation: 'rankingFadeIn 0.25s ease both' }}>
+            <style>{`@keyframes rankingFadeIn { from { opacity:0; transform:scale(0.97) translateY(8px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
+            <div className="absolute -top-32 -right-32 w-80 h-80 bg-emerald-400/15 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-24 -left-24 w-72 h-72 bg-blue-400/10 rounded-full blur-3xl pointer-events-none" />
 
                 {/* ── HEADER ── */}
                 <div className="relative shrink-0 px-6 py-5 bg-white/70 backdrop-blur-xl border-b border-white/60 z-10">
@@ -698,7 +696,9 @@ const RankingModal = ({ onClose }) => {
                                     className={`p-2.5 rounded-xl transition-all ${utilidadesGuardadas ? 'bg-emerald-50 text-emerald-500' : 'bg-gray-50 hover:bg-emerald-50 hover:text-emerald-600 text-gray-400'} disabled:opacity-60`}>
                                     {guardandoUtilidades ? <Loader2 className="h-4 w-4 animate-spin" /> : utilidadesGuardadas ? <CheckCircle className="h-4 w-4" /> : <Save className="h-4 w-4" />}
                                 </button>
-                                <button onClick={onClose} className="p-2.5 bg-gray-50 hover:bg-red-50 hover:text-red-500 text-gray-400 rounded-xl transition-all"><X className="h-4 w-4" /></button>
+                                {onClose && (
+                                    <button onClick={onClose} className="p-2.5 bg-gray-50 hover:bg-red-50 hover:text-red-500 text-gray-400 rounded-xl transition-all"><X className="h-4 w-4" /></button>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -725,7 +725,7 @@ const RankingModal = ({ onClose }) => {
                 </div>
 
                 {/* ── BODY ── */}
-                <div className="flex-1 overflow-y-auto relative z-10">
+                <div className={embedded ? 'relative z-10' : 'flex-1 overflow-y-auto relative z-10'}>
                     {loading ? (
                         <div className="flex flex-col items-center justify-center h-full gap-4">
                             <div className="relative">
@@ -835,9 +835,15 @@ const RankingModal = ({ onClose }) => {
                     )}
                 </div>
             </div>
-        </div>
     );
 };
+
+const RankingModal = ({ onClose }) => (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-6">
+        <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
+        <RankingBox onClose={onClose} />
+    </div>
+);
 
 const SavingsDetail = ({ title, icon: Icon, data, fullData, loading, emptyMsg }) => {
     const [showModal, setShowModal] = useState(false);
