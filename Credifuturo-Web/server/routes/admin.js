@@ -137,6 +137,7 @@ const BETA_ROUTES = [
     { method: 'GET', path: '/propuestas' },
     { method: 'POST', path: '/propuestas' },
     { method: 'PUT', test: p => /^\/propuestas\/\d+\/voto$/.test(p) },
+    { method: 'PUT', test: p => /^\/propuestas\/\d+$/.test(p) },
 ];
 
 router.use((req, res, next) => {
@@ -4811,6 +4812,47 @@ router.post('/propuestas', verifyToken, requireFreshPassword, async (req, res) =
         res.json({ ok: true, data: propuesta });
     } catch (err) {
         console.error('Error POST /propuestas:', err.message);
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
+// PUT /propuestas/:id — editar el texto de una propuesta ya creada.
+// El autor puede editar la suya solo mientras siga 'pendiente' (antes de que el
+// comité empiece a revisarla); el admin puede editar cualquiera en cualquier estado.
+// Las propuestas anónimas (clientId null) solo las puede editar el admin, porque el
+// servidor no tiene forma de verificar quién fue el autor original.
+router.put('/propuestas/:id', verifyToken, requireFreshPassword, async (req, res) => {
+    try {
+        const propuesta = await Propuesta.findByPk(req.params.id);
+        if (!propuesta) return res.status(404).json({ ok: false, error: 'Propuesta no encontrada.' });
+
+        const isAdmin = req.user?.role === 'admin';
+        const clientId = req.user?.clientId || req.user?.id;
+        const esAutor = propuesta.clientId != null && propuesta.clientId === clientId;
+
+        if (!isAdmin) {
+            if (!esAutor) return res.status(403).json({ ok: false, error: 'No puedes editar una propuesta que no es tuya.' });
+            if (propuesta.estado !== 'pendiente') return res.status(403).json({ ok: false, error: 'Ya no puedes editar esta propuesta: el comité ya la está revisando.' });
+        }
+
+        const { titulo, descripcion, categoria } = req.body;
+        if (!titulo || titulo.trim().length < 5) return res.status(400).json({ ok: false, error: 'El título debe tener al menos 5 caracteres.' });
+        if (!descripcion || descripcion.trim().length < 10) return res.status(400).json({ ok: false, error: 'La descripción debe tener al menos 10 caracteres.' });
+
+        const categoriasValidas = ['Ahorro', 'Préstamos', 'Eventos', 'Tecnología', 'Otro'];
+        if (categoria && !categoriasValidas.includes(categoria)) {
+            return res.status(400).json({ ok: false, error: 'Categoría inválida.' });
+        }
+
+        await propuesta.update({
+            titulo: titulo.trim(),
+            descripcion: descripcion.trim(),
+            ...(categoria ? { categoria } : {}),
+        });
+
+        res.json({ ok: true, data: propuesta });
+    } catch (err) {
+        console.error('Error PUT /propuestas/:id:', err.message);
         res.status(500).json({ ok: false, error: err.message });
     }
 });

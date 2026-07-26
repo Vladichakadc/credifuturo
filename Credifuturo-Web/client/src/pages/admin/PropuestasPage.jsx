@@ -3,7 +3,7 @@ import api from '../../config/api';
 import {
     Lightbulb, Plus, Heart, ChevronDown, ChevronUp, Filter, Search,
     Clock, CheckCircle, XCircle, Eye, Trash2, MessageSquare, Rocket,
-    TrendingUp, Users, Sparkles, X, Loader2, Lock
+    TrendingUp, Users, Sparkles, X, Loader2, Lock, Pencil
 } from 'lucide-react';
 import { BETA_USERS } from '../../utils/betaAccess';
 
@@ -30,7 +30,7 @@ const ESTADOS = {
 const ESTADOS_ORDER = ['pendiente', 'en_revision', 'aprobada', 'rechazada'];
 
 // ── Componente: Tarjeta de Propuesta ────────────────────────────────────
-const PropuestaCard = ({ propuesta, isAdmin, onVote, onEstadoChange, onDelete, expandedId, setExpandedId }) => {
+const PropuestaCard = ({ propuesta, isAdmin, puedeEditar, onVote, onEstadoChange, onDelete, onEdit, expandedId, setExpandedId }) => {
     const [guardandoEstado, setGuardandoEstado] = useState(false);
     const [respuesta, setRespuesta] = useState(propuesta.respuestaAdmin || '');
     const [guardandoResp, setGuardandoResp] = useState(false);
@@ -110,6 +110,9 @@ const PropuestaCard = ({ propuesta, isAdmin, onVote, onEstadoChange, onDelete, e
                             <div className="text-[10px] font-bold text-gray-700 truncate">{propuesta.autorNombre}</div>
                             <div className="text-[9px] text-gray-400">
                                 {new Date(propuesta.createdAt).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                {new Date(propuesta.updatedAt).getTime() - new Date(propuesta.createdAt).getTime() > 1000 && (
+                                    <span className="italic"> · editada</span>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -131,6 +134,15 @@ const PropuestaCard = ({ propuesta, isAdmin, onVote, onEstadoChange, onDelete, e
                             className="p-1.5 rounded-lg text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-all">
                             {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                         </button>
+                        {/* Editar texto (autor mientras esté pendiente, o admin siempre) */}
+                        {puedeEditar && (
+                            <button
+                                onClick={() => onEdit(propuesta)}
+                                title="Editar texto"
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-brand-primary hover:bg-brand-primary/10 transition-all">
+                                <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                        )}
                         {/* Eliminar (solo admin) */}
                         {isAdmin && (
                             <button
@@ -189,11 +201,12 @@ const PropuestaCard = ({ propuesta, isAdmin, onVote, onEstadoChange, onDelete, e
     );
 };
 
-// ── Componente: Formulario de nueva propuesta ────────────────────────────
-const FormularioPropuesta = ({ onCreated, onCancel }) => {
-    const [titulo, setTitulo] = useState('');
-    const [descripcion, setDescripcion] = useState('');
-    const [categoria, setCategoria] = useState('Otro');
+// ── Componente: Formulario de nueva propuesta / edición de texto ────────
+const FormularioPropuesta = ({ onSaved, onCancel, propuestaEditar = null }) => {
+    const esEdicion = !!propuestaEditar;
+    const [titulo, setTitulo] = useState(propuestaEditar?.titulo || '');
+    const [descripcion, setDescripcion] = useState(propuestaEditar?.descripcion || '');
+    const [categoria, setCategoria] = useState(propuestaEditar?.categoria || 'Otro');
     const [anonima, setAnonima] = useState(false);
     const [enviando, setEnviando] = useState(false);
     const [lanzado, setLanzado] = useState(false);
@@ -207,16 +220,18 @@ const FormularioPropuesta = ({ onCreated, onCancel }) => {
 
         setEnviando(true);
         try {
-            const res = await api.post('/admin/propuestas', { titulo, descripcion, categoria, anonima });
+            const res = esEdicion
+                ? await api.put(`/admin/propuestas/${propuestaEditar.id}`, { titulo, descripcion, categoria })
+                : await api.post('/admin/propuestas', { titulo, descripcion, categoria, anonima });
             if (res.data.ok) {
                 setLanzado(true);
                 setTimeout(() => {
                     setLanzado(false);
-                    onCreated(res.data.data);
-                }, 1800);
+                    onSaved(res.data.data);
+                }, esEdicion ? 900 : 1800);
             }
         } catch (err) {
-            setError(err.response?.data?.error || 'Error al enviar la propuesta.');
+            setError(err.response?.data?.error || `Error al ${esEdicion ? 'guardar los cambios de' : 'enviar'} la propuesta.`);
         } finally {
             setEnviando(false);
         }
@@ -233,13 +248,13 @@ const FormularioPropuesta = ({ onCreated, onCancel }) => {
                     <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-3">
                             <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center text-2xl">
-                                {lanzado ? '🚀' : '💡'}
+                                {lanzado ? (esEdicion ? '✅' : '🚀') : (esEdicion ? '✏️' : '💡')}
                             </div>
                             <div>
                                 <h2 className="font-black text-lg leading-tight">
-                                    {lanzado ? '¡Propuesta enviada!' : 'Nueva Propuesta'}
+                                    {lanzado ? (esEdicion ? '¡Cambios guardados!' : '¡Propuesta enviada!') : (esEdicion ? 'Editar Propuesta' : 'Nueva Propuesta')}
                                 </h2>
-                                <p className="text-white/70 text-xs">Tu voz importa en el fondo</p>
+                                <p className="text-white/70 text-xs">{esEdicion ? 'Corrige el título o la descripción' : 'Tu voz importa en el fondo'}</p>
                             </div>
                         </div>
                         <button onClick={onCancel} className="p-2 rounded-xl hover:bg-white/20 transition-all">
@@ -250,10 +265,10 @@ const FormularioPropuesta = ({ onCreated, onCancel }) => {
 
                 {lanzado ? (
                     <div className="p-8 text-center flex flex-col items-center gap-4">
-                        <div className="text-6xl animate-bounce">🚀</div>
+                        <div className="text-6xl animate-bounce">{esEdicion ? '✅' : '🚀'}</div>
                         <div>
-                            <p className="font-black text-gray-900 text-lg">¡Tu propuesta fue enviada!</p>
-                            <p className="text-gray-500 text-sm mt-1">El comité la revisará pronto.</p>
+                            <p className="font-black text-gray-900 text-lg">{esEdicion ? '¡Tu propuesta fue actualizada!' : '¡Tu propuesta fue enviada!'}</p>
+                            {!esEdicion && <p className="text-gray-500 text-sm mt-1">El comité la revisará pronto.</p>}
                         </div>
                     </div>
                 ) : (
@@ -303,18 +318,20 @@ const FormularioPropuesta = ({ onCreated, onCancel }) => {
                             <div className="text-right text-[10px] text-gray-300 mt-0.5">{descripcion.length}/2000</div>
                         </div>
 
-                        {/* Anónima */}
-                        <label className="flex items-center gap-3 cursor-pointer group">
-                            <div className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all
-                                ${anonima ? 'bg-brand-primary border-brand-primary' : 'border-gray-300 group-hover:border-brand-primary/60'}`}
-                                onClick={() => setAnonima(prev => !prev)}>
-                                {anonima && <CheckCircle className="w-3.5 h-3.5 text-white" />}
-                            </div>
-                            <div>
-                                <span className="text-sm font-semibold text-gray-700">Enviar de forma anónima</span>
-                                <p className="text-xs text-gray-400">Tu nombre no aparecerá en la propuesta</p>
-                            </div>
-                        </label>
+                        {/* Anónima — solo se decide al crear, no se puede cambiar después */}
+                        {!esEdicion && (
+                            <label className="flex items-center gap-3 cursor-pointer group">
+                                <div className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all
+                                    ${anonima ? 'bg-brand-primary border-brand-primary' : 'border-gray-300 group-hover:border-brand-primary/60'}`}
+                                    onClick={() => setAnonima(prev => !prev)}>
+                                    {anonima && <CheckCircle className="w-3.5 h-3.5 text-white" />}
+                                </div>
+                                <div>
+                                    <span className="text-sm font-semibold text-gray-700">Enviar de forma anónima</span>
+                                    <p className="text-xs text-gray-400">Tu nombre no aparecerá en la propuesta</p>
+                                </div>
+                            </label>
+                        )}
 
                         {error && (
                             <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-xs text-red-700 font-semibold">
@@ -329,7 +346,9 @@ const FormularioPropuesta = ({ onCreated, onCancel }) => {
                             </button>
                             <button type="submit" disabled={enviando}
                                 className="flex-1 py-3 rounded-xl bg-gradient-to-r from-brand-primary to-brand-dark text-white text-sm font-black hover:opacity-90 transition-all disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg shadow-brand-primary/30">
-                                {enviando ? 'Enviando...' : <><Rocket className="w-4 h-4" /> Enviar Propuesta</>}
+                                {enviando
+                                    ? (esEdicion ? 'Guardando...' : 'Enviando...')
+                                    : esEdicion ? <><CheckCircle className="w-4 h-4" /> Guardar Cambios</> : <><Rocket className="w-4 h-4" /> Enviar Propuesta</>}
                             </button>
                         </div>
                     </form>
@@ -349,7 +368,9 @@ const PropuestasPage = () => {
     const [filtroEstado, setFiltroEstado] = useState('todas');
     const [orden, setOrden] = useState('votos');
     const [expandedId, setExpandedId] = useState(null);
+    const [editingPropuesta, setEditingPropuesta] = useState(null);
     const [isAdmin, setIsAdmin] = useState(false);
+    const [currentClientId, setCurrentClientId] = useState(null);
     const [isBetaTester, setIsBetaTester] = useState(false);
     const [moduleEnabled, setModuleEnabled] = useState(false);
     const [checkingAccess, setCheckingAccess] = useState(true);
@@ -359,6 +380,7 @@ const PropuestasPage = () => {
         const u = JSON.parse(localStorage.getItem('user') || '{}');
         const isAdminUser = u.role === 'admin';
         setIsAdmin(isAdminUser);
+        setCurrentClientId(u.clientId || u.id || null);
         const fullName = `${u.name || ''} ${u.surname1 || ''}`.trim().toUpperCase();
         setIsBetaTester(BETA_USERS.includes(fullName));
 
@@ -430,9 +452,16 @@ const PropuestasPage = () => {
         }
     };
 
-    const handleCreated = (nueva) => {
-        setPropuestas(prev => [{ ...nueva, yaVote: false }, ...prev]);
+    const handleEdit = (propuesta) => setEditingPropuesta(propuesta);
+
+    const handleSaved = (data) => {
+        setPropuestas(prev => {
+            const existe = prev.some(p => p.id === data.id);
+            if (existe) return prev.map(p => (p.id === data.id ? { ...p, ...data } : p));
+            return [{ ...data, yaVote: false }, ...prev];
+        });
         setShowForm(false);
+        setEditingPropuesta(null);
     };
 
     // Filtro local por búsqueda
@@ -612,8 +641,9 @@ const PropuestasPage = () => {
                                                 </div>
                                             ) : grupo.map(p => (
                                                 <PropuestaCard key={p.id} propuesta={p} isAdmin={isAdmin}
+                                                    puedeEditar={isAdmin || (p.clientId != null && p.clientId === currentClientId && p.estado === 'pendiente')}
                                                     onVote={handleVote} onEstadoChange={handleEstadoChange}
-                                                    onDelete={handleDelete} expandedId={expandedId}
+                                                    onDelete={handleDelete} onEdit={handleEdit} expandedId={expandedId}
                                                     setExpandedId={setExpandedId} />
                                             ))}
                                         </div>
@@ -626,8 +656,9 @@ const PropuestasPage = () => {
                         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
                             {filtradas.map(p => (
                                 <PropuestaCard key={p.id} propuesta={p} isAdmin={isAdmin}
+                                    puedeEditar={isAdmin || (p.clientId != null && p.clientId === currentClientId && p.estado === 'pendiente')}
                                     onVote={handleVote} onEstadoChange={handleEstadoChange}
-                                    onDelete={handleDelete} expandedId={expandedId}
+                                    onDelete={handleDelete} onEdit={handleEdit} expandedId={expandedId}
                                     setExpandedId={setExpandedId} />
                             ))}
                         </div>
@@ -635,8 +666,14 @@ const PropuestasPage = () => {
                 </>
             )}
 
-            {/* ── FORMULARIO MODAL ── */}
-            {showForm && <FormularioPropuesta onCreated={handleCreated} onCancel={() => setShowForm(false)} />}
+            {/* ── FORMULARIO MODAL (crear o editar) ── */}
+            {(showForm || editingPropuesta) && (
+                <FormularioPropuesta
+                    propuestaEditar={editingPropuesta}
+                    onSaved={handleSaved}
+                    onCancel={() => { setShowForm(false); setEditingPropuesta(null); }}
+                />
+            )}
         </div>
     );
 };
