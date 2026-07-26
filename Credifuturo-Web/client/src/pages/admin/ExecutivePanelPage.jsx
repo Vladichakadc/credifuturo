@@ -267,27 +267,34 @@ const ExecutivePanelPage = () => {
         const mesesTranscurridos = Math.max(0.5, currentDayOfYear / 30.44);
         const mesesRestantes = remainingDays / 30.44;
 
-        // Intereses: (a) cartera ya desembolsada = cobrado + agendado pendiente ×
-        // tasa de RECAUDO REAL del año (misma cifra que el hero "Recaudo del año"),
-        // no un porcentaje inventado; (b) nueva colocación esperada al ritmo de
-        // desembolso real observado, generando interés solo por la fracción de año
-        // que le queda a cada crédito nuevo.
-        const interesesYaCobrados = stats?.totalInteresesPagados || 0;
-        const interesesPendientesAgendados = Math.max(0, (stats?.totalIntereses || 0) - interesesYaCobrados);
+        // ── Intereses proyectados — fuente única: exec.series (mismo origen que las
+        // tarjetas de "Actividad y Crecimiento"). Ya NO se mezcla con stats.totalIntereses
+        // ni stats.totalInteresesPagados, que provienen de filtros distintos y podían
+        // producir un valor de "pendiente" negativo o inflado cuando el período del
+        // dashboard-stats difiere del año-en-curso del executive-stats.
+        //
+        // intCobradosAnio  = intereses con estado Pago|Abono del año actual (ya cobrado).
+        // intAgendadosAnio = intereses con estado Pendiente del año actual (por cobrar).
+        //
+        // Escenario BASE: cobrado + pendiente × tasa de recaudo real observada.
+        // Escenario CONSERVADOR: cobrado + pendiente × (recaudo − 15 pp).
+        // Escenario OPTIMISTA: igual al base pero además suma los intereses que
+        //   generaría nueva colocación al ritmo histórico del año en curso.
         const recaudoBase = (exec.recaudoYtd?.eficienciaPct ?? 85) / 100;
         const recaudoConservador = Math.max(0.5, recaudoBase - 0.15);
         const recaudoOptimista = Math.min(1, recaudoBase + 0.10);
-        const colocacionMensualProm = (stats?.totalPrestamos || 0) / mesesTranscurridos;
-        const tasaMensualVigente = 0.015; // tasa típica actual del fondo (1.4%–1.6%)
+        // Ritmo mensual de colocación del año en curso (de exec.series, no stats)
+        const colocacionAnioActual = colocActual?.total || 0;
+        const colocacionMensualProm = colocacionAnioActual / mesesTranscurridos;
+        const tasaMensualVigente = 0.015; // tasa típica del fondo (1.4%–1.6%)
         const interesesPorNuevaColocacion = (monto) => monto * tasaMensualVigente * (mesesRestantes / 2);
 
-        const proyeccionInteresesBase = interesesYaCobrados
-            + interesesPendientesAgendados * recaudoBase
-            + interesesPorNuevaColocacion(colocacionMensualProm * mesesRestantes);
-        const proyeccionInteresesConservador = interesesYaCobrados
-            + interesesPendientesAgendados * recaudoConservador;
-        const proyeccionInteresesOptimista = interesesYaCobrados
-            + interesesPendientesAgendados * recaudoOptimista
+        const proyeccionInteresesBase = intCobradosAnio
+            + intAgendadosAnio * recaudoBase;
+        const proyeccionInteresesConservador = intCobradosAnio
+            + intAgendadosAnio * recaudoConservador;
+        const proyeccionInteresesOptimista = intCobradosAnio
+            + intAgendadosAnio * recaudoOptimista
             + interesesPorNuevaColocacion(colocacionMensualProm * 1.5 * mesesRestantes);
 
         // NU: extrapolación lineal (único método válido con un solo dato acumulado
@@ -304,6 +311,11 @@ const ExecutivePanelPage = () => {
         const proyeccionPenalidadConservador = proyeccionPenalidadBase * 0.5;
         const proyeccionPenalidadOptimista = proyeccionPenalidadBase * 1.8;
 
+        // Ganancia real acumulada YTD: ancla de comparación con el dashboard principal
+        const gananciaRealYtd = intCobradosAnio
+            + (stats?.rentabilidadCajaNU || 0)
+            + (stats?.totalPenaltyValue || 0);
+
         const proyeccion = {
             intereses: { base: proyeccionInteresesBase, conservador: proyeccionInteresesConservador, optimista: proyeccionInteresesOptimista },
             nu: { base: proyeccionCajaNUBase, conservador: proyeccionCajaNUConservador, optimista: proyeccionCajaNUOptimista },
@@ -313,6 +325,7 @@ const ExecutivePanelPage = () => {
                 conservador: proyeccionInteresesConservador + proyeccionCajaNUConservador + proyeccionPenalidadConservador,
                 optimista: proyeccionInteresesOptimista + proyeccionCajaNUOptimista + proyeccionPenalidadOptimista,
             },
+            gananciaRealYtd,
             recaudoBasePct: Math.round(recaudoBase * 100),
             colocacionMensualProm,
         };
@@ -495,12 +508,12 @@ const ExecutivePanelPage = () => {
                                                 <span className="text-sm font-black text-gray-800 tabular-nums">{fmtCorto(totalIngresos)}</span>
                                             </div>
                                         </div>
-                                        <div className="flex-1 min-w-0 space-y-2">
+                                        <div className="flex-1 min-w-0 space-y-2.5">
                                             {ingresos.map(d => (
-                                                <div key={d.name} className="flex items-center gap-2">
-                                                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
-                                                    <span className="text-xs text-gray-600 font-medium flex-1 truncate">{d.name}</span>
-                                                    <span className="text-xs text-gray-800 font-bold tabular-nums">{fmtCorto(d.value)}</span>
+                                                <div key={d.name} className="flex items-start gap-2">
+                                                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-0.5" style={{ backgroundColor: d.color }} />
+                                                    <span className="text-xs text-gray-600 font-medium flex-1 min-w-0 leading-tight break-words">{d.name}</span>
+                                                    <span className="text-xs text-gray-800 font-bold tabular-nums whitespace-nowrap">{fmtCorto(d.value)}</span>
                                                 </div>
                                             ))}
                                             <div className="pt-2 mt-1 border-t border-gray-100">
@@ -518,32 +531,48 @@ const ExecutivePanelPage = () => {
                             {/* Estimado al cierre del año — 3 escenarios basados en comportamiento real */}
                             <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
                                 <SectionTitle icon={Gauge}>Estimado al cierre del año</SectionTitle>
+
+                                {/* Ancla YTD real: permite comparar directamente con el Panel Principal */}
+                                <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 mb-3">
+                                    <span className="text-[11px] font-bold text-emerald-800 flex items-center gap-1.5">
+                                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 flex-shrink-0" />
+                                        Ganancia real acumulada (YTD)
+                                    </span>
+                                    <span className="text-sm font-black text-emerald-700 tabular-nums">{fmt(derived.proyeccion.gananciaRealYtd)}</span>
+                                </div>
+
                                 <div className="space-y-2.5">
                                     {[
                                         { label: 'Intereses de préstamos', v: derived.proyeccion.intereses, color: '#166534' },
                                         { label: 'Rendimiento cuenta NU', v: derived.proyeccion.nu, color: '#84cc16' },
                                         { label: 'Recargos por mora', v: derived.proyeccion.penalidad, color: '#f59e0b' },
                                     ].map(row => (
-                                        <div key={row.label} className="flex items-center gap-2">
-                                            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: row.color }} />
-                                            <span className="text-xs text-gray-600 font-medium flex-1 truncate">{row.label}</span>
-                                            <div className="text-right">
+                                        <div key={row.label} className="flex items-start gap-2">
+                                            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-0.5" style={{ backgroundColor: row.color }} />
+                                            <span className="text-xs text-gray-600 font-medium flex-1 min-w-0 leading-tight break-words">{row.label}</span>
+                                            <div className="text-right flex-shrink-0 ml-2">
                                                 <p className="text-xs font-bold text-gray-800 tabular-nums">{fmtCorto(row.v.base)}</p>
-                                                <p className="text-[9px] text-gray-400 tabular-nums">{fmtCorto(row.v.conservador)}–{fmtCorto(row.v.optimista)}</p>
+                                                <p className="text-[9px] text-gray-400 tabular-nums whitespace-nowrap">{fmtCorto(row.v.conservador)}–{fmtCorto(row.v.optimista)}</p>
                                             </div>
                                         </div>
                                     ))}
-                                    <div className="pt-2.5 mt-1.5 border-t border-gray-100 flex items-center justify-between">
-                                        <span className="text-xs font-extrabold text-gray-900">Ganancia total estimada</span>
-                                        <div className="text-right">
-                                            <p className="text-sm font-black text-brand-primary tabular-nums">{fmt(derived.proyeccion.total.base)}</p>
-                                            <p className="text-[9px] text-gray-400 tabular-nums">{fmt(derived.proyeccion.total.conservador)} – {fmt(derived.proyeccion.total.optimista)}</p>
+                                    <div className="pt-2.5 mt-1.5 border-t border-gray-100">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div>
+                                                <p className="text-xs font-extrabold text-gray-900">Proyección cierre año</p>
+                                                <p className="text-[9px] text-gray-400 mt-0.5">Escenario base · {derived.proyeccion.recaudoBasePct}% recaudo real</p>
+                                            </div>
+                                            <div className="text-right flex-shrink-0">
+                                                <p className="text-sm font-black text-brand-primary tabular-nums">{fmt(derived.proyeccion.total.base)}</p>
+                                                <p className="text-[9px] text-gray-400 tabular-nums whitespace-nowrap">{fmt(derived.proyeccion.total.conservador)} – {fmt(derived.proyeccion.total.optimista)}</p>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                                 <p className="text-[10px] text-gray-400 mt-3 leading-snug">
-                                    Cartera desembolsada (cobrado + agendado × {derived.proyeccion.recaudoBasePct}% recaudo real) + nuevos préstamos esperados
-                                    al ritmo observado ({fmtCorto(derived.proyeccion.colocacionMensualProm)}/mes). Rango conservador–optimista, no un número con falsa precisión.
+                                    Base: intereses cobrados + pendientes del año × tasa de recaudo real.
+                                    Optimista: incluye además interés de nueva colocación ({fmtCorto(derived.proyeccion.colocacionMensualProm)}/mes).
+                                    Rango conservador–optimista, no un número con falsa precisión.
                                 </p>
                             </div>
 
