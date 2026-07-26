@@ -108,12 +108,45 @@ async function validateAndFixLoanStatuses() {
 // /my/* lleva su propia auth por ruta. /dashboard-stats lo puede leer cualquier socio
 // autenticado (el panel de Inicio lo comparte). El resto exige rol admin.
 // A07: ademas exigimos que el usuario no tenga mustChangePassword pendiente.
-const READ_ONLY_FOR_ALL = new Set(['/dashboard-stats', '/savings/ranking']);
+const READ_ONLY_FOR_ALL = new Set(['/dashboard-stats']);
 const READ_ONLY_PREFIXES = ['/settings/'];
+
+// Funciones "(BETA)" (Ranking de Ahorro, Buzón de Propuestas): el menú del socio ya
+// las oculta a todos menos a este grupo, pero la API debe exigir lo mismo — si no,
+// cualquier socio autenticado podría pedir el endpoint directo y ver los datos reales
+// de todos los demás socios. La cédula sí viene en el JWT (surname1 no), así que el
+// grupo beta se identifica por cédula, no por nombre.
+const BETA_CEDULAS = new Set(['36304875', '52496873', '79863805']); // Lady Torres, Xiomara Rojas, Leonardo Rojas
+async function requireAdminOrBetaTester(req, res, next) {
+    if (req.user?.role === 'admin') return next();
+    if (!BETA_CEDULAS.has(req.user?.cedula)) {
+        return res.status(403).json({ error: 'Esta función todavía no está disponible para tu cuenta.' });
+    }
+    try {
+        const AppSetting = require('../models/AppSetting');
+        const setting = await AppSetting.findOne({ where: { key: 'propuestas_enabled' } });
+        if (setting?.value === 'true') return next();
+        return res.status(403).json({ error: 'Esta función todavía no está disponible para tu cuenta.' });
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+}
+// { método, ruta o test(path) } -> abierta a admin + grupo beta (no a cualquier autenticado)
+const BETA_ROUTES = [
+    { method: 'GET', path: '/savings/ranking' },
+    { method: 'GET', path: '/propuestas' },
+    { method: 'POST', path: '/propuestas' },
+    { method: 'PUT', test: p => /^\/propuestas\/\d+\/voto$/.test(p) },
+];
+
 router.use((req, res, next) => {
     if (req.path.startsWith('/my/')) return next();
     if (req.method === 'GET' && (READ_ONLY_FOR_ALL.has(req.path) || READ_ONLY_PREFIXES.some(p => req.path.startsWith(p)))) {
         return verifyToken(req, res, () => requireFreshPassword(req, res, next));
+    }
+    const betaRoute = BETA_ROUTES.some(r => r.method === req.method && (r.path === req.path || (r.test && r.test(req.path))));
+    if (betaRoute) {
+        return verifyToken(req, res, () => requireFreshPassword(req, res, () => requireAdminOrBetaTester(req, res, next)));
     }
     verifyToken(req, res, () =>
         requireFreshPassword(req, res, () =>
