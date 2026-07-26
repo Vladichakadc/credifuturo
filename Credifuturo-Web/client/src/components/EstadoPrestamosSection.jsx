@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
     Calendar, CheckCircle, Activity, Loader2, DollarSign,
-    BarChart3, AlertTriangle, PieChart, Clock, ChevronDown
+    BarChart3, AlertTriangle, PieChart, Clock, ChevronDown, ChevronLeft, ChevronRight
 } from 'lucide-react';
+
+const ITEMS_PER_PAGE = 25;
 
 /**
  * EstadoPrestamosSection — réplica exacta de la sección "Lista Estado Préstamos
@@ -87,6 +89,9 @@ const EstadoPrestamosSection = ({
     const [paymentStatusFilter, setPaymentStatusFilter] = useState('Todos');
     const [paymentLoanStatusFilter, setPaymentLoanStatusFilter] = useState('Todos');
     const [paymentSortConfig, setPaymentSortConfig] = useState({ key: 'idVm', dir: 'desc' });
+    const [currentPage, setCurrentPage] = useState(1);
+
+    useEffect(() => { setCurrentPage(1); }, [paymentYearFilter, paymentStatusFilter, paymentLoanStatusFilter]);
 
     const safeParseDate = useCallback((dateVal, mesRef) => {
         if (!dateVal) return null;
@@ -170,6 +175,10 @@ const EstadoPrestamosSection = ({
             prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }
         );
     };
+
+    const totalPages = Math.max(1, Math.ceil(sortedSocioPayments.length / ITEMS_PER_PAGE));
+    const pageStartIdx = (currentPage - 1) * ITEMS_PER_PAGE;
+    const paginatedPayments = sortedSocioPayments.slice(pageStartIdx, pageStartIdx + ITEMS_PER_PAGE);
 
     const paymentStats = useMemo(() => {
         const today = new Date();
@@ -288,7 +297,7 @@ const EstadoPrestamosSection = ({
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
-                            {sortedSocioPayments.map((payment, i) => {
+                            {paginatedPayments.map((payment, i) => {
                                 const isPaid = payment.estado === 'Pago';
 
                                 const fechaMax = safeParseDate(payment.fechaPagoMax, payment.mesPago);
@@ -334,6 +343,33 @@ const EstadoPrestamosSection = ({
                             })}
                         </tbody>
                     </table>
+                </div>
+            )}
+
+            {!loading && sortedSocioPayments.length > 0 && totalPages > 1 && (
+                <div className="flex justify-between items-center gap-2 pt-3 mt-1 print:hidden">
+                    <span className="text-xs text-gray-500">
+                        Mostrando <strong className="text-brand-primary">{pageStartIdx + 1}–{Math.min(pageStartIdx + ITEMS_PER_PAGE, sortedSocioPayments.length)}</strong> de <strong>{sortedSocioPayments.length}</strong> cuota{sortedSocioPayments.length !== 1 ? 's' : ''}
+                    </span>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                            disabled={currentPage === 1}
+                            className="flex items-center px-2.5 py-1.5 rounded-lg text-xs font-semibold text-gray-500 hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+                        >
+                            <ChevronLeft className="h-3.5 w-3.5 mr-1" /> Anterior
+                        </button>
+                        <span className="text-xs text-gray-600 font-medium">
+                            Página <span className="font-bold text-brand-primary bg-brand-primary/10 px-2 py-0.5 rounded">{currentPage}</span> de {totalPages}
+                        </span>
+                        <button
+                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                            disabled={currentPage === totalPages}
+                            className="flex items-center px-2.5 py-1.5 rounded-lg text-xs font-semibold text-gray-500 hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+                        >
+                            Siguiente <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                        </button>
+                    </div>
                 </div>
             )}
         </div>

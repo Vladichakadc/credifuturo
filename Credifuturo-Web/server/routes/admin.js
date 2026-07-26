@@ -4159,7 +4159,8 @@ router.get('/my/loans', verifyToken, requireFreshPassword, requireRole('user', '
         const loans = await DisbursedLoan.findAll({
             where: { clientId: req.user.id },
             include: [{ model: Client, attributes: ['customerId', 'name', 'surname1', 'surname2', 'cedula'] }],
-            order: [['fechaPrestamo', 'DESC']]
+            order: [['fechaPrestamo', 'DESC']],
+            limit: 1000 // tope defensivo: acota el costo de la consulta ante un dato anómalo, sin afectar el uso real
         });
 
         const normalizedData = loans.map(l => {
@@ -4184,7 +4185,8 @@ router.get('/my/savings', verifyToken, requireFreshPassword, requireRole('user',
         const savings = await Saving.findAll({
             where: { clientId: req.user.id, type: { [Op.ne]: 'Aporte Inicial' } },
             include: [{ model: Client, attributes: ['customerId', 'name', 'surname1', 'surname2', 'cedula'] }],
-            order: [['date', 'DESC']]
+            order: [['date', 'DESC']],
+            limit: 1000 // tope defensivo: acota el costo de la consulta ante un dato anómalo, sin afectar el uso real
         });
 
         const normalizedData = savings.map(s => {
@@ -4208,7 +4210,8 @@ router.get('/my/initial-contributions', verifyToken, requireFreshPassword, requi
         const contributions = await Saving.findAll({
             where: { clientId: req.user.id, type: 'Aporte Inicial' },
             include: [{ model: Client, attributes: ['customerId', 'name', 'surname1', 'surname2', 'cedula'] }],
-            order: [['date', 'DESC']]
+            order: [['date', 'DESC']],
+            limit: 1000 // tope defensivo: acota el costo de la consulta ante un dato anómalo, sin afectar el uso real
         });
 
         const normalizedData = contributions.map(s => {
@@ -4232,6 +4235,7 @@ router.get('/my/payments', verifyToken, requireFreshPassword, requireRole('user'
         const payments = await LoanPayment.findAll({
             where: { clientId: req.user.id },
             include: [{ model: Client, attributes: ['customerId', 'name', 'surname1', 'surname2', 'cedula'] }],
+            limit: 1000 // tope defensivo: acota el costo de la consulta ante un dato anómalo, sin afectar el uso real
         });
 
         // ── Corrección día/mes invertido en fechaPagoMax ────────────────────
