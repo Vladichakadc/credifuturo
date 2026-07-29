@@ -2643,9 +2643,25 @@ router.put('/payments/:id', async (req, res) => {
         const payment = await LoanPayment.findByPk(req.params.id);
         if (!payment) return res.status(404).json({ error: 'Registro de pago no encontrado' });
 
+        const estadoAnterior = payment.estado;
+
         // A08: whitelist; bloquea cambios a externalId.
         await payment.update(pickFields(req.body, ALLOWED_LOAN_PAYMENT_FIELDS));
         validateAndFixLoanStatuses().catch(() => { });
+
+        // Notifica al socio solo cuando la cuota PASA a 'Pago' (no en cualquier otra
+        // edición del registro, como corregir una fecha o un monto).
+        if (estadoAnterior !== 'Pago' && payment.estado === 'Pago' && payment.clientId) {
+            const { createNotification } = require('../services/NotificationService');
+            await createNotification({
+                clientId: payment.clientId,
+                type: 'payment_registered',
+                title: 'Se registró el pago de tu cuota',
+                message: `Tu cuota ${payment.externalId || ''} de $${Math.round(Number(payment.valorCuotaPago || payment.valorCuotaVariable || 0)).toLocaleString('es-CO')} quedó registrada como pagada.`.trim(),
+                link: '/dashboard/mis-creditos?tab=cuotas'
+            });
+        }
+
         res.json(payment);
     } catch (err) {
         res.status(400).json({ error: err.message });
@@ -4799,6 +4815,31 @@ router.put('/settings/:key', verifyToken, requireFreshPassword, requireRole('adm
             return res.status(400).json({ error: 'El campo value es requerido.' });
         }
         const [setting] = await AppSetting.upsert({ key, value: String(value) });
+
+        // Avisa al grupo que hoy puede ver el Ranking de Ahorro (beta) que la
+        // ganancia a distribuir del año quedó definida/actualizada por el comité.
+        // Se limita a ese grupo — no a todos los socios activos — porque es el
+        // único lugar de la app que refleja este valor específico: /dashboard/cuenta
+        // muestra una "utilidad estimada" propia, calculada con una fórmula
+        // completamente distinta e independiente (ver /my/utilidades-estimadas),
+        // así que notificar a todos apuntaría a la mayoría a un número que no
+        // corresponde a este cambio, o a una página bloqueada para ellos todavía.
+        if (key === 'utilidadesADistribuir') {
+            const { Op } = require('sequelize');
+            const { notifyMany } = require('../services/NotificationService');
+            const destinatarios = await Client.findAll({
+                where: { estatus: 'Activo', [Op.or]: [{ role: 'admin' }, { cedula: Array.from(BETA_CEDULAS) }] },
+                attributes: ['id']
+            });
+            const idsSinActor = destinatarios.map(c => c.id).filter(id => id !== req.user.id);
+            await notifyMany(idsSinActor, {
+                type: 'utilidades_definidas',
+                title: 'Ganancia a distribuir definida',
+                message: `El comité definió $${Math.round(Number(value)).toLocaleString('es-CO')} como la ganancia a distribuir de este año.`,
+                link: '/dashboard/ranking-ahorro'
+            });
+        }
+
         res.json({ ok: true, key, value: setting.value });
     } catch (err) {
         res.status(500).json({ error: err.message });
