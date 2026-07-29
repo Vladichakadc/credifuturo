@@ -29,7 +29,13 @@ const TABLE_COLUMNS = [
     { key: 'fechaIngreso', label: 'Fecha Ingreso', align: 'center', minWidth: '120px', isDate: true },
     { key: 'fechaBaja', label: 'Fecha Baja', align: 'center', minWidth: '120px', isDate: true },
     { key: 'estatus', label: 'Estatus', align: 'center', minWidth: '110px', isBadge: true },
-    { key: 'porcentajeEfectivo', label: '% Préstamos', align: 'center', minWidth: '120px', isPercentage: true },
+    { key: 'porcentajeEfectivo', label: '% Préstamos (efectivo)', align: 'center', minWidth: '140px', isPercentage: true },
+    // Tasa de PERFIL (porcentajePrestamo crudo): distinta de la de arriba a propósito —
+    // esa prioriza el préstamo activo del año, esta es la política asignada al socio
+    // (la que usa el Simulador). Mostrarlas por separado permite auditar huecos: un socio
+    // puede tener % Préstamos correcto porque coincide con un préstamo activo, pero seguir
+    // con la Tasa Perfil vacía — invisible en la columna de arriba, visible en esta.
+    { key: 'porcentajePrestamo', label: 'Tasa Perfil (Simulador)', align: 'center', minWidth: '140px', isProfileRate: true },
 ];
 
 const ITEMS_PER_PAGE = 20;
@@ -75,7 +81,8 @@ const CellValue = ({ column, value, row = {} }) => {
     if (column.key === 'socioFundador') return <FundadorBadge value={value} />;
     if (column.isDate) return <span className="tabular-nums text-gray-700">{formatDate(value)}</span>;
 
-    // Columna % Préstamos: muestra la tasa efectiva con badge de fuente
+    // Columna % Préstamos (efectivo): muestra la tasa que realmente aplica hoy,
+    // con badge de fuente (préstamo activo vs. tasa de perfil manual).
     if (column.isPercentage) {
         if (value === null || value === undefined) {
             return <span className="text-gray-300 text-xs italic">—</span>;
@@ -93,6 +100,21 @@ const CellValue = ({ column, value, row = {} }) => {
                     <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 font-bold leading-none">manual</span>
                 )}
             </div>
+        );
+    }
+
+    // Columna Tasa Perfil: el valor crudo de porcentajePrestamo (decimal, ej. 0.016),
+    // sin que un préstamo activo la tape — para auditar huecos como los de este caso:
+    // un socio puede verse bien en "% Préstamos (efectivo)" por coincidir con su
+    // préstamo, y aun así tener la tasa de perfil vacía (la que usa el Simulador).
+    if (column.isProfileRate) {
+        if (value === null || value === undefined || value === '') {
+            return <span className="text-red-400 text-xs font-bold" title="Sin tasa de perfil asignada — el Simulador usará la tasa vigente por defecto, no necesariamente la correcta para este socio.">— sin asignar</span>;
+        }
+        return (
+            <span className="font-mono font-bold text-sm text-amber-700">
+                {(Number(value) * 100).toFixed(2)}%
+            </span>
         );
     }
 

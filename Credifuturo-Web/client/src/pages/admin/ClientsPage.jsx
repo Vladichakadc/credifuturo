@@ -613,45 +613,45 @@ const ClientsPage = () => {
                                 <Percent className="w-4 h-4" />
                                 Crédito
                             </h3>
-                            {porcentajeDesdePrestamo !== null ? (
-                                /* El socio tiene préstamo activo este año — mostrar tasa automática */
+                            {porcentajeDesdePrestamo !== null && (
+                                /* Informativo, no bloquea edición — el préstamo activo tiene su propia tasa
+                                   fija (histórica de cuando se desembolsó); el campo de abajo es la tasa de
+                                   PERFIL del socio, la que usa el Simulador para una solicitud nueva. Ambas
+                                   pueden coincidir o no, y el admin necesita poder editar la de perfil sin
+                                   depender de tocar el préstamo. */
                                 <div className="flex items-center gap-3 p-3 rounded-xl bg-blue-50 border border-blue-200">
                                     <Percent className="h-5 w-5 text-blue-500 flex-shrink-0" />
                                     <div className="flex-1">
-                                        <p className="text-xs font-black text-blue-700 uppercase tracking-wider">% Préstamos — Auto-calculado</p>
+                                        <p className="text-xs font-black text-blue-700 uppercase tracking-wider">Préstamo activo este año</p>
                                         <p className="text-lg font-black text-blue-800 font-mono mt-0.5">
                                             {Number(porcentajeDesdePrestamo).toFixed(2)}% mensual
                                         </p>
                                         <p className="text-[11px] text-blue-600 mt-0.5">
-                                            Tomado del préstamo activo de {new Date().getFullYear()}. Edita el préstamo para cambiar la tasa.
+                                            Es la tasa fija de ese préstamo desembolsado en {new Date().getFullYear()}. El campo de abajo es la tasa de perfil del socio (la que usa el Simulador) — se edita aquí, independiente del préstamo.
                                         </p>
                                     </div>
                                 </div>
-                            ) : (
-                                /* Sin préstamo este año — campo editable */
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <FormField label="% Interés Mensual Préstamos">
-                                        <div className="relative">
-                                            <Input
-                                                type="number"
-                                                step="0.01"
-                                                min="0"
-                                                max="100"
-                                                value={formData.porcentajePrestamo}
-                                                onChange={(e) => setFormData({ ...formData, porcentajePrestamo: e.target.value })}
-                                                placeholder="Ej: 1.5"
-                                                className="pr-8"
-                                            />
-                                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">%</span>
-                                        </div>
-                                        <p className="text-[11px] text-gray-400 mt-1">
-                                            {isEditing
-                                                ? 'Este socio no tiene préstamos activos en el año actual. Ingrese la tasa manualmente.'
-                                                : 'Opcional. Si el socio solicita un préstamo, la tasa se tomará del préstamo registrado.'}
-                                        </p>
-                                    </FormField>
-                                </div>
                             )}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <FormField label="% Interés Mensual — Tasa de Perfil (Simulador)">
+                                    <div className="relative">
+                                        <Input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            max="100"
+                                            value={formData.porcentajePrestamo}
+                                            onChange={(e) => setFormData({ ...formData, porcentajePrestamo: e.target.value })}
+                                            placeholder="Ej: 1.5"
+                                            className="pr-8"
+                                        />
+                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">%</span>
+                                    </div>
+                                    <p className="text-[11px] text-gray-400 mt-1">
+                                        Tasa asignada al perfil del socio según la política del fondo (ej. 1,6% si retiró el total de sus ahorros el año anterior; 1,4% si no). Es la que ve el socio en el Simulador de Préstamo al pedir uno nuevo.
+                                    </p>
+                                </FormField>
+                            </div>
                         </div>
 
                         {/* Action Buttons */}
