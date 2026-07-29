@@ -438,11 +438,26 @@ router.put('/clients/:id', async (req, res) => {
             });
         }
 
+        const tasaAnterior = client.porcentajePrestamo;
         const updates = pickFields(req.body, ALLOWED_CLIENT_FIELDS);
         if (updates.fechaBaja === '' || updates.fechaBaja === 'Invalid date') updates.fechaBaja = null;
         if (updates.email === '' || updates.email === 'null') updates.email = null;
 
         await client.update(updates);
+
+        // Notifica al socio solo si su tasa asignada realmente cambió a un valor
+        // nuevo (no cuando se limpia/deja en null, ni en ediciones de otros campos).
+        if ('porcentajePrestamo' in updates && client.porcentajePrestamo != null
+            && Number(tasaAnterior) !== Number(client.porcentajePrestamo)) {
+            const { createNotification } = require('../services/NotificationService');
+            await createNotification({
+                clientId: client.id,
+                type: 'tasa_actualizada',
+                title: 'Tu tasa de interés fue actualizada',
+                message: `El comité definió tu nueva tasa mensual: ${(Number(client.porcentajePrestamo) * 100).toFixed(2)}%.`,
+                link: '/dashboard/mis-creditos'
+            });
+        }
 
         const safe = client.toJSON();
         delete safe.password;
@@ -4568,6 +4583,17 @@ router.post('/clients/:id/reset-password', verifyToken, requireRole('admin'), as
             ip: getClientIp(req)
         });
 
+        // No se incluye la contraseña temporal en el mensaje: ya viaja una sola vez
+        // en esta respuesta HTTP, no debe quedar guardada en texto plano en Notifications.
+        const { createNotification } = require('../services/NotificationService');
+        await createNotification({
+            clientId: client.id,
+            type: 'password_reset_resolved',
+            title: 'Tu contraseña fue restablecida',
+            message: 'El administrador restableció tu contraseña. Usa la nueva contraseña temporal que te compartieron para ingresar; se te pedirá cambiarla.',
+            link: null
+        });
+
         res.json({ ok: true, message: `Contraseña restablecida. El socio deberá cambiarla en su próximo ingreso.`, tempPassword });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -4597,6 +4623,18 @@ router.put('/password-reset-requests/:id/resolve', verifyToken, requireRole('adm
         const request = await PasswordResetRequest.findByPk(req.params.id);
         if (!request) return res.status(404).json({ error: 'Solicitud no encontrada.' });
         await request.update({ status: 'resolved' });
+
+        if (request.clientId) {
+            const { createNotification } = require('../services/NotificationService');
+            await createNotification({
+                clientId: request.clientId,
+                type: 'password_reset_resolved',
+                title: 'Tu contraseña fue restablecida',
+                message: 'El administrador atendió tu solicitud de recuperación. Usa la nueva contraseña temporal que te compartieron para ingresar; se te pedirá cambiarla.',
+                link: null
+            });
+        }
+
         res.json({ ok: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -4610,6 +4648,18 @@ router.put('/password-reset-requests/:id/reject', verifyToken, requireRole('admi
         const request = await PasswordResetRequest.findByPk(req.params.id);
         if (!request) return res.status(404).json({ error: 'Solicitud no encontrada.' });
         await request.update({ status: 'rejected' });
+
+        if (request.clientId) {
+            const { createNotification } = require('../services/NotificationService');
+            await createNotification({
+                clientId: request.clientId,
+                type: 'password_reset_rejected',
+                title: 'Novedades sobre tu solicitud de contraseña',
+                message: 'Tu solicitud de recuperación de contraseña no fue procesada. Contacta al administrador si sigues sin poder ingresar.',
+                link: null
+            });
+        }
+
         res.json({ ok: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -4938,6 +4988,23 @@ router.post('/propuestas', verifyToken, requireFreshPassword, async (req, res) =
             anonima
         });
 
+        // Avisa al resto del grupo beta (mismo grupo que puede ver/crear propuestas
+        // hoy) que hay una propuesta nueva para revisar o votar. No se notifica al
+        // propio autor.
+        const { Op } = require('sequelize');
+        const { notifyMany } = require('../services/NotificationService');
+        const destinatarios = await Client.findAll({
+            where: { [Op.or]: [{ role: 'admin' }, { cedula: Array.from(BETA_CEDULAS) }] },
+            attributes: ['id']
+        });
+        const idsSinAutor = destinatarios.map(c => c.id).filter(id => id !== req.user.id);
+        await notifyMany(idsSinAutor, {
+            type: 'propuesta_nueva',
+            title: 'Nueva propuesta en el Buzón',
+            message: `${propuesta.autorNombre} publicó "${propuesta.titulo}".`,
+            link: '/dashboard/propuestas'
+        });
+
         res.json({ ok: true, data: propuesta });
     } catch (err) {
         console.error('Error POST /propuestas:', err.message);
@@ -5030,6 +5097,32 @@ router.put('/propuestas/:id/estado', verifyToken, requireFreshPassword, requireR
             ...(estado ? { estado } : {}),
             ...(respuestaAdmin !== undefined ? { respuestaAdmin } : {}),
         });
+
+        // Avisa al autor (si no es anónima) de cambios de estado o respuestas del
+        // comité — el frontend llama esta ruta una vez por cada tipo de cambio, así
+        // que como mucho se dispara una de las dos notificaciones por llamada.
+        if (propuesta.clientId != null) {
+            const { createNotification } = require('../services/NotificationService');
+            if (estado) {
+                const estadoLabels = { pendiente: 'pendiente', en_revision: 'en revisión', aprobada: 'aprobada', rechazada: 'rechazada' };
+                await createNotification({
+                    clientId: propuesta.clientId,
+                    type: 'propuesta_estado_cambiado',
+                    title: 'Novedades en tu propuesta',
+                    message: `Tu propuesta "${propuesta.titulo}" quedó ${estadoLabels[estado] || estado}.`,
+                    link: '/dashboard/propuestas'
+                });
+            }
+            if (respuestaAdmin) {
+                await createNotification({
+                    clientId: propuesta.clientId,
+                    type: 'propuesta_respondida',
+                    title: 'El comité respondió tu propuesta',
+                    message: `"${propuesta.titulo}": ${respuestaAdmin}`,
+                    link: '/dashboard/propuestas'
+                });
+            }
+        }
 
         res.json({ ok: true, data: propuesta });
     } catch (err) {
