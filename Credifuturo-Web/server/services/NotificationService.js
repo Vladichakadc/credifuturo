@@ -23,4 +23,14 @@ async function notifyAdmins({ type, title, message = null, link = null }) {
     }
 }
 
-module.exports = { createNotification, notifyAdmins };
+// Notifica a una lista arbitraria de clientId ya resuelta por el call site (ej. la
+// Junta Administrativa, cuyos miembros exactos se calculan en admin.js).
+async function notifyMany(clientIds, { type, title, message = null, link = null }) {
+    try {
+        await Promise.all((clientIds || []).map(id => createNotification({ clientId: id, type, title, message, link })));
+    } catch (err) {
+        console.error('[NotificationService] Error en notifyMany:', err.message);
+    }
+}
+
+module.exports = { createNotification, notifyAdmins, notifyMany };

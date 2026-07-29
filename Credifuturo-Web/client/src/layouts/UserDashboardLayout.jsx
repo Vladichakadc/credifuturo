@@ -17,7 +17,8 @@ import {
     ShieldCheck,
     Lightbulb,
     TrendingUp,
-    MessageSquareMore
+    MessageSquareMore,
+    Vote
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { Button } from '../components/ui/Button';
@@ -146,6 +147,11 @@ const UserDashboardLayout = ({ user, onLogout }) => {
     const userFullName = `${user?.name || ''} ${user?.surname1 || ''}`.trim().toUpperCase();
     const isBetaTester = betaUsers.includes(userFullName) || user?.role === 'admin';
 
+    // Junta Administrativa: gerente (admin) + subgerente + tesorera. Mismo criterio
+    // que JUNTA_CEDULAS en server/routes/admin.js.
+    const JUNTA_CEDULAS_NO_ADMIN = ['79863805', '52496873']; // Leonardo Rojas, Xiomara Rojas
+    const isJuntaMember = user?.role === 'admin' || JUNTA_CEDULAS_NO_ADMIN.includes(user?.cedula);
+
     const toggleSubmenu = (key) => {
         setOpenSubmenus(prev => ({ ...prev, [key]: !prev[key] }));
     };
@@ -211,6 +217,10 @@ const UserDashboardLayout = ({ user, onLogout }) => {
                 { icon: MessageSquareMore, label: 'Buzón de Propuestas (BETA)', path: '/dashboard/propuestas' }
             ]
         }] : []),
+        ...(isJuntaMember ? [
+            { type: 'label', label: 'JUNTA ADMINISTRATIVA' },
+            { type: 'link', icon: Vote, label: 'Aprobación de Préstamos', path: '/dashboard/junta-prestamos' }
+        ] : []),
         {
             type: 'submenu',
             key: 'estatutos',

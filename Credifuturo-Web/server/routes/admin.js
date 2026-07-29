@@ -140,6 +140,31 @@ const BETA_ROUTES = [
     { method: 'PUT', test: p => /^\/propuestas\/\d+$/.test(p) },
 ];
 
+// Junta Administrativa del fondo: gerente (admin) + subgerente + tesorera. Un
+// préstamo solo se puede desembolsar cuando los 3 hayan votado y los 3 hayan
+// aprobado — ver PUT /loan-requests/:id/vote. El gerente entra por role==='admin'
+// (no hay más de un admin hoy); los otros dos, por cédula (igual que BETA_CEDULAS).
+const JUNTA_CEDULAS = new Set(['79863805', '52496873']); // Leonardo Rojas (Subgerente), Xiomara Rojas (Tesorera)
+function isJuntaMember(user) {
+    return user?.role === 'admin' || JUNTA_CEDULAS.has(user?.cedula);
+}
+function requireJuntaMember(req, res, next) {
+    if (isJuntaMember(req.user)) return next();
+    return res.status(403).json({ error: 'Esta función es exclusiva de la Junta Administrativa.' });
+}
+async function getJuntaClientIds() {
+    const admins = await Client.findAll({ where: { role: 'admin' }, attributes: ['id'] });
+    const otros = await Client.findAll({ where: { cedula: Array.from(JUNTA_CEDULAS) }, attributes: ['id'] });
+    return [...new Set([...admins.map(a => a.id), ...otros.map(o => o.id)])];
+}
+const JUNTA_ROUTES = [
+    { method: 'GET', path: '/loan-requests' },
+    { method: 'GET', test: p => /^\/loan-requests\/\d+$/.test(p) },
+    { method: 'PUT', test: p => /^\/loan-requests\/\d+\/vote$/.test(p) },
+    { method: 'GET', test: p => /^\/clients\/\d+\/loan-capacity$/.test(p) },
+    { method: 'GET', path: '/junta/members' },
+];
+
 router.use((req, res, next) => {
     if (req.path.startsWith('/my/')) return next();
     if (req.method === 'GET' && (READ_ONLY_FOR_ALL.has(req.path) || READ_ONLY_PREFIXES.some(p => req.path.startsWith(p)))) {
@@ -148,6 +173,10 @@ router.use((req, res, next) => {
     const betaRoute = BETA_ROUTES.some(r => r.method === req.method && (r.path === req.path || (r.test && r.test(req.path))));
     if (betaRoute) {
         return verifyToken(req, res, () => requireFreshPassword(req, res, () => requireAdminOrBetaTester(req, res, next)));
+    }
+    const juntaRoute = JUNTA_ROUTES.some(r => r.method === req.method && (r.path === req.path || (r.test && r.test(req.path))));
+    if (juntaRoute) {
+        return verifyToken(req, res, () => requireFreshPassword(req, res, () => requireJuntaMember(req, res, next)));
     }
     verifyToken(req, res, () =>
         requireFreshPassword(req, res, () =>
@@ -4086,13 +4115,14 @@ router.post('/my/loan-requests', verifyToken, requireFreshPassword, requireRole(
             console.error('[EmailService] Error enviando notificación de solicitud de préstamo:', err.message)
         );
 
-        const { notifyAdmins } = require('../services/NotificationService');
-        await notifyAdmins({
-            type: 'loan_request_submitted',
-            title: 'Nueva solicitud de préstamo',
-            message: `${client.name} ${client.surname1 || ''} solicitó $${Math.round(Number(request.amount)).toLocaleString('es-CO')} a ${request.installments} cuota(s).`.trim(),
-            link: '/admin/loans/approvals'
-        });
+        // Notifica a los 3 miembros de la Junta Administrativa (gerente, subgerente,
+        // tesorera) — cada uno debe votar por separado, ver PUT .../vote más abajo.
+        const { notifyMany } = require('../services/NotificationService');
+        const mensajeSolicitud = `${client.name} ${client.surname1 || ''} solicitó $${Math.round(Number(request.amount)).toLocaleString('es-CO')} a ${request.installments} cuota(s). Tu voto de la Junta está pendiente.`.trim();
+        const admins = await Client.findAll({ where: { role: 'admin' }, attributes: ['id'] });
+        const juntaNoAdmin = await Client.findAll({ where: { cedula: Array.from(JUNTA_CEDULAS) }, attributes: ['id'] });
+        await notifyMany(admins.map(a => a.id), { type: 'loan_request_submitted', title: 'Nueva solicitud de préstamo', message: mensajeSolicitud, link: '/admin/loans/approvals' });
+        await notifyMany(juntaNoAdmin.map(c => c.id), { type: 'loan_request_submitted', title: 'Nueva solicitud de préstamo', message: mensajeSolicitud, link: '/dashboard/junta-prestamos' });
 
         res.status(201).json({ ok: true, data: request });
     } catch (err) {
@@ -4572,11 +4602,14 @@ router.put('/password-reset-requests/:id/reject', verifyToken, requireRole('admi
 
 // ── Solicitudes de préstamo (módulo de aprobaciones del gerente) ────────────
 
-// Listar solicitudes de préstamo (admin). status: 'pending' (default), 'all', un valor,
-// o varios separados por coma (ej. 'approved,rejected,disbursed' para el historial).
-router.get('/loan-requests', verifyToken, requireRole('admin'), async (req, res) => {
+// Listar solicitudes de préstamo (Junta Administrativa: gerente, subgerente, tesorera).
+// status: 'pending' (default), 'all', un valor, o varios separados por coma (ej.
+// 'approved,rejected,disbursed' para el historial). Incluye BoardVotes para que cada
+// miembro vea el estado de los 3 votos, no solo el suyo.
+router.get('/loan-requests', verifyToken, requireFreshPassword, async (req, res) => {
     try {
         const LoanRequest = require('../models/LoanRequest');
+        const LoanBoardVote = require('../models/LoanBoardVote');
         const DisbursedLoan = require('../models/DisbursedLoan');
         const { Op } = require('sequelize');
         const { status } = req.query;
@@ -4592,7 +4625,8 @@ router.get('/loan-requests', verifyToken, requireRole('admin'), async (req, res)
             include: [
                 { model: Client, as: 'Client', attributes: ['id', 'name', 'surname1', 'surname2', 'cedula', 'email', 'customerId'] },
                 { model: Client, as: 'Reviewer', attributes: ['id', 'name', 'surname1'] },
-                { model: DisbursedLoan, as: 'DisbursedLoan', attributes: ['id', 'idVm', 'estado'] }
+                { model: DisbursedLoan, as: 'DisbursedLoan', attributes: ['id', 'idVm', 'estado'] },
+                { model: LoanBoardVote, as: 'BoardVotes', include: [{ model: Client, as: 'Voter', attributes: ['id', 'name', 'surname1', 'cargo'] }] }
             ],
             order: [['createdAt', 'DESC']]
         });
@@ -4602,12 +4636,16 @@ router.get('/loan-requests', verifyToken, requireRole('admin'), async (req, res)
     }
 });
 
-// Detalle de una solicitud de préstamo (admin)
-router.get('/loan-requests/:id', verifyToken, requireRole('admin'), async (req, res) => {
+// Detalle de una solicitud de préstamo (Junta Administrativa)
+router.get('/loan-requests/:id', verifyToken, requireFreshPassword, async (req, res) => {
     try {
         const LoanRequest = require('../models/LoanRequest');
+        const LoanBoardVote = require('../models/LoanBoardVote');
         const request = await LoanRequest.findByPk(req.params.id, {
-            include: [{ model: Client, as: 'Client', attributes: ['id', 'name', 'surname1', 'surname2', 'cedula', 'email', 'customerId'] }]
+            include: [
+                { model: Client, as: 'Client', attributes: ['id', 'name', 'surname1', 'surname2', 'cedula', 'email', 'customerId'] },
+                { model: LoanBoardVote, as: 'BoardVotes', include: [{ model: Client, as: 'Voter', attributes: ['id', 'name', 'surname1', 'cargo'] }] }
+            ]
         });
         if (!request) return res.status(404).json({ error: 'Solicitud no encontrada.' });
         res.json({ ok: true, data: request });
@@ -4616,71 +4654,96 @@ router.get('/loan-requests/:id', verifyToken, requireRole('admin'), async (req, 
     }
 });
 
-// Aprobar una solicitud de préstamo (admin/gerente)
-router.put('/loan-requests/:id/approve', verifyToken, requireRole('admin'), async (req, res) => {
+// Miembros de la Junta Administrativa (para que el frontend pueda mostrar las 3
+// filas de votación incluso antes de que alguien haya votado).
+router.get('/junta/members', verifyToken, requireFreshPassword, async (req, res) => {
     try {
-        const LoanRequest = require('../models/LoanRequest');
-        const request = await LoanRequest.findByPk(req.params.id, { include: [{ model: Client, as: 'Client' }] });
-        if (!request) return res.status(404).json({ error: 'Solicitud no encontrada.' });
-        if (request.status !== 'pending') return res.status(400).json({ error: 'Esta solicitud ya fue revisada.' });
-
-        await request.update({
-            status: 'approved',
-            reviewedBy: req.user.id,
-            reviewedAt: new Date(),
-            reviewNote: req.body?.reviewNote || null
+        const ids = await getJuntaClientIds();
+        const members = await Client.findAll({
+            where: { id: ids },
+            attributes: ['id', 'name', 'surname1', 'surname2', 'cargo', 'role']
         });
-
-        const { sendLoanApprovalNotification } = require('../services/EmailService');
-        sendLoanApprovalNotification(request.Client, request).catch(err =>
-            console.error('[EmailService] Error enviando notificación de aprobación de préstamo:', err.message)
-        );
-
-        const { createNotification } = require('../services/NotificationService');
-        await createNotification({
-            clientId: request.clientId,
-            type: 'loan_request_approved',
-            title: 'Tu préstamo fue aprobado',
-            message: `Se aprobó tu solicitud de $${Math.round(Number(request.amount)).toLocaleString('es-CO')} a ${request.installments} cuota(s).`,
-            link: '/dashboard/loan-capacity-beta'
-        });
-
-        res.json({ ok: true, data: request });
+        res.json({ ok: true, data: members });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// Rechazar una solicitud de préstamo (admin/gerente)
-router.put('/loan-requests/:id/reject', verifyToken, requireRole('admin'), async (req, res) => {
+// Votar una solicitud de préstamo (cada miembro de la Junta Administrativa: gerente,
+// subgerente, tesorera). El estado final de la solicitud (approved/rejected) solo se
+// calcula cuando los 3 miembros han votado — mientras falte alguno, la solicitud sigue
+// 'pending' aunque ya existan votos registrados (se espera a los 3 antes de decidir).
+router.put('/loan-requests/:id/vote', verifyToken, requireFreshPassword, async (req, res) => {
     try {
         const LoanRequest = require('../models/LoanRequest');
+        const LoanBoardVote = require('../models/LoanBoardVote');
+        const { decision, note } = req.body;
+        if (!['approved', 'rejected'].includes(decision)) {
+            return res.status(400).json({ error: 'decision debe ser "approved" o "rejected".' });
+        }
+
         const request = await LoanRequest.findByPk(req.params.id, { include: [{ model: Client, as: 'Client' }] });
         if (!request) return res.status(404).json({ error: 'Solicitud no encontrada.' });
-        if (request.status !== 'pending') return res.status(400).json({ error: 'Esta solicitud ya fue revisada.' });
+        if (request.status !== 'pending') {
+            return res.status(400).json({ error: 'Esta solicitud ya tiene una decisión final de la Junta; no se puede votar de nuevo.' });
+        }
 
-        await request.update({
-            status: 'rejected',
-            reviewedBy: req.user.id,
-            reviewedAt: new Date(),
-            reviewNote: req.body?.reviewNote || null
+        // Cada miembro tiene un solo voto por solicitud; puede cambiarlo mientras siga pendiente.
+        const [vote, created] = await LoanBoardVote.findOrCreate({
+            where: { loanRequestId: request.id, voterClientId: req.user.id },
+            defaults: { decision, note: note?.trim() || null }
         });
+        if (!created) await vote.update({ decision, note: note?.trim() || null });
 
-        const { sendLoanRejectionNotification } = require('../services/EmailService');
-        sendLoanRejectionNotification(request.Client, request).catch(err =>
-            console.error('[EmailService] Error enviando notificación de rechazo de préstamo:', err.message)
-        );
-
-        const { createNotification } = require('../services/NotificationService');
-        await createNotification({
-            clientId: request.clientId,
-            type: 'loan_request_rejected',
-            title: 'Novedades sobre tu solicitud de préstamo',
-            message: request.reviewNote || 'Tu solicitud de préstamo no fue aprobada por ahora.',
-            link: '/dashboard/loan-capacity-beta'
+        const juntaIds = await getJuntaClientIds();
+        const votosActuales = await LoanBoardVote.findAll({
+            where: { loanRequestId: request.id },
+            include: [{ model: Client, as: 'Voter', attributes: ['id', 'name', 'surname1', 'cargo'] }]
         });
+        const faltan = juntaIds.filter(id => !votosActuales.some(v => v.voterClientId === id));
 
-        res.json({ ok: true, data: request });
+        if (faltan.length === 0) {
+            const todosAprobaron = votosActuales.every(v => v.decision === 'approved');
+            const nuevoEstado = todosAprobaron ? 'approved' : 'rejected';
+            await request.update({ status: nuevoEstado, reviewedAt: new Date() });
+
+            const { createNotification, notifyMany } = require('../services/NotificationService');
+            if (todosAprobaron) {
+                const { sendLoanApprovalNotification } = require('../services/EmailService');
+                sendLoanApprovalNotification(request.Client, request).catch(err =>
+                    console.error('[EmailService] Error enviando notificación de aprobación de préstamo:', err.message)
+                );
+                await createNotification({
+                    clientId: request.clientId,
+                    type: 'loan_request_approved',
+                    title: 'Tu préstamo fue aprobado',
+                    message: `La Junta Administrativa aprobó tu solicitud de $${Math.round(Number(request.amount)).toLocaleString('es-CO')} a ${request.installments} cuota(s).`,
+                    link: '/dashboard/loan-capacity-beta'
+                });
+            } else {
+                const { sendLoanRejectionNotification } = require('../services/EmailService');
+                sendLoanRejectionNotification(request.Client, request).catch(err =>
+                    console.error('[EmailService] Error enviando notificación de rechazo de préstamo:', err.message)
+                );
+                await createNotification({
+                    clientId: request.clientId,
+                    type: 'loan_request_rejected',
+                    title: 'Novedades sobre tu solicitud de préstamo',
+                    message: 'Tu solicitud de préstamo no fue aprobada por la Junta Administrativa por ahora.',
+                    link: '/dashboard/loan-capacity-beta'
+                });
+            }
+            // Aviso de control a los 3 miembros: la decisión ya quedó en firme.
+            const tituloFinal = `Decisión final: préstamo ${todosAprobaron ? 'aprobado' : 'rechazado'}`;
+            const mensajeFinal = `${request.Client?.name || 'El socio'} ${request.Client?.surname1 || ''}: solicitud de $${Math.round(Number(request.amount)).toLocaleString('es-CO')} quedó ${todosAprobaron ? 'aprobada' : 'rechazada'} tras el voto de los 3 miembros de la Junta.`.trim();
+            const admins = await Client.findAll({ where: { role: 'admin' }, attributes: ['id'] });
+            const juntaNoAdmin = await Client.findAll({ where: { cedula: Array.from(JUNTA_CEDULAS) }, attributes: ['id'] });
+            await notifyMany(admins.map(a => a.id), { type: 'loan_request_decided', title: tituloFinal, message: mensajeFinal, link: '/admin/loans/approvals' });
+            await notifyMany(juntaNoAdmin.map(c => c.id), { type: 'loan_request_decided', title: tituloFinal, message: mensajeFinal, link: '/dashboard/junta-prestamos' });
+        }
+
+        const requestActualizada = await LoanRequest.findByPk(request.id, { include: [{ model: Client, as: 'Client' }] });
+        res.json({ ok: true, data: requestActualizada, votes: votosActuales });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

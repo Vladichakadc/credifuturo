@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import api from '../../config/api';
 import { useUi } from '../../context/UiContext';
 import LoanCapacityWidget from '../../components/admin/LoanCapacityWidget';
+import LoanBoardVotingPanel from '../../components/LoanBoardVotingPanel';
 import { Button } from '../../components/ui/Button';
 import {
     ClipboardCheck, Loader2, Clock, Users, Calendar,
-    Vote, Calculator, CheckCircle, XCircle, Inbox, History, Banknote
+    Vote, Calculator, Inbox, History, Banknote
 } from 'lucide-react';
 
 const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
@@ -27,8 +28,6 @@ const LoanApprovalsPage = () => {
     const [selectedId, setSelectedId] = useState(null);
     const [analysis, setAnalysis] = useState(null);
     const [loadingAnalysis, setLoadingAnalysis] = useState(false);
-    const [reviewNote, setReviewNote] = useState('');
-    const [actionLoading, setActionLoading] = useState(null); // 'approve' | 'reject' | null
 
     const fetchRequests = async (keepSelection = true) => {
         setLoading(true);
@@ -54,30 +53,11 @@ const LoanApprovalsPage = () => {
         if (!selected || viewMode !== 'pending') { setAnalysis(null); return; }
         setAnalysis(null);
         setLoadingAnalysis(true);
-        setReviewNote('');
         api.get(`/admin/clients/${selected.clientId}/loan-capacity`)
             .then(res => setAnalysis(res.data))
             .catch(() => {})
             .finally(() => setLoadingAnalysis(false));
     }, [selected?.id, viewMode]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    const handleDecision = async (decision) => {
-        if (!selected) return;
-        setActionLoading(decision);
-        try {
-            await api.put(`/admin/loan-requests/${selected.id}/${decision}`, {
-                reviewNote: reviewNote.trim() || undefined
-            });
-            toast.success(decision === 'approve'
-                ? 'Préstamo aprobado. El socio fue notificado.'
-                : 'Solicitud rechazada. El socio fue notificado.');
-            fetchRequests(false);
-        } catch (err) {
-            toast.error(err.response?.data?.error || 'No se pudo procesar la decisión.');
-        } finally {
-            setActionLoading(null);
-        }
-    };
 
     const nombreSocio = (r) => {
         const c = r?.Client;
@@ -131,15 +111,15 @@ const LoanApprovalsPage = () => {
                                         <th className="px-4 py-3 text-right">Monto</th>
                                         <th className="px-4 py-3 text-center">Cuotas</th>
                                         <th className="px-4 py-3 text-center">Estado</th>
-                                        <th className="px-4 py-3 text-left">Revisado por</th>
+                                        <th className="px-4 py-3 text-left">Votos de la Junta</th>
                                         <th className="px-4 py-3 text-left">Fecha decisión</th>
-                                        <th className="px-4 py-3 text-left">Nota</th>
                                         <th className="px-4 py-3 text-center">Acción</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50">
                                     {requests.map(r => {
                                         const badge = ESTADO_BADGE[r.status] || ESTADO_BADGE.rejected;
+                                        const votos = r.BoardVotes || [];
                                         return (
                                             <tr key={r.id} className="hover:bg-gray-50/60">
                                                 <td className="px-4 py-3 font-semibold text-gray-800">{nombreSocio(r)}</td>
@@ -150,11 +130,22 @@ const LoanApprovalsPage = () => {
                                                         {badge.label}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-3 text-gray-600">
-                                                    {r.Reviewer ? `${r.Reviewer.name} ${r.Reviewer.surname1 || ''}`.trim() : '—'}
+                                                <td className="px-4 py-3">
+                                                    {votos.length === 0 ? <span className="text-gray-300">—</span> : (
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {votos.map(v => (
+                                                                <span key={v.id}
+                                                                    title={`${v.Voter?.name || ''} ${v.Voter?.surname1 || ''} (${v.Voter?.cargo || ''}): ${v.decision === 'approved' ? 'aprobó' : 'rechazó'}${v.note ? ' — ' + v.note : ''}`}
+                                                                    className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full cursor-help ${
+                                                                        v.decision === 'approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                                                                    }`}>
+                                                                    {(v.Voter?.cargo || v.Voter?.name || '?').slice(0, 2).toUpperCase()}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    )}
                                                 </td>
                                                 <td className="px-4 py-3 text-gray-500">{fmtFecha(r.reviewedAt)}</td>
-                                                <td className="px-4 py-3 text-gray-500 max-w-xs truncate" title={r.reviewNote || ''}>{r.reviewNote || '—'}</td>
                                                 <td className="px-4 py-3 text-center">
                                                     {r.status === 'approved' && (
                                                         <Button size="sm" onClick={() => navigate(`/admin/loans?prefillRequestId=${r.id}`)}>
@@ -213,9 +204,14 @@ const LoanApprovalsPage = () => {
                                             </span>
                                         )}
                                     </div>
-                                    <p className="text-[10px] text-gray-400 mt-1 flex items-center gap-1">
-                                        <Calendar className="h-2.5 w-2.5" /> {fmtFecha(r.createdAt)}
-                                    </p>
+                                    <div className="flex items-center justify-between gap-2 mt-1">
+                                        <p className="text-[10px] text-gray-400 flex items-center gap-1">
+                                            <Calendar className="h-2.5 w-2.5" /> {fmtFecha(r.createdAt)}
+                                        </p>
+                                        <span className="text-[9px] font-bold text-gray-400">
+                                            {(r.BoardVotes || []).length}/3 votaron
+                                        </span>
+                                    </div>
                                 </button>
                             ))}
                         </div>
@@ -301,39 +297,11 @@ const LoanApprovalsPage = () => {
                             {/* Análisis de viabilidad en vivo (situación actual del socio) */}
                             <LoanCapacityWidget analysis={analysis} loading={loadingAnalysis} />
 
-                            {/* Decisión */}
-                            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-3">
-                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Nota para el socio (opcional)</label>
-                                <textarea
-                                    value={reviewNote}
-                                    onChange={e => setReviewNote(e.target.value)}
-                                    rows={2}
-                                    placeholder="Ej: aprobado a 8 cuotas en vez de 12, o motivo del rechazo..."
-                                    className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:border-brand-primary focus:outline-none resize-none"
-                                />
-                                <div className="flex flex-col sm:flex-row gap-2 pt-1">
-                                    <Button
-                                        onClick={() => handleDecision('approve')}
-                                        isLoading={actionLoading === 'approve'}
-                                        disabled={!!actionLoading}
-                                        className="flex-1"
-                                    >
-                                        <CheckCircle className="mr-2 h-4 w-4" /> Aprobar préstamo
-                                    </Button>
-                                    <Button
-                                        variant="danger"
-                                        onClick={() => handleDecision('reject')}
-                                        isLoading={actionLoading === 'reject'}
-                                        disabled={!!actionLoading}
-                                        className="flex-1"
-                                    >
-                                        <XCircle className="mr-2 h-4 w-4" /> Rechazar
-                                    </Button>
-                                </div>
-                                <p className="text-[10px] text-gray-400 leading-relaxed">
-                                    Aprobar solo cambia el estado de la solicitud y notifica al socio. El desembolso (banco, cuenta, id_VM) se hace después, por separado, desde "Nuevo Desembolso" en Gestión de Préstamos.
-                                </p>
-                            </div>
+                            {/* Votación de la Junta Administrativa (gerente, subgerente, tesorera) */}
+                            <LoanBoardVotingPanel request={selected} onVoted={() => fetchRequests(false)} />
+                            <p className="text-[10px] text-gray-400 leading-relaxed px-1">
+                                El desembolso (banco, cuenta, id_VM) se hace después, por separado, desde "Nuevo Desembolso" en Gestión de Préstamos, una vez la solicitud quede aprobada por los 3.
+                            </p>
                         </>
                     )}
                 </div>
