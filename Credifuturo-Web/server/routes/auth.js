@@ -168,11 +168,23 @@ router.post('/request-reset', resetLimiter, async (req, res) => {
                 email: user.email || null,
                 status: 'pending'
             });
+
+            // Solo se avisa (correo + campana in-app) cuando es una solicitud NUEVA.
+            // El correo es best-effort (depende de Gmail); la notificación in-app no
+            // depende de ningún servicio externo, así que es el aviso garantizado —
+            // si el correo falla o queda en spam, el admin igual la ve en la campana.
+            sendResetRequestNotification(user).catch(err =>
+                console.error('[EmailService] Error enviando notificación de reset:', err.message)
+            );
+
+            const { notifyAdmins } = require('../services/NotificationService');
+            await notifyAdmins({
+                type: 'password_reset_requested',
+                title: 'Nueva solicitud de restablecimiento',
+                message: `${user.name} ${user.surname1 || ''} (cédula ${user.cedula}) solicitó restablecer su contraseña.`.trim(),
+                link: '/admin/clients'
+            });
         }
-        // Notificar siempre, exista o no una solicitud pendiente (resetLimiter evita abuso)
-        sendResetRequestNotification(user).catch(err =>
-            console.error('[EmailService] Error enviando notificación de reset:', err.message)
-        );
 
         res.json({ ok: true, message: 'Solicitud registrada. El administrador restablecerá su acceso pronto.' });
     } catch (err) {

@@ -4568,7 +4568,11 @@ router.post('/clients/:id/reset-password', verifyToken, requireRole('admin'), as
             if (policyError) return res.status(400).json({ error: policyError });
             tempPassword = provided;
         } else {
-            tempPassword = 'Coop2025';
+            // Antes era el string fijo 'Coop2025' para TODOS los socios — un secreto
+            // compartido y adivinable que cualquiera podía probar durante la ventana
+            // entre el reset y el próximo ingreso real del socio. Ahora es aleatoria
+            // por reset, igual que ya se hacía en el auto-seed del admin.
+            tempPassword = generateTempPassword();
         }
         const hashed = await bcrypt.hash(tempPassword, 10);
         await client.update({ password: hashed, mustChangePassword: true });

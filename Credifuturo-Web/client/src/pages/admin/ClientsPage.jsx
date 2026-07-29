@@ -264,11 +264,12 @@ const ClientsPage = () => {
     const handleResetPassword = async () => {
         if (!formData.id) return;
         const nombre = `${formData.name} ${formData.surname1 || ''}`.trim();
-        if (!window.confirm(`¿Restablecer contraseña de "${nombre}" a la contraseña genérica Coop2025?\n\nEl socio deberá cambiarla en su próximo ingreso.`)) return;
+        if (!window.confirm(`¿Restablecer la contraseña de "${nombre}"?\n\nSe generará una contraseña temporal aleatoria y el socio deberá cambiarla en su próximo ingreso.`)) return;
         setLoading(true);
         try {
-            await api.post(`/admin/clients/${formData.id}/reset-password`, {});
-            toast.success('Contraseña restablecida a Coop2025. El socio deberá cambiarla al ingresar.');
+            const res = await api.post(`/admin/clients/${formData.id}/reset-password`, {});
+            toast.success('Contraseña restablecida. El socio deberá cambiarla al ingresar.');
+            window.alert(`Contraseña temporal para ${nombre}:\n\n${res.data.tempPassword}\n\nComunícasela al socio por un medio seguro (llamada, WhatsApp). Deberá cambiarla en su próximo ingreso.`);
             fetchResetRequests();
         } catch (error) {
             toast.error('Error al resetear contraseña: ' + (error.response?.data?.error || error.message));
@@ -278,10 +279,11 @@ const ClientsPage = () => {
     };
 
     const handleResolveRequest = async (clientId, nombre) => {
-        if (!window.confirm(`¿Restablecer contraseña de "${nombre}" a la contraseña genérica Coop2025?\n\nEl socio deberá cambiarla en su próximo ingreso.`)) return;
+        if (!window.confirm(`¿Restablecer la contraseña de "${nombre}"?\n\nSe generará una contraseña temporal aleatoria y el socio deberá cambiarla en su próximo ingreso.`)) return;
         try {
-            await api.post(`/admin/clients/${clientId}/reset-password`, {});
-            toast.success(`Contraseña restablecida a Coop2025. El socio deberá cambiarla al ingresar.`);
+            const res = await api.post(`/admin/clients/${clientId}/reset-password`, {});
+            toast.success('Contraseña restablecida. El socio deberá cambiarla al ingresar.');
+            window.alert(`Contraseña temporal para ${nombre}:\n\n${res.data.tempPassword}\n\nComunícasela al socio por un medio seguro (llamada, WhatsApp). Deberá cambiarla en su próximo ingreso.`);
             setShowDropdown(false);
             fetchResetRequests();
         } catch (error) {
