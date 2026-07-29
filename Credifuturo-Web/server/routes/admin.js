@@ -1102,12 +1102,29 @@ router.get('/savings/ranking', async (req, res) => {
 
         // Calcular métricas de comportamiento por socio
         const mesActual = new Date().getMonth() + 1;
+        // Casos que ameritan revisión del comité antes de confiar en el reparto —
+        // no bloquean el cálculo (se sigue mostrando el ranking), solo se marcan.
+        const anomalias = [];
+        let excluidosSinAhorro = 0;
         const data = clients.map(c => {
-            const saldoApertura = Math.max(priorNetByClient[c.id] || 0, 0);
+            const priorNetRaw = priorNetByClient[c.id] || 0;
+            const saldoApertura = Math.max(priorNetRaw, 0);
+            if (priorNetRaw < 0) {
+                // Más devuelto que lo ahorrado en años anteriores: el saldo de apertura
+                // se protege en 0 para no calcular con un número negativo, pero esto casi
+                // siempre indica un dato mal registrado (devolución duplicada, o aplicada
+                // al socio equivocado) y merece revisión antes de repartir utilidades.
+                anomalias.push({
+                    clientId: c.id,
+                    fullName: `${c.name} ${c.surname1} ${c.surname2 || ''}`.trim(),
+                    tipo: 'saldo_apertura_negativo',
+                    detalle: `Las devoluciones registradas superan lo ahorrado en años anteriores por $${Math.round(Math.abs(priorNetRaw)).toLocaleString('es-CO')}. Revisar los registros de "Devolución Total" de este socio.`
+                });
+            }
             const thisYear = thisYearByClient[c.id] || [];
             const totalEsteAnio = thisYear.reduce((sum, m) => sum + m.amount, 0);
             const total = saldoApertura + totalEsteAnio;
-            if (total === 0) return null;
+            if (total === 0) { excluidosSinAhorro++; return null; }
 
             // El saldo de apertura se modela como un aporte de enero del año en curso
             // (peso completo, 12/12): representa capital que ya estaba en el fondo desde
@@ -1158,7 +1175,15 @@ router.get('/savings/ranking', async (req, res) => {
             ? Number(utilidadesSetting.value)
             : null;
 
-        res.json({ ok: true, data, totalDevolucionIntereses, utilidadesADistribuir });
+        res.json({
+            ok: true,
+            data,
+            totalDevolucionIntereses,
+            utilidadesADistribuir,
+            calculatedAt: new Date().toISOString(),
+            anomalias,
+            excluidosSinAhorro,
+        });
     } catch (err) {
         console.error('Error en /savings/ranking:', err);
         res.status(500).json({ ok: false, error: err.message });

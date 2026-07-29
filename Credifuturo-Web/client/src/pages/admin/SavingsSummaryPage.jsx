@@ -345,6 +345,11 @@ const calcSaldoPromedio = (monthlyData = []) => {
 export const RankingBox = ({ onClose = null, embedded = false }) => {
     const [ranking, setRanking] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [lastUpdated, setLastUpdated] = useState(null);
+    const [anomalias, setAnomalias] = useState([]);
+    const [excluidosSinAhorro, setExcluidosSinAhorro] = useState(0);
+    const [showAnomalias, setShowAnomalias] = useState(false);
     const [search, setSearch] = useState('');
     const [utilidadesDistribuir, setUtilidadesDistribuir] = useState('');
     const [guardandoUtilidades, setGuardandoUtilidades] = useState(false);
@@ -352,69 +357,78 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
     const [gananciaRealFondo, setGananciaRealFondo] = useState(0);
     const [expandedId, setExpandedId] = useState(null);
     const [showExplainer, setShowExplainer] = useState(true);
+    // Evita que "Sincronizar" pise un valor de utilidades que el comité está
+    // escribiendo pero aún no ha guardado.
+    const utilidadesSinGuardarRef = useRef(false);
 
-    useEffect(() => {
-        const fetchAll = async () => {
-            try {
-                const [rankRes, statsRes] = await Promise.allSettled([
-                    api.get('/admin/savings/ranking'),
-                    api.get('/admin/dashboard-stats'),
-                ]);
+    const fetchAll = useCallback(async (isManualRefresh = false) => {
+        if (isManualRefresh) setRefreshing(true); else setLoading(true);
+        try {
+            const [rankRes, statsRes] = await Promise.allSettled([
+                api.get('/admin/savings/ranking'),
+                api.get('/admin/dashboard-stats'),
+            ]);
 
-                // Ganancia real = intereses cobrados + NU + penalidades (idéntico al Executive Panel)
-                let gananciaReal = 0;
-                if (statsRes.status === 'fulfilled') {
-                    const s = statsRes.value.data;
-                    gananciaReal = (s.totalInteresesPagados || 0)
-                        + (s.rentabilidadCajaNU || 0)
-                        + (s.totalPenaltyValue || 0);
-                    setGananciaRealFondo(gananciaReal);
-                }
+            // Ganancia real = intereses cobrados + NU + penalidades (idéntico al Executive Panel)
+            let gananciaReal = 0;
+            if (statsRes.status === 'fulfilled') {
+                const s = statsRes.value.data;
+                gananciaReal = (s.totalInteresesPagados || 0)
+                    + (s.rentabilidadCajaNU || 0)
+                    + (s.totalPenaltyValue || 0);
+                setGananciaRealFondo(gananciaReal);
+            }
 
-                if (rankRes.status === 'fulfilled' && rankRes.value.data.ok) {
-                    const d = rankRes.value.data;
-                    
-                    // ── Saldo Promedio Ponderado (método FIC/SFC Colombia) ──
-                    // La distribución es proporcional al saldo promedio anual.
-                    // Cada aporte se pondera por: (meses invertidos / 12)
-                    // Enero = 12/12 = 100% del año · Julio = 6/12 = 50% · Dic = 1/12 ≈ 8%
-                    const processedRanking = (d.data || []).map(socio => {
-                        const { saldoPromedio, desgloseMes } = calcSaldoPromedio(socio.monthlyData);
-                        return {
-                            ...socio,
-                            saldoPromedio,
-                            desgloseMes,
-                            // Alias para compatibilidad con variables existentes
-                            puntajeFinal: saldoPromedio,
-                            ahorroPonderado: saldoPromedio,
-                        };
-                    }).sort((a, b) => b.saldoPromedio - a.saldoPromedio);
+            if (rankRes.status === 'fulfilled' && rankRes.value.data.ok) {
+                const d = rankRes.value.data;
 
-                    setRanking(processedRanking);
+                // ── Saldo Promedio Ponderado (método FIC/SFC Colombia) ──
+                // La distribución es proporcional al saldo promedio anual.
+                // Cada aporte se pondera por: (meses invertidos / 12)
+                // Enero = 12/12 = 100% del año · Julio = 6/12 = 50% · Dic = 1/12 ≈ 8%
+                const processedRanking = (d.data || []).map(socio => {
+                    const { saldoPromedio, desgloseMes } = calcSaldoPromedio(socio.monthlyData);
+                    return {
+                        ...socio,
+                        saldoPromedio,
+                        desgloseMes,
+                        // Alias para compatibilidad con variables existentes
+                        puntajeFinal: saldoPromedio,
+                        ahorroPonderado: saldoPromedio,
+                    };
+                }).sort((a, b) => b.saldoPromedio - a.saldoPromedio);
+
+                setRanking(processedRanking);
+                setAnomalias(d.anomalias || []);
+                setExcluidosSinAhorro(d.excluidosSinAhorro || 0);
+                setLastUpdated(d.calculatedAt ? new Date(d.calculatedAt) : new Date());
+
+                if (!utilidadesSinGuardarRef.current) {
                     // Prioridad: (1) valor del comité en AppSettings (siempre que NO sea el valor legacy erróneo),
                     // (2) ganancia real del fondo (fuente correcta del dashboard),
                     // (3) devoluciones históricas como último fallback.
-                    
                     const valorGuardado = Number(d.utilidadesADistribuir) || 0;
                     const esValorLegacyErroneo = valorGuardado > 0 && valorGuardado === (d.totalDevolucionIntereses || 0);
-                    
+
                     const sugerido = (valorGuardado > 0 && !esValorLegacyErroneo)
                         ? valorGuardado
                         : gananciaReal > 0
                             ? gananciaReal
                             : (d.totalDevolucionIntereses || 0);
-                            
+
                     setUtilidadesDistribuir(sugerido > 0 ? sugerido.toLocaleString('es-CO') : '');
                     setUtilidadesGuardadas(valorGuardado > 0 && !esValorLegacyErroneo);
                 }
-            } catch (err) {
-                console.error('Error fetching ranking:', err.message);
-            } finally {
-                setLoading(false);
             }
-        };
-        fetchAll();
+        } catch (err) {
+            console.error('Error fetching ranking:', err.message);
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
     }, []);
+
+    useEffect(() => { fetchAll(false); }, [fetchAll]);
 
 
     const guardarUtilidades = async () => {
@@ -424,6 +438,7 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
         try {
             await api.put('/admin/settings/utilidadesADistribuir', { value: valor });
             setUtilidadesGuardadas(true);
+            utilidadesSinGuardarRef.current = false;
         } catch (err) {
             console.error('Error guardando utilidades:', err.message);
         } finally {
@@ -692,6 +707,12 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
                                     Saldo Promedio Ponderado · Método FIC/SFC Colombia
                                 </p>
                                 <p className="text-[10px] text-white/50 mt-0.5">Haz clic en un socio para ver su desglose mes a mes</p>
+                                {lastUpdated && (
+                                    <p className="text-[10px] text-white/40 mt-0.5 flex items-center gap-1">
+                                        Actualizado {lastUpdated.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                        {refreshing && <span className="text-blue-300 font-semibold">· sincronizando…</span>}
+                                    </p>
+                                )}
                             </div>
                         </div>
                         <div className="flex items-center gap-2 bg-white/10 backdrop-blur rounded-2xl border border-white/15 p-1.5 flex-shrink-0">
@@ -707,17 +728,24 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
                                         const val = e.target.value.replace(/\D/g, '');
                                         setUtilidadesDistribuir(val ? Number(val).toLocaleString('es-CO') : '');
                                         setUtilidadesGuardadas(false);
+                                        utilidadesSinGuardarRef.current = true;
                                     }}
                                     className="w-32 bg-transparent text-base font-black text-white outline-none placeholder:text-white/30 focus:text-brand-gold transition-colors"
                                     placeholder="0"
                                 />
                                 {gananciaRealFondo > 0 && (
-                                    <div className="text-[9px] text-white/50 leading-tight">
+                                    <div className={`text-[9px] leading-tight ${pctDistribuido > 100 ? 'text-red-300 font-bold' : 'text-white/50'}`}>
                                         Ganancia real: <span className="font-bold text-brand-gold">{fmtCorto(gananciaRealFondo)}</span> · {pctDistribuido}% a distribuir
+                                        {pctDistribuido > 100 && ' ⚠️ supera la ganancia real'}
                                     </div>
                                 )}
                             </div>
                             <div className="flex flex-col gap-1">
+                                <button onClick={() => fetchAll(true)} disabled={refreshing || loading}
+                                    title="Sincronizar: recalcula con los datos más recientes y revalida"
+                                    className="p-2.5 rounded-xl bg-white/10 hover:bg-sky-400/20 hover:text-sky-200 text-white/70 transition-all disabled:opacity-50">
+                                    <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+                                </button>
                                 <button onClick={guardarUtilidades} disabled={guardandoUtilidades || utilidadesGuardadas || utilidadesParsed <= 0}
                                     title="Guardar como valor oficial del comité"
                                     className={`p-2.5 rounded-xl transition-all ${utilidadesGuardadas ? 'bg-emerald-400/20 text-emerald-300' : 'bg-white/10 hover:bg-brand-gold/20 hover:text-brand-gold text-white/70'} disabled:opacity-50`}>
@@ -729,6 +757,28 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
                             </div>
                         </div>
                     </div>
+                    {/* Aviso de validación: datos que ameritan revisión antes de repartir */}
+                    {!loading && anomalias.length > 0 && (
+                        <div className="relative mt-3 bg-red-500/15 border border-red-300/30 rounded-xl overflow-hidden">
+                            <button onClick={() => setShowAnomalias(v => !v)}
+                                className="w-full flex items-center justify-between gap-2 px-4 py-2.5 text-left">
+                                <span className="flex items-center gap-2 text-xs font-black text-red-100">
+                                    <ShieldAlert className="w-4 h-4 text-red-300 flex-shrink-0" />
+                                    {anomalias.length} socio{anomalias.length !== 1 ? 's' : ''} requiere{anomalias.length === 1 ? '' : 'n'} revisión antes de repartir
+                                </span>
+                                <ChevronDown className={`w-4 h-4 text-red-200 flex-shrink-0 transition-transform ${showAnomalias ? 'rotate-180' : ''}`} />
+                            </button>
+                            {showAnomalias && (
+                                <div className="px-4 pb-3 space-y-1.5" style={{ animation: 'rankingFadeIn 0.15s ease both' }}>
+                                    {anomalias.map(a => (
+                                        <div key={a.clientId} className="text-[11px] text-red-50 bg-red-900/20 rounded-lg px-3 py-2 leading-relaxed">
+                                            <strong>{a.fullName}</strong>: {a.detalle}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
                     {/* Strip de métricas */}
                     {!loading && ranking.length > 0 && (
                         <div className="relative grid grid-cols-2 sm:grid-cols-4 gap-2 mt-5">
@@ -897,6 +947,11 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
                                     <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 flex items-center gap-2">
                                         <div className="w-1.5 h-4 bg-gradient-to-b from-brand-primary to-brand-dark rounded-full" />
                                         Clasificación completa · {ranking.length} socios
+                                        {excluidosSinAhorro > 0 && (
+                                            <span className="normal-case font-semibold text-gray-400">
+                                                · {excluidosSinAhorro} sin ahorros este período (no aparece{excluidosSinAhorro === 1 ? '' : 'n'})
+                                            </span>
+                                        )}
                                     </div>
                                     <div className="relative w-full sm:w-64">
                                         <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
