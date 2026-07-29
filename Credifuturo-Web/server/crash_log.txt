@@ -391,3 +391,71 @@
     at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
     at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
 ---
+[2026-07-29T16:30:19.966Z] goToAdmin is not defined
+
+    at ExecutivePanelPage (http://localhost:5173/src/pages/admin/ExecutivePanelPage.jsx?t=1785342618992:384:20)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:4122:5)
+    at Outlet (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:4528:26)
+    at div
+    at main
+    at div
+    at DashboardLayout (http://localhost:5173/src/layouts/DashboardLayout.jsx:268:28)
+    at ProtectedRoute (http://localhost:5173/src/App.jsx?t=1785342549865:81:29)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:4122:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:4592:5)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:4535:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:5273:5)
+    at App (http://localhost:5173/src/App.jsx?t=1785342549865:74:27)
+    at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
+    at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
+---
+[2026-07-29T17:04:08.245Z] execStats is not defined
+
+    at FinancialChart (http://localhost:5173/src/pages/admin/DashboardHome.jsx:2672:27)
+    at div
+    at _c7 (http://localhost:5173/src/components/ui/Card.jsx:82:54)
+    at div
+    at _c (http://localhost:5173/src/components/ui/Card.jsx:19:46)
+    at div
+    at div
+    at DashboardHome (http://localhost:5173/src/pages/admin/DashboardHome.jsx:5062:31)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:4122:5)
+    at Outlet (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:4528:26)
+    at div
+    at main
+    at div
+    at UserDashboardLayout (http://localhost:5173/src/layouts/UserDashboardLayout.jsx:222:32)
+    at ProtectedRoute (http://localhost:5173/src/App.jsx:81:29)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:4122:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:4592:5)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:4535:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:5273:5)
+    at App (http://localhost:5173/src/App.jsx:74:27)
+    at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
+    at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
+---
+[2026-07-29T17:04:29.180Z] execStats is not defined
+
+    at FinancialChart (http://localhost:5173/src/pages/admin/DashboardHome.jsx:2672:27)
+    at div
+    at _c7 (http://localhost:5173/src/components/ui/Card.jsx:82:54)
+    at div
+    at _c (http://localhost:5173/src/components/ui/Card.jsx:19:46)
+    at div
+    at div
+    at DashboardHome (http://localhost:5173/src/pages/admin/DashboardHome.jsx:5062:31)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:4122:5)
+    at Outlet (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:4528:26)
+    at div
+    at main
+    at div
+    at UserDashboardLayout (http://localhost:5173/src/layouts/UserDashboardLayout.jsx:222:32)
+    at ProtectedRoute (http://localhost:5173/src/App.jsx:81:29)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:4122:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:4592:5)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:4535:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=1ca5f561:5273:5)
+    at App (http://localhost:5173/src/App.jsx:74:27)
+    at UiProvider (http://localhost:5173/src/context/UiContext.jsx:88:30)
+    at GlobalErrorBoundary (http://localhost:5173/src/components/GlobalErrorBoundary.jsx:7:5)
+---

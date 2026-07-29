@@ -106,9 +106,12 @@ async function validateAndFixLoanStatuses() {
 
 // A01 (Broken Access Control): deny-by-default.
 // /my/* lleva su propia auth por ruta. /dashboard-stats lo puede leer cualquier socio
-// autenticado (el panel de Inicio lo comparte). El resto exige rol admin.
+// autenticado (el panel de Inicio lo comparte). /executive-stats y /savings-evolution
+// se suman por la misma razón: el Panel Ejecutivo (client/.../ExecutivePanelPage.jsx)
+// ahora se monta también en /dashboard/panel-ejecutivo como vista de solo lectura para
+// socios — igual que /dashboard-stats con DashboardHome. El resto exige rol admin.
 // A07: ademas exigimos que el usuario no tenga mustChangePassword pendiente.
-const READ_ONLY_FOR_ALL = new Set(['/dashboard-stats']);
+const READ_ONLY_FOR_ALL = new Set(['/dashboard-stats', '/executive-stats', '/savings-evolution']);
 const READ_ONLY_PREFIXES = ['/settings/'];
 
 // Funciones "(BETA)" (Ranking de Ahorro, Buzón de Propuestas): el menú del socio ya
@@ -3146,6 +3149,28 @@ router.get('/dashboard-stats', async (req, res) => {
             }]
         }) || 0;
 
+        // ── Descuento Total Anual Penalizacion del año en curso ─────────────────
+        // totalPenaltyValue (arriba) SIEMPRE excluye este mecanismo, porque
+        // valorAPenalizar queda en 0 en esos registros — el monto real vive
+        // negativo en `amount`. Es un evento único de fin de año (en 2025 se
+        // aplicó el 30-nov, y representó el 100% de la mora de ese año; el
+        // "totalPenaltyValue" de las cuotas mensuales fue $0 ese año). Si este
+        // campo ya es > 0, el evento de este año ya ocurrió y debe sumarse al
+        // total real "llevamos"; si sigue en 0, todavía no ha pasado y el
+        // estimado de cierre debe anticiparlo usando el patrón del año anterior
+        // (baselines.mora) en vez de asumir que nunca va a ocurrir.
+        const _dbForDescuento = require('../config/database');
+        const { QueryTypes: _QTDescuento } = require('sequelize');
+        const descuentoAnualVigenteRow = await _dbForDescuento.query(
+            `SELECT ROUND(SUM(ABS(s.amount))) total
+             FROM Savings s JOIN Clients c ON c.id = s.clientId
+             WHERE s.status = 'Descuento Total Anual Penalizacion'
+               AND s.anioAbonado = :anio
+               AND c.estatus = 'Activo'`,
+            { type: _QTDescuento.SELECT, replacements: { anio: currentYear } }
+        );
+        const descuentoAnualVigente = Number(descuentoAnualVigenteRow[0]?.total) || 0;
+
         // --- 3.5 DETALLE PENALIDADES PAGADAS (Para el modal de Valor Penalizado) ---
         const penSavings = await Saving.findAll({
             where: {
@@ -3427,7 +3452,7 @@ router.get('/dashboard-stats', async (req, res) => {
         const _anioPrev = _anioActual - 1;
         const _sequelize = require('../config/database');
         const { QueryTypes: _QT } = require('sequelize');
-        const [prestamosPrevRow, interesesPrevRow, metaSetting, patrimonioSetting] = await Promise.all([
+        const [prestamosPrevRow, interesesPrevRow, metaSetting, patrimonioSetting, moraPrevRow, nuCierreSetting] = await Promise.all([
             _sequelize.query(
                 `SELECT ROUND(SUM(COALESCE(valor_prestado, valorPrestado, monto))) total
                  FROM DisbursedLoans WHERE anio_desembolso = :anio`,
@@ -3439,6 +3464,29 @@ router.get('/dashboard-stats', async (req, res) => {
                 { type: _QT.SELECT, replacements: { anio: String(_anioPrev) } }),
             AppSetting.findOne({ where: { key: 'metaGananciaAnual' } }),
             AppSetting.findOne({ where: { key: `patrimonioCierre${_anioPrev}` } }),
+            // Mora sí tiene serie histórica real por año (a diferencia de NU, ver abajo).
+            // Corrección: la primera versión sumaba solo valorAPenalizar agrupado por
+            // `year` (fecha de la transacción) y daba $0 para 2025 — pero el recargo
+            // anual real vive en registros con status='Descuento Total Anual
+            // Penalizacion', donde valorAPenalizar queda en 0 y el valor real está en
+            // `amount` (negativo). Además hay que agrupar por anioAbonado (período
+            // acreditado), no por year: uno de los 8 descuentos de 2025 quedó con
+            // year=2024 (aplicado el 29-dic-2024 para el período 2025). Verificado
+            // contra la BD: esta query reproduce exactamente los $212.000 reales de
+            // 2025. Sin filtro de cliente activo a propósito — es un hecho histórico
+            // de lo que se cobró ese año, no debe reducirse porque el socio luego se
+            // haya dado de baja.
+            _sequelize.query(
+                `SELECT ROUND(SUM(CASE WHEN status = 'Descuento Total Anual Penalizacion' THEN ABS(amount) ELSE valorAPenalizar END)) total
+                 FROM Savings
+                 WHERE anioAbonado = :anio
+                   AND (valorAPenalizar > 0 OR status = 'Descuento Total Anual Penalizacion')`,
+                { type: _QT.SELECT, replacements: { anio: _anioPrev } }),
+            // NU no tiene serie histórica (el admin edita un único saldo acumulado,
+            // sin snapshot por año) — se gobierna igual que patrimonioCierre: un
+            // AppSetting editable por el comité, sembrado con el valor real de cierre
+            // 2025 conocido en vez de quedar hardcodeado para siempre en el frontend.
+            AppSetting.findOne({ where: { key: `rentabilidadCajaNUCierre${_anioPrev}` } }),
         ]);
         const baselines = {
             anio: _anioPrev,
@@ -3447,6 +3495,8 @@ router.get('/dashboard-stats', async (req, res) => {
             ahorro: (ahorroPorAnio.find(a => Number(a.anio) === _anioPrev)?.total) || 0,
             patrimonio: patrimonioSetting ? Number(patrimonioSetting.value) : (_anioPrev === 2025 ? 36126201 : 0),
             metaGanancia: metaSetting ? Number(metaSetting.value) : 2448052,
+            mora: Number(moraPrevRow[0]?.total) || 0,
+            nu: nuCierreSetting ? Number(nuCierreSetting.value) : (_anioPrev === 2025 ? 1029139 : 0),
         };
 
         res.json({
@@ -3473,6 +3523,7 @@ router.get('/dashboard-stats', async (req, res) => {
             ahorroPorAnio,
             totalPenaltyDays: Math.round(totalPenaltyDays),
             totalPenaltyValue: Math.round(totalPenaltyValue),
+            descuentoAnualVigente: Math.round(descuentoAnualVigente),
             // Rendimiento NU: leído desde AppSettings (editable por admin desde el panel).
             rentabilidadCajaNU,
             rentabilidadCajaNUActualizada,
@@ -4437,8 +4488,12 @@ router.get('/executive-stats', async (req, res) => {
                WHERE strftime('%Y', fecha_pago_max) = strftime('%Y','now')
                  AND date(fecha_pago_max) <= date('now')
                GROUP BY estado`),
-            // Concentración: saldo pendiente por deudor (orden descendente)
-            q(`SELECT lp.clientId, c.name || ' ' || COALESCE(c.apellido1,'') nombre,
+            // Concentración: saldo pendiente por deudor (orden descendente).
+            // nombre replica exactamente la construcción de clientName en /payments/list
+            // (name + apellido1 + apellido2) para que el drill-down por socio pueda
+            // armar el mismo "socioKey" y hacer match exacto al navegar con filtros.
+            q(`SELECT lp.clientId, c.cedula,
+                      TRIM(c.name || ' ' || COALESCE(c.apellido1,'') || ' ' || COALESCE(c.apellido2,'')) nombre,
                       ROUND(SUM(lp.valor_cuota_variable)) saldo
                FROM LoanPayments lp JOIN Clients c ON c.id = lp.clientId
                WHERE lp.estado='Pendiente'
@@ -4482,6 +4537,17 @@ router.get('/executive-stats', async (req, res) => {
         const vencidasSinPago = recaudoYtdRows.find(r => r.estado === 'Pendiente') || { n: 0, valor: 0 };
         const cuotasExigidas = pagadasYtd.n + (vencidasSinPago.n || 0);
 
+        // A01 (Broken Access Control): esta ruta es de lectura para CUALQUIER socio
+        // autenticado (READ_ONLY_FOR_ALL) porque el Panel Ejecutivo ahora se muestra
+        // también en /dashboard/panel-ejecutivo. El top3/top3Pct se calcula aquí para
+        // todos, pero el detalle "quién debe cuánto" (nombre + cédula + saldo de cada
+        // deudor) SOLO se incluye si quien pide es admin — filtrar esto solo en el
+        // frontend no basta, cualquier socio podría llamar este endpoint directo y leer
+        // los datos de otros socios en la respuesta JSON aunque la UI no los muestre.
+        const isAdminReq = req.user?.role === 'admin';
+        const top3 = topDeudores.slice(0, 3).reduce((s, d) => s + (Number(d.saldo) || 0), 0);
+        const top3Pct = carteraTotal > 0 ? +((top3 / carteraTotal) * 100).toFixed(1) : 0;
+
         res.json({
             generadoEl: new Date().toISOString(),
             cartera: {
@@ -4497,7 +4563,9 @@ router.get('/executive-stats', async (req, res) => {
                 valorRecaudado: pagadasYtd.valor,
                 eficienciaPct: cuotasExigidas > 0 ? +((pagadasYtd.n / cuotasExigidas) * 100).toFixed(1) : null,
             },
-            concentracion: topDeudores,
+            top3,
+            top3Pct,
+            concentracion: isAdminReq ? topDeudores : undefined,
             vencimientos,
             flujo30dias: flujo30Rows[0] || { cuotas: 0, valor: 0 },
             penetracion: penetracionRows[0] || { conCredito: 0, activos: 0 },

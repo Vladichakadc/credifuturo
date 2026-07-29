@@ -18,7 +18,8 @@ import {
     Lightbulb,
     TrendingUp,
     MessageSquareMore,
-    Vote
+    Vote,
+    Activity
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { Button } from '../components/ui/Button';
@@ -179,6 +180,12 @@ const UserDashboardLayout = ({ user, onLogout }) => {
             icon: Landmark,
             label: 'Nuestro Fondo',
             path: '/dashboard/fondo'
+        },
+        {
+            type: 'link',
+            icon: Activity,
+            label: 'Panel Ejecutivo',
+            path: '/dashboard/panel-ejecutivo'
         },
         {
             type: 'link',

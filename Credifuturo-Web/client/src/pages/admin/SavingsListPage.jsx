@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import api from '../../config/api';
 import { Search, RefreshCw, PiggyBank, AlertTriangle, Inbox, Download, DollarSign, AlertCircle, Users, X, Calendar, ChevronDown, Activity, UserCheck, CheckCircle } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
@@ -423,16 +424,19 @@ const CellWrapper = ({ column, row, onDownload }) => {
 
 const SavingsListPage = () => {
     const { toast } = useUi();
+    const [searchParams] = useSearchParams();
 
     // States
     const [savings, setSavings] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [statusFilter, setStatusFilter] = useState(''); // Estado de transaccion filter
+    // status/penalty aceptan un valor inicial desde la URL (?status=, ?penalty=SI) para que
+    // enlaces externos (p. ej. las tarjetas del Panel Ejecutivo) aterricen ya filtrados.
+    const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || ''); // Estado de transaccion filter
     const [clientFilter, setClientFilter] = useState(''); // Exact client filter
     const [statusClientFilter, setStatusClientFilter] = useState(''); // Estatus (Activo/Desactivado)
     const [yearFilter, setYearFilter] = useState(''); // Año pago filter
-    const [filterPenalty, setFilterPenalty] = useState(''); // SI/NO filter
+    const [filterPenalty, setFilterPenalty] = useState(searchParams.get('penalty') || ''); // SI/NO filter
     const [totalFromServer, setTotalFromServer] = useState(0);
     const [dashboardStats, setDashboardStats] = useState(null);
     const [soportesInfo, setSoportesInfo] = useState({}); // { savingId: { exists: true, name: '...' } }

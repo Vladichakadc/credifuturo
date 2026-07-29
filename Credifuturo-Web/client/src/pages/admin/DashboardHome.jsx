@@ -6,6 +6,7 @@ import {
     ShieldCheck, ActivitySquare, FileDown, Clock, Calendar, ChevronDown, Maximize2, Edit2
 } from 'lucide-react';
 import ChartExpandModal, { analyzeComparativeChart, analyzeIncomeDistribution } from '../../components/ChartExpandModal';
+import { computeFundProjection } from '../../utils/fundProjection';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card';
@@ -996,7 +997,7 @@ const SavingsByYearChart = ({ data, title = 'Ahorro de los Socios por Año', com
 
 
 // ─── NUEVO: COMPONENTE DE GRÁFICA PROFESIONAL ────────────────────────────────────────────────────────
-const FinancialChart = ({ stats, selectedYears = [], onEditMeta }) => {
+const FinancialChart = ({ stats, execStats, selectedYears = [], onEditMeta }) => {
     // Etiqueta del período que cubren las cifras (regla de gobernanza: declarar el período)
     const periodoLabel = selectedYears.length > 0 ? selectedYears.join(' – ') : 'todos los años';
     const [expandDonut, setExpandDonut] = useState(false);
@@ -1044,9 +1045,24 @@ const FinancialChart = ({ stats, selectedYears = [], onEditMeta }) => {
     const baselinePatrimonio = Number(stats?.baselines?.patrimonio) || 36126201;
     const baselineIntereses = Number(stats?.baselines?.intereses) || 1206913;
     const baselineAnio = stats?.baselines?.anio || 2025;
+    // NU: sin serie histórica por año (saldo único editado manualmente) — gobernado
+    // por AppSetting rentabilidadCajaNUCierre{año}, igual patrón que patrimonioCierre.
+    // Mora: sí tiene serie histórica real (Saving.valorAPenalizar por año) — dinámico.
+    const baselineNU = Number(stats?.baselines?.nu) || 1029139;
+    const baselineMora = Number(stats?.baselines?.mora) || 0;
+    // Ganancia REAL del año anterior = suma de los 3 baselines de arriba. Distinto,
+    // a propósito, de "rentabilidad2025"/metaGanancia más abajo — esa es la META del
+    // comité para el año EN CURSO, no el resultado real del año anterior; mezclarlas
+    // hacía que "Ganancia total del fondo · 2025" no coincidiera con la suma real de
+    // sus 3 filas apenas alguno de los 3 baselines dejara de ser el valor congelado.
+    const gananciaReal2025 = baselineIntereses + baselineNU + baselineMora;
 
     // Cálculo de Rentabilidad Histórica vs Actual (meta anual editable en AppSettings)
-    const rentabilidadActual = (stats.totalInteresesPagados || 0) + (stats.rentabilidadCajaNU || 0) + (stats.totalPenaltyValue || 0);
+    // totalPenaltyValue nunca incluye el "Descuento Total Anual Penalizacion" (evento
+    // de fin de año, ver fundProjection.js) — se suma aparte para no subestimar lo
+    // realmente ganado una vez que ese evento ya ocurrió en el año en curso.
+    const rentabilidadActual = (stats.totalInteresesPagados || 0) + (stats.rentabilidadCajaNU || 0)
+        + (stats.totalPenaltyValue || 0) + (stats.descuentoAnualVigente || 0);
     const rentabilidad2025 = Number(stats?.baselines?.metaGanancia) || 2448052;
     const achievement = (rentabilidadActual / rentabilidad2025) * 100; // Porcentaje de cumplimiento de la meta
     const growthValue = achievement - 100; // Crecimiento real
@@ -1069,30 +1085,23 @@ const FinancialChart = ({ stats, selectedYears = [], onEditMeta }) => {
         growthLabelClass = "text-emerald-600/70";
     }
 
-    // --- CÁLCULOS DE PROYECCIÓN A DICIEMBRE 2026 ---
-    const today = new Date();
-    const endOfYear = new Date(today.getFullYear(), 11, 31);
-    const remainingDays = Math.max(0, Math.ceil((endOfYear - today) / (1000 * 60 * 60 * 24)));
-    const currentDayOfYear = Math.max(1, Math.ceil((today - new Date(today.getFullYear(), 0, 1)) / (1000 * 60 * 60 * 24)));
-
-    // 1. Intereses: total de intereses amortizados agendados en 2026 (pagados + pendientes).
-    //    Es el techo real del portafolio actual; no incluye préstamos nuevos que se disbursén.
-    //    Aplicamos factor 95% para absorber posibles moras o incumplimientos (~5% de cartera).
-    const proyeccionIntereses = (stats.totalIntereses || 0) * 0.95;
-
-    // 2. Caja NU: proyección lineal al ritmo diario real observado en lo que va del año.
-    //    La fórmula anterior (balance × tasa × días restantes) sobreestimaba porque:
-    //    a) El balance actual baja cada vez que se desembolsa un préstamo nuevo.
-    //    b) rentabilidadCajaNU está hardcodeado y no refleja la tasa cambiante del balance.
-    //    Proyección lineal es más conservadora y realista al ritmo actual del fondo.
-    const dailyNURate = (stats.rentabilidadCajaNU || 0) / currentDayOfYear;
-    const proyeccionCajaNU = (stats.rentabilidadCajaNU || 0) + dailyNURate * remainingDays;
-
-    // 3. Penalidad: proyección lineal al ritmo diario del año (ya era correcta).
-    const proyeccionPenalidad = ((stats.totalPenaltyValue || 0) / currentDayOfYear) * 365;
-
-    // 4. Rentabilidad Total Proyectada
-    const proyeccionTotal = proyeccionIntereses + proyeccionCajaNU + proyeccionPenalidad;
+    // --- ESTIMADO AL CIERRE DE AÑO — mismo modelo que ExecutivePanelPage.jsx (utils/fundProjection.js) ---
+    // Antes: proyeccionIntereses = stats.totalIntereses * 0.95, donde totalIntereses suma
+    // TODOS los intereses agendados en el rango del selector de años de esta página (por
+    // defecto año actual + año siguiente) — es decir, mezclaba intereses de 2027 en la
+    // "proyección de cierre 2026" apenas alguien tocara ese filtro, o incluso por defecto
+    // si hay cuotas ya agendadas para el año siguiente. El nuevo modelo usa únicamente
+    // cobrado/agendado del año calendario en curso (independiente del selector de arriba)
+    // más la tasa de recaudo real observada — igual que en el Panel Ejecutivo, para que
+    // ambos paneles nunca muestren cifras distintas de "cuánto ganará el fondo este año".
+    // Se muestra el escenario conservador (no "base"/optimista) en todas las
+    // filas por decisión explícita: un solo número prudente, sin rangos ni notas.
+    const anioActualProyeccion = new Date().getFullYear();
+    const proyeccionFondo = computeFundProjection({ exec: execStats, stats, anioActual: anioActualProyeccion });
+    const proyeccionIntereses = proyeccionFondo?.intereses?.conservador ?? 0;
+    const proyeccionCajaNU = proyeccionFondo?.nu?.conservador ?? 0;
+    const proyeccionPenalidad = proyeccionFondo?.penalidad?.conservador ?? 0;
+    const proyeccionTotal = proyeccionFondo?.total?.conservador ?? 0;
 
     // Función auxiliar para obtener estilos de variación
     const getVariationStyles = (actual, historical) => {
@@ -1522,91 +1531,105 @@ const FinancialChart = ({ stats, selectedYears = [], onEditMeta }) => {
 
             {/* Fila Inferior: ¿Cuánto está ganando el fondo? */}
             <div className="p-4 bg-gray-50/50 border-t border-gray-100">
-                <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-                    <div className="w-full md:w-1/4">
-                        <h3 className="text-base font-extrabold text-gray-900">¿Cuánto está ganando el fondo?</h3>
-                        <p className="inline-block mt-1 text-[11px] font-bold text-blue-800 bg-blue-100 px-2 py-0.5 rounded-md uppercase tracking-wide">Comparado con 2025</p>
+                {(() => {
+                    // pctBadge: variación %, con guardia contra división por cero cuando el
+                    // baseline del año anterior es 0 (p. ej. mora 2025 = $0 en la BD real —
+                    // antes se mostraba un 212.000 inventado, nunca hubo cobros ese año).
+                    // Un baseline en 0 no es "creció infinito%", es una fuente nueva.
+                    const pctBadge = (actual, historical) => {
+                        if (!historical) {
+                            return <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-1 rounded-md">Nuevo</span>;
+                        }
+                        const pct = (actual / historical) * 100 - 100;
+                        return (
+                            <span className={`px-2 py-1 rounded-md border ${getVariationStyles(actual, historical)}`}>
+                                {pct > 0 ? '+' : ''}{pct.toFixed(1)}%
+                            </span>
+                        );
+                    };
+                    const growthVsReal2025 = gananciaReal2025 > 0 ? ((rentabilidadActual / gananciaReal2025) * 100 - 100) : null;
+                    const growthOk = growthVsReal2025 === null || growthVsReal2025 >= 0;
 
-                        <div className={`mt-3 ${growthBgClass} border rounded-xl p-4 flex flex-col items-center justify-center shadow-sm transition-all duration-500`}>
-                            <span className={`text-[10px] ${growthLabelClass} font-black uppercase tracking-widest mb-1`}>Resultado total</span>
-                            <span className={`text-3xl font-black ${growthTextClass} font-mono`}>
-                                {growthValue > 0 ? '+' : ''}{growthValue.toFixed(1)}%
-                            </span>
-                            <span className={`text-[9px] mt-1 ${growthLabelClass} font-semibold`}>
-                                {growthValue >= 0 ? 'Mejor que el año pasado' : 'Por debajo del año pasado'}
-                            </span>
+                    return (
+                        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+                            <div className="w-full md:w-1/4">
+                                <h3 className="text-base font-extrabold text-gray-900">¿Cuánto está ganando el fondo?</h3>
+                                <p className="inline-block mt-1 text-[11px] font-bold text-blue-800 bg-blue-100 px-2 py-0.5 rounded-md uppercase tracking-wide">Comparado con {baselineAnio}</p>
+
+                                <div className={`mt-3 border rounded-xl p-4 flex flex-col items-center justify-center shadow-sm transition-all duration-500 ${growthVsReal2025 === null ? 'bg-gray-50 border-gray-200' : growthOk ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
+                                    <span className={`text-[10px] font-black uppercase tracking-widest mb-1 ${growthVsReal2025 === null ? 'text-gray-500' : growthOk ? 'text-emerald-600/70' : 'text-red-600/70'}`}>Resultado total</span>
+                                    <span className={`text-3xl font-black font-mono ${growthVsReal2025 === null ? 'text-gray-900' : growthOk ? 'text-emerald-700' : 'text-red-700'}`}>
+                                        {growthVsReal2025 === null ? '—' : `${growthVsReal2025 > 0 ? '+' : ''}${growthVsReal2025.toFixed(1)}%`}
+                                    </span>
+                                    <span className={`text-[9px] mt-1 font-semibold ${growthVsReal2025 === null ? 'text-gray-500' : growthOk ? 'text-emerald-600/70' : 'text-red-600/70'}`}>
+                                        {growthVsReal2025 === null ? `Sin dato de ${baselineAnio} para comparar` : growthOk ? `Mejor que ${baselineAnio}` : `Por debajo de ${baselineAnio}`}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="w-full md:w-3/4 bg-white rounded-xl p-1 border border-gray-200 shadow-sm overflow-x-auto">
+                                <table className="w-full text-sm min-w-[640px] border-collapse">
+                                    <thead>
+                                        <tr className="bg-gray-100 text-gray-800 uppercase tracking-wider text-[11px]">
+                                            <th className="text-left font-extrabold p-3 rounded-tl-lg">Fuente de ingreso</th>
+                                            <th className="text-right font-extrabold p-3">Lo que ganamos en {baselineAnio}</th>
+                                            <th className="text-right font-extrabold p-3">Lo que llevamos en {baselineAnio + 1}</th>
+                                            <th className="text-right font-extrabold p-3">¿Subió o bajó?</th>
+                                            <th className="text-right font-extrabold p-3 text-brand-primary rounded-tr-lg">Estimado al cierre del año</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        <tr className="hover:bg-gray-50 transition-colors">
+                                            <td className="p-3 text-gray-900 font-bold">
+                                                Intereses de préstamos
+                                                <p className="text-[10px] text-emerald-700 font-semibold">Lo que pagan los socios por sus préstamos</p>
+                                            </td>
+                                            <td className="p-3 text-right text-blue-700 font-black bg-gray-50/50">${baselineIntereses.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
+                                            <td className="p-3 text-right font-black text-blue-700">${Math.round(stats.totalInteresesPagados || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
+                                            <td className="p-3 text-right text-sm font-black border-l">{pctBadge(stats.totalInteresesPagados || 0, baselineIntereses)}</td>
+                                            <td className="p-3 text-right font-black border-l text-brand-primary">
+                                                ${Math.round(proyeccionIntereses).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                                            </td>
+                                        </tr>
+                                        <tr className="hover:bg-gray-50 transition-colors">
+                                            <td className="p-3 text-gray-900 font-bold">
+                                                Rendimiento cuenta NU
+                                                <p className="text-[10px] text-emerald-700 font-semibold">Intereses que genera el dinero guardado en NU</p>
+                                            </td>
+                                            <td className="p-3 text-right text-purple-700 font-black bg-gray-50/50">${baselineNU.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
+                                            <td className="p-3 text-right font-black text-purple-700">${Math.round(stats.rentabilidadCajaNU || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
+                                            <td className="p-3 text-right text-sm font-black border-l">{pctBadge(stats.rentabilidadCajaNU || 0, baselineNU)}</td>
+                                            <td className="p-3 text-right font-black border-l text-brand-primary">
+                                                ${Math.round(proyeccionCajaNU).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                                            </td>
+                                        </tr>
+                                        <tr className="hover:bg-gray-50 transition-colors">
+                                            <td className="p-3 text-gray-900 font-bold">
+                                                Cobros por pagos tardíos
+                                                <p className="text-[10px] text-emerald-700 font-semibold">Recargo aplicado a socios con cuotas vencidas</p>
+                                            </td>
+                                            <td className="p-3 text-right text-red-600 font-black bg-gray-50/50">${baselineMora.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
+                                            <td className="p-3 text-right font-black text-red-600">${Math.round(proyeccionFondo?.moraYtdReal ?? (stats.totalPenaltyValue || 0)).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
+                                            <td className="p-3 text-right text-sm font-black border-l">{pctBadge(proyeccionFondo?.moraYtdReal ?? (stats.totalPenaltyValue || 0), baselineMora)}</td>
+                                            <td className="p-3 text-right font-black border-l text-brand-primary">
+                                                ${Math.round(proyeccionPenalidad).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                                            </td>
+                                        </tr>
+                                        <tr className="bg-emerald-50 border-t-2 border-emerald-200">
+                                            <td className="p-3 text-emerald-900 font-black text-base uppercase tracking-wider">Ganancia total del fondo</td>
+                                            <td className="p-3 text-right text-emerald-800 font-black text-lg">${gananciaReal2025.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
+                                            <td className="p-3 text-right font-black text-emerald-700 text-lg">${Math.round(rentabilidadActual).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
+                                            <td className="p-3 text-right text-lg font-black border-l shadow-inner">{pctBadge(rentabilidadActual, gananciaReal2025)}</td>
+                                            <td className="p-3 text-right font-black text-lg border-l rounded-br-lg text-emerald-800">
+                                                ${Math.round(proyeccionTotal).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
-                    </div>
-
-                    <div className="w-full md:w-3/4 bg-white rounded-xl p-1 border border-gray-200 shadow-sm overflow-x-auto">
-                        <table className="w-full text-sm min-w-[600px] border-collapse">
-                            <thead>
-                                <tr className="bg-gray-100 text-gray-800 uppercase tracking-wider text-[11px]">
-                                    <th className="text-left font-extrabold p-3 rounded-tl-lg">Fuente de ingreso</th>
-                                    <th className="text-right font-extrabold p-3">Lo que ganamos en 2025</th>
-                                    <th className="text-right font-extrabold p-3">Lo que llevamos en 2026</th>
-                                    <th className="text-right font-extrabold p-3">¿Subió o bajó?</th>
-                                    <th className="text-right font-extrabold p-3 text-brand-primary rounded-tr-lg">Estimado al cierre del año</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                                <tr className="hover:bg-gray-50 transition-colors">
-                                    <td className="p-3 text-gray-900 font-bold">
-                                        Intereses de préstamos
-                                        <p className="text-[10px] text-emerald-700 font-semibold">Lo que pagan los socios por sus préstamos</p>
-                                    </td>
-                                    <td className="p-3 text-right text-blue-700 font-black bg-gray-50/50">${baselineIntereses.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                    <td className="p-3 text-right font-black text-blue-700">${Math.round(stats.totalInteresesPagados || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                    <td className={`p-3 text-right text-sm font-black border-l ${getVariationStyles((stats.totalInteresesPagados || 0), baselineIntereses)}`}>
-                                        {(((stats.totalInteresesPagados || 0) / baselineIntereses) * 100 - 100).toFixed(1)}%
-                                    </td>
-                                    <td className={`p-3 text-right font-black border-l ${getVariationStyles((stats.totalInteresesPagados || 0), baselineIntereses)}`}>
-                                        ${Math.round(stats.totalIntereses || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
-                                    </td>
-                                </tr>
-                                <tr className="hover:bg-gray-50 transition-colors">
-                                    <td className="p-3 text-gray-900 font-bold">
-                                        Rendimiento cuenta NU
-                                        <p className="text-[10px] text-emerald-700 font-semibold">Intereses que genera el dinero guardado en NU</p>
-                                    </td>
-                                    <td className="p-3 text-right text-purple-700 font-black bg-gray-50/50">${(1029139).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                    <td className="p-3 text-right font-black text-purple-700">${Math.round(stats.rentabilidadCajaNU || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                    <td className={`p-3 text-right text-sm font-black border-l ${getVariationStyles((stats.rentabilidadCajaNU || 0), 1029139)}`}>
-                                        {(((stats.rentabilidadCajaNU || 0) / 1029139) * 100 - 100).toFixed(1)}%
-                                    </td>
-                                    <td className={`p-3 text-right font-black border-l ${getVariationStyles((stats.rentabilidadCajaNU || 0), 1029139)}`}>
-                                        ${Math.round(proyeccionCajaNU).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
-                                    </td>
-                                </tr>
-                                <tr className="hover:bg-gray-50 transition-colors">
-                                    <td className="p-3 text-gray-900 font-bold">
-                                        Cobros por pagos tardíos
-                                        <p className="text-[10px] text-emerald-700 font-semibold">Recargo aplicado a socios con cuotas vencidas</p>
-                                    </td>
-                                    <td className="p-3 text-right text-red-600 font-black bg-gray-50/50">${(212000).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                    <td className="p-3 text-right font-black text-red-600">${Math.round(stats.totalPenaltyValue || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                    <td className={`p-3 text-right text-sm font-black border-l ${getVariationStyles((stats.totalPenaltyValue || 0), 212000)}`}>
-                                        {(((stats.totalPenaltyValue || 0) / 212000) * 100 - 100).toFixed(1)}%
-                                    </td>
-                                    <td className={`p-3 text-right font-black border-l ${getVariationStyles((stats.totalPenaltyValue || 0), 212000)}`}>
-                                        ${Math.round(proyeccionPenalidad).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
-                                    </td>
-                                </tr>
-                                <tr className="bg-emerald-50 border-t-2 border-emerald-200">
-                                    <td className="p-3 text-emerald-900 font-black text-base uppercase tracking-wider">Ganancia total del fondo</td>
-                                    <td className="p-3 text-right text-emerald-800 font-black text-lg">${rentabilidad2025.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                    <td className="p-3 text-right font-black text-emerald-700 text-lg">${Math.round((stats.totalInteresesPagados || 0) + (stats.rentabilidadCajaNU || 0) + (stats.totalPenaltyValue || 0)).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                    <td className={`p-3 text-right text-lg font-black border-l shadow-inner ${getVariationStyles(((stats.totalInteresesPagados || 0) + (stats.rentabilidadCajaNU || 0) + (stats.totalPenaltyValue || 0)), rentabilidad2025)}`}>
-                                        {((((stats.totalInteresesPagados || 0) + (stats.rentabilidadCajaNU || 0) + (stats.totalPenaltyValue || 0)) / rentabilidad2025) * 100 - 100).toFixed(1)}%
-                                    </td>
-                                    <td className={`p-3 text-right font-black text-lg border-l rounded-br-lg ${getVariationStyles(((stats.totalInteresesPagados || 0) + (stats.rentabilidadCajaNU || 0) + (stats.totalPenaltyValue || 0)), rentabilidad2025)}`}>
-                                        ${Math.round(proyeccionTotal).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+                    );
+                })()}
             </div>
 
             {/* Resultados del Año */}
@@ -2030,6 +2053,7 @@ const DashboardHome = () => {
                     ahorroPorAnio: res.data.ahorroPorAnio || [],
                     totalPenaltyDays: res.data.totalPenaltyDays || 0,
                     totalPenaltyValue: res.data.totalPenaltyValue || 0,
+                    descuentoAnualVigente: res.data.descuentoAnualVigente || 0,
                     rentabilidadCajaNU: res.data.rentabilidadCajaNU || 0,
                     saldoEnBanco: res.data.saldoEnBanco || 0,
                     carteraMora: res.data.carteraMora || 0,
@@ -2042,6 +2066,12 @@ const DashboardHome = () => {
                     recentPayments: res.data.recentPayments || [],
                     proximosVencimientos30d: res.data.proximosVencimientos30d || { count: 0, monto: 0, socios: 0 },
                     sociosAlDiaMes: res.data.sociosAlDiaMes || { count: 0, total: 0 },
+                    // FIX: este objeto se venía perdiendo por completo — el backend ya calculaba
+                    // baselines dinámicos (prestamos/intereses/mora desde la BD, patrimonio/meta/nu
+                    // desde AppSettings) pero nunca llegaban al render, así que TODO baseline en
+                    // esta página caía siempre al valor hardcodeado de respaldo en el JS, nunca al
+                    // real. Con esto, stats.baselines.* refleja lo que de verdad calculó el backend.
+                    baselines: res.data.baselines || {},
                     timestamp: res.data.timestamp
                 });
             }
@@ -2055,6 +2085,15 @@ const DashboardHome = () => {
     }, [toast, statusFilter, selectedYears]);
 
     useEffect(() => { fetchStats(); }, [fetchStats]);
+
+    // Serie/eficiencia de recaudo del año en curso — misma fuente que ExecutivePanelPage,
+    // para que "Estimado al cierre del año" nunca contradiga al Panel Ejecutivo.
+    const [execStats, setExecStats] = useState(null);
+    useEffect(() => {
+        api.get('/admin/executive-stats')
+            .then(res => setExecStats(res.data))
+            .catch(() => {/* la tabla usa optional chaining; sin esto solo pierde el rango de proyección */ });
+    }, []);
 
     // Actualizar stats ante cualquier mutación de datos en la app
     useEffect(() => {
@@ -2901,6 +2940,7 @@ const DashboardHome = () => {
                     <CardContent className="p-0 bg-white rounded-b-xl overflow-hidden">
                         <FinancialChart
                             stats={stats}
+                            execStats={execStats}
                             selectedYears={selectedYears}
                             onEditMeta={isAdmin ? () => {
                                 setMetaInputRaw(String(stats?.baselines?.metaGanancia || ''));

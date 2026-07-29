@@ -3,13 +3,17 @@ import { useNavigate } from 'react-router-dom';
 import api from '../../config/api';
 import {
     ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-    Tooltip as RechartsTooltip, Cell, PieChart, Pie, LabelList
+    Tooltip as RechartsTooltip, Cell, PieChart, Pie, LabelList,
+    AreaChart, Area
 } from 'recharts';
 import {
     Gauge, ShieldCheck, AlertTriangle, TrendingUp, Wallet, PiggyBank,
     CalendarClock, Users, Printer, CheckCircle2, Info, Landmark, Percent,
-    ChevronDown, DollarSign, Database, Clock, Activity, BarChart3, Coins
+    ChevronDown, DollarSign, Database, Clock, Activity, BarChart3, Coins,
+    ChevronRight, Bell, KeyRound, ClipboardList, Sparkles
 } from 'lucide-react';
+import ChartExpandModal, { analyzeIncomeDistribution } from '../../components/ChartExpandModal';
+import { computeFundProjection } from '../../utils/fundProjection';
 
 const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
 const fmtCorto = (n) => {
@@ -29,16 +33,39 @@ const mesLabel = (ym) => {
 // Paleta con semántica financiera: verde = ingreso/ahorro, dorado = flujo, rojo = solo riesgo
 const DONUT_COLORS = ['#166534', '#15803d', '#22c55e', '#84cc16', '#a3e635', '#d1d5db'];
 
-const HeroKpi = ({ label, value, sub, badge, badgeTone = 'ok', icon: Icon }) => {
+// Análisis experto del Apalancamiento del Fondo (Loan-to-Deposit Ratio), espejo a
+// nivel-fondo de la regla 3× que ya se aplica por socio en el Simulador de Préstamo.
+function analyzeLeverage({ ldrPct, carteraTotal, patrimonio }) {
+    const narrative = ldrPct > 85
+        ? `El fondo tiene colocado el ${ldrPct.toFixed(0)}% del patrimonio de los socios (${fmt(carteraTotal)} de ${fmt(patrimonio)}). Este nivel deja muy poco margen de maniobra: cualquier solicitud nueva de crédito o retiro significativo de un socio puede tensionar la caja disponible. Recomendación: priorizar recaudo de cartera vigente antes de aprobar nuevos desembolsos grandes, y mantener un colchón de liquidez visible en "Disponible total".`
+        : ldrPct < 40
+            ? `Solo el ${ldrPct.toFixed(0)}% del patrimonio de los socios está colocado en préstamos (${fmt(carteraTotal)} de ${fmt(patrimonio)}). Hay capacidad ociosa: capital que podría generar el interés propio del fondo en vez de quedar en caja o rendimientos de bajo retorno. Recomendación: revisar si hay solicitudes represadas o socios sin crédito vigente que puedan aprovechar el cupo disponible (ver "Penetración de crédito").`
+            : `El fondo tiene colocado el ${ldrPct.toFixed(0)}% del patrimonio de los socios (${fmt(carteraTotal)} de ${fmt(patrimonio)}), un nivel sano: suficiente colocación para generar interés sin comprometer la liquidez frente a retiros o nuevas solicitudes.`;
+    return {
+        headline: `${ldrPct.toFixed(0)}% de apalancamiento`,
+        narrative,
+        insights: [
+            { label: 'Cartera pendiente', value: fmt(carteraTotal), icon: Wallet, color: 'blue' },
+            { label: 'Patrimonio de socios', value: fmt(patrimonio), icon: PiggyBank, color: 'emerald' },
+            { label: 'Umbral sano', value: '40% – 85%', icon: Gauge, color: 'gray' },
+            { label: 'Estado', value: ldrPct > 85 ? 'Cerca del límite' : ldrPct < 40 ? 'Capacidad ociosa' : 'Sano', icon: ldrPct > 85 ? AlertTriangle : CheckCircle2, color: ldrPct > 85 ? 'red' : ldrPct < 40 ? 'amber' : 'emerald' },
+        ],
+    };
+}
+
+const HeroKpi = ({ label, value, sub, badge, badgeTone = 'ok', icon: Icon, onClick, children }) => {
     const tones = {
         ok: 'bg-emerald-100 text-emerald-700',
         warn: 'bg-amber-100 text-amber-700',
         risk: 'bg-red-100 text-red-700',
         neutral: 'bg-white/15 text-white/80',
     };
+    const Comp = onClick ? 'button' : 'div';
     return (
-        <div className="rounded-2xl p-4 lg:p-5 text-white relative overflow-hidden"
-             style={{ background: 'linear-gradient(135deg, #052e16 0%, #166534 80%)' }}>
+        <Comp
+            onClick={onClick}
+            className={`rounded-2xl p-4 lg:p-5 text-white relative overflow-hidden text-left w-full ${onClick ? 'cursor-pointer transition-transform duration-200 hover:scale-[1.02] hover:shadow-lg hover:shadow-emerald-900/30 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300' : ''}`}
+            style={{ background: 'linear-gradient(135deg, #052e16 0%, #166534 80%)' }}>
             <div className="flex items-center justify-between">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-white/55">{label}</p>
                 {Icon && <Icon className="h-4 w-4 text-white/40" />}
@@ -50,7 +77,9 @@ const HeroKpi = ({ label, value, sub, badge, badgeTone = 'ok', icon: Icon }) => 
                 )}
                 {sub && <span className="text-[11px] text-white/60">{sub}</span>}
             </div>
-        </div>
+            {children}
+            {onClick && <ChevronRight className="h-3.5 w-3.5 text-white/30 absolute bottom-3 right-3" />}
+        </Comp>
     );
 };
 
@@ -123,10 +152,10 @@ const MiniYearBars = ({ title, data, currentYear }) => (
 );
 
 // Sección colapsable del detalle operativo
-const Collapsible = ({ icon: Icon, title, sub, children, defaultOpen = true }) => {
+const Collapsible = ({ icon: Icon, title, sub, children, defaultOpen = true, id }) => {
     const [open, setOpen] = useState(defaultOpen);
     return (
-        <div className="bg-gray-50/60 rounded-2xl border border-gray-200">
+        <div id={id} className="bg-gray-50/60 rounded-2xl border border-gray-200 scroll-mt-20">
             <button
                 onClick={() => setOpen(o => !o)}
                 className="w-full flex items-center justify-between gap-3 px-4 py-3.5 min-h-[48px] text-left"
@@ -145,17 +174,41 @@ const Collapsible = ({ icon: Icon, title, sub, children, defaultOpen = true }) =
 
 const ExecutivePanelPage = () => {
     const navigate = useNavigate();
+    // Misma página montada en dos rutas: /admin/executive (admin) y
+    // /dashboard/panel-ejecutivo (socio, solo lectura) — idéntico patrón a
+    // DashboardHome.jsx en /admin y /dashboard/fondo. isAdmin gatea acciones y
+    // datos que no le corresponde ver a un socio (colas administrativas,
+    // nombres/montos de otros socios deudores, navegación a rutas /admin/*).
+    const user = (() => {
+        try { return JSON.parse(localStorage.getItem('user') || '{}'); }
+        catch { return {}; }
+    })();
+    const isAdmin = user.role === 'admin';
     const [exec, setExec] = useState(null);
     const [stats, setStats] = useState(null);
+    const [evolution, setEvolution] = useState(null);
+    const [pending, setPending] = useState({ loanRequests: 0, passwordResets: 0 });
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [showLdrInfo, setShowLdrInfo] = useState(false);
+    const [expandIngresos, setExpandIngresos] = useState(false);
 
     // Mismo click-through que las StatCard del Panel Principal: navega a la lista
     // filtrada correspondiente en vez de quedarse solo como dato de consulta.
+    // Todos los destinos son rutas /admin/* — un socio no tiene acceso a ellas.
     const goTo = (path, params = {}) => {
         const queryParams = new URLSearchParams(params);
         const qs = queryParams.toString();
         navigate(qs ? `${path}?${qs}` : path);
+    };
+
+    // Devuelve el handler solo si es admin; si no, undefined — el mismo `undefined`
+    // que ya usan HeroKpi/DetailCard para desactivar el cursor-pointer y el hover,
+    // así un socio ve la tarjeta puramente informativa, sin una promesa de clic rota.
+    const goToAdmin = (path, params = {}) => isAdmin ? () => goTo(path, params) : undefined;
+
+    const scrollToId = (id) => {
+        document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
 
     useEffect(() => {
@@ -163,10 +216,21 @@ const ExecutivePanelPage = () => {
             const results = await Promise.allSettled([
                 api.get('/admin/executive-stats'),
                 api.get('/admin/dashboard-stats'),
+                api.get('/admin/savings-evolution'),
+                // Las colas administrativas (solicitudes de préstamo / reset de contraseña)
+                // son exclusivas del admin y de la Junta — un socio normal recibiría 403,
+                // así que ni se piden si quien mira esta página no es admin.
+                isAdmin ? api.get('/admin/loan-requests') : Promise.resolve({ status: 'skipped' }),
+                isAdmin ? api.get('/admin/password-reset-requests') : Promise.resolve({ status: 'skipped' }),
             ]);
             if (results[0].status === 'fulfilled') setExec(results[0].value.data);
             else setError('No se pudieron cargar los indicadores ejecutivos.');
             if (results[1].status === 'fulfilled') setStats(results[1].value.data);
+            if (results[2].status === 'fulfilled') setEvolution(results[2].value.data);
+            setPending({
+                loanRequests: results[3].status === 'fulfilled' ? (results[3].value.data?.total || 0) : 0,
+                passwordResets: results[4].status === 'fulfilled' ? (results[4].value.data?.total || 0) : 0,
+            });
             setLoading(false);
         };
         fetchAll();
@@ -179,16 +243,19 @@ const ExecutivePanelPage = () => {
         if (!exec) return null;
 
         const cartera = exec.cartera || {};
+        // exec.concentracion (nombre/cédula/saldo por deudor) solo llega si el backend
+        // determinó que quien pide es admin — para un socio viene undefined y el top3/
+        // top3Pct ya calculado server-side (exec.top3/exec.top3Pct) es la única fuente.
         const conc = exec.concentracion || [];
-        const top3 = conc.slice(0, 3).reduce((s, d) => s + (d.saldo || 0), 0);
-        const top3Pct = cartera.total > 0 ? (top3 / cartera.total) * 100 : 0;
+        const top3 = exec.top3 ?? conc.slice(0, 3).reduce((s, d) => s + (d.saldo || 0), 0);
+        const top3Pct = exec.top3Pct ?? (cartera.total > 0 ? (top3 / cartera.total) * 100 : 0);
 
         // Dona: top 5 + resto
         const top5 = conc.slice(0, 5);
         const resto = conc.slice(5).reduce((s, d) => s + (d.saldo || 0), 0);
         const donutData = [
-            ...top5.map(d => ({ name: d.nombre, value: d.saldo })),
-            ...(resto > 0 ? [{ name: 'Resto de socios', value: resto }] : []),
+            ...top5.map(d => ({ name: d.nombre, value: d.saldo, cedula: d.cedula })),
+            ...(resto > 0 ? [{ name: 'Resto de socios', value: resto, cedula: null }] : []),
         ];
 
         // Series por año
@@ -258,77 +325,10 @@ const ExecutivePanelPage = () => {
         };
 
         // ── Estimado al cierre del año — modelo de 3 escenarios (Conservador/Base/
-        // Optimista), basado en el comportamiento real del fondo, no en supuestos
-        // arbitrarios (framework: business-analyst + startup-financial-modeling).
-        const today = new Date();
-        const endOfYear = new Date(today.getFullYear(), 11, 31);
-        const remainingDays = Math.max(0, Math.ceil((endOfYear - today) / 86400000));
-        const currentDayOfYear = Math.max(1, Math.ceil((today - new Date(today.getFullYear(), 0, 1)) / 86400000));
-        const mesesTranscurridos = Math.max(0.5, currentDayOfYear / 30.44);
-        const mesesRestantes = remainingDays / 30.44;
-
-        // ── Intereses proyectados — fuente única: exec.series (mismo origen que las
-        // tarjetas de "Actividad y Crecimiento"). Ya NO se mezcla con stats.totalIntereses
-        // ni stats.totalInteresesPagados, que provienen de filtros distintos y podían
-        // producir un valor de "pendiente" negativo o inflado cuando el período del
-        // dashboard-stats difiere del año-en-curso del executive-stats.
-        //
-        // intCobradosAnio  = intereses con estado Pago|Abono del año actual (ya cobrado).
-        // intAgendadosAnio = intereses con estado Pendiente del año actual (por cobrar).
-        //
-        // Escenario BASE: cobrado + pendiente × tasa de recaudo real observada.
-        // Escenario CONSERVADOR: cobrado + pendiente × (recaudo − 15 pp).
-        // Escenario OPTIMISTA: igual al base pero además suma los intereses que
-        //   generaría nueva colocación al ritmo histórico del año en curso.
-        const recaudoBase = (exec.recaudoYtd?.eficienciaPct ?? 85) / 100;
-        const recaudoConservador = Math.max(0.5, recaudoBase - 0.15);
-        const recaudoOptimista = Math.min(1, recaudoBase + 0.10);
-        // Ritmo mensual de colocación del año en curso (de exec.series, no stats)
-        const colocacionAnioActual = colocActual?.total || 0;
-        const colocacionMensualProm = colocacionAnioActual / mesesTranscurridos;
-        const tasaMensualVigente = 0.015; // tasa típica del fondo (1.4%–1.6%)
-        const interesesPorNuevaColocacion = (monto) => monto * tasaMensualVigente * (mesesRestantes / 2);
-
-        const proyeccionInteresesBase = intCobradosAnio
-            + intAgendadosAnio * recaudoBase;
-        const proyeccionInteresesConservador = intCobradosAnio
-            + intAgendadosAnio * recaudoConservador;
-        const proyeccionInteresesOptimista = intCobradosAnio
-            + intAgendadosAnio * recaudoOptimista
-            + interesesPorNuevaColocacion(colocacionMensualProm * 1.5 * mesesRestantes);
-
-        // NU: extrapolación lineal (único método válido con un solo dato acumulado
-        // sin serie histórica). Rango: más colocación (optimista de intereses)
-        // implica menos saldo en NU, y viceversa.
-        const dailyNURate = (stats?.rentabilidadCajaNU || 0) / currentDayOfYear;
-        const proyeccionCajaNUBase = (stats?.rentabilidadCajaNU || 0) + dailyNURate * remainingDays;
-        const proyeccionCajaNUConservador = proyeccionCajaNUBase * 0.85;
-        const proyeccionCajaNUOptimista = proyeccionCajaNUBase * 1.05;
-
-        // Recargos por mora: run-rate anualizado, rango amplio porque el
-        // comportamiento real es errático mes a mes.
-        const proyeccionPenalidadBase = ((stats?.totalPenaltyValue || 0) / currentDayOfYear) * 365;
-        const proyeccionPenalidadConservador = proyeccionPenalidadBase * 0.5;
-        const proyeccionPenalidadOptimista = proyeccionPenalidadBase * 1.8;
-
-        // Ganancia real acumulada YTD: ancla de comparación con el dashboard principal
-        const gananciaRealYtd = intCobradosAnio
-            + (stats?.rentabilidadCajaNU || 0)
-            + (stats?.totalPenaltyValue || 0);
-
-        const proyeccion = {
-            intereses: { base: proyeccionInteresesBase, conservador: proyeccionInteresesConservador, optimista: proyeccionInteresesOptimista },
-            nu: { base: proyeccionCajaNUBase, conservador: proyeccionCajaNUConservador, optimista: proyeccionCajaNUOptimista },
-            penalidad: { base: proyeccionPenalidadBase, conservador: proyeccionPenalidadConservador, optimista: proyeccionPenalidadOptimista },
-            total: {
-                base: proyeccionInteresesBase + proyeccionCajaNUBase + proyeccionPenalidadBase,
-                conservador: proyeccionInteresesConservador + proyeccionCajaNUConservador + proyeccionPenalidadConservador,
-                optimista: proyeccionInteresesOptimista + proyeccionCajaNUOptimista + proyeccionPenalidadOptimista,
-            },
-            gananciaRealYtd,
-            recaudoBasePct: Math.round(recaudoBase * 100),
-            colocacionMensualProm,
-        };
+        // Optimista). Extraído a utils/fundProjection.js para que DashboardHome.jsx
+        // use exactamente el mismo cálculo (dos paneles con cifras distintas para
+        // "cuánto ganará el fondo" rompería la confianza de los socios).
+        const proyeccion = computeFundProjection({ exec, stats, anioActual });
 
         return {
             top3, top3Pct, donutData, ldrPct, ldrTone, proyeccion,
@@ -337,6 +337,18 @@ const ExecutivePanelPage = () => {
             penPct, alertas, seriesCharts,
         };
     }, [exec, stats, anioActual]);
+
+    // ── Evolución patrimonial: acumulado mensual real de ahorro (mesAbonado/anioAbonado),
+    // fondo completo (sin clientId). Deliberadamente excluye Aporte Inicial — igual que el
+    // resto del panel — para no mezclar flujo recurrente con capitalización puntual.
+    const evolucionSerie = useMemo(() => {
+        const rows = evolution?.serieMensual || [];
+        let acumulado = 0;
+        return rows.map(r => {
+            acumulado += Number(r.neto || 0);
+            return { label: mesLabel(`${r.anio}-${String(r.mes).padStart(2, '0')}`), acumulado };
+        });
+    }, [evolution]);
 
     if (loading) {
         return (
@@ -369,6 +381,14 @@ const ExecutivePanelPage = () => {
         ? ((derived.ahorroActual - derived.ahorroPrevio) / derived.ahorroPrevio) * 100
         : null;
 
+    // Compartido entre la tarjeta "¿Cuánto está ganando el fondo?" y su modal de
+    // análisis experto (ChartExpandModal), para no duplicar la lógica de filtrado.
+    const ingresosFondoData = [
+        { name: 'Intereses de préstamos', value: Number(stats?.totalInteresesPagados || 0), color: '#166534' },
+        { name: 'Rendimientos NU', value: Number(stats?.rentabilidadCajaNU || 0), color: '#84cc16' },
+        { name: 'Recargos por mora', value: Number(stats?.totalPenaltyValue || 0), color: '#f59e0b' },
+    ].filter(d => d.value > 0);
+
     const toneStyles = {
         ok:   'bg-emerald-50 border-emerald-200 text-emerald-800',
         warn: 'bg-amber-50 border-amber-200 text-amber-800',
@@ -394,17 +414,28 @@ const ExecutivePanelPage = () => {
                 <div>
                     <div className="flex items-center gap-2">
                         <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">Panel Ejecutivo</h1>
-                        <span className="text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Beta</span>
+                        {isAdmin && (
+                            <span className="text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Beta</span>
+                        )}
+                        <span className="print:hidden text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full flex items-center gap-1.5">
+                            <span className="relative flex h-1.5 w-1.5">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
+                            </span>
+                            En vivo
+                        </span>
                     </div>
                     <p className="text-sm text-gray-500 mt-0.5">
-                        Indicadores de riesgo, flujo y rendimiento del fondo · propuesta en evaluación
+                        {isAdmin
+                            ? 'Indicadores de riesgo, flujo y rendimiento del fondo · misma información que ven los socios'
+                            : 'Transparencia total: así está la salud financiera de nuestro fondo, con datos reales y actualizados'}
                     </p>
                 </div>
                 <button
                     onClick={() => window.print()}
                     className="print:hidden inline-flex items-center gap-2 bg-brand-primary hover:bg-brand-dark text-white text-xs font-bold px-4 py-2.5 rounded-lg transition-colors min-h-[44px]"
                 >
-                    <Printer className="h-4 w-4" /> Informe ejecutivo
+                    <Printer className="h-4 w-4" /> {isAdmin ? 'Informe ejecutivo' : 'Descargar / imprimir'}
                 </button>
             </div>
 
@@ -416,6 +447,7 @@ const ExecutivePanelPage = () => {
                     icon={PiggyBank}
                     badge={crecimientoAhorro != null ? `▲ +${crecimientoAhorro.toFixed(0)}% ahorro vs ${anioActual - 1}` : null}
                     badgeTone="ok"
+                    onClick={goToAdmin('/admin/savings/list')}
                 />
                 <HeroKpi
                     label="Cartera pendiente"
@@ -424,7 +456,20 @@ const ExecutivePanelPage = () => {
                     badge={`PAR ${cartera.parPct}%`}
                     badgeTone={cartera.parPct <= 3 ? 'ok' : cartera.parPct <= 5 ? 'warn' : 'risk'}
                     sub={`${cartera.cuotasPendientes} cuotas`}
-                />
+                    onClick={goToAdmin('/admin/payments/list', { estado: 'Pendiente' })}
+                >
+                    {cartera.total > 0 && (
+                        <div className="mt-2">
+                            <div className="flex h-1.5 rounded-full overflow-hidden bg-white/10">
+                                <div className="bg-emerald-300" style={{ width: `${(cartera.vigente / cartera.total) * 100}%` }} />
+                                <div className="bg-red-400" style={{ width: `${(cartera.vencida / cartera.total) * 100}%` }} />
+                            </div>
+                            <p className="text-[9px] text-white/50 mt-1">
+                                {fmtCorto(cartera.vigente)} vigente · {fmtCorto(cartera.vencida)} vencida
+                            </p>
+                        </div>
+                    )}
+                </HeroKpi>
                 <HeroKpi
                     label="Recaudo del año"
                     value={recaudoYtd.eficienciaPct != null ? `${recaudoYtd.eficienciaPct}%` : '—'}
@@ -432,6 +477,7 @@ const ExecutivePanelPage = () => {
                     badge={`${recaudoYtd.pagadas}/${recaudoYtd.exigidas} cuotas`}
                     badgeTone={recaudoYtd.eficienciaPct >= 95 ? 'ok' : recaudoYtd.eficienciaPct >= 90 ? 'warn' : 'risk'}
                     sub={fmt(recaudoYtd.valorRecaudado)}
+                    onClick={goToAdmin('/admin/payments/list', { estado: 'Pago' })}
                 />
                 <HeroKpi
                     label="Disponible total"
@@ -439,6 +485,7 @@ const ExecutivePanelPage = () => {
                     icon={Landmark}
                     sub="Caja + rendimientos NU"
                     badge={null}
+                    onClick={() => scrollToId('saldos-rendimientos')}
                 />
                 <HeroKpi
                     label="Apalancamiento del fondo"
@@ -447,6 +494,7 @@ const ExecutivePanelPage = () => {
                     badge={derived.ldrTone === 'risk' ? 'Cerca del límite' : derived.ldrTone === 'warn' ? 'Capacidad ociosa' : 'Sano'}
                     badgeTone={derived.ldrTone}
                     sub="Cartera vs. patrimonio de socios"
+                    onClick={() => setShowLdrInfo(true)}
                 />
             </div>
 
@@ -466,6 +514,251 @@ const ExecutivePanelPage = () => {
                     );
                 })}
             </div>
+
+            {/* ── Detalle operativo/completo del fondo (siempre desplegado) ── */}
+            {stats && (
+                <div className="space-y-3">
+                    <h2 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
+                        <Gauge className="h-4 w-4 text-brand-primary" />
+                        {isAdmin ? 'Detalle operativo' : 'Detalle completo del fondo'}
+                        <span className="text-[11px] font-semibold text-gray-400">
+                            {isAdmin ? 'para consulta bajo demanda' : 'el mismo detalle que consulta la administración, para tu tranquilidad'}
+                        </span>
+                    </h2>
+
+                    <Collapsible defaultOpen icon={PiggyBank} title="Socios y Ahorros" sub={`${stats.activeClientsCount || 0} socios activos`}>
+                        <div className="grid gap-2.5 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+                            <DetailCard title="Socios del Fondo" value={stats.clientsCount || 0}
+                                sub={`${stats.activeClientsCount || 0} activos · ${stats.inactiveClientsCount || 0} inactivos`} icon={Users} tone="info"
+                                onClick={goToAdmin('/admin/clients/list')} />
+                            <DetailCard title="Ahorros Mensuales" value={fmt(stats.totalSavings)} sub="Abonos acumulados · activos" icon={PiggyBank} tone="ok"
+                                onClick={goToAdmin('/admin/savings/list')} />
+                            <DetailCard title="Base Patrimonial" value={fmt(stats.totalInitialContributions)} sub="Aportes iniciales" icon={Database} tone="gold"
+                                onClick={goToAdmin('/admin/contributions/initial-list')} />
+                            <DetailCard title="Patrimonio de Socios" value={fmt(stats.totalAhorradoGeneral)} sub="Ahorros + aportes" icon={Landmark} tone="ok"
+                                onClick={goToAdmin('/admin/savings/list')} />
+                            <DetailCard title="Días en Retraso" value={stats.totalPenaltyDays || 0} sub="Mora en ahorros · año en curso"
+                                icon={Clock} tone={(stats.totalPenaltyDays || 0) > 0 ? 'risk' : 'neutral'}
+                                onClick={goToAdmin('/admin/savings/list', { penalty: 'SI' })} />
+                            <DetailCard title="Recargos por Mora" value={fmt(stats.totalPenaltyValue)} sub="Cobrados en el año" icon={DollarSign} tone="gold"
+                                customBg="linear-gradient(135deg, #FEFDE8 0%, #FEF9C3 100%)"
+                                onClick={goToAdmin('/admin/savings/list', { penalty: 'SI' })} />
+                        </div>
+                    </Collapsible>
+
+                    <Collapsible defaultOpen icon={Activity} title="Préstamos e Intereses" sub={`${stats.totalPrestamosCount || 0} créditos entregados`}>
+                        <div className="grid gap-2.5 grid-cols-2 lg:grid-cols-4">
+                            <DetailCard title="Capital Desembolsado" value={fmt(stats.totalPrestamos)}
+                                sub={`${stats.totalPrestamosCount || 0} préstamos entregados`} icon={DollarSign} tone="ok"
+                                onClick={goToAdmin('/admin/disbursed-loans/list')} />
+                            <DetailCard title="Cartera al Día" value={fmt(stats.carteraDia)}
+                                sub={`${stats.carteraDiaCount || 0} cuotas vigentes`} icon={TrendingUp} tone="ok"
+                                onClick={goToAdmin('/admin/payments/list', { estadoPrestamo: 'Vigente' })} />
+                            <DetailCard title="Cuotas Recaudadas" value={fmt(stats.totalCuotasPagadas)}
+                                sub={`${stats.recaudoCuotasCount || 0} pagos completados`} icon={CheckCircle2} tone="info"
+                                onClick={goToAdmin('/admin/payments/list')} />
+                            <DetailCard title="Mora de Cartera" value={fmt(stats.moraCarteraEP)} sub="Vencimiento superado"
+                                icon={AlertTriangle} tone={(stats.moraCarteraEP || 0) > 0 ? 'risk' : 'neutral'}
+                                customBg={(stats.moraCarteraEP || 0) > 0 ? 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)' : undefined}
+                                onClick={goToAdmin('/admin/payments/list', { estado: 'Mora' })} />
+                            <DetailCard title="Cartera Total" value={fmt(stats.totalPrestamosMasIntereses)} sub="Capital + intereses del portafolio" icon={Activity} />
+                            <DetailCard title="Intereses Proyectados" value={fmt(stats.totalIntereses)} sub="Todo el portafolio (incluye años futuros)" icon={BarChart3}
+                                onClick={goToAdmin('/admin/payments/list')} />
+                            <DetailCard title="Intereses Cobrados" value={fmt(stats.totalInteresesPagados)} sub="Ingreso por cartera" icon={TrendingUp} tone="ok"
+                                onClick={goToAdmin('/admin/payments/list', { estado: 'Pago' })} />
+                            <DetailCard title="Intereses Pendientes" value={fmt(Math.max(0, (stats.totalIntereses || 0) - (stats.totalInteresesPagados || 0)))}
+                                sub="Por recaudar del portafolio" icon={Clock}
+                                customBg="linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)"
+                                onClick={goToAdmin('/admin/payments/list', { estado: 'Pendiente' })} />
+                        </div>
+                    </Collapsible>
+
+                    <Collapsible defaultOpen icon={Activity} title="Actividad y Crecimiento" sub="penetración de crédito, intereses, préstamos y ahorro del año">
+                        <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+                            <div
+                                onClick={goToAdmin('/admin/disbursed-loans/list')}
+                                className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 relative cursor-pointer transition-all duration-200 hover:shadow-md hover:border-brand-primary/20 hover:-translate-y-0.5 active:scale-[0.98] group"
+                            >
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
+                                    <Users className="h-3.5 w-3.5" /> Penetración de crédito
+                                </p>
+                                <p className="text-xl font-extrabold text-gray-900 mt-1.5 tabular-nums">{derived.penPct.toFixed(0)}%</p>
+                                <p className="text-[11px] text-gray-500 mt-0.5">
+                                    {penetracion.conCredito} de {penetracion.activos} socios con crédito · {penetracion.activos - penetracion.conCredito} sin crédito vigente
+                                </p>
+                                <ChevronRight className="h-3.5 w-3.5 text-gray-200 group-hover:text-brand-primary/50 absolute bottom-3 right-3 transition-colors" />
+                            </div>
+                            <div
+                                onClick={goToAdmin('/admin/payments/list', { estado: 'Pago' })}
+                                className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 relative cursor-pointer transition-all duration-200 hover:shadow-md hover:border-brand-primary/20 hover:-translate-y-0.5 active:scale-[0.98] group"
+                            >
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
+                                    <TrendingUp className="h-3.5 w-3.5" /> Intereses {anioActual}
+                                </p>
+                                <p className="text-xl font-extrabold text-brand-primary mt-1.5 tabular-nums">
+                                    {fmt(derived.intCobradosAnio + derived.intAgendadosAnio)}
+                                </p>
+                                <p className="text-[11px] text-gray-500 mt-0.5">
+                                    {fmt(derived.intCobradosAnio)} cobrados + {fmt(derived.intAgendadosAnio)} agendados
+                                    {derived.intAnioPrevio > 0 && (
+                                        <span className="text-emerald-600 font-bold"> · +{(((derived.intCobradosAnio + derived.intAgendadosAnio) / derived.intAnioPrevio - 1) * 100).toFixed(0)}% vs {anioActual - 1}</span>
+                                    )}
+                                </p>
+                                <ChevronRight className="h-3.5 w-3.5 text-gray-200 group-hover:text-brand-primary/50 absolute bottom-3 right-3 transition-colors" />
+                            </div>
+                            <div
+                                onClick={goToAdmin('/admin/disbursed-loans/list')}
+                                className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 relative cursor-pointer transition-all duration-200 hover:shadow-md hover:border-brand-primary/20 hover:-translate-y-0.5 active:scale-[0.98] group"
+                            >
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
+                                    <Wallet className="h-3.5 w-3.5" /> Préstamos {anioActual}
+                                </p>
+                                <p className="text-xl font-extrabold text-gray-900 mt-1.5 tabular-nums">
+                                    {fmt(derived.colocActual?.total || 0)}
+                                </p>
+                                <p className="text-[11px] text-gray-500 mt-0.5">
+                                    {derived.colocActual?.creditos || 0} créditos
+                                    {derived.colocPrevio?.total > 0 && (
+                                        <span className="text-emerald-600 font-bold"> · +{(((derived.colocActual?.total || 0) / derived.colocPrevio.total - 1) * 100).toFixed(0)}% vs {anioActual - 1}</span>
+                                    )}
+                                </p>
+                                <ChevronRight className="h-3.5 w-3.5 text-gray-200 group-hover:text-brand-primary/50 absolute bottom-3 right-3 transition-colors" />
+                            </div>
+                            <div
+                                onClick={goToAdmin('/admin/savings/list')}
+                                className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 relative cursor-pointer transition-all duration-200 hover:shadow-md hover:border-brand-primary/20 hover:-translate-y-0.5 active:scale-[0.98] group"
+                            >
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
+                                    <PiggyBank className="h-3.5 w-3.5" /> Ahorro {anioActual}
+                                </p>
+                                <p className="text-xl font-extrabold text-gray-900 mt-1.5 tabular-nums">{fmt(derived.ahorroActual)}</p>
+                                <p className="text-[11px] text-gray-500 mt-0.5">
+                                    Mes acreditado
+                                    {crecimientoAhorro != null && (
+                                        <span className="text-emerald-600 font-bold"> · +{crecimientoAhorro.toFixed(0)}% vs {anioActual - 1}</span>
+                                    )}
+                                </p>
+                                <ChevronRight className="h-3.5 w-3.5 text-gray-200 group-hover:text-brand-primary/50 absolute bottom-3 right-3 transition-colors" />
+                            </div>
+                        </div>
+                    </Collapsible>
+
+                    <Collapsible defaultOpen icon={Landmark} title="Saldos y Rendimientos" id="saldos-rendimientos">
+                        <div className="grid gap-2.5 grid-cols-1 sm:grid-cols-3">
+                            <DetailCard title="Caja Disponible" value={fmt(stats.saldoEnBanco)} sub="Patrimonio − capital prestado + recaudos" icon={Landmark}
+                                customBg="linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)" />
+                            <DetailCard title="Rendimiento Cuenta NU" value={fmt(stats.rentabilidadCajaNU)}
+                                sub={
+                                    isAdmin
+                                        ? (stats.rentabilidadCajaNUActualizada
+                                            ? `Editable en Panel Principal · actualizado hace ${Math.max(0, Math.round((new Date() - new Date(stats.rentabilidadCajaNUActualizada)) / 86400000))} día(s)`
+                                            : 'Editable desde el Panel Principal')
+                                        : (stats.rentabilidadCajaNUActualizada
+                                            ? `Intereses generados por depósitos · actualizado hace ${Math.max(0, Math.round((new Date() - new Date(stats.rentabilidadCajaNUActualizada)) / 86400000))} día(s)`
+                                            : 'Intereses generados por depósitos')
+                                }
+                                icon={Coins} tone="gold"
+                                customBg="linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)" />
+                            <DetailCard title="Disponible Total" value={fmt(disponible)} sub="Caja + rendimientos consolidados" icon={Wallet} tone="ok"
+                                customBg="linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)" />
+                        </div>
+                    </Collapsible>
+                </div>
+            )}
+
+            {/* ── Acciones Pendientes: exclusivo del admin/Junta — cosas que resolver
+                 hoy, con conteo real y enlace directo a la pantalla de gestión. Un
+                 socio no tiene nada que "gestionar" aquí, así que la sección entera
+                 no aplica para su vista de solo lectura. ── */}
+            {isAdmin && (
+            <div className="space-y-2">
+                <h2 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
+                    <Bell className="h-4 w-4 text-brand-primary" />
+                    Acciones Pendientes
+                </h2>
+                <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
+                    <button
+                        onClick={goToAdmin('/admin/loans/approvals')}
+                        className={`text-left rounded-xl border p-4 flex items-center gap-3 transition-all duration-200 hover:shadow-md active:scale-[0.98] ${
+                            pending.loanRequests > 0 ? 'bg-amber-50 border-amber-200 hover:border-amber-300' : 'bg-white border-gray-200 hover:border-brand-primary/20'
+                        }`}
+                    >
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${pending.loanRequests > 0 ? 'bg-amber-100' : 'bg-gray-100'}`}>
+                            <ClipboardList className={`h-5 w-5 ${pending.loanRequests > 0 ? 'text-amber-600' : 'text-gray-400'}`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-sm font-extrabold text-gray-900">
+                                {pending.loanRequests > 0 ? `${pending.loanRequests} solicitud${pending.loanRequests > 1 ? 'es' : ''} de préstamo` : 'Sin solicitudes pendientes'}
+                            </p>
+                            <p className="text-[11px] text-gray-500">
+                                {pending.loanRequests > 0 ? 'Esperando aprobación de la Junta Administrativa' : 'Solicitudes de préstamo al día'}
+                            </p>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-gray-300 flex-shrink-0" />
+                    </button>
+                    <button
+                        onClick={goToAdmin('/admin/clients')}
+                        className={`text-left rounded-xl border p-4 flex items-center gap-3 transition-all duration-200 hover:shadow-md active:scale-[0.98] ${
+                            pending.passwordResets > 0 ? 'bg-amber-50 border-amber-200 hover:border-amber-300' : 'bg-white border-gray-200 hover:border-brand-primary/20'
+                        }`}
+                    >
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${pending.passwordResets > 0 ? 'bg-amber-100' : 'bg-gray-100'}`}>
+                            <KeyRound className={`h-5 w-5 ${pending.passwordResets > 0 ? 'text-amber-600' : 'text-gray-400'}`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-sm font-extrabold text-gray-900">
+                                {pending.passwordResets > 0 ? `${pending.passwordResets} solicitud${pending.passwordResets > 1 ? 'es' : ''} de contraseña` : 'Sin solicitudes pendientes'}
+                            </p>
+                            <p className="text-[11px] text-gray-500">
+                                {pending.passwordResets > 0 ? 'Socios esperando restablecimiento de acceso' : 'Restablecimientos de contraseña al día'}
+                            </p>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-gray-300 flex-shrink-0" />
+                    </button>
+                </div>
+            </div>
+            )}
+
+            {/* ── Evolución Patrimonial: tendencia mensual real (acumulado de ahorro
+                 neto, mesAbonado/anioAbonado), no solo totales estáticos por año. ── */}
+            {evolucionSerie.length > 1 && (
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
+                    <div className="flex items-center justify-between mb-1">
+                        <SectionTitle icon={Sparkles}>Evolución Patrimonial</SectionTitle>
+                        {isAdmin && (
+                            <button
+                                onClick={goToAdmin('/admin/savings/evolution')}
+                                className="text-[11px] font-bold text-brand-primary hover:underline flex items-center gap-1 mb-3"
+                            >
+                                Ver evolución completa <ChevronRight className="h-3 w-3" />
+                            </button>
+                        )}
+                    </div>
+                    <div className="h-[180px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={evolucionSerie} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                                <defs>
+                                    <linearGradient id="patrimonioGradient" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#166534" stopOpacity={0.35} />
+                                        <stop offset="95%" stopColor="#166534" stopOpacity={0.02} />
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                <XAxis dataKey="label" axisLine={false} tickLine={false}
+                                    tick={{ fill: '#94a3b8', fontSize: 10 }} interval="preserveStartEnd" />
+                                <YAxis tickFormatter={fmtCorto} axisLine={false} tickLine={false}
+                                    tick={{ fill: '#94a3b8', fontSize: 10 }} width={48} domain={['auto', 'auto']} />
+                                <RechartsTooltip formatter={(v) => [fmt(v), 'Acumulado']} />
+                                <Area type="monotone" dataKey="acumulado" stroke="#166534" strokeWidth={2}
+                                    fill="url(#patrimonioGradient)" isAnimationActive={false} />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-1">
+                        Acumulado de ahorro mensual neto por mes acreditado (mesAbonado/anioAbonado) · no incluye aportes iniciales · $ COP
+                    </p>
+                </div>
+            )}
 
             {/* ── Rentabilidad del Fondo (promovida: responde la pregunta central del
                  comité — cuánto está ganando el fondo — justo después de las alertas,
@@ -488,7 +781,17 @@ const ExecutivePanelPage = () => {
                         <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
                             {/* ¿Cuánto está ganando el fondo? */}
                             <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
-                                <SectionTitle icon={Coins}>¿Cuánto está ganando el fondo?</SectionTitle>
+                                <div className="flex items-center justify-between">
+                                    <SectionTitle icon={Coins}>¿Cuánto está ganando el fondo?</SectionTitle>
+                                    {ingresos.length > 0 && (
+                                        <button
+                                            onClick={() => setExpandIngresos(true)}
+                                            className="text-[11px] font-bold text-brand-primary hover:underline flex items-center gap-1 mb-3 flex-shrink-0"
+                                        >
+                                            Ver análisis experto <ChevronRight className="h-3 w-3" />
+                                        </button>
+                                    )}
+                                </div>
                                 {ingresos.length === 0 ? (
                                     <div className="h-[200px] flex items-center justify-center text-sm text-gray-400">Sin ingresos registrados</div>
                                 ) : (
@@ -550,30 +853,16 @@ const ExecutivePanelPage = () => {
                                         <div key={row.label} className="flex items-start gap-2">
                                             <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-0.5" style={{ backgroundColor: row.color }} />
                                             <span className="text-xs text-gray-600 font-medium flex-1 min-w-0 leading-tight break-words">{row.label}</span>
-                                            <div className="text-right flex-shrink-0 ml-2">
-                                                <p className="text-xs font-bold text-gray-800 tabular-nums">{fmtCorto(row.v.base)}</p>
-                                                <p className="text-[9px] text-gray-400 tabular-nums whitespace-nowrap">{fmtCorto(row.v.conservador)}–{fmtCorto(row.v.optimista)}</p>
-                                            </div>
+                                            <p className="text-xs font-bold text-gray-800 tabular-nums flex-shrink-0 ml-2">{fmtCorto(row.v.conservador)}</p>
                                         </div>
                                     ))}
                                     <div className="pt-2.5 mt-1.5 border-t border-gray-100">
                                         <div className="flex items-start justify-between gap-2">
-                                            <div>
-                                                <p className="text-xs font-extrabold text-gray-900">Proyección cierre año</p>
-                                                <p className="text-[9px] text-gray-400 mt-0.5">Escenario base · {derived.proyeccion.recaudoBasePct}% recaudo real</p>
-                                            </div>
-                                            <div className="text-right flex-shrink-0">
-                                                <p className="text-sm font-black text-brand-primary tabular-nums">{fmt(derived.proyeccion.total.base)}</p>
-                                                <p className="text-[9px] text-gray-400 tabular-nums whitespace-nowrap">{fmt(derived.proyeccion.total.conservador)} – {fmt(derived.proyeccion.total.optimista)}</p>
-                                            </div>
+                                            <p className="text-xs font-extrabold text-gray-900">Proyección cierre año</p>
+                                            <p className="text-sm font-black text-brand-primary tabular-nums flex-shrink-0">{fmt(derived.proyeccion.total.conservador)}</p>
                                         </div>
                                     </div>
                                 </div>
-                                <p className="text-[10px] text-gray-400 mt-3 leading-snug">
-                                    Base: intereses cobrados + pendientes del año × tasa de recaudo real.
-                                    Optimista: incluye además interés de nueva colocación ({fmtCorto(derived.proyeccion.colocacionMensualProm)}/mes).
-                                    Rango conservador–optimista, no un número con falsa precisión.
-                                </p>
                             </div>
 
                             {/* Resultados por año — baselines dinámicos */}
@@ -634,12 +923,46 @@ const ExecutivePanelPage = () => {
                     </p>
                 </div>
 
-                {/* Concentración de cartera */}
+                {/* Concentración de cartera. Para el admin: detalle por deudor (nombre +
+                    monto), igual que antes. Para el socio: solo el agregado — nunca el
+                    nombre ni el monto pendiente de otro socio, por privacidad. */}
                 <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
-                    <SectionTitle icon={ShieldCheck}>Concentración de cartera por deudor</SectionTitle>
+                    <SectionTitle icon={ShieldCheck}>{isAdmin ? 'Concentración de cartera por deudor' : 'Diversificación de la cartera'}</SectionTitle>
                     {derived.donutData.length === 0 ? (
                         <div className="h-[220px] flex items-center justify-center text-sm text-gray-400">
                             Sin cartera pendiente
+                        </div>
+                    ) : !isAdmin ? (
+                        <div className="flex items-center gap-5">
+                            <div className="relative w-[140px] h-[140px] flex-shrink-0">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie data={[{ value: derived.top3Pct }, { value: Math.max(0, 100 - derived.top3Pct) }]}
+                                            cx="50%" cy="50%" innerRadius="65%" outerRadius="90%"
+                                            dataKey="value" isAnimationActive={false} stroke="none" startAngle={90} endAngle={-270}>
+                                            <Cell fill={derived.top3Pct > 60 ? '#dc2626' : derived.top3Pct > 40 ? '#f59e0b' : '#166534'} />
+                                            <Cell fill="#e5e7eb" />
+                                        </Pie>
+                                    </PieChart>
+                                </ResponsiveContainer>
+                                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                    <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400">Top 3</span>
+                                    <span className={`text-lg font-black tabular-nums ${
+                                        derived.top3Pct > 60 ? 'text-red-600' : derived.top3Pct > 40 ? 'text-amber-600' : 'text-emerald-600'
+                                    }`}>
+                                        {derived.top3Pct.toFixed(0)}%
+                                    </span>
+                                </div>
+                            </div>
+                            <div className="flex-1 min-w-0 space-y-2">
+                                <p className="text-xs text-gray-600 leading-relaxed">
+                                    Los 3 socios con mayor préstamo pendiente concentran el <b className="text-gray-900">{derived.top3Pct.toFixed(0)}%</b> de
+                                    la cartera activa ({fmt(derived.top3)} de {fmt(cartera.total)}). Por privacidad, no se muestran nombres ni montos individuales de otros socios.
+                                </p>
+                                <p className="text-[10px] text-gray-400">
+                                    Umbral saludable: &lt;40% · a vigilar: 40–60% · alto: &gt;60%
+                                </p>
+                            </div>
                         </div>
                     ) : (
                         <div className="flex items-center gap-4">
@@ -666,11 +989,16 @@ const ExecutivePanelPage = () => {
                             </div>
                             <div className="flex-1 min-w-0 space-y-1.5">
                                 {derived.donutData.map((d, i) => (
-                                    <div key={d.name} className="flex items-center gap-2">
+                                    <div
+                                        key={d.name}
+                                        onClick={d.cedula ? goToAdmin('/admin/payments/list', { estado: 'Pendiente', search: `${d.name} (${d.cedula})` }) : undefined}
+                                        className={`flex items-center gap-2 rounded-lg -mx-1.5 px-1.5 py-0.5 transition-colors ${d.cedula ? 'cursor-pointer hover:bg-gray-50 group' : ''}`}
+                                    >
                                         <span className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                                             style={{ backgroundColor: DONUT_COLORS[i % DONUT_COLORS.length] }} />
-                                        <span className="text-xs text-gray-600 font-medium flex-1 truncate">{d.name}</span>
+                                        <span className="text-xs text-gray-600 font-medium flex-1 truncate group-hover:text-brand-primary">{d.name}</span>
                                         <span className="text-xs text-gray-800 font-bold tabular-nums">{fmtCorto(d.value)}</span>
+                                        {d.cedula && <ChevronRight className="h-3 w-3 text-gray-200 group-hover:text-brand-primary/60 flex-shrink-0 transition-colors" />}
                                     </div>
                                 ))}
                                 <p className="text-[10px] text-gray-400 pt-1.5">
@@ -683,143 +1011,61 @@ const ExecutivePanelPage = () => {
             </div>
             </div>
 
-            {/* ── Actividad y Crecimiento ── */}
-            <div className="space-y-3">
-                <h2 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
-                    <Activity className="h-4 w-4 text-brand-primary" />
-                    Actividad y Crecimiento
-                    <span className="text-[11px] font-semibold text-gray-400">penetración de crédito, intereses, préstamos y ahorro del año</span>
-                </h2>
-            <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-                <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
-                        <Users className="h-3.5 w-3.5" /> Penetración de crédito
-                    </p>
-                    <p className="text-xl font-extrabold text-gray-900 mt-1.5 tabular-nums">{derived.penPct.toFixed(0)}%</p>
-                    <p className="text-[11px] text-gray-500 mt-0.5">
-                        {penetracion.conCredito} de {penetracion.activos} socios con crédito · {penetracion.activos - penetracion.conCredito} sin crédito vigente
-                    </p>
-                </div>
-                <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
-                        <TrendingUp className="h-3.5 w-3.5" /> Intereses {anioActual}
-                    </p>
-                    <p className="text-xl font-extrabold text-brand-primary mt-1.5 tabular-nums">
-                        {fmt(derived.intCobradosAnio + derived.intAgendadosAnio)}
-                    </p>
-                    <p className="text-[11px] text-gray-500 mt-0.5">
-                        {fmt(derived.intCobradosAnio)} cobrados + {fmt(derived.intAgendadosAnio)} agendados
-                        {derived.intAnioPrevio > 0 && (
-                            <span className="text-emerald-600 font-bold"> · +{(((derived.intCobradosAnio + derived.intAgendadosAnio) / derived.intAnioPrevio - 1) * 100).toFixed(0)}% vs {anioActual - 1}</span>
-                        )}
-                    </p>
-                </div>
-                <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
-                        <Wallet className="h-3.5 w-3.5" /> Préstamos {anioActual}
-                    </p>
-                    <p className="text-xl font-extrabold text-gray-900 mt-1.5 tabular-nums">
-                        {fmt(derived.colocActual?.total || 0)}
-                    </p>
-                    <p className="text-[11px] text-gray-500 mt-0.5">
-                        {derived.colocActual?.creditos || 0} créditos
-                        {derived.colocPrevio?.total > 0 && (
-                            <span className="text-emerald-600 font-bold"> · +{(((derived.colocActual?.total || 0) / derived.colocPrevio.total - 1) * 100).toFixed(0)}% vs {anioActual - 1}</span>
-                        )}
-                    </p>
-                </div>
-                <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
-                        <PiggyBank className="h-3.5 w-3.5" /> Ahorro {anioActual}
-                    </p>
-                    <p className="text-xl font-extrabold text-gray-900 mt-1.5 tabular-nums">{fmt(derived.ahorroActual)}</p>
-                    <p className="text-[11px] text-gray-500 mt-0.5">
-                        Mes acreditado
-                        {crecimientoAhorro != null && (
-                            <span className="text-emerald-600 font-bold"> · +{crecimientoAhorro.toFixed(0)}% vs {anioActual - 1}</span>
-                        )}
-                    </p>
-                </div>
-            </div>
-            </div>
 
-            {/* ── Detalle operativo (todo lo del Panel Principal) ── */}
-            {stats && (
-                <div className="space-y-3">
-                    <h2 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
-                        <Gauge className="h-4 w-4 text-brand-primary" />
-                        Detalle operativo
-                        <span className="text-[11px] font-semibold text-gray-400">indicadores del Panel Principal, para consulta bajo demanda</span>
-                    </h2>
-
-                    <Collapsible icon={PiggyBank} title="Socios y Ahorros" sub={`${stats.activeClientsCount || 0} socios activos`}>
-                        <div className="grid gap-2.5 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-                            <DetailCard title="Socios del Fondo" value={stats.clientsCount || 0}
-                                sub={`${stats.activeClientsCount || 0} activos · ${stats.inactiveClientsCount || 0} inactivos`} icon={Users} tone="info"
-                                onClick={() => goTo('/admin/clients/list')} />
-                            <DetailCard title="Ahorros Mensuales" value={fmt(stats.totalSavings)} sub="Abonos acumulados · activos" icon={PiggyBank} tone="ok"
-                                onClick={() => goTo('/admin/savings/list', { type: 'Mensual' })} />
-                            <DetailCard title="Base Patrimonial" value={fmt(stats.totalInitialContributions)} sub="Aportes iniciales" icon={Database} tone="gold"
-                                onClick={() => goTo('/admin/contributions/initial-list')} />
-                            <DetailCard title="Patrimonio de Socios" value={fmt(stats.totalAhorradoGeneral)} sub="Ahorros + aportes" icon={Landmark} tone="ok"
-                                onClick={() => goTo('/admin/savings/list')} />
-                            <DetailCard title="Días en Retraso" value={stats.totalPenaltyDays || 0} sub="Mora en ahorros · año en curso"
-                                icon={Clock} tone={(stats.totalPenaltyDays || 0) > 0 ? 'risk' : 'neutral'}
-                                onClick={() => goTo('/admin/savings/list', { status: 'Penalizacion' })} />
-                            <DetailCard title="Recargos por Mora" value={fmt(stats.totalPenaltyValue)} sub="Cobrados en el año" icon={DollarSign} tone="gold"
-                                customBg="linear-gradient(135deg, #FEFDE8 0%, #FEF9C3 100%)"
-                                onClick={() => goTo('/admin/savings/list', { status: 'Penalizacion' })} />
-                        </div>
-                    </Collapsible>
-
-                    <Collapsible icon={Activity} title="Préstamos e Intereses" sub={`${stats.totalPrestamosCount || 0} créditos entregados`}>
-                        <div className="grid gap-2.5 grid-cols-2 lg:grid-cols-4">
-                            <DetailCard title="Capital Desembolsado" value={fmt(stats.totalPrestamos)}
-                                sub={`${stats.totalPrestamosCount || 0} préstamos entregados`} icon={DollarSign} tone="ok"
-                                onClick={() => goTo('/admin/disbursed-loans/list')} />
-                            <DetailCard title="Cartera al Día" value={fmt(stats.carteraDia)}
-                                sub={`${stats.carteraDiaCount || 0} cuotas vigentes`} icon={TrendingUp} tone="ok"
-                                onClick={() => goTo('/admin/payments/list', { estadoPrestamo: 'Activo' })} />
-                            <DetailCard title="Cuotas Recaudadas" value={fmt(stats.totalCuotasPagadas)}
-                                sub={`${stats.recaudoCuotasCount || 0} pagos completados`} icon={CheckCircle2} tone="info"
-                                onClick={() => goTo('/admin/payments/list')} />
-                            <DetailCard title="Mora de Cartera" value={fmt(stats.moraCarteraEP)} sub="Vencimiento superado"
-                                icon={AlertTriangle} tone={(stats.moraCarteraEP || 0) > 0 ? 'risk' : 'neutral'}
-                                customBg={(stats.moraCarteraEP || 0) > 0 ? 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)' : undefined}
-                                onClick={() => goTo('/admin/payments/list', { estado: 'Mora' })} />
-                            <DetailCard title="Cartera Total" value={fmt(stats.totalPrestamosMasIntereses)} sub="Capital + intereses del portafolio" icon={Activity} />
-                            <DetailCard title="Intereses Proyectados" value={fmt(stats.totalIntereses)} sub="Todo el portafolio (incluye años futuros)" icon={BarChart3}
-                                onClick={() => goTo('/admin/payments/list')} />
-                            <DetailCard title="Intereses Cobrados" value={fmt(stats.totalInteresesPagados)} sub="Ingreso por cartera" icon={TrendingUp} tone="ok"
-                                onClick={() => goTo('/admin/payments/list', { estado: 'Pago' })} />
-                            <DetailCard title="Intereses Pendientes" value={fmt(Math.max(0, (stats.totalIntereses || 0) - (stats.totalInteresesPagados || 0)))}
-                                sub="Por recaudar del portafolio" icon={Clock}
-                                customBg="linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)"
-                                onClick={() => goTo('/admin/payments/list', { estado: 'Pendiente' })} />
-                        </div>
-                    </Collapsible>
-
-                    <Collapsible icon={Landmark} title="Saldos y Rendimientos">
-                        <div className="grid gap-2.5 grid-cols-1 sm:grid-cols-3">
-                            <DetailCard title="Caja Disponible" value={fmt(stats.saldoEnBanco)} sub="Patrimonio − capital prestado + recaudos" icon={Landmark}
-                                customBg="linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)" />
-                            <DetailCard title="Rendimiento Cuenta NU" value={fmt(stats.rentabilidadCajaNU)}
-                                sub={stats.rentabilidadCajaNUActualizada
-                                    ? `Editable en Panel Principal · actualizado hace ${Math.max(0, Math.round((new Date() - new Date(stats.rentabilidadCajaNUActualizada)) / 86400000))} día(s)`
-                                    : 'Editable desde el Panel Principal'}
-                                icon={Coins} tone="gold"
-                                customBg="linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)" />
-                            <DetailCard title="Disponible Total" value={fmt(disponible)} sub="Caja + rendimientos consolidados" icon={Wallet} tone="ok"
-                                customBg="linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)" />
-                        </div>
-                    </Collapsible>
-                </div>
-            )}
 
             <p className="text-[11px] text-gray-400 pb-2">
-                Fuente: base de datos del fondo en tiempo real · generado {new Date(exec.generadoEl).toLocaleString('es-CO')} ·
-                Los indicadores siguen el plan de mejora del Panel Principal (jul 2026). Baselines por año calculados dinámicamente — sin cifras fijas en el código.
+                Fuente: base de datos del fondo en tiempo real · generado {new Date(exec.generadoEl).toLocaleString('es-CO')}
+                {isAdmin
+                    ? ' · Los indicadores siguen el plan de mejora del Panel Principal (jul 2026). Baselines por año calculados dinámicamente — sin cifras fijas en el código.'
+                    : ' · Cifras calculadas directamente desde los registros del fondo, sin valores fijos ni estimaciones manuales.'}
             </p>
+
+            {/* ── Modal: Apalancamiento del Fondo ── */}
+            <ChartExpandModal
+                isOpen={showLdrInfo}
+                onClose={() => setShowLdrInfo(false)}
+                title="Apalancamiento del Fondo (Loan-to-Deposit Ratio)"
+                analysisResult={analyzeLeverage({ ldrPct: derived.ldrPct, carteraTotal: cartera.total, patrimonio })}
+            >
+                <div className="h-full flex flex-col items-center justify-center gap-3 px-6">
+                    <div className="w-full max-w-md">
+                        <div className="flex justify-between text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                            <span>0%</span><span>Umbral sano 40–85%</span><span>100%+</span>
+                        </div>
+                        <div className="relative h-4 rounded-full bg-gray-100 overflow-hidden">
+                            <div className="absolute inset-y-0 left-[40%] w-[45%] bg-emerald-100" />
+                            <div
+                                className={`absolute inset-y-0 left-0 rounded-full ${derived.ldrTone === 'risk' ? 'bg-red-500' : derived.ldrTone === 'warn' ? 'bg-amber-400' : 'bg-emerald-500'}`}
+                                style={{ width: `${Math.min(100, derived.ldrPct)}%` }}
+                            />
+                        </div>
+                        <p className="text-center text-3xl font-black text-gray-900 mt-4 tabular-nums">{derived.ldrPct.toFixed(0)}%</p>
+                        <p className="text-center text-xs text-gray-400 mt-1">{fmt(cartera.total)} colocados de {fmt(patrimonio)} en patrimonio de socios</p>
+                    </div>
+                </div>
+            </ChartExpandModal>
+
+            {/* ── Modal: análisis experto de ingresos del fondo (mismo motor que el Panel Principal) ── */}
+            <ChartExpandModal
+                isOpen={expandIngresos}
+                onClose={() => setExpandIngresos(false)}
+                title="¿Cuánto está ganando el fondo?"
+                analysisResult={analyzeIncomeDistribution({
+                    totalInteresesPagados: stats?.totalInteresesPagados,
+                    rentabilidadCajaNU: stats?.rentabilidadCajaNU,
+                    totalPenaltyValue: stats?.totalPenaltyValue,
+                })}
+            >
+                <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                        <Pie data={ingresosFondoData} cx="50%" cy="50%" innerRadius="55%" outerRadius="85%"
+                            paddingAngle={3} dataKey="value" isAnimationActive={false} stroke="none">
+                            {ingresosFondoData.map((d, i) => <Cell key={i} fill={d.color} />)}
+                        </Pie>
+                        <RechartsTooltip formatter={(v) => fmt(v)} />
+                    </PieChart>
+                </ResponsiveContainer>
+            </ChartExpandModal>
         </div>
     );
 };

@@ -324,6 +324,10 @@ const DashboardLayout = ({ user, onLogout }) => {
             ]
         },
         {
+            type: 'label',
+            label: 'MI CUENTA DE SOCIO'
+        },
+        {
             type: 'submenu',
             key: 'micuenta',
             icon: UserRound,

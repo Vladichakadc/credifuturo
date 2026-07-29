@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { formatDate } from '../../utils/excelUtils';
 import { useSortTable, SortIcon } from '../../utils/useSortTable';
 
@@ -280,13 +281,23 @@ const ITEMS_PER_PAGE = 20;
 // ════════════════════════════════════════════════════════════════════════════
 const PaymentsListPage = () => {
     const { toast } = useUi();
+    const [searchParams] = useSearchParams();
     const [payments, setPayments] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [filterSearch, setFilterSearch] = useState('');   // full socio key search
+    // Los 3 filtros abajo aceptan un valor inicial desde la URL (?estado=, ?estadoPrestamo=,
+    // ?search=) para que las tarjetas del Panel Ejecutivo (y cualquier otro enlace externo)
+    // aterricen ya filtradas en vez de en una lista genérica sin contexto.
+    const [filterSearch, setFilterSearch] = useState(searchParams.get('search') || '');   // full socio key search
     const [filterIdVm, setFilterIdVm] = useState('');        // filtro Id_VM (SOL##)
-    const [filterEstado, setFilterEstado] = useState([]);
-    const [filterEstadoPrestamo, setFilterEstadoPrestamo] = useState([]);
+    const [filterEstado, setFilterEstado] = useState(() => {
+        const v = searchParams.get('estado');
+        return v ? v.split(',').map(s => s.trim()).filter(Boolean) : [];
+    });
+    const [filterEstadoPrestamo, setFilterEstadoPrestamo] = useState(() => {
+        const v = searchParams.get('estadoPrestamo');
+        return v ? v.split(',').map(s => s.trim()).filter(Boolean) : [];
+    });
     const [selectedYears, setSelectedYears] = useState([new Date().getFullYear(), new Date().getFullYear() + 1]);
     const [soportesInfo, setSoportesInfo] = useState({}); // { paymentId: { exists: true, name: '...' } }
     const [showMoraDetail, setShowMoraDetail] = useState(false);

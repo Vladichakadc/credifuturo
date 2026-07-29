@@ -139,6 +139,9 @@ function App() {
                     <Route index element={<MiPanelPage />} />
                     {/* Panel del fondo completo (antes era el inicio) */}
                     <Route path="fondo" element={<DashboardHome />} />
+                    {/* Panel Ejecutivo: misma página que /admin/executive, reutilizada como
+                        vista de solo lectura para socios (igual patrón que "fondo" arriba) */}
+                    <Route path="panel-ejecutivo" element={<ExecutivePanelPage />} />
                     {/* UserDashboardHome queda accesible en /dashboard/mi-resumen */}
                     <Route path="mi-resumen" element={<UserDashboardHome />} />
                     <Route path="mis-creditos" element={<MisCreditosPage />} />
