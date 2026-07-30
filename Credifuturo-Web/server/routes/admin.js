@@ -553,6 +553,30 @@ router.get('/clients/:id/balance', async (req, res) => {
     }
 });
 
+// Reconstruye una fecha cuando día y mes vienen invertidos (bug de importación ya
+// documentado en CLAUDE.md: afecta fechaPagoMax en ~72 de 183 cuotas del fondo) usando
+// mesPago como referencia confiable (se genera correctamente al crear la cuota y el bug
+// nunca lo toca). Misma lógica que las copias ya usadas en getLoanCapacityAnalysis y
+// dashboard-stats para mora EP — aquí se reutiliza para no volver a calcular "días
+// transcurridos" contra una fecha corrida un mes.
+function safeParseDateAdmin(dateVal, mesRef) {
+    if (!dateVal) return null;
+    let dateStr = dateVal instanceof Date ? dateVal.toISOString().split('T')[0] : String(dateVal);
+    if (dateStr.includes('T')) dateStr = dateStr.split('T')[0];
+    const parts = dateStr.split('-');
+    if (parts.length !== 3) return new Date(dateStr + 'T00:00:00');
+    const [y, m, d] = parts.map(Number);
+    if (mesRef) {
+        const monthsLower = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+        const targetIdx = monthsLower.indexOf(mesRef.toLowerCase().trim()) + 1;
+        if (targetIdx > 0) {
+            if (m === targetIdx) return new Date(y, m - 1, d);
+            if (d === targetIdx) return new Date(y, d - 1, m);
+        }
+    }
+    return new Date(dateStr + 'T00:00:00');
+}
+
 // Interés proporcional en retanqueos — cálculo compartido entre la previsualización
 // (GET /clients/:id/active-loan, lo que el admin ve ANTES de confirmar) y la operación
 // real (POST /disbursed-loans, sección REFINANCIACIÓN). Antes vivía duplicado en un solo
@@ -575,7 +599,7 @@ function calcularInteresRetanqueo({ prestamoAnterior, cuotasPendientesAnteriores
         if (primeraCuota.itemQuantity === 1 && prestamoAnterior.fechaPrestamo) {
             fechaInicio = new Date(prestamoAnterior.fechaPrestamo);
         } else if (primeraCuota.fechaPagoMax) {
-            const fechaMax = new Date(primeraCuota.fechaPagoMax);
+            const fechaMax = safeParseDateAdmin(primeraCuota.fechaPagoMax, primeraCuota.mesPago) || new Date(primeraCuota.fechaPagoMax);
             fechaInicio = new Date(fechaMax);
             fechaInicio.setMonth(fechaInicio.getMonth() - 1);
         } else {
@@ -2580,19 +2604,99 @@ router.put('/disbursed-loans/:id', async (req, res) => {
 });
 
 router.delete('/disbursed-loans/:id', async (req, res) => {
+    const sequelize = require('../config/database');
+    const { Op } = require('sequelize');
+    const t = await sequelize.transaction();
     try {
-        const loan = await DisbursedLoan.findByPk(req.params.id);
-        if (!loan) return res.status(404).json({ error: 'Préstamo no encontrado' });
+        const loan = await DisbursedLoan.findByPk(req.params.id, { transaction: t });
+        if (!loan) {
+            await t.rollback();
+            return res.status(404).json({ error: 'Préstamo no encontrado' });
+        }
+
+        // ==== Si este préstamo fue creado como retanqueo, restaurar el préstamo anterior ====
+        // POST /disbursed-loans, al refinanciar, cancela el préstamo vigente anterior y marca
+        // sus cuotas pendientes como Pago (esPrepago=true, ver calcularInteresRetanqueo arriba).
+        // Si el admin se equivocó al registrar el retanqueo y borra este préstamo nuevo, sin
+        // esto el préstamo anterior queda "Cancelado" para siempre y sin el desembolso que lo
+        // reemplazaba — el socio pierde su préstamo. Se detecta el vínculo por el marcador que
+        // la refinanciación deja en observaciones ("...refinanciación <idVm> — ...") y se
+        // revierte: préstamo anterior → Vigente, sus cuotas prepagadas → Pendiente (recalculadas
+        // con la misma fórmula de capital fijo/interés decreciente usada al crearlas).
+        let restauracion = null;
+        if (loan.idVm) {
+            const marcador = `refinanciación ${loan.idVm} —`;
+            const cuotasPrepagadas = await LoanPayment.findAll({
+                where: { esPrepago: true, observaciones: { [Op.like]: `%${marcador}%` } },
+                transaction: t
+            });
+
+            if (cuotasPrepagadas.length > 0) {
+                const idVmAnterior = cuotasPrepagadas[0].idVm;
+                const prestamoAnterior = await DisbursedLoan.findOne({ where: { idVm: idVmAnterior }, transaction: t });
+
+                if (prestamoAnterior) {
+                    const capitalPorCuota = parseFloat(prestamoAnterior.valorPrestado) / prestamoAnterior.cuotas;
+
+                    for (const cuota of cuotasPrepagadas) {
+                        const saldoInicial = parseFloat(cuota.saldoInicial || 0);
+                        const interesMensualCuota = parseFloat(cuota.interesMensual || 0);
+                        const interesesCuota = parseFloat((saldoInicial * interesMensualCuota).toFixed(2));
+                        const valorCuotaOriginal = parseFloat((capitalPorCuota + interesesCuota).toFixed(2));
+                        const saldoFinalOriginal = Math.max(0, parseFloat((saldoInicial - capitalPorCuota).toFixed(2)));
+
+                        await cuota.update({
+                            estado: 'Pendiente',
+                            estadoPrestamo: 'Vigente',
+                            valorInteresesAmortizados: interesesCuota,
+                            valorCuotaVariable: valorCuotaOriginal,
+                            valorCuotaPago: 0,
+                            saldoFinal: saldoFinalOriginal,
+                            esPrepago: false,
+                            observaciones: null
+                        }, { transaction: t });
+                    }
+
+                    // Las cuotas que ya estaban Pago/Mora antes de la refinanciación solo
+                    // recibieron estadoPrestamo=Cancelado (su estado real no se tocó) — revertir.
+                    await LoanPayment.update(
+                        { estadoPrestamo: 'Vigente' },
+                        { where: { idVm: idVmAnterior, esPrepago: false }, transaction: t }
+                    );
+
+                    await prestamoAnterior.update({ estado: 'Vigente' }, { transaction: t });
+
+                    restauracion = { idVmAnterior, cuotasRestauradas: cuotasPrepagadas.length };
+
+                    logSecurityEvent('RETANQUEO_REVERTIDO', {
+                        actorId: req.user?.id,
+                        idVmEliminado: loan.idVm,
+                        idVmRestaurado: idVmAnterior,
+                        cuotasRestauradas: cuotasPrepagadas.length,
+                        ip: getClientIp(req)
+                    });
+                    console.log(`↩️  Retanqueo revertido: ${loan.idVm} eliminado, ${idVmAnterior} vuelve a Vigente (${cuotasPrepagadas.length} cuota(s) a Pendiente).`);
+                }
+            }
+        }
 
         // Eliminar cuotas asociadas en Estado de Préstamos antes de borrar el préstamo
         if (loan.idVm) {
-            const deletedCount = await LoanPayment.destroy({ where: { idVm: loan.idVm } });
+            const deletedCount = await LoanPayment.destroy({ where: { idVm: loan.idVm }, transaction: t });
             console.log('🗑️  Eliminadas ' + deletedCount + ' cuotas de Estado de Préstamos para ' + loan.idVm);
         }
 
-        await loan.destroy();
-        res.json({ message: 'Préstamo y sus cuotas eliminados con éxito' });
+        await loan.destroy({ transaction: t });
+        await t.commit();
+
+        res.json({
+            message: restauracion
+                ? `Préstamo eliminado. Se restauró el préstamo anterior ${restauracion.idVmAnterior} a Vigente (${restauracion.cuotasRestauradas} cuota(s) revertida(s) a Pendiente).`
+                : 'Préstamo y sus cuotas eliminados con éxito',
+            restauracion
+        });
     } catch (err) {
+        await t.rollback();
         res.status(500).json({ error: err.message });
     }
 });

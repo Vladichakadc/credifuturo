@@ -383,8 +383,15 @@ const LoansPage = () => {
                     ]
                 });
                 setIsProcessing(true);
-                await api.delete(`/admin/disbursed-loans/${loan.id}`);
-                toast.success(`Préstamo ${loan.idVm} y sus cuotas eliminados`);
+                const { data } = await api.delete(`/admin/disbursed-loans/${loan.id}`);
+                if (data?.restauracion) {
+                    toast.success(
+                        `Préstamo ${loan.idVm} eliminado. Como era un retanqueo, el préstamo anterior ${data.restauracion.idVmAnterior} volvió a Vigente (${data.restauracion.cuotasRestauradas} cuota(s) de vuelta a Pendiente).`,
+                        9000
+                    );
+                } else {
+                    toast.success(`Préstamo ${loan.idVm} y sus cuotas eliminados`);
+                }
                 fetchData();
                 notifyUpdate('loans');
                 notifyUpdate('payments'); // sus cuotas también se borraron — refrescar Lista de Pagos
