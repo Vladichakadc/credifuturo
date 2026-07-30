@@ -166,6 +166,11 @@ const JUNTA_ROUTES = [
     { method: 'PUT', test: p => /^\/loan-requests\/\d+\/vote$/.test(p) },
     { method: 'GET', test: p => /^\/clients\/\d+\/loan-capacity$/.test(p) },
     { method: 'GET', path: '/junta/members' },
+    // Solo lectura — listar y ver informes. El DELETE de /informes/:name NO se
+    // agrega aquí a propósito: cae al gate por defecto (solo admin), la Junta
+    // puede consultar documentos institucionales pero no borrarlos.
+    { method: 'GET', path: '/informes' },
+    { method: 'GET', test: p => /^\/informes\/[^/]+$/.test(p) },
 ];
 
 router.use((req, res, next) => {
@@ -548,6 +553,51 @@ router.get('/clients/:id/balance', async (req, res) => {
     }
 });
 
+// Interés proporcional en retanqueos — cálculo compartido entre la previsualización
+// (GET /clients/:id/active-loan, lo que el admin ve ANTES de confirmar) y la operación
+// real (POST /disbursed-loans, sección REFINANCIACIÓN). Antes vivía duplicado en un solo
+// lugar (solo en POST /disbursed-loans) — la advertencia que veía el admin seguía
+// mostrando "interés condonado" por el 100%, sin reflejar lo que en realidad se iba a
+// cobrar. Extraído a una sola función para que ambos lados nunca puedan volver a
+// desincronizarse.
+function calcularInteresRetanqueo({ prestamoAnterior, cuotasPendientesAnteriores, fechaNuevoDesembolso }) {
+    let interesCondonado = cuotasPendientesAnteriores.reduce(
+        (s, c) => s + parseFloat(c.valorInteresesAmortizados || 0), 0
+    );
+    let interesCausado = 0;
+    let diasTranscurridos = 0;
+
+    if (cuotasPendientesAnteriores.length > 0) {
+        const ordenadas = [...cuotasPendientesAnteriores].sort((a, b) => a.itemQuantity - b.itemQuantity);
+        const primeraCuota = ordenadas[0];
+
+        let fechaInicio;
+        if (primeraCuota.itemQuantity === 1 && prestamoAnterior.fechaPrestamo) {
+            fechaInicio = new Date(prestamoAnterior.fechaPrestamo);
+        } else if (primeraCuota.fechaPagoMax) {
+            const fechaMax = new Date(primeraCuota.fechaPagoMax);
+            fechaInicio = new Date(fechaMax);
+            fechaInicio.setMonth(fechaInicio.getMonth() - 1);
+        } else {
+            fechaInicio = new Date();
+        }
+
+        const fechaActual = new Date(fechaNuevoDesembolso);
+        const diffTime = fechaActual.getTime() - fechaInicio.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        diasTranscurridos = Math.max(0, Math.min(30, diffDays));
+
+        const saldoPendiente = parseFloat(primeraCuota.saldoInicial || 0);
+        const tasaAnterior = parseFloat(prestamoAnterior.interesMensual || 0);
+        interesCausado = saldoPendiente * tasaAnterior * (diasTranscurridos / 30);
+
+        interesCondonado = interesCondonado - interesCausado;
+        if (interesCondonado < 0) interesCondonado = 0;
+    }
+
+    return { interesCausado, interesCondonado, diasTranscurridos };
+}
+
 // GET /clients/:id/active-loan — Verifica si el socio tiene un préstamo Vigente
 // Usado por el formulario "Registrar Nuevo Desembolso" para mostrar alerta previa.
 router.get('/clients/:id/active-loan', async (req, res) => {
@@ -578,7 +628,16 @@ router.get('/clients/:id/active-loan', async (req, res) => {
 
         // saldoPendiente = saldoInicial de la primera cuota pendiente (balance actual outstanding)
         const saldoPendiente = cuotasPendientes.length > 0 ? parseFloat(cuotasPendientes[0].saldoInicial || 0) : 0;
-        const interesCondonable = cuotasPendientes.reduce((s, c) => s + parseFloat(c.valorInteresesAmortizados || 0), 0);
+
+        // Misma fórmula que se aplica de verdad al guardar (POST /disbursed-loans). Como
+        // todavía no se conoce la fecha exacta del nuevo desembolso en este punto del
+        // formulario (recién se seleccionó el socio), se usa hoy — es lo que el admin va a
+        // dejar en el 99% de los casos, y si la cambia, el cálculo real al guardar manda.
+        const { interesCausado, interesCondonado } = calcularInteresRetanqueo({
+            prestamoAnterior: prestamoVigente,
+            cuotasPendientesAnteriores: cuotasPendientes,
+            fechaNuevoDesembolso: new Date()
+        });
 
         res.json({
             tienePrestamoActivo: true,
@@ -589,7 +648,8 @@ router.get('/clients/:id/active-loan', async (req, res) => {
                 cuotas: prestamoVigente.cuotas,
                 cuotasPendientes: cuotasPendientes.length,
                 saldoPendiente: Math.round(saldoPendiente),
-                interesCondonable: Math.round(interesCondonable)
+                interesCausado: Math.round(interesCausado),
+                interesCondonable: Math.round(interesCondonado)
             }
         });
     } catch (err) {
@@ -2103,17 +2163,94 @@ router.post('/disbursed-loans', async (req, res) => {
             transaction: t
         });
 
-        let refinanciacion = null;
-
+        let cuotasPendientesAnteriores = [];
         if (prestamoAnterior) {
-            const cuotasPendientesAnteriores = await LoanPayment.findAll({
+            cuotasPendientesAnteriores = await LoanPayment.findAll({
                 where: { idVm: prestamoAnterior.idVm, estado: 'Pendiente' },
                 transaction: t
             });
+            // Orden ascendente por itemQuantity: calcularInteresRetanqueo() ordena su propia
+            // copia internamente, pero el loop de abajo (i === 0 → cobra interesCausado)
+            // necesita que ESTE array también quede ordenado — si no, se le podría cobrar
+            // el interés a una cuota que no es la más antigua.
+            cuotasPendientesAnteriores.sort((a, b) => a.itemQuantity - b.itemQuantity);
+        }
 
-            const interesCondonado = cuotasPendientesAnteriores.reduce(
-                (s, c) => s + parseFloat(c.valorInteresesAmortizados || 0), 0
-            );
+        // ==== 9.1 VALIDAR CAPACIDAD DE CRÉDITO Y MORA (política del fondo) ====
+        // Antes, "Registrar Nuevo Desembolso" no aplicaba NINGUNA de las reglas que el
+        // propio Analizador de Capacidad le muestra al admin como asesoría (regla 3× y
+        // bloqueo por mora EP) — eran solo texto informativo en otra pantalla, nunca se
+        // exigían al mover el dinero de verdad. Se reutiliza getLoanCapacityAnalysis
+        // (misma fuente que el Analizador) para que la regla se aplique en el único
+        // punto donde de verdad importa.
+        const capacidad = await getLoanCapacityAnalysis(clientId);
+
+        if (capacidad.enMoraActual) {
+            return res.status(400).json({
+                error: `No se puede desembolsar: ${capacidad.nombre} tiene ${capacidad.totalCuotasMoraEP} cuota(s) en mora EP vigente por $${Math.round(capacidad.totalMoraEPValor).toLocaleString('es-CO')}. El reglamento del fondo no autoriza nuevos desembolsos con mora vigente — regularice los pagos primero.`
+            });
+        }
+
+        // Si es un retanqueo, el saldo del préstamo que se está cancelando en esta misma
+        // operación ya no debe contar contra el cupo — se está extinguiendo ahora mismo.
+        const saldoPrestamoQueSeCancela = cuotasPendientesAnteriores[0]
+            ? parseFloat(cuotasPendientesAnteriores[0].saldoInicial || 0) : 0;
+        const deudaEfectiva = Math.max(0, capacidad.totalDeudaPendiente - saldoPrestamoQueSeCancela);
+        const cupoMaximo = capacidad.ahorroTotal * 3; // misma regla 3× del Analizador (utils/loanCapacity.js)
+        const capacidadDisponible = cupoMaximo - deudaEfectiva;
+
+        // Un préstamo ya aprobado por la Junta (solicitud + votación unánime, módulo
+        // Aprobación de Préstamos) queda exento del tope 3× sin votación — ya pasó por
+        // el canal de gobierno correcto antes de llegar aquí.
+        const loanRequestId = req.body.loanRequestId ? parseInt(req.body.loanRequestId) : null;
+        let vieneDeSolicitudAprobada = false;
+        if (loanRequestId) {
+            const LoanRequest = require('../models/LoanRequest');
+            const solicitud = await LoanRequest.findByPk(loanRequestId, { transaction: t });
+            vieneDeSolicitudAprobada = !!(solicitud && solicitud.clientId === clientId && solicitud.status === 'approved');
+        }
+
+        // El gerente (único rol que llega a este endpoint — la ruta ya exige
+        // requireRole('admin')) puede aprobar directamente un monto sobre cupo sin
+        // esperar la votación completa de la Junta. No aplica al bloqueo por mora EP
+        // (ese es absoluto, sin excepción, por reglamento del fondo). Queda auditado:
+        // log de seguridad + nota permanente en observaciones del préstamo.
+        const gerenteAprueba = req.body.gerenteAprueba === true;
+
+        if (!vieneDeSolicitudAprobada && !gerenteAprueba && valorPrestado > capacidadDisponible) {
+            return res.status(400).json({
+                error: `El monto solicitado ($${valorPrestado.toLocaleString('es-CO')}) supera el cupo máximo sin votación de ${capacidad.nombre} (3× ahorro: $${Math.round(cupoMaximo).toLocaleString('es-CO')}, disponible: $${Math.round(Math.max(0, capacidadDisponible)).toLocaleString('es-CO')}). Este monto requiere aprobación de la Junta Administrativa — regístralo primero como solicitud en Aprobación de Préstamos, o usa "Aprobar como Gerente" si decides autorizarlo directamente.`
+            });
+        }
+
+        const aprobadoDirectoPorGerente = gerenteAprueba && !vieneDeSolicitudAprobada && valorPrestado > capacidadDisponible;
+        if (aprobadoDirectoPorGerente) {
+            logSecurityEvent('GERENTE_APRUEBA_SOBRE_CUPO', {
+                actorId: req.user?.id,
+                clientId,
+                valorPrestado,
+                cupoMaximo: Math.round(cupoMaximo),
+                capacidadDisponible: Math.round(Math.max(0, capacidadDisponible)),
+                ip: getClientIp(req)
+            });
+            const notaGerente = `[Aprobado directamente por el gerente el ${new Date().toISOString().split('T')[0]}, sin votación completa de la Junta — monto ($${valorPrestado.toLocaleString('es-CO')}) supera el cupo 3× disponible ($${Math.round(Math.max(0, capacidadDisponible)).toLocaleString('es-CO')})]`;
+            loanData.observaciones = loanData.observaciones ? `${notaGerente} ${loanData.observaciones}` : notaGerente;
+        }
+
+        let refinanciacion = null;
+
+        if (prestamoAnterior) {
+            // NOTA: si hay más de una cuota pendiente (el socio ya lleva 2+ meses sin pagar
+            // antes de retanquear), solo la primera recibe el cargo proporcional (topado a
+            // 30 días); el resto se sigue condonando al 100% aunque hayan pasado más de un
+            // mes real desde su vencimiento. Es una limitación conocida — evaluar si vale la
+            // pena calcular el interés causado cuota por cuota si en la práctica llegan a
+            // darse retanqueos con mora de varios meses.
+            const { interesCausado, interesCondonado, diasTranscurridos } = calcularInteresRetanqueo({
+                prestamoAnterior,
+                cuotasPendientesAnteriores,
+                fechaNuevoDesembolso: fechaPrestamo // fecha del nuevo desembolso elegida en el formulario
+            });
 
             // Marcar todas las cuotas ya pagadas/mora del préstamo anterior como estadoPrestamo=Cancelado
             await LoanPayment.update(
@@ -2127,22 +2264,31 @@ router.post('/disbursed-loans', async (req, res) => {
                 }
             );
 
-            // Marcar cada cuota pendiente como Pago sin interés (prepago).
-            // valorCuotaVariable se ajusta al capital real (sin interés condonado).
-            // saldoFinal se recalcula: saldoInicial - capital; la última cuota queda en 0.
-            for (const cuota of cuotasPendientesAnteriores) {
+            // Marcar cada cuota pendiente como Pago (prepago).
+            // A la primera cuota pendiente se le cobra el interés causado proporcional. A las demás 0.
+            for (let i = 0; i < cuotasPendientesAnteriores.length; i++) {
+                const cuota = cuotasPendientesAnteriores[i];
+                let interesCobradoCuota = 0;
+                
+                if (i === 0) {
+                    interesCobradoCuota = interesCausado;
+                }
+
                 const capitalCuota = parseFloat(cuota.valorCuotaVariable || 0) - parseFloat(cuota.valorInteresesAmortizados || 0);
                 const saldoInicial = parseFloat(cuota.saldoInicial || 0);
                 const saldoFinalCal = Math.max(0, parseFloat((saldoInicial - capitalCuota).toFixed(2)));
+                
+                const valorCuotaAjustado = capitalCuota + interesCobradoCuota;
+
                 await cuota.update({
                     estado: 'Pago',
                     estadoPrestamo: 'Cancelado',
-                    valorInteresesAmortizados: 0,
-                    valorCuotaVariable: Math.max(0, capitalCuota),
-                    valorCuotaPago: Math.max(0, capitalCuota),
+                    valorInteresesAmortizados: interesCobradoCuota, // interés realmente cobrado por días
+                    valorCuotaVariable: Math.max(0, valorCuotaAjustado),
+                    valorCuotaPago: Math.max(0, valorCuotaAjustado),
                     saldoFinal: saldoFinalCal,
                     esPrepago: true,
-                    observaciones: `Cancelado por refinanciación ${nextIdVm} — interés condonado`
+                    observaciones: `Cancelado por refinanciación ${nextIdVm} — interés causado por ${diasTranscurridos} días.`
                 }, { transaction: t });
             }
 
@@ -2156,6 +2302,7 @@ router.post('/disbursed-loans', async (req, res) => {
             refinanciacion = {
                 idVmAnterior: prestamoAnterior.idVm,
                 cuotasSaldadas: cuotasPendientesAnteriores.length,
+                interesCausado: Math.round(interesCausado),
                 interesCondonado: Math.round(interesCondonado)
             };
 
@@ -2929,13 +3076,15 @@ router.get('/dashboard-stats', async (req, res) => {
         const pendingInstallmentsCount = carteraPayments.length;
 
         // ── 3. INTERESES (CURRENT YEAR): Sum of Valor Intereses amortizados ──
-        // Excluye cuotas con esPrepago=true (interés condonado por refinanciación).
+        // No se filtra por esPrepago: valorInteresesAmortizados ya es la fuente de verdad
+        // (0 en cuotas 100% condonadas por refinanciación, el monto real cobrado por días
+        // en la cuota que sí tiene interés proporcional causado — ver retanqueos). Filtrar
+        // por esPrepago excluía también ese interés real, subestimando el ingreso del fondo.
         const totalIntereses = await LoanPayment.sum('valorInteresesAmortizados', {
             where: {
                 fechaPagoMax: {
                     [Op.between]: [dateFrom, dateTo]
-                },
-                esPrepago: { [Op.ne]: true }
+                }
             },
             include: [{
                 model: Client,
@@ -3007,12 +3156,12 @@ router.get('/dashboard-stats', async (req, res) => {
         totalAllCuotasPagadas = Math.round(totalAllCuotasPagadas);
 
 
-        // Intereses recaudados en el año actual (Estado: Pago).
-        // Excluye cuotas con esPrepago=true (interés condonado por refinanciación).
+        // Intereses recaudados en el año actual (Estado: Pago). No se filtra por esPrepago
+        // por la misma razón que totalIntereses arriba — valorInteresesAmortizados ya es 0
+        // en lo condonado y el monto real en lo cobrado por días en un retanqueo.
         const totalInteresesPagados = await LoanPayment.sum('valorInteresesAmortizados', {
             where: {
                 estado: 'Pago',
-                esPrepago: { [Op.ne]: true },
                 fechaPagoMax: {
                     [Op.between]: [dateFrom, dateTo]
                 }
@@ -3897,15 +4046,23 @@ router.post('/backup/restore', restoreUpload.single('database'), async (req, res
 // ─────────────────────────────────────────────
 const INFORMES_DIR = 'C:\\Credifuturo\\Informes';
 
+// La carpeta Informes/ tiene ~230 documentos técnicos (auditorías de seguridad, planes
+// de incidentes, migraciones de datos) pensados para el admin, no para consulta general
+// de la Junta. Leonardo y Xiomara (Junta, no-admin) solo deben ver lo que se comparte
+// explícitamente con ellos — hoy, solo este informe. Agregar aquí cada nuevo documento
+// que se quiera compartir con Junta.
+const JUNTA_INFORMES_VISIBLES = new Set(['Interes_Proporcional_Retanqueos.pdf']);
 
 router.get('/informes', async (req, res) => {
     try {
         if (!fs.existsSync(INFORMES_DIR)) {
             return res.json([]);
         }
+        const isAdminReq = req.user?.role === 'admin';
         const files = fs.readdirSync(INFORMES_DIR);
         const reports = files
-            .filter(f => f.endsWith('.md') || f.endsWith('.txt'))
+            .filter(f => f.endsWith('.md') || f.endsWith('.txt') || f.endsWith('.pdf'))
+            .filter(f => isAdminReq || JUNTA_INFORMES_VISIBLES.has(f))
             .map(f => {
                 const stat = fs.statSync(path.join(INFORMES_DIR, f));
                 return {
@@ -3928,9 +4085,21 @@ router.get('/informes/:name', async (req, res) => {
         if (name.includes('..') || name.includes('/') || name.includes('\\')) {
             return res.status(400).json({ error: 'Nombre de archivo inválido' });
         }
+        const isAdminReq = req.user?.role === 'admin';
+        if (!isAdminReq && !JUNTA_INFORMES_VISIBLES.has(name)) {
+            return res.status(403).json({ error: 'No tienes acceso a este informe.' });
+        }
         const filePath = path.join(INFORMES_DIR, name);
         if (!fs.existsSync(filePath)) {
             return res.status(404).json({ error: 'Informe no encontrado' });
+        }
+        // Los .pdf se sirven como binario (el visor los pide con responseType: 'blob'
+        // desde el frontend, igual que la descarga de soportes); .md/.txt siguen el
+        // contrato JSON existente que ya consume el visor de Markdown.
+        if (name.endsWith('.pdf')) {
+            res.set('Content-Type', 'application/pdf');
+            res.set('Content-Disposition', `inline; filename="${name}"`);
+            return res.send(fs.readFileSync(filePath));
         }
         const content = fs.readFileSync(filePath, 'utf-8');
         res.json({ name, content });
@@ -4062,10 +4231,11 @@ router.get('/my/utilidades-estimadas', verifyToken, requireFreshPassword, requir
         const currentYear = new Date().getFullYear();
 
         // ── Ganancia total del fondo (réplica del panel: año actual + siguiente en intereses) ──
+        // Sin filtro esPrepago — mismo motivo que en /dashboard-stats: valorInteresesAmortizados
+        // ya distingue lo condonado (0) de lo cobrado por días en un retanqueo (monto real).
         const interesesPagados = await LoanPayment.sum('valorInteresesAmortizados', {
             where: {
                 estado: 'Pago',
-                esPrepago: { [Op.ne]: true },
                 fechaPagoMax: { [Op.between]: [`${currentYear}-01-01`, `${currentYear + 1}-12-31`] }
             }
         }) || 0;
@@ -4596,6 +4766,8 @@ router.get('/savings-evolution', async (req, res) => {
         const [serieMensual, aportesRow] = await Promise.all([
             sequelize.query(`
                 SELECT anioAbonado anio, CAST(mesAbonado AS INTEGER) mes,
+                       ROUND(SUM(CASE WHEN amount >= 0 THEN amount ELSE 0 END)) abonos,
+                       ROUND(SUM(CASE WHEN amount < 0 THEN amount ELSE 0 END) - SUM(COALESCE(valorAPenalizar, 0))) retiros,
                        ROUND(SUM(COALESCE(valorAhorrado, amount))) neto,
                        ROUND(SUM(amount)) bruto
                 FROM Savings

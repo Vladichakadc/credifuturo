@@ -13,7 +13,17 @@ const InformesViewerPage = () => {
     const navigate = useNavigate();
     const { toast } = useUi();
     
+    // Página compartida entre /admin/informes/:filename y /dashboard/informes/:filename
+    // (Junta Administrativa). El backend solo permite DELETE a admin (ver JUNTA_ROUTES en
+    // admin.js) — se oculta el botón para que un miembro de Junta no vea una acción que
+    // igual le devolvería 403.
+    const isAdmin = (() => {
+        try { return JSON.parse(localStorage.getItem('user') || '{}').role === 'admin'; }
+        catch { return false; }
+    })();
+    const isPdf = filename?.toLowerCase().endsWith('.pdf');
     const [content, setContent] = useState('');
+    const [pdfUrl, setPdfUrl] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
@@ -22,8 +32,16 @@ const InformesViewerPage = () => {
             setLoading(true);
             setError(null);
             try {
-                const res = await api.get(`/admin/informes/${encodeURIComponent(filename)}`);
-                setContent(res.data.content);
+                if (isPdf) {
+                    // Igual que la descarga de soportes: se pide como blob autenticado
+                    // (un <iframe src="/api/..."> directo no enviaría el token) y se
+                    // muestra desde una object URL local.
+                    const res = await api.get(`/admin/informes/${encodeURIComponent(filename)}`, { responseType: 'blob' });
+                    setPdfUrl(URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' })));
+                } else {
+                    const res = await api.get(`/admin/informes/${encodeURIComponent(filename)}`);
+                    setContent(res.data.content);
+                }
             } catch (err) {
                 console.error('Error fetching report:', err.message);
                 setError(err.response?.data?.error || 'Error al cargar el informe');
@@ -32,6 +50,10 @@ const InformesViewerPage = () => {
             }
         };
         fetchReport();
+        // Libera la object URL anterior al cambiar de informe o desmontar, para no
+        // acumular blobs en memoria.
+        return () => { if (pdfUrl) URL.revokeObjectURL(pdfUrl); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [filename]);
 
     const handleDelete = async () => {
@@ -84,30 +106,55 @@ const InformesViewerPage = () => {
                         <ArrowLeft className="h-5 w-5" />
                     </Button>
                     <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                        <div className={`h-10 w-10 rounded-lg flex items-center justify-center shrink-0 ${isPdf ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
                             <FileText className="h-5 w-5" />
                         </div>
                         <div>
                             <h1 className="text-xl font-bold text-gray-900 truncate max-w-lg" title={filename}>
-                                {filename.replace(/\.md$/, '')}
+                                {filename.replace(/\.md$|\.pdf$/, '')}
                             </h1>
                             <p className="text-sm text-gray-500 flex items-center gap-2">
-                                <span className="uppercase text-[10px] tracking-wider font-bold bg-gray-100 px-2 py-0.5 rounded text-gray-600">Markdown</span>
+                                <span className="uppercase text-[10px] tracking-wider font-bold bg-gray-100 px-2 py-0.5 rounded text-gray-600">{isPdf ? 'PDF' : 'Markdown'}</span>
                                 Documento guardado en sistema
                             </p>
                         </div>
                     </div>
                 </div>
-                
-                <Button variant="outline" className="text-red-600 border-red-200 hover:bg-red-50 w-full sm:w-auto" onClick={handleDelete}>
-                    <Trash2 className="mr-2 h-4 w-4" /> Eliminar
-                </Button>
+
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                    {isPdf && pdfUrl && (
+                        <a href={pdfUrl} download={filename} className="w-full sm:w-auto">
+                            <Button variant="outline" className="w-full sm:w-auto">
+                                Descargar
+                            </Button>
+                        </a>
+                    )}
+                    {isAdmin && (
+                        <Button variant="outline" className="text-red-600 border-red-200 hover:bg-red-50 w-full sm:w-auto" onClick={handleDelete}>
+                            <Trash2 className="mr-2 h-4 w-4" /> Eliminar
+                        </Button>
+                    )}
+                </div>
             </div>
 
-            {/* Contenido Renderizado */}
+            {/* Contenido: PDF embebido o Markdown renderizado */}
+            {isPdf ? (
+                <Card className="border-gray-200 shadow-sm overflow-hidden bg-white">
+                    <CardContent className="p-0">
+                        {pdfUrl && (
+                            <iframe
+                                src={pdfUrl}
+                                title={filename}
+                                className="w-full"
+                                style={{ height: '85vh', border: 'none' }}
+                            />
+                        )}
+                    </CardContent>
+                </Card>
+            ) : (
             <Card className="border-gray-200 shadow-sm overflow-hidden bg-white">
                 <CardContent className="p-8 sm:p-12">
-                    <div className="prose prose-blue max-w-none 
+                    <div className="prose prose-blue max-w-none
                         prose-headings:text-gray-900 prose-headings:font-bold 
                         prose-h1:text-3xl prose-h1:border-b prose-h1:pb-4 prose-h1:mb-6
                         prose-h2:text-2xl prose-h2:mt-8 prose-h2:mb-4
@@ -130,6 +177,7 @@ const InformesViewerPage = () => {
                     </div>
                 </CardContent>
             </Card>
+            )}
         </div>
     );
 };

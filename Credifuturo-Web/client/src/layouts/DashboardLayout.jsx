@@ -166,6 +166,7 @@ const DashboardLayout = ({ user, onLogout }) => {
     const [openSubmenus, setOpenSubmenus] = useState({ inicio: true, estatutos: false, socios: false, prestamos: false, ahorros: false, aportes: false, informes: false, micuenta: false, propuestas: false });
     const [informesList, setInformesList] = useState([]);
     const [informesSearch, setInformesSearch] = useState('');
+    const [orphanLoansCount, setOrphanLoansCount] = useState(0);
     const location = useLocation();
     const navigate = useNavigate();
     const { toast } = useUi();
@@ -248,6 +249,16 @@ const DashboardLayout = ({ user, onLogout }) => {
         return () => window.removeEventListener('informesUpdated', fetchInformes);
     }, []);
 
+    // "Préstamos sin asignar" es una red de seguridad para un caso raro (solo puede
+    // pasar por un script de migración manual — la importación Excel está deshabilitada
+    // y "Nuevo Desembolso" siempre exige socio). En vez de un ítem de menú permanente
+    // que casi siempre está vacío, se oculta hasta que realmente haya algo que resolver.
+    React.useEffect(() => {
+        api.get('/admin/disbursed-loans/orphans')
+            .then(res => setOrphanLoansCount(res.data?.total || 0))
+            .catch(() => {});
+    }, []);
+
     const handleCloseSummary = () => setShowSummary(false);
 
     const navItems = [
@@ -294,7 +305,7 @@ const DashboardLayout = ({ user, onLogout }) => {
                 { icon: ClipboardCheck, label: 'Registrar Pago', path: '/admin/payments?action=new' },
                 { icon: Scale, label: 'Analizador', path: '/admin/loans/analyzer' },
                 { icon: Inbox, label: 'Aprobaciones de Préstamos', path: '/admin/loans/approvals' },
-                { icon: AlertTriangle, label: 'Préstamos sin asignar', path: '/admin/loans/orphans' },
+                ...(orphanLoansCount > 0 ? [{ icon: AlertTriangle, label: `Préstamos sin asignar (${orphanLoansCount})`, path: '/admin/loans/orphans' }] : []),
             ]
         },
         {
@@ -360,7 +371,7 @@ const DashboardLayout = ({ user, onLogout }) => {
                 });
                 if (filtered.length > 0) return filtered.map(inf => ({
                     icon: FileText,
-                    label: inf.name.replace(/\.md$|\.txt$/, '').replace(/_/g, ' '),
+                    label: inf.name.replace(/\.md$|\.txt$|\.pdf$/, '').replace(/_/g, ' '),
                     path: `/admin/informes/${encodeURIComponent(inf.name)}`
                 }));
                 if (informesSearch.trim()) return [{ icon: Search, label: 'Sin resultados', path: '#' }];

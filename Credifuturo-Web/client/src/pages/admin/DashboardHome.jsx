@@ -1418,8 +1418,9 @@ const FinancialChart = ({ stats, execStats, selectedYears = [], onEditMeta }) =>
                                                         if (percent < 0.04) return null;
                                                         return (
                                                             <g>
-                                                                <text x={x} y={y - 6} textAnchor={anchor} fill={payload.hex} fontSize={12} fontWeight="800">{shortNames[payload.label]}</text>
-                                                                <text x={x} y={y + 8} textAnchor={anchor} fill="#6b7280" fontSize={11} fontWeight="700">{(percent * 100).toFixed(0)}%</text>
+                                                                <text x={x} y={y - 12} textAnchor={anchor} fill={payload.hex} fontSize={12} fontWeight="800">{shortNames[payload.label]}</text>
+                                                                <text x={x} y={y + 2} textAnchor={anchor} fill="#6b7280" fontSize={11} fontWeight="700">{(percent * 100).toFixed(0)}%</text>
+                                                                <text x={x} y={y + 15} textAnchor={anchor} fill="#9ca3af" fontSize={10} fontWeight="600">${Math.round(payload.value).toLocaleString('es-CO')}</text>
                                                             </g>
                                                         );
                                                     }}

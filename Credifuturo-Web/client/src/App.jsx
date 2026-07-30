@@ -162,7 +162,12 @@ function App() {
                     <Route path="loan-capacity-beta" element={<CapacidadBetaPage />} />
                     <Route path="propuestas" element={<PropuestasPage />} />
                     <Route path="ranking-ahorro" element={<UserRankingAhorroPage />} />
+                    <Route path="savings-evolution" element={<SavingsEvolutionPage user={user} />} />
                     <Route path="junta-prestamos" element={<JuntaAprobacionesPage />} />
+                    {/* Informes: misma página que /admin/informes/:filename, reutilizada para
+                        la Junta Administrativa (gerente/subgerente/tesorera). El backend ya
+                        restringe /admin/informes a admin + Junta (ver JUNTA_ROUTES). */}
+                    <Route path="informes/:filename" element={<InformesViewerPage />} />
                 </Route>
 
                 <Route path="/" element={<Navigate to={user ? (user.role === 'admin' ? '/admin' : '/dashboard') : '/login'} />} />

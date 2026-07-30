@@ -24,7 +24,7 @@ const Toast = ({ message, type, onClose }) => {
     };
 
     return (
-        <div className={`flex items-start p-4 rounded shadow-lg mb-3 min-w-[300px] max-w-sm animate-slide-in-right transition-all ${styles[type]}`}>
+        <div className={`flex items-start p-4 rounded shadow-lg mb-3 min-w-[300px] max-w-md animate-slide-in-right transition-all ${styles[type]}`}>
             <div className="flex-shrink-0 mr-3 mt-0.5">
                 {icons[type]}
             </div>
@@ -41,13 +41,16 @@ const Toast = ({ message, type, onClose }) => {
 export const UiProvider = ({ children }) => {
     const [toasts, setToasts] = useState([]);
 
-    const addToast = useCallback((message, type = 'info') => {
+    // duration es opcional — por defecto TOAST_DURATION (3s), pero mensajes largos
+    // (ej. el resumen de una refinanciación con varias cifras) pueden pedir más
+    // tiempo pasando un tercer argumento: toast.success(msg, 8000).
+    const addToast = useCallback((message, type = 'info', duration = TOAST_DURATION) => {
         const id = Date.now();
         setToasts(prev => [...prev, { id, message, type }]);
 
         setTimeout(() => {
             removeToast(id);
-        }, TOAST_DURATION);
+        }, duration);
     }, []);
 
     const removeToast = useCallback((id) => {
@@ -57,10 +60,10 @@ export const UiProvider = ({ children }) => {
     // Memoizado: sin esto, `toast` cambia de referencia en cada render del Provider,
     // y cualquier useEffect con [toast] en deps entra en loop al agregar un toast.
     const toast = useMemo(() => ({
-        success: (msg) => addToast(msg, 'success'),
-        error: (msg) => addToast(msg, 'error'),
-        info: (msg) => addToast(msg, 'info'),
-        warning: (msg) => addToast(msg, 'warning')
+        success: (msg, duration) => addToast(msg, 'success', duration),
+        error: (msg, duration) => addToast(msg, 'error', duration),
+        info: (msg, duration) => addToast(msg, 'info', duration),
+        warning: (msg, duration) => addToast(msg, 'warning', duration)
     }), [addToast]);
 
     const value = useMemo(() => ({ toast }), [toast]);

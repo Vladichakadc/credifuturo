@@ -19,7 +19,8 @@ import {
     TrendingUp,
     MessageSquareMore,
     Vote,
-    Activity
+    Activity,
+    ClipboardList
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { Button } from '../components/ui/Button';
@@ -133,8 +134,9 @@ const SidebarSubmenu = ({ icon: Icon, label, children, isOpen, onToggle, locatio
 
 const UserDashboardLayout = ({ user, onLogout }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
-    const [openSubmenus, setOpenSubmenus] = useState({ estatutos: true, prestamos: true, propuestas: true });
+    const [openSubmenus, setOpenSubmenus] = useState({ ahorros: true, estatutos: true, prestamos: true, propuestas: true });
     const [propuestasEnabled, setPropuestasEnabled] = useState(false);
+    const [informesList, setInformesList] = useState([]);
     const location = useLocation();
 
     useEffect(() => {
@@ -152,6 +154,16 @@ const UserDashboardLayout = ({ user, onLogout }) => {
     // que JUNTA_CEDULAS en server/routes/admin.js.
     const JUNTA_CEDULAS_NO_ADMIN = ['79863805', '52496873']; // Leonardo Rojas, Xiomara Rojas
     const isJuntaMember = user?.role === 'admin' || JUNTA_CEDULAS_NO_ADMIN.includes(user?.cedula);
+
+    // Informes solo se pide si es Junta — el backend ya lo restringe (JUNTA_ROUTES en
+    // admin.js), pedirlo para un socio raso solo generaría un 403 innecesario.
+    useEffect(() => {
+        if (!isJuntaMember) return;
+        api.get('/admin/informes')
+           .then(res => setInformesList(res.data || []))
+           .catch(err => console.error(err));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isJuntaMember]);
 
     const toggleSubmenu = (key) => {
         setOpenSubmenus(prev => ({ ...prev, [key]: !prev[key] }));
@@ -188,10 +200,14 @@ const UserDashboardLayout = ({ user, onLogout }) => {
             path: '/dashboard/panel-ejecutivo'
         },
         {
-            type: 'link',
+            type: 'submenu',
+            key: 'ahorros',
             icon: PiggyBank,
             label: 'Ahorros',
-            path: '/dashboard/cuenta'
+            children: [
+                { icon: Wallet, label: 'Mi Cuenta', path: '/dashboard/cuenta' },
+                { icon: TrendingUp, label: 'Evolución', path: '/dashboard/savings-evolution' }
+            ]
         },
         {
             type: 'link',
@@ -226,7 +242,20 @@ const UserDashboardLayout = ({ user, onLogout }) => {
         }] : []),
         ...(isJuntaMember ? [
             { type: 'label', label: 'JUNTA ADMINISTRATIVA' },
-            { type: 'link', icon: Vote, label: 'Aprobación de Préstamos', path: '/dashboard/junta-prestamos' }
+            { type: 'link', icon: Vote, label: 'Aprobación de Préstamos', path: '/dashboard/junta-prestamos' },
+            {
+                type: 'submenu',
+                key: 'informesJunta',
+                icon: ClipboardList,
+                label: `Informes (${informesList.length})`,
+                children: informesList.length > 0
+                    ? informesList.map(inf => ({
+                        icon: FileText,
+                        label: inf.name.replace(/\.md$|\.txt$|\.pdf$/, '').replace(/_/g, ' '),
+                        path: `/dashboard/informes/${encodeURIComponent(inf.name)}`
+                    }))
+                    : [{ icon: FileText, label: 'No hay informes', path: '#' }]
+            }
         ] : []),
         {
             type: 'submenu',

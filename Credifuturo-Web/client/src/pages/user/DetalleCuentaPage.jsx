@@ -498,7 +498,7 @@ const DetalleCuentaPage = () => {
                             <p className="text-sm lg:text-lg font-extrabold tabular-nums">{fmt(heroTotals.aportes)}</p>
                         </div>
                         <div>
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-white/50">Devoluciones recibidas</p>
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-white/50">Penalizaciones Anteriores</p>
                             <p className="text-sm lg:text-lg font-extrabold tabular-nums text-brand-gold">{fmt(heroTotals.devoluciones)}</p>
                         </div>
                     </div>
@@ -703,7 +703,7 @@ const DetalleCuentaPage = () => {
                                         <th className="px-5 py-3">Fecha</th>
                                         <th className="px-3 py-3">Movimiento</th>
                                         <th className="px-3 py-3 text-right">Pagado (bruto)</th>
-                                        <th className="px-3 py-3 text-right">Recargo</th>
+                                        <th className="px-3 py-3 text-right">Penalizaciones</th>
                                         <th className="px-3 py-3 text-right">Acreditado (neto)</th>
                                         <th className="px-5 py-3 text-right">Saldo</th>
                                     </tr>
@@ -749,7 +749,7 @@ const DetalleCuentaPage = () => {
                                             <p className="text-xs font-semibold text-gray-800 leading-tight">{r.concepto}</p>
                                             <p className="text-[10px] text-gray-400 mt-0.5">{fmtFecha(r.fecha)}</p>
                                             {r.recargo > 0 && (
-                                                <p className="text-[10px] text-red-500 mt-0.5">Recargo −{fmt(r.recargo)}{r.dias > 0 ? ` · ${r.dias} día(s) tarde` : ''}</p>
+                                                <p className="text-[10px] text-red-500 mt-0.5">Penalizaciones −{fmt(r.recargo)}{r.dias > 0 ? ` · ${r.dias} día(s) tarde` : ''}</p>
                                             )}
                                         </div>
                                         <div className="text-right shrink-0">
@@ -781,7 +781,7 @@ const DetalleCuentaPage = () => {
             <div className="bg-gray-50 rounded-2xl border border-gray-100 p-4 flex items-start gap-3">
                 <Info className="h-4 w-4 text-gray-400 shrink-0 mt-0.5" />
                 <p className="text-[11px] text-gray-500 leading-relaxed">
-                    <b className="text-gray-600">Definiciones:</b> <b>Pagado (bruto)</b> = valor que consignaste. <b>Acreditado (neto)</b> = lo que suma a tu patrimonio (bruto menos recargos por mora).
+                    <b className="text-gray-600">Definiciones:</b> <b>Pagado (bruto)</b> = valor que consignaste. <b>Acreditado (neto)</b> = lo que suma a tu patrimonio (bruto menos penalizaciones por mora).
                     Las <b>devoluciones de intereses</b> son giros del fondo hacia ti y se muestran en negativo porque salen de tu saldo acumulado.
                     El saldo corrido se calcula sobre tu historial completo; el filtro por año solo cambia qué movimientos y gráficos ves.
                     La tendencia mensual usa el <b>mes abonado</b> (el período que cubre cada pago), no la fecha de consignación.

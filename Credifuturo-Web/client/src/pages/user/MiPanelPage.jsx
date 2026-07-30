@@ -495,7 +495,10 @@ const MiPanelPage = () => {
                             <>{MESES_ABR[hoy.getMonth()]} aún está pendiente. Ahorrar a tiempo evita la penalización{racha.streak > 0 && <> y mantiene tu racha de <b className="text-brand-primary">{racha.streak} {racha.streak === 1 ? 'mes' : 'meses'}</b></>}.</>
                         )}
                     </p>
-                    <Link to="/dashboard/cuenta" className="inline-flex items-center gap-1 text-xs font-bold text-brand-primary hover:text-brand-dark mt-2 transition-colors">
+                    <Link 
+                        to="/dashboard/cuenta" 
+                        className="inline-flex items-center gap-1.5 mt-3 border border-brand-primary text-brand-primary hover:bg-brand-primary/5 text-xs font-bold px-4 py-2 rounded-lg transition-colors min-h-[38px]"
+                    >
                         Ver mis ahorros <ChevronRight className="h-3.5 w-3.5" />
                     </Link>
                 </div>
@@ -570,9 +573,16 @@ const MiPanelPage = () => {
                                 <p className="text-xs text-gray-500 mt-1 leading-relaxed">{salud.resumen}</p>
                             </div>
                         </div>
-                        <p className="text-[10px] text-gray-400 mt-3">
+                        <p className="text-[10px] text-gray-400 mt-3 pt-3 border-t border-gray-100">
                             Calificación del fondo: capacidad, cumplimiento, antigüedad, lealtad y constancia de ahorro.
                         </p>
+                        <Link
+                            to="/dashboard/loan-capacity"
+                            className="inline-flex items-center gap-1.5 mt-3 border border-brand-primary text-brand-primary hover:bg-brand-primary/5 text-xs font-bold px-4 py-2 rounded-lg transition-colors min-h-[38px]"
+                        >
+                            <ChevronRight className="h-3.5 w-3.5" />
+                            Ver detalles de mi calificación
+                        </Link>
                     </div>
                 )}
 
@@ -615,22 +625,16 @@ const MiPanelPage = () => {
             </div>
 
             {/* 7 · Acceso al panel del fondo con mini-indicadores */}
-            <Link
-                to="/dashboard/fondo"
-                className="block bg-white rounded-2xl border border-gray-200 shadow-card p-4 hover:border-brand-primary/40 hover:shadow-card-hover transition-all group"
-            >
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-lg bg-brand-primary/10">
-                            <Landmark className="h-5 w-5 text-brand-primary" />
-                        </div>
-                        <div>
-                            <p className="text-sm font-bold text-gray-900">Nuestro Fondo</p>
-                            <p className="text-xs text-gray-500">Indicadores y transparencia de todo el fondo Credifuturo</p>
-                        </div>
-                    </div>
-                    <ChevronRight className="h-5 w-5 text-gray-300 group-hover:text-brand-primary group-hover:translate-x-0.5 transition-all" />
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-3 flex items-center gap-1.5">
+                    <Landmark className="h-3.5 w-3.5" />
+                    Nuestro Fondo
+                </p>
+                <div>
+                    <p className="text-sm font-bold text-gray-900">Transparencia y estadísticas</p>
+                    <p className="text-xs text-gray-500 mt-1">Indicadores de todo el fondo Credifuturo</p>
                 </div>
+                
                 {fondo && (
                     <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-gray-100">
                         <div className="text-center">
@@ -652,7 +656,15 @@ const MiPanelPage = () => {
                         </div>
                     </div>
                 )}
-            </Link>
+                
+                <Link
+                    to="/dashboard/fondo"
+                    className="inline-flex items-center gap-1.5 mt-4 border border-brand-primary text-brand-primary hover:bg-brand-primary/5 text-xs font-bold px-4 py-2 rounded-lg transition-colors min-h-[38px]"
+                >
+                    <ChevronRight className="h-3.5 w-3.5" />
+                    Ver indicadores del fondo
+                </Link>
+            </div>
         </div>
     );
 };

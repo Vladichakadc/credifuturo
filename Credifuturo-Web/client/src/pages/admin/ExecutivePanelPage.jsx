@@ -10,7 +10,7 @@ import {
     Gauge, ShieldCheck, AlertTriangle, TrendingUp, Wallet, PiggyBank,
     CalendarClock, Users, Printer, CheckCircle2, Info, Landmark, Percent,
     ChevronDown, DollarSign, Database, Clock, Activity, BarChart3, Coins,
-    ChevronRight, Bell, KeyRound, ClipboardList, Sparkles
+    ChevronRight, Bell, KeyRound, ClipboardList, Sparkles, UserX
 } from 'lucide-react';
 import ChartExpandModal, { analyzeIncomeDistribution } from '../../components/ChartExpandModal';
 import { computeFundProjection } from '../../utils/fundProjection';
@@ -187,7 +187,7 @@ const ExecutivePanelPage = () => {
     const [exec, setExec] = useState(null);
     const [stats, setStats] = useState(null);
     const [evolution, setEvolution] = useState(null);
-    const [pending, setPending] = useState({ loanRequests: 0, passwordResets: 0 });
+    const [pending, setPending] = useState({ loanRequests: 0, passwordResets: 0, orphanLoans: 0 });
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [showLdrInfo, setShowLdrInfo] = useState(false);
@@ -222,6 +222,12 @@ const ExecutivePanelPage = () => {
                 // así que ni se piden si quien mira esta página no es admin.
                 isAdmin ? api.get('/admin/loan-requests') : Promise.resolve({ status: 'skipped' }),
                 isAdmin ? api.get('/admin/password-reset-requests') : Promise.resolve({ status: 'skipped' }),
+                // Préstamos desembolsados sin clientId — solo pasa por scripts de migración
+                // manuales (la importación Excel está deshabilitada y "Nuevo Desembolso"
+                // siempre exige socio). Es un caso raro, así que en vez de ser una página
+                // aparte que nadie recuerda revisar, se vuelve visible aquí solo cuando
+                // realmente hay algo que resolver.
+                isAdmin ? api.get('/admin/disbursed-loans/orphans') : Promise.resolve({ status: 'skipped' }),
             ]);
             if (results[0].status === 'fulfilled') setExec(results[0].value.data);
             else setError('No se pudieron cargar los indicadores ejecutivos.');
@@ -230,6 +236,7 @@ const ExecutivePanelPage = () => {
             setPending({
                 loanRequests: results[3].status === 'fulfilled' ? (results[3].value.data?.total || 0) : 0,
                 passwordResets: results[4].status === 'fulfilled' ? (results[4].value.data?.total || 0) : 0,
+                orphanLoans: results[5].status === 'fulfilled' ? (results[5].value.data?.total || 0) : 0,
             });
             setLoading(false);
         };
@@ -676,7 +683,7 @@ const ExecutivePanelPage = () => {
                     <Bell className="h-4 w-4 text-brand-primary" />
                     Acciones Pendientes
                 </h2>
-                <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
+                <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
                     <button
                         onClick={goToAdmin('/admin/loans/approvals')}
                         className={`text-left rounded-xl border p-4 flex items-center gap-3 transition-all duration-200 hover:shadow-md active:scale-[0.98] ${
@@ -715,6 +722,26 @@ const ExecutivePanelPage = () => {
                         </div>
                         <ChevronRight className="h-4 w-4 text-gray-300 flex-shrink-0" />
                     </button>
+                    {/* Solo aparece si hay algo que resolver — es un caso raro (solo puede
+                        pasar por un script de migración manual, la importación Excel está
+                        deshabilitada), no una cola de trabajo diaria como las otras dos. */}
+                    {pending.orphanLoans > 0 && (
+                        <button
+                            onClick={goToAdmin('/admin/loans/orphans')}
+                            className="text-left rounded-xl border p-4 flex items-center gap-3 transition-all duration-200 hover:shadow-md active:scale-[0.98] bg-amber-50 border-amber-200 hover:border-amber-300"
+                        >
+                            <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-amber-100">
+                                <UserX className="h-5 w-5 text-amber-600" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-extrabold text-gray-900">
+                                    {pending.orphanLoans} préstamo{pending.orphanLoans > 1 ? 's' : ''} sin socio asignado
+                                </p>
+                                <p className="text-[11px] text-gray-500">Quedaron sin cliente vinculado — asígnalos para incluirlos en el análisis</p>
+                            </div>
+                            <ChevronRight className="h-4 w-4 text-gray-300 flex-shrink-0" />
+                        </button>
+                    )}
                 </div>
             </div>
             )}

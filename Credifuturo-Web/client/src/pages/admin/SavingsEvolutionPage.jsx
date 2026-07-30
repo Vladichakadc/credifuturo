@@ -17,7 +17,7 @@ const fmtCorto = (n) => {
 };
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
-const SavingsEvolutionPage = () => {
+const SavingsEvolutionPage = ({ user }) => {
     const [data, setData] = useState(null);
     const [clients, setClients] = useState([]);
     const [clientId, setClientId] = useState('');
@@ -25,12 +25,21 @@ const SavingsEvolutionPage = () => {
     const [error, setError] = useState(null);
 
     useEffect(() => {
+        if (user && user.role !== 'admin') {
+            setClients([{ 
+                id: user.id, 
+                name: user.name || 'Mi evolución', 
+                surname1: user.surname1 || user.apellido1 || '' 
+            }]);
+            return;
+        }
+
         api.get('/admin/clients')
             .then(res => setClients((res.data || [])
                 .filter(c => c.role === 'user')
                 .sort((a, b) => (a.name || '').localeCompare(b.name || ''))))
             .catch(() => {});
-    }, []);
+    }, [user]);
 
     useEffect(() => {
         setLoading(true);
@@ -53,7 +62,12 @@ const SavingsEvolutionPage = () => {
         const porKey = {};
         data.serieMensual.forEach(r => {
             const k = Number(r.anio) * 12 + (Number(r.mes) - 1);
-            porKey[k] = { neto: Number(r.neto) || 0, bruto: Number(r.bruto) || 0 };
+            porKey[k] = { 
+                neto: Number(r.neto) || 0, 
+                bruto: Number(r.bruto) || 0,
+                abonos: Number(r.abonos) || 0,
+                retiros: Number(r.retiros) || 0
+            };
         });
         const keys = Object.keys(porKey).map(Number);
         const minK = Math.min(...keys);
@@ -63,6 +77,8 @@ const SavingsEvolutionPage = () => {
         let acum = 0;
         for (let k = minK; k <= maxK; k++) {
             const flujo = porKey[k]?.neto || 0;
+            const abonos = porKey[k]?.abonos || 0;
+            const retiros = porKey[k]?.retiros || 0;
             acum += flujo;
             const esFuturo = k > hoyKey;
             const esBorde = k === hoyKey || (k === minK && minK > hoyKey);
@@ -70,6 +86,8 @@ const SavingsEvolutionPage = () => {
                 key: k,
                 label: `${MESES[k % 12]} ${String(Math.floor(k / 12)).slice(2)}`,
                 flujo,
+                abonos,
+                retiros,
                 // Dos series para el área: causado (sólido) y futuro/prepagos (punteado).
                 // El mes actual pertenece a ambas para que la línea conecte sin salto.
                 acumCausado: !esFuturo ? acum : null,
@@ -99,15 +117,18 @@ const SavingsEvolutionPage = () => {
         if (!active || !payload?.length) return null;
         const p = payload.find(x => x.value != null);
         if (!p) return null;
-        const esFuturo = p.payload?.esFuturo;
+        const d = p.payload;
         return (
-            <div className="bg-white p-3 border border-gray-200 shadow-lg rounded-lg text-xs">
-                <p className="font-bold text-gray-800 mb-1">{label}{esFuturo ? ' · prepagado' : ''}</p>
-                <p className="text-gray-700">Saldo acumulado: <b className="text-brand-primary">{fmt(p.value)}</b></p>
-                {p.payload?.flujo !== 0 && (
-                    <p className={p.payload.flujo < 0 ? 'text-red-600' : 'text-gray-500'}>
-                        Movimiento del mes: {fmt(p.payload.flujo)}
-                    </p>
+            <div className="bg-white p-3 border border-gray-200 shadow-lg rounded-lg text-xs min-w-[160px]">
+                <p className="font-bold text-gray-800 mb-1">{label}{d.esFuturo ? ' · prepagado' : ''}</p>
+                <p className="text-gray-700 mb-1.5">Saldo acumulado: <b className="text-brand-primary">{fmt(p.value)}</b></p>
+                
+                {(d.abonos > 0 || d.retiros < 0) && (
+                    <div className="pt-1.5 mt-1.5 border-t border-gray-100">
+                        {d.abonos > 0 && <p className="text-gray-500">Abonos: <span className="font-semibold text-green-600">{fmt(d.abonos)}</span></p>}
+                        {d.retiros < 0 && <p className="text-gray-500">Devolución/Recargo: <span className="font-semibold text-red-600">{fmt(d.retiros)}</span></p>}
+                        <p className="text-gray-500 mt-1">Neto mensual: <span className={`font-semibold ${d.flujo < 0 ? 'text-red-600' : 'text-gray-800'}`}>{fmt(d.flujo)}</span></p>
+                    </div>
                 )}
             </div>
         );
@@ -126,22 +147,47 @@ const SavingsEvolutionPage = () => {
                         Stock · Flujo · Composición — con devoluciones visibles y prepagos diferenciados
                     </p>
                 </div>
-                {/* Selector de socio */}
-                <label className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg px-3 min-h-[44px]">
-                    <Users className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                    <select
-                        value={clientId}
-                        onChange={(e) => setClientId(e.target.value)}
-                        className="text-sm font-semibold text-gray-700 bg-transparent focus:outline-none py-2 max-w-[220px]"
-                    >
-                        <option value="">Todo el fondo</option>
-                        {clients.map(c => (
-                            <option key={c.id} value={c.id}>
-                                {c.name} {c.apellido1 || c.surname1 || ''}{c.estatus !== 'Activo' ? ' (inactivo)' : ''}
-                            </option>
-                        ))}
-                    </select>
-                </label>
+                {/* Selector de socio / Filtros */}
+                {user && user.role !== 'admin' ? (
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setClientId('')}
+                            className={`inline-flex items-center gap-1.5 border text-xs font-bold px-4 py-2 rounded-lg transition-colors min-h-[38px] ${
+                                clientId === '' 
+                                    ? 'bg-brand-primary border-brand-primary text-white' 
+                                    : 'border-brand-primary text-brand-primary hover:bg-brand-primary/5'
+                            }`}
+                        >
+                            Todo el fondo
+                        </button>
+                        <button
+                            onClick={() => setClientId(String(user.id))}
+                            className={`inline-flex items-center gap-1.5 border text-xs font-bold px-4 py-2 rounded-lg transition-colors min-h-[38px] ${
+                                String(clientId) === String(user.id)
+                                    ? 'bg-brand-primary border-brand-primary text-white' 
+                                    : 'border-brand-primary text-brand-primary hover:bg-brand-primary/5'
+                            }`}
+                        >
+                            Mi evolución
+                        </button>
+                    </div>
+                ) : (
+                    <label className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg px-3 min-h-[44px]">
+                        <Users className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                        <select
+                            value={clientId}
+                            onChange={(e) => setClientId(e.target.value)}
+                            className="text-sm font-semibold text-gray-700 bg-transparent focus:outline-none py-2 max-w-[220px]"
+                        >
+                            <option value="">Todo el fondo</option>
+                            {clients.map(c => (
+                                <option key={c.id} value={c.id}>
+                                    {c.name} {c.apellido1 || c.surname1 || ''}{c.estatus !== 'Activo' ? ' (inactivo)' : ''}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                )}
             </div>
 
             {loading ? (
@@ -244,14 +290,26 @@ const SavingsEvolutionPage = () => {
                                         <YAxis axisLine={false} tickLine={false} tickFormatter={fmtCorto}
                                             tick={{ fill: '#94a3b8', fontSize: 10 }} width={52} />
                                         <RechartsTooltip
-                                            formatter={(v) => [fmt(v), v < 0 ? 'Retiro / devolución' : 'Abono del mes']}
+                                            content={({ active, payload, label }) => {
+                                                if (active && payload && payload.length) {
+                                                    const d = payload[0].payload;
+                                                    return (
+                                                        <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 shadow-xl text-xs text-left min-w-[150px]">
+                                                            <p className="text-gray-400 font-medium mb-1.5">{label}</p>
+                                                            {d.abonos > 0 && <p className="text-gray-200">Abonos: <span className="font-semibold text-green-400">{fmt(d.abonos)}</span></p>}
+                                                            {d.retiros < 0 && <p className="text-gray-200">Devolución / Recargo: <span className="font-semibold text-red-400">{fmt(d.retiros)}</span></p>}
+                                                            <div className="h-px bg-gray-800 my-1.5" />
+                                                            <p className="text-gray-200">Neto: <span className={`font-semibold ${d.flujo < 0 ? 'text-red-400' : 'text-gray-100'}`}>{fmt(d.flujo)}</span></p>
+                                                        </div>
+                                                    );
+                                                }
+                                                return null;
+                                            }}
+                                            cursor={{ fill: '#f1f5f9' }}
                                         />
                                         <ReferenceLine y={0} stroke="#9ca3af" strokeWidth={1} />
-                                        <Bar dataKey="flujo" radius={[3, 3, 0, 0]} maxBarSize={26} isAnimationActive={false}>
-                                            {derived.serie.map((s, i) => (
-                                                <Cell key={i} fill={s.flujo < 0 ? '#dc2626' : s.esFuturo ? '#a7d3b7' : '#166534'} />
-                                            ))}
-                                        </Bar>
+                                        <Bar dataKey="abonos" stackId="a" fill="#166534" radius={[3, 3, 0, 0]} maxBarSize={26} isAnimationActive={false} />
+                                        <Bar dataKey="retiros" stackId="a" fill="#dc2626" radius={[0, 0, 3, 3]} maxBarSize={26} isAnimationActive={false} />
                                     </BarChart>
                                 </ResponsiveContainer>
                             </div>
