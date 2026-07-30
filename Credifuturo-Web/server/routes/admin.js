@@ -4150,32 +4150,56 @@ router.post('/backup/restore', restoreUpload.single('database'), async (req, res
 // ─────────────────────────────────────────────
 const INFORMES_DIR = 'C:\\Credifuturo\\Informes';
 
-// La carpeta Informes/ tiene ~230 documentos técnicos (auditorías de seguridad, planes
-// de incidentes, migraciones de datos) pensados para el admin, no para consulta general
-// de la Junta. Leonardo y Xiomara (Junta, no-admin) solo deben ver lo que se comparte
-// explícitamente con ellos — hoy, solo este informe. Agregar aquí cada nuevo documento
-// que se quiera compartir con Junta.
+// Los ~230 documentos técnicos de INFORMES_DIR (auditorías de seguridad, planes de
+// incidentes, migraciones de datos) viven solo en la máquina Windows del admin — esa
+// carpeta no existe en Railway (producción), y no queremos que documentos internos
+// se empaqueten en el build. Los informes que sí deben verse en producción (los
+// compartidos con Junta) se guardan aparte, dentro del repo, para que viajen con
+// cada despliegue.
+const SHARED_INFORMES_DIR = path.join(__dirname, '..', 'shared-informes');
+
+// La carpeta Informes/ tiene ~230 documentos técnicos pensados para el admin, no para
+// consulta general de la Junta. Leonardo y Xiomara (Junta, no-admin) solo deben ver lo
+// que se comparte explícitamente con ellos — hoy, solo este informe. Agregar aquí cada
+// nuevo documento que se quiera compartir con Junta, y copiar el archivo también a
+// SHARED_INFORMES_DIR para que esté disponible en producción.
 const JUNTA_INFORMES_VISIBLES = new Set(['Interes_Proporcional_Retanqueos.pdf']);
+
+function findInformePath(name) {
+    const sharedPath = path.join(SHARED_INFORMES_DIR, name);
+    if (fs.existsSync(sharedPath)) return sharedPath;
+    const localPath = path.join(INFORMES_DIR, name);
+    if (fs.existsSync(localPath)) return localPath;
+    return null;
+}
 
 router.get('/informes', async (req, res) => {
     try {
-        if (!fs.existsSync(INFORMES_DIR)) {
-            return res.json([]);
-        }
         const isAdminReq = req.user?.role === 'admin';
-        const files = fs.readdirSync(INFORMES_DIR);
-        const reports = files
-            .filter(f => f.endsWith('.md') || f.endsWith('.txt') || f.endsWith('.pdf'))
-            .filter(f => isAdminReq || JUNTA_INFORMES_VISIBLES.has(f))
-            .map(f => {
+        const seen = new Set();
+        const reports = [];
+
+        if (fs.existsSync(SHARED_INFORMES_DIR)) {
+            for (const f of fs.readdirSync(SHARED_INFORMES_DIR)) {
+                if (!(f.endsWith('.md') || f.endsWith('.txt') || f.endsWith('.pdf'))) continue;
+                if (!(isAdminReq || JUNTA_INFORMES_VISIBLES.has(f))) continue;
+                const stat = fs.statSync(path.join(SHARED_INFORMES_DIR, f));
+                reports.push({ name: f, createdAt: stat.birthtime, updatedAt: stat.mtime });
+                seen.add(f);
+            }
+        }
+
+        if (fs.existsSync(INFORMES_DIR)) {
+            for (const f of fs.readdirSync(INFORMES_DIR)) {
+                if (seen.has(f)) continue;
+                if (!(f.endsWith('.md') || f.endsWith('.txt') || f.endsWith('.pdf'))) continue;
+                if (!(isAdminReq || JUNTA_INFORMES_VISIBLES.has(f))) continue;
                 const stat = fs.statSync(path.join(INFORMES_DIR, f));
-                return {
-                    name: f,
-                    createdAt: stat.birthtime,
-                    updatedAt: stat.mtime
-                };
-            })
-            .sort((a, b) => b.createdAt - a.createdAt);
+                reports.push({ name: f, createdAt: stat.birthtime, updatedAt: stat.mtime });
+            }
+        }
+
+        reports.sort((a, b) => b.createdAt - a.createdAt);
         res.json(reports);
     } catch (err) {
         console.error('Error al listar informes:', err);
@@ -4193,8 +4217,8 @@ router.get('/informes/:name', async (req, res) => {
         if (!isAdminReq && !JUNTA_INFORMES_VISIBLES.has(name)) {
             return res.status(403).json({ error: 'No tienes acceso a este informe.' });
         }
-        const filePath = path.join(INFORMES_DIR, name);
-        if (!fs.existsSync(filePath)) {
+        const filePath = findInformePath(name);
+        if (!filePath) {
             return res.status(404).json({ error: 'Informe no encontrado' });
         }
         // Los .pdf se sirven como binario (el visor los pide con responseType: 'blob'
@@ -4219,8 +4243,8 @@ router.delete('/informes/:name', async (req, res) => {
         if (name.includes('..') || name.includes('/') || name.includes('\\')) {
             return res.status(400).json({ error: 'Nombre de archivo inválido' });
         }
-        const filePath = path.join(INFORMES_DIR, name);
-        if (fs.existsSync(filePath)) {
+        const filePath = findInformePath(name);
+        if (filePath) {
             fs.unlinkSync(filePath);
         }
         res.json({ success: true });
