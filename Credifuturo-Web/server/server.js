@@ -60,9 +60,16 @@ if (isProduction) {
 
 // A05 (Security Misconfiguration): headers de seguridad por defecto
 app.use(helmet({
-    // El frontend React vive en mismo origen, pero permitimos contentSecurityPolicy
-    // por defecto; si rompe algo en prod, ajustar las directivas aquí.
-    contentSecurityPolicy: isProduction ? undefined : false,
+    // El frontend React vive en mismo origen. frame-src se extiende con 'blob:'
+    // porque 'self' no cubre automáticamente ese esquema — lo necesita el visor
+    // de informes en PDF (InformesViewerPage), que embebe el PDF en un <iframe
+    // src="blob:..."> para poder mandar el JWT en la descarga.
+    contentSecurityPolicy: isProduction ? {
+        directives: {
+            ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+            'frame-src': ["'self'", 'blob:']
+        }
+    } : false,
     crossOriginEmbedderPolicy: false
 }));
 
