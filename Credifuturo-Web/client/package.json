@@ -23,7 +23,7 @@
         "recharts": "^3.8.1",
         "remark-gfm": "^4.0.1",
         "tailwind-merge": "^3.5.0",
-        "xlsx": "^0.18.5"
+        "xlsx": "npm:@e965/xlsx@^0.20.3"
     },
     "devDependencies": {
         "@types/react": "^18.2.66",

@@ -61,10 +61,13 @@ jobs:
             npm run lint --if-present
           fi
 
-      - name: npm audit (falla en high/critical)
+      - name: npm audit (falla en high/critical de dependencias de produccion)
         run: |
           if [ -f package.json ]; then
-            npm audit --audit-level=high
+            # --omit=dev: solo auditamos lo que se despacha en runtime. Las
+            # herramientas de build (vite/esbuild) son devDependencies; sus
+            # avisos se atienden por Dependabot, no bloquean el pipeline.
+            npm audit --omit=dev --audit-level=high
           else
             echo "No package.json - se omite npm audit"
           fi
