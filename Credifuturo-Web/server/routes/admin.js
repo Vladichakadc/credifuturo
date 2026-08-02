@@ -206,26 +206,51 @@ router.get('/clients', async (req, res) => {
     }
 });
 
-// GET /clients/list - Lista completa de clientes para tabla (ordenada por PK ASC)
+// Construye el `where` de búsqueda/filtro de socios a partir del query string.
+// Centraliza los Op.like/Op.in que antes estaban duplicados en varios endpoints.
+// Params soportados (todos opcionales): q, estatus, tipoCliente, socioFundador,
+// ciudad. `estatus`/`tipoCliente`/`ciudad` aceptan lista separada por comas.
+function buildClientWhere(query = {}) {
+    const { Op } = require('sequelize');
+    const and = [];
+
+    const q = (query.q || '').trim();
+    if (q) {
+        and.push({
+            [Op.or]: [
+                { name: { [Op.like]: `%${q}%` } },
+                { surname1: { [Op.like]: `%${q}%` } },
+                { surname2: { [Op.like]: `%${q}%` } },
+                { cedula: { [Op.like]: `%${q}%` } },
+                { customerId: { [Op.like]: `%${q}%` } },
+                { email: { [Op.like]: `%${q}%` } }
+            ]
+        });
+    }
+
+    const addIn = (field, value) => {
+        if (value === undefined || value === null || String(value).trim() === '') return;
+        const arr = String(value).split(',').map(s => s.trim()).filter(Boolean);
+        if (arr.length === 1) and.push({ [field]: arr[0] });
+        else if (arr.length > 1) and.push({ [field]: { [Op.in]: arr } });
+    };
+    addIn('estatus', query.estatus);
+    addIn('tipoCliente', query.tipoCliente);
+    addIn('socioFundador', query.socioFundador);
+    addIn('ciudad', query.ciudad);
+
+    return and.length ? { [Op.and]: and } : {};
+}
+
+// GET /clients/list - Lista de socios para tabla (ordenada por PK ASC).
+// Compatibilidad: sin params de paginación devuelve TODOS los socios como antes
+// (misma forma { ok, data, total }); con ?page/?limit pagina y añade page/limit.
 router.get('/clients/list', async (req, res) => {
     try {
-        const { q } = req.query;
-        let whereClause = {};
-
-        // Búsqueda opcional por nombre, apellido o cédula
-        if (q && q.trim()) {
-            const { Op } = require('sequelize');
-            const searchTerm = q.trim();
-            whereClause = {
-                [Op.or]: [
-                    { name: { [Op.like]: `%${searchTerm}%` } },
-                    { surname1: { [Op.like]: `%${searchTerm}%` } },
-                    { surname2: { [Op.like]: `%${searchTerm}%` } },
-                    { cedula: { [Op.like]: `%${searchTerm}%` } },
-                    { customerId: { [Op.like]: `%${searchTerm}%` } }
-                ]
-            };
-        }
+        const { Op } = require('sequelize');
+        const paginate = req.query.page !== undefined || req.query.limit !== undefined;
+        const sinTasa = String(req.query.sinTasa) === 'true' || String(req.query.sinTasa) === '1';
+        const whereClause = buildClientWhere(req.query);
 
         const clients = await Client.findAll({
             where: whereClause,
@@ -254,13 +279,19 @@ router.get('/clients/list', async (req, res) => {
         });
 
         // Calcular % Préstamos efectivo: préstamo activo del año actual tiene prioridad
-        // sobre el valor manual almacenado en el socio.
+        // sobre el valor manual almacenado en el socio. Se acota la consulta a los
+        // socios devueltos (evita traer préstamos de socios que no están en la lista).
         const DisbursedLoan = require('../models/DisbursedLoan');
         const anioActual = new Date().getFullYear();
-        const prestamosActivos = await DisbursedLoan.findAll({
-            where: { anioDesembolso: anioActual, estado: { [require('sequelize').Op.in]: ['Activo', 'Vigente', 'Pendiente'] } },
+        const clientIds = clients.map(c => c.id);
+        const prestamosActivos = clientIds.length ? await DisbursedLoan.findAll({
+            where: {
+                anioDesembolso: anioActual,
+                estado: { [Op.in]: ['Activo', 'Vigente', 'Pendiente'] },
+                clientId: { [Op.in]: clientIds }
+            },
             attributes: ['clientId', 'interesMensual']
-        });
+        }) : [];
         // Mapa clientId → interesMensual del préstamo más reciente del año
         const loanRateMap = {};
         prestamosActivos.forEach(l => {
@@ -284,10 +315,28 @@ router.get('/clients/list', async (req, res) => {
             }
         });
 
+        // Filtro "sin tasa asignada": se aplica sobre la tasa EFECTIVA ya calculada
+        // (ni manual ni por préstamo activo), por eso va aquí y no en el where SQL.
+        let result = sinTasa
+            ? normalizedData.filter(c => c.porcentajeEfectivo === null)
+            : normalizedData;
+
+        const total = result.length;
+        let page = 1;
+        let limit = total;
+        if (paginate) {
+            page = Math.max(1, parseInt(req.query.page, 10) || 1);
+            limit = Math.max(1, Math.min(parseInt(req.query.limit, 10) || 20, 500));
+            const start = (page - 1) * limit;
+            result = result.slice(start, start + limit);
+        }
+
         res.json({
             ok: true,
-            data: normalizedData,
-            total: normalizedData.length
+            data: result,
+            total,
+            page,
+            limit
         });
     } catch (err) {
         console.error('Error en /clients/list:', err);
@@ -315,6 +364,10 @@ router.post('/clients', async (req, res) => {
             genero, pais, ciudad, tipoCliente, socioFundador,
             referido, cargo, fechaIngreso, fechaBaja, estatus, customerId
         } = req.body;
+
+        if (estatus !== undefined && estatus !== null && estatus !== '' && !VALID_ESTATUS.includes(estatus)) {
+            return res.status(400).json({ error: `Estatus inválido. Valores permitidos: ${VALID_ESTATUS.join(', ')}.` });
+        }
 
         const existing = await Client.findOne({ where: { cedula } });
         if (existing) {
@@ -416,6 +469,10 @@ const ALLOWED_CLIENT_FIELDS = [
     'porcentajePrestamo'
 ];
 
+// Vocabulario controlado de `estatus`. SQLite no fuerza el ENUM del modelo, así
+// que se valida a mano en create/update para evitar valores libres ("Inactivo").
+const VALID_ESTATUS = ['Activo', 'Desactivado'];
+
 const ALLOWED_DISBURSED_LOAN_FIELDS = [
     'clientId', 'estado', 'fechaPrestamo', 'mesDesembolso', 'anioDesembolso',
     'valorPrestado', 'cuotas', 'interesMensual', 'diasPagoMax', 'itemQuantity',
@@ -450,8 +507,24 @@ router.put('/clients/:id', async (req, res) => {
         const updates = pickFields(req.body, ALLOWED_CLIENT_FIELDS);
         if (updates.fechaBaja === '' || updates.fechaBaja === 'Invalid date') updates.fechaBaja = null;
         if (updates.email === '' || updates.email === 'null') updates.email = null;
+        if (updates.estatus !== undefined && !VALID_ESTATUS.includes(updates.estatus)) {
+            return res.status(400).json({ error: `Estatus inválido. Valores permitidos: ${VALID_ESTATUS.join(', ')}.` });
+        }
 
+        // Snapshot previo (solo campos editables) para la traza de auditoría
+        const beforeSnapshot = pickFields(client.toJSON(), ALLOWED_CLIENT_FIELDS);
         await client.update(updates);
+
+        // Auditoría: registra qué campos cambiaron (antes → después), sin secretos
+        const changed = {};
+        for (const k of Object.keys(updates)) {
+            if (String(beforeSnapshot[k] ?? '') !== String(updates[k] ?? '')) {
+                changed[k] = { from: beforeSnapshot[k] ?? null, to: updates[k] ?? null };
+            }
+        }
+        if (Object.keys(changed).length) {
+            logSecurityEvent('CLIENT_UPDATED', { actorId: req.user?.id, clientId: client.id, cedula: client.cedula, changed, ip: getClientIp(req) });
+        }
 
         // Notifica al socio solo si su tasa asignada realmente cambió a un valor
         // nuevo (no cuando se limpia/deja en null, ni en ediciones de otros campos).
@@ -483,20 +556,47 @@ router.put('/clients/:id', async (req, res) => {
     }
 });
 
+// DELETE /clients/:id — por defecto DESACTIVA (soft-delete reversible vía
+// estatus/fechaBaja), preservando el historial financiero del socio. El borrado
+// físico (?hard=true) solo se permite si el socio no tiene NINGÚN registro
+// financiero. Ambas ramas dejan traza de auditoría.
 router.delete('/clients/:id', async (req, res) => {
     try {
         const client = await Client.findByPk(req.params.id);
         if (!client) return res.status(404).json({ error: 'Socio no encontrado' });
 
-        const savingsCount = await Saving.count({ where: { clientId: req.params.id } });
-        const loansCount = await Loan.count({ where: { clientId: req.params.id } });
+        const hard = String(req.query.hard) === 'true';
 
-        if (savingsCount > 0 || loansCount > 0) {
-            return res.status(400).json({ error: 'No se puede eliminar un socio que tiene ahorros o préstamos registrados.' });
+        if (hard) {
+            const LoanRequest = require('../models/LoanRequest');
+            const [savingsCount, loansCount, disbCount, payCount, reqCount] = await Promise.all([
+                Saving.count({ where: { clientId: req.params.id } }),
+                Loan.count({ where: { clientId: req.params.id } }),
+                DisbursedLoan.count({ where: { clientId: req.params.id } }),
+                LoanPayment.count({ where: { clientId: req.params.id } }),
+                LoanRequest.count({ where: { clientId: req.params.id } })
+            ]);
+            if (savingsCount || loansCount || disbCount || payCount || reqCount) {
+                return res.status(400).json({
+                    error: 'No se puede eliminar definitivamente un socio con registros financieros (ahorros, préstamos, cuotas o solicitudes). Use la desactivación.'
+                });
+            }
+            await client.destroy();
+            logSecurityEvent('CLIENT_HARD_DELETED', { actorId: req.user?.id, clientId: client.id, cedula: client.cedula, ip: getClientIp(req) });
+            return res.json({ message: 'Socio eliminado definitivamente', mode: 'hard' });
         }
 
-        await client.destroy();
-        res.json({ message: 'Socio eliminado con éxito' });
+        // Soft-delete: desactivar (reversible)
+        if (client.estatus === 'Desactivado') {
+            return res.status(400).json({ error: 'El socio ya está desactivado.' });
+        }
+        const before = { estatus: client.estatus, fechaBaja: client.fechaBaja };
+        await client.update({ estatus: 'Desactivado', fechaBaja: new Date().toISOString().slice(0, 10) });
+        logSecurityEvent('CLIENT_DEACTIVATED', {
+            actorId: req.user?.id, clientId: client.id, cedula: client.cedula,
+            before, after: { estatus: 'Desactivado', fechaBaja: client.fechaBaja }, ip: getClientIp(req)
+        });
+        res.json({ message: 'Socio desactivado con éxito', mode: 'soft', estatus: 'Desactivado' });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -516,7 +616,8 @@ router.get('/clients/search', async (req, res) => {
                     { surname2: { [Op.like]: `%${query}%` } },
                     { cedula: { [Op.like]: `%${query}%` } }
                 ]
-            }
+            },
+            attributes: { exclude: ['password'] } // A02: no exponer hashes bcrypt
         });
         res.json(clients);
     } catch (err) {
@@ -524,6 +625,20 @@ router.get('/clients/search', async (req, res) => {
     }
 });
 
+
+// GET /clients/:id — un socio por PK (sin hash). Registrado DESPUÉS de las rutas
+// literales (/clients/list, /search, /cedula/:cedula) para no ensombrecerlas.
+router.get('/clients/:id', async (req, res) => {
+    try {
+        const client = await Client.findByPk(req.params.id, {
+            attributes: { exclude: ['password'] } // A02: no exponer hashes bcrypt
+        });
+        if (!client) return res.status(404).json({ error: 'Socio no encontrado' });
+        res.json(client);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 
 router.get('/clients/:id/balance', async (req, res) => {
     try {
@@ -1068,9 +1183,12 @@ router.get('/savings', async (req, res) => {
 // GET /savings/list - Lista completa de ahorros para tabla
 router.get('/savings/list', async (req, res) => {
     try {
-        const { q, year, status, type } = req.query;
+        const { q, year, status, type, clientId } = req.query;
         const { Op } = require('sequelize');
         let whereClause = {};
+
+        // Filtro opcional por socio (usado por la ficha 360° del admin)
+        if (clientId) whereClause.clientId = clientId;
 
         // Filtro tipo (Mensual o Aporte Inicial)
         if (type && type.trim() && type.trim() !== 'Todos') {

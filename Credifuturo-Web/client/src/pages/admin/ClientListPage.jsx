@@ -1,12 +1,20 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { apiWithRetry } from '../../config/api';
 import api from '../../config/api';
-import { Search, RefreshCw, Users, AlertTriangle, Inbox, Download, ChevronLeft, ChevronRight } from 'lucide-react';
+import {
+    Search, RefreshCw, Users, AlertTriangle, Inbox, Download, ChevronLeft, ChevronRight,
+    Filter, Building2, Tag, Award, PercentDiamond, XCircle, MoreVertical, Eye, Pencil, PowerOff, Power
+} from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Card, CardContent } from '../../components/ui/Card';
+import { Badge } from '../../components/ui/Badge';
 import { useUi } from '../../context/UiContext';
 import ListHeader from '../../components/admin/ListHeader';
-import * as XLSX from 'xlsx';
-import { formatDate } from '../../utils/excelUtils';
+import StatusMultiSelect from '../../components/admin/StatusMultiSelect';
+import PillSingleSelect from '../../components/admin/PillSingleSelect';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import { exportToExcel, formatDate } from '../../utils/excelUtils';
 import { useSortTable, SortIcon } from '../../utils/useSortTable';
 
 // Configuración de columnas de la tabla (mapeo completo de Tabla_Clientes)
@@ -39,27 +47,16 @@ const TABLE_COLUMNS = [
 
 const ITEMS_PER_PAGE = 20;
 
-
-// ——— Status Badge ———
+// ——— Status Badge (estandarizado sobre el primitivo Badge) ———
 const StatusBadge = ({ value }) => {
     if (!value) return <span className="text-gray-400 text-xs italic">—</span>;
-
     const normalized = value.trim().toLowerCase();
     const isActive = normalized === 'activo' || normalized === 'active';
-
     return (
-        <span
-            className={`
-                inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold tracking-wide
-                ${isActive
-                    ? 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200'
-                    : 'bg-red-100 text-red-700 ring-1 ring-red-200'
-                }
-            `}
-        >
+        <Badge variant={isActive ? 'success' : 'error'}>
             <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${isActive ? 'bg-emerald-500' : 'bg-red-500'}`} />
             {value}
-        </span>
+        </Badge>
     );
 };
 
@@ -133,10 +130,53 @@ const CellValue = ({ column, value, row = {} }) => {
     return <span className="text-gray-700">{value}</span>;
 };
 
-import { useSearchParams } from 'react-router-dom';
+// ——— Menú de acciones por fila (Ver / Editar / Desactivar-Reactivar) ———
+const RowActions = ({ client, onView, onEdit, onToggleStatus }) => {
+    const [open, setOpen] = useState(false);
+    const ref = useRef(null);
+    useEffect(() => {
+        const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+    const isActive = (client.estatus || '').trim().toLowerCase().startsWith('activo');
+    const item = 'flex w-full items-center gap-2 px-4 py-2.5 text-sm text-left hover:bg-gray-50 transition-colors';
+    return (
+        <div ref={ref} className="relative inline-block" onClick={(e) => e.stopPropagation()}>
+            <button
+                onClick={() => setOpen(o => !o)}
+                aria-label="Acciones del socio"
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+            >
+                <MoreVertical className="h-4 w-4" />
+            </button>
+            {open && (
+                <div className="absolute right-0 top-full mt-1 z-20 w-44 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden">
+                    <button className={item} onClick={() => { setOpen(false); onView(client); }}>
+                        <Eye className="h-4 w-4 text-gray-500" /> Ver ficha
+                    </button>
+                    <button className={item} onClick={() => { setOpen(false); onEdit(client); }}>
+                        <Pencil className="h-4 w-4 text-gray-500" /> Editar
+                    </button>
+                    <div className="border-t border-gray-100" />
+                    {isActive ? (
+                        <button className={`${item} text-red-600`} onClick={() => { setOpen(false); onToggleStatus(client, 'deactivate'); }}>
+                            <PowerOff className="h-4 w-4" /> Desactivar
+                        </button>
+                    ) : (
+                        <button className={`${item} text-emerald-700`} onClick={() => { setOpen(false); onToggleStatus(client, 'reactivate'); }}>
+                            <Power className="h-4 w-4" /> Reactivar
+                        </button>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
 
 const ClientListPage = () => {
     const { toast } = useUi();
+    const navigate = useNavigate();
     const [searchParams] = useSearchParams();
 
     // States
@@ -144,17 +184,28 @@ const ClientListPage = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
-    const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || 'Todos');
     const [currentPage, setCurrentPage] = useState(1);
 
-    // Fetch clients from backend
+    // Filtros multi-faceta
+    const initialStatus = searchParams.get('status');
+    const [statusSel, setStatusSel] = useState(initialStatus && initialStatus !== 'Todos' ? [initialStatus] : []);
+    const [tipoSel, setTipoSel] = useState([]);
+    const [fundadorSel, setFundadorSel] = useState('');
+    const [ciudadSel, setCiudadSel] = useState('');
+    const [soloSinTasa, setSoloSinTasa] = useState(false);
+
+    // Confirmación de (des)activación
+    const [confirmTarget, setConfirmTarget] = useState(null); // { client, action }
+    const [confirmLoading, setConfirmLoading] = useState(false);
+
+    // Fetch clients from backend (full set; el filtrado/orden/paginación es client-side
+    // para respuesta instantánea — el volumen de socios es pequeño. El backend ya
+    // soporta paginación/filtros server-side vía params si el padrón crece.)
     const fetchClients = useCallback(async () => {
         setLoading(true);
         setError(null);
         try {
-            // Updated to support potential backend filtering if we want, 
-            // but for now we fetch all and filter client-side for better UX
-            const res = await api.get('/admin/clients/list');
+            const res = await apiWithRetry(() => api.get('/admin/clients/list'));
             if (res.data && res.data.ok) {
                 setClients(res.data.data);
             } else {
@@ -173,19 +224,43 @@ const ClientListPage = () => {
         fetchClients();
     }, [fetchClients]);
 
-    // Client-side filtering (Search + Status)
+    // Opciones de cada faceta derivadas de los datos cargados (sin llamadas extra)
+    const uniqueSorted = (key) => [...new Set(clients.map(c => c[key]?.toString().trim()).filter(Boolean))].sort();
+    const availableStatuses = useMemo(() => uniqueSorted('estatus'), [clients]);
+    const availableTipos = useMemo(() => uniqueSorted('tipoCliente'), [clients]);
+    const availableFundador = useMemo(() => uniqueSorted('socioFundador'), [clients]);
+    const availableCiudades = useMemo(() => uniqueSorted('ciudad'), [clients]);
+
+    const activeFilterCount =
+        statusSel.length + tipoSel.length + (fundadorSel ? 1 : 0) + (ciudadSel ? 1 : 0) + (soloSinTasa ? 1 : 0);
+
+    const clearFilters = () => {
+        setStatusSel([]); setTipoSel([]); setFundadorSel(''); setCiudadSel(''); setSoloSinTasa(false); setSearchTerm('');
+    };
+
+    // Filtrado client-side (búsqueda + facetas)
     const filteredClients = useMemo(() => {
         let results = clients;
 
-        // Apply Status Filter
-        if (statusFilter !== 'Todos') {
-            const term = statusFilter.toLowerCase();
-            results = results.filter(c =>
-                c.estatus && c.estatus.toLowerCase().startsWith(term)
-            );
+        if (statusSel.length) {
+            const set = new Set(statusSel.map(s => s.toLowerCase()));
+            results = results.filter(c => c.estatus && set.has(c.estatus.trim().toLowerCase()));
+        }
+        if (tipoSel.length) {
+            const set = new Set(tipoSel);
+            results = results.filter(c => c.tipoCliente && set.has(c.tipoCliente.trim()));
+        }
+        if (fundadorSel) {
+            results = results.filter(c => (c.socioFundador || '').trim() === fundadorSel);
+        }
+        if (ciudadSel) {
+            results = results.filter(c => (c.ciudad || '').trim() === ciudadSel);
+        }
+        if (soloSinTasa) {
+            // "Sin tasa" = sin tasa EFECTIVA (ni manual ni por préstamo activo)
+            results = results.filter(c => c.porcentajeEfectivo === null || c.porcentajeEfectivo === undefined);
         }
 
-        // Apply Search Term Filter
         if (searchTerm.trim()) {
             const term = searchTerm.toLowerCase().trim();
             results = results.filter(c =>
@@ -200,14 +275,13 @@ const ClientListPage = () => {
         }
 
         return results;
-    }, [clients, searchTerm, statusFilter]);
+    }, [clients, searchTerm, statusSel, tipoSel, fundadorSel, ciudadSel, soloSinTasa]);
 
     // Reset page to 1 when filters change
     useEffect(() => {
         setCurrentPage(1);
-    }, [searchTerm, statusFilter]);
+    }, [searchTerm, statusSel, tipoSel, fundadorSel, ciudadSel, soloSinTasa]);
 
-    // Paginated data
     const { sortedData: sortedClients, sortConfig: clientSort, handleSort: handleClientSort } = useSortTable(filteredClients);
 
     const paginatedClients = useMemo(() => {
@@ -215,10 +289,32 @@ const ClientListPage = () => {
         return sortedClients.slice(start, start + ITEMS_PER_PAGE);
     }, [sortedClients, currentPage]);
 
-    // Derive distinct statuses from loaded clients (no extra API call needed)
-    const availableStatuses = useMemo(() => [
-        ...new Set(clients.map(c => c.estatus?.trim()).filter(Boolean))
-    ].sort(), [clients]);
+    // Navegación a la ficha 360°
+    const goToDetail = (client) => navigate(`/admin/clients/${client.id}`);
+    const goToEdit = (client) => navigate(`/admin/clients/${client.id}?edit=1`);
+
+    // (Des)activar socio
+    const requestToggle = (client, action) => setConfirmTarget({ client, action });
+    const runToggle = async () => {
+        if (!confirmTarget) return;
+        const { client, action } = confirmTarget;
+        setConfirmLoading(true);
+        try {
+            if (action === 'deactivate') {
+                await api.delete(`/admin/clients/${client.id}`); // soft-delete: desactiva
+                toast.success(`${client.name || 'Socio'} desactivado.`);
+            } else {
+                await api.put(`/admin/clients/${client.id}`, { estatus: 'Activo' });
+                toast.success(`${client.name || 'Socio'} reactivado.`);
+            }
+            setConfirmTarget(null);
+            await fetchClients();
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'No se pudo actualizar el estado del socio.');
+        } finally {
+            setConfirmLoading(false);
+        }
+    };
 
     const handleExport = () => {
         if (filteredClients.length === 0) {
@@ -243,12 +339,16 @@ const ClientListPage = () => {
             'Fecha de baja': formatDate(c.fechaBaja),
             'Cedula': c.cedula ?? '',
             'Correo': c.email ?? '',
+            '% Prestamo': c.porcentajeEfectivo != null ? Number(c.porcentajeEfectivo) : '',
         }));
-        const ws = XLSX.utils.json_to_sheet(dataToExport);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Socios');
-        XLSX.writeFile(wb, 'Tabla_Clientes.xlsx');
-        toast.success('Reporte exportado: Tabla_Clientes.xlsx');
+        const { success, error: exportErr } = exportToExcel(
+            dataToExport,
+            'Tabla_Clientes',
+            'Socios',
+            { '% Prestamo': '0.00"%"' }
+        );
+        if (success) toast.success('Reporte exportado: Tabla_Clientes.xlsx');
+        else toast.error(exportErr || 'No se pudo exportar.');
     };
 
     const totalPages = Math.max(1, Math.ceil(filteredClients.length / ITEMS_PER_PAGE));
@@ -266,7 +366,6 @@ const ClientListPage = () => {
                 <Card>
                     <CardContent className="p-0">
                         <div className="p-6 space-y-4">
-                            {/* Skeleton rows */}
                             {[...Array(8)].map((_, i) => (
                                 <div key={i} className="flex gap-4 items-center">
                                     <div className="h-4 w-12 bg-gray-200 rounded animate-pulse" />
@@ -327,50 +426,88 @@ const ClientListPage = () => {
                     />
                 </div>
 
-                <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
-                    {/* Status Filter - Rediseñado */}
-                    <div className="flex items-center gap-2 bg-gradient-to-r from-emerald-50 to-green-50 px-4 py-2 rounded-xl border-2 border-emerald-200/80 shadow-sm transition-all hover:shadow-lg hover:border-emerald-300 w-full sm:w-auto">
-                        <Users className="h-4 w-4 text-emerald-600" />
-                        <select
-                            aria-label="Filtrar por estado de socio"
-                            value={statusFilter}
-                            onChange={(e) => setStatusFilter(e.target.value)}
-                            className="text-sm font-bold text-emerald-900 bg-transparent border-none focus:ring-0 cursor-pointer outline-none p-0"
-                        >
-                            <option value="Todos">Todos</option>
-                            {availableStatuses.map(s => (
-                                <option key={s} value={s}>{s}</option>
-                            ))}
-                        </select>
-                    </div>
+                <div className="flex items-center gap-2 shrink-0">
+                    <Button variant="secondary" onClick={handleExport} title="Exportar a Excel" className="px-3">
+                        <Download className="h-4 w-4 sm:mr-2" />
+                        <span className="hidden sm:inline">Exportar</span>
+                    </Button>
+                    <Button variant="ghost" onClick={fetchClients} title="Recargar datos" className="px-2.5">
+                        <RefreshCw className="h-4 w-4" />
+                    </Button>
+                </div>
+            </div>
 
-                    {/* Search Box - Rediseñado */}
-                    <div className="relative flex-1 lg:w-64 w-full">
-                        <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border-2 border-gray-200/80 shadow-sm transition-all hover:shadow-lg hover:border-gray-300 w-full h-full">
-                            <Search className="h-4 w-4 text-gray-400" />
-                            <input
-                                id="search-clients"
-                                aria-label="Buscar socio"
-                                type="text"
-                                placeholder="Buscar socio..."
-                                className="w-full bg-transparent border-none focus:ring-0 text-sm font-medium text-gray-800 placeholder:text-gray-400 p-0"
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                        <Button variant="secondary" onClick={handleExport} title="Exportar a Excel" className="px-3">
-                            <Download className="h-4 w-4 sm:mr-2" />
-                            <span className="hidden sm:inline">Exportar</span>
-                        </Button>
-
-                        <Button variant="ghost" onClick={fetchClients} title="Recargar datos" className="px-2.5">
-                            <RefreshCw className="h-4 w-4" />
-                        </Button>
+            {/* Barra de filtros multi-faceta */}
+            <div className="flex flex-wrap items-center gap-3">
+                <div className="relative flex-1 min-w-[220px] max-w-sm">
+                    <div className="flex items-center gap-2 bg-white px-4 rounded-xl border-2 border-gray-200/80 shadow-sm transition-all hover:shadow-lg hover:border-gray-300 h-11">
+                        <Search className="h-4 w-4 text-gray-400" />
+                        <input
+                            id="search-clients"
+                            aria-label="Buscar socio"
+                            type="text"
+                            placeholder="Buscar socio..."
+                            className="w-full bg-transparent border-none focus:ring-0 text-sm font-medium text-gray-800 placeholder:text-gray-400 p-0"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
                     </div>
                 </div>
+
+                <StatusMultiSelect
+                    options={availableStatuses}
+                    selectedValues={statusSel}
+                    onChange={setStatusSel}
+                    labelPrefix="Estatus"
+                    icon={Users}
+                />
+                {availableTipos.length > 0 && (
+                    <StatusMultiSelect
+                        options={availableTipos}
+                        selectedValues={tipoSel}
+                        onChange={setTipoSel}
+                        labelPrefix="Tipo"
+                        icon={Tag}
+                    />
+                )}
+                {availableFundador.length > 0 && (
+                    <PillSingleSelect
+                        options={availableFundador}
+                        selectedValue={fundadorSel}
+                        onChange={setFundadorSel}
+                        labelPrefix="Fundador"
+                        icon={Award}
+                    />
+                )}
+                {availableCiudades.length > 0 && (
+                    <PillSingleSelect
+                        options={availableCiudades}
+                        selectedValue={ciudadSel}
+                        onChange={setCiudadSel}
+                        labelPrefix="Ciudad"
+                        icon={Building2}
+                    />
+                )}
+                <button
+                    onClick={() => setSoloSinTasa(v => !v)}
+                    className={`inline-flex items-center gap-2 px-4 rounded-xl border-2 shadow-sm transition-all h-11 text-sm font-bold ${
+                        soloSinTasa
+                            ? 'bg-amber-500 border-amber-500 text-white hover:bg-amber-600'
+                            : 'bg-white border-gray-200/80 text-gray-600 hover:border-amber-300 hover:text-amber-700'
+                    }`}
+                    title="Mostrar solo socios sin tasa de préstamo efectiva"
+                >
+                    <PercentDiamond className="h-4 w-4" /> Sin tasa
+                </button>
+
+                {activeFilterCount > 0 && (
+                    <button
+                        onClick={clearFilters}
+                        className="inline-flex items-center gap-1.5 px-3 h-11 rounded-xl text-sm font-semibold text-gray-500 hover:text-red-600 hover:bg-red-50 transition-colors"
+                    >
+                        <XCircle className="h-4 w-4" /> Limpiar ({activeFilterCount})
+                    </button>
+                )}
             </div>
 
             {/* EMPTY STATE */}
@@ -382,17 +519,13 @@ const ClientListPage = () => {
                         </div>
                         <h3 className="text-lg font-semibold text-gray-900 mb-1">Sin registros</h3>
                         <p className="text-gray-500 text-sm">
-                            {searchTerm
-                                ? `No se encontraron socios que coincidan con "${searchTerm}"`
+                            {activeFilterCount > 0 || searchTerm
+                                ? 'No se encontraron socios que coincidan con los filtros aplicados.'
                                 : 'No hay socios registrados en el sistema.'}
                         </p>
-                        {searchTerm && (
-                            <Button
-                                variant="ghost"
-                                onClick={() => setSearchTerm('')}
-                                className="mt-4 text-brand-primary hover:text-brand-dark"
-                            >
-                                Limpiar búsqueda
+                        {(activeFilterCount > 0 || searchTerm) && (
+                            <Button variant="ghost" onClick={clearFilters} className="mt-4 text-brand-primary hover:text-brand-dark">
+                                Limpiar filtros
                             </Button>
                         )}
                     </CardContent>
@@ -403,7 +536,6 @@ const ClientListPage = () => {
                     <Card className="overflow-hidden border-none shadow-none bg-transparent">
                         <div className="table-container max-h-[70vh] overflow-y-auto">
                             <table className="premium-table" id="clients-list-table">
-                                {/* Sticky Header */}
                                 <thead>
                                     <tr className="bg-brand-primary text-white">
                                         {TABLE_COLUMNS.map(col => (
@@ -411,18 +543,31 @@ const ClientListPage = () => {
                                                 <span className="inline-flex items-center gap-1">{col.label}<SortIcon colKey={col.key} sortConfig={clientSort} /></span>
                                             </th>
                                         ))}
+                                        <th className="sticky top-0 z-10 bg-brand-primary text-center" style={{ minWidth: '70px' }}>Acciones</th>
                                     </tr>
                                 </thead>
 
-                                {/* Body with zebra striping */}
                                 <tbody className="divide-y divide-gray-100">
                                     {paginatedClients.map((client, rowIdx) => (
-                                        <tr key={client.customerId || client.id} className={`transition-colors duration-150 ${rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/70'} hover:bg-emerald-50`}>
+                                        <tr
+                                            key={client.customerId || client.id}
+                                            onClick={() => goToDetail(client)}
+                                            className={`cursor-pointer transition-colors duration-150 ${rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/70'} hover:bg-emerald-50`}
+                                            title="Ver ficha del socio"
+                                        >
                                             {TABLE_COLUMNS.map(col => (
                                                 <td key={col.key} style={{ textAlign: col.align, minWidth: col.minWidth }} className={col.key === 'customerId' ? 'font-mono text-xs' : ''}>
                                                     <CellValue column={col} value={client[col.key]} row={client} />
                                                 </td>
                                             ))}
+                                            <td className="text-center">
+                                                <RowActions
+                                                    client={client}
+                                                    onView={goToDetail}
+                                                    onEdit={goToEdit}
+                                                    onToggleStatus={requestToggle}
+                                                />
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -450,6 +595,22 @@ const ClientListPage = () => {
                     )}
                 </>
             )}
+
+            {/* Confirmación de (des)activación */}
+            <ConfirmDialog
+                open={!!confirmTarget}
+                title={confirmTarget?.action === 'deactivate' ? 'Desactivar socio' : 'Reactivar socio'}
+                message={
+                    confirmTarget?.action === 'deactivate'
+                        ? `Se marcará a ${confirmTarget?.client?.name || 'este socio'} como Desactivado. Su historial se conserva y podrás reactivarlo después.`
+                        : `Se reactivará a ${confirmTarget?.client?.name || 'este socio'} (estatus Activo).`
+                }
+                confirmLabel={confirmTarget?.action === 'deactivate' ? 'Desactivar' : 'Reactivar'}
+                variant={confirmTarget?.action === 'deactivate' ? 'danger' : 'primary'}
+                loading={confirmLoading}
+                onConfirm={runToggle}
+                onClose={() => !confirmLoading && setConfirmTarget(null)}
+            />
         </div>
     );
 };
