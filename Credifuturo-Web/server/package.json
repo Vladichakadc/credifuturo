@@ -24,10 +24,13 @@
     "nodemailer": "^9.0.3",
     "sequelize": "^6.37.3",
     "sqlite3": "^5.1.7",
-    "xlsx": "^0.18.5"
+    "xlsx": "npm:@e965/xlsx@^0.20.3"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"
+  },
+  "overrides": {
+    "tar": "^7.5.21"
   },
   "engines": {
     "node": ">=18.0.0"
