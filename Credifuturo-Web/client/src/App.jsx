@@ -44,7 +44,7 @@ import UserRankingAhorroPage from './pages/user/RankingAhorroPage';
 import JuntaAprobacionesPage from './pages/user/JuntaAprobacionesPage';
 
 import Navbar from './components/Navbar';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
     Users,
     LayoutDashboard,
@@ -56,15 +56,23 @@ import {
     PiggyBank
 } from 'lucide-react';
 
-function App() {
-    const [user, setUser] = useState(null);
-
-    useEffect(() => {
+// Lee el usuario de localStorage de forma síncrona en la inicialización del
+// estado (no en un useEffect): un useEffect corre DESPUÉS del primer render,
+// así que en una recarga completa de una ruta /admin/* o /dashboard/* el
+// primer render veía `user === null`, ProtectedRoute redirigía a /login, y
+// para cuando el efecto poblaba `user` la ruta ya había cambiado — la sesión
+// seguía en localStorage pero la URL quedaba varada en /login.
+function getStoredUser() {
+    try {
         const storedUser = localStorage.getItem('user');
-        if (storedUser) {
-            setUser(JSON.parse(storedUser));
-        }
-    }, []);
+        return storedUser ? JSON.parse(storedUser) : null;
+    } catch {
+        return null;
+    }
+}
+
+function App() {
+    const [user, setUser] = useState(getStoredUser);
 
     const ProtectedRoute = ({ children, role, roles }) => {
         if (!user) return <Navigate to="/login" />;
