@@ -6,6 +6,7 @@ import DashboardLayout from './layouts/DashboardLayout';
 import DashboardHome from './pages/admin/DashboardHome';
 import ClientsPage from './pages/admin/ClientsPage';
 import ClientListPage from './pages/admin/ClientListPage';
+import ClientDetailPage from './pages/admin/ClientDetailPage';
 import LoansPage from './pages/admin/LoansPage';
 import LoansListPage from './pages/admin/LoansListPage';
 import SavingsPage from './pages/admin/SavingsPage';
@@ -98,6 +99,7 @@ function App() {
                     {/* Placeholder para futuras páginas - Redirige a inicio por ahora o al legacy dashboard si se requiere */}
                     <Route path="clients" element={<ClientsPage />} />
                     <Route path="clients/list" element={<ClientListPage />} />
+                    <Route path="clients/:id" element={<ClientDetailPage />} />
                     <Route path="loans" element={<LoansPage />} />
                     <Route path="loans/list" element={<LoansListPage />} />
                     <Route path="loans/analyzer" element={<LoanAnalyzerPage />} />
