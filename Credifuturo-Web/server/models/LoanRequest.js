@@ -32,6 +32,7 @@ const LoanRequest = sequelize.define('LoanRequest', {
     // ── A dónde desembolsar (mismos nombres de campo que DisbursedLoan, para prellenado 1:1) ──
     banco: { type: DataTypes.STRING, allowNull: true },
     cuentaAhorros: { type: DataTypes.STRING, allowNull: true },
+    observaciones: { type: DataTypes.TEXT, allowNull: true },
 
     // ── Foto del perfil del socio en el momento de pedir ──
     scoreAtRequest: { type: DataTypes.INTEGER, allowNull: true },
