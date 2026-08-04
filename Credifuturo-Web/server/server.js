@@ -325,6 +325,12 @@ sequelize.sync().then(async () => {
         'ALTER TABLE clients ADD COLUMN porcentajePrestamo REAL DEFAULT NULL'
     ).catch(() => { /* ya existe — ok */ });
 
+    // Migración: columna observaciones en LoanRequests (banco/cuentaAhorros ya existían;
+    // observaciones se agrega para que la Junta vea la nota del socio al aprobar/desembolsar)
+    await sequelize.query(
+        'ALTER TABLE LoanRequests ADD COLUMN observaciones TEXT DEFAULT NULL'
+    ).catch(() => { /* ya existe — ok */ });
+
     // Migración de datos: poblar porcentajePrestamo desde el préstamo más reciente
     // (sólo para clientes que tienen NULL — no sobreescribe valores ya guardados)
     try {

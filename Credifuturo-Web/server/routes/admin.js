@@ -4587,7 +4587,7 @@ router.post('/my/loan-requests', verifyToken, requireFreshPassword, requireRole(
             amount, installments, monthlyRate,
             firstInstallment, lastInstallment, totalInterest, totalToPay, estimatedEndDate,
             scoreAtRequest, availableCapacityAtRequest, requiresVote,
-            banco, cuentaAhorros
+            banco, cuentaAhorros, observaciones
         } = req.body;
 
         if (!amount || !installments || !monthlyRate) {
@@ -4595,6 +4595,9 @@ router.post('/my/loan-requests', verifyToken, requireFreshPassword, requireRole(
         }
         if (!banco || !cuentaAhorros) {
             return res.status(400).json({ error: 'Banco y número de cuenta de ahorros son obligatorios.' });
+        }
+        if (!observaciones || !observaciones.trim()) {
+            return res.status(400).json({ error: 'Las observaciones son obligatorias.' });
         }
 
         const client = await Client.findByPk(req.user.id);
@@ -4605,7 +4608,7 @@ router.post('/my/loan-requests', verifyToken, requireFreshPassword, requireRole(
             amount, installments, monthlyRate,
             firstInstallment, lastInstallment, totalInterest, totalToPay, estimatedEndDate,
             scoreAtRequest, availableCapacityAtRequest, requiresVote: !!requiresVote,
-            banco, cuentaAhorros
+            banco, cuentaAhorros, observaciones: observaciones.trim()
         });
 
         const { sendLoanRequestNotification } = require('../services/EmailService');
