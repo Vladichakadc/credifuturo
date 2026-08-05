@@ -9,6 +9,7 @@ import {
 import ChartExpandModal, { analyzeMonthlyTrend, analyzeSavingsComposition } from '../../components/ChartExpandModal';
 import { useUi } from '../../context/UiContext';
 import LoanCapacityWidget from '../../components/admin/LoanCapacityWidget';
+import { computeFundProjection } from '../../utils/fundProjection';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
     ResponsiveContainer, Cell, AreaChart, Area, LabelList, ReferenceLine,
@@ -364,18 +365,29 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
     const fetchAll = useCallback(async (isManualRefresh = false) => {
         if (isManualRefresh) setRefreshing(true); else setLoading(true);
         try {
-            const [rankRes, statsRes] = await Promise.allSettled([
+            const [rankRes, statsRes, execRes] = await Promise.allSettled([
                 api.get('/admin/savings/ranking'),
                 api.get('/admin/dashboard-stats'),
+                api.get('/admin/executive-stats'),
             ]);
 
-            // Ganancia real = intereses cobrados + NU + penalidades (idéntico al Executive Panel)
+            // Ganancia real = la MISMA fuente única que Panel Principal y Panel
+            // Ejecutivo (utils/fundProjection.js, gananciaRealYtd) — nunca un
+            // cálculo propio. Antes este panel sumaba sus propios 3 campos y se
+            // quedaba corto frente al Panel Principal (no incluía el descuento
+            // anual de mora ya aplicado, y usaba intereses de toda la vida en vez
+            // de solo los del año en curso) — exactamente el problema que
+            // fundProjection.js existe para evitar entre paneles.
             let gananciaReal = 0;
             if (statsRes.status === 'fulfilled') {
                 const s = statsRes.value.data;
-                gananciaReal = (s.totalInteresesPagados || 0)
-                    + (s.rentabilidadCajaNU || 0)
-                    + (s.totalPenaltyValue || 0);
+                const exec = execRes.status === 'fulfilled' ? execRes.value.data : null;
+                const proyeccion = computeFundProjection({ exec, stats: s, anioActual: new Date().getFullYear() });
+                gananciaReal = proyeccion?.gananciaRealYtd
+                    // Fallback solo si /executive-stats no cargó (computeFundProjection
+                    // devuelve null sin 'exec'): aproximación con lo que sí tenemos,
+                    // nunca un valor guardado/congelado.
+                    || (s.totalInteresesPagados || 0) + (s.rentabilidadCajaNU || 0) + (s.totalPenaltyValue || 0);
                 setGananciaRealFondo(gananciaReal);
             }
 
