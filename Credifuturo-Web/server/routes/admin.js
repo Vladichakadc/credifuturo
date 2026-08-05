@@ -2049,7 +2049,8 @@ router.get('/disbursed-loans/list', async (req, res) => {
                 model: Client,
                 attributes: ['cedula', 'name', 'surname1', 'surname2', 'customerId']
             }],
-            order: [['fechaPrestamo', 'DESC']]
+            order: [['fechaPrestamo', 'DESC']],
+            limit: 3000 // tope de seguridad — ver nota en /payments/list
         });
 
         const normalizedData = loans.map(l => {
@@ -2889,7 +2890,13 @@ router.get('/payments/list', async (req, res) => {
                     attributes: ['fechaPrestamo', 'valorPrestado']
                 }
             ],
-            order: [['id', 'ASC']]
+            order: [['id', 'ASC']],
+            // Tope de seguridad: sin filtro (clientId/año/estado/etc.), esta consulta
+            // no tenía límite y crecía sin techo con cada cuota nueva. Un límite
+            // generoso evita un full scan ilimitado sin cambiar el comportamiento
+            // actual para el volumen de datos de hoy; paginación real en SQL queda
+            // como trabajo aparte (requiere mover los StatCards/filtros al backend).
+            limit: 3000
         });
 
         // Aplanar datos del cliente + normalizar strings
@@ -2947,8 +2954,14 @@ router.get('/payments/list', async (req, res) => {
 
 router.get('/payments', async (req, res) => {
     try {
+        // Soporte incluido aquí (excluyendo el BLOB 'data') para que el frontend
+        // sepa qué cuotas tienen comprobante adjunto en esta misma respuesta, sin
+        // tener que preguntarle a /payments/:id/soporte/info una vez por cada fila.
         const payments = await LoanPayment.findAll({
-            include: [Client],
+            include: [
+                { model: Client, attributes: { exclude: ['password'] } }, // A02: no exponer hashes bcrypt
+                { model: Soporte, attributes: ['id', 'originalName', 'mimeType', 'uploadedAt'] }
+            ],
             order: [['fechaPagoMax', 'DESC']],
             limit: 500
         });
@@ -3825,7 +3838,7 @@ router.get('/dashboard-stats', async (req, res) => {
         const { QueryTypes: _QT } = require('sequelize');
         const [prestamosPrevRow, interesesPrevRow, metaSetting, patrimonioSetting, moraPrevRow, nuCierreSetting] = await Promise.all([
             _sequelize.query(
-                `SELECT ROUND(SUM(COALESCE(valor_prestado, valorPrestado, monto))) total
+                `SELECT ROUND(SUM(COALESCE(valor_prestado, monto))) total
                  FROM DisbursedLoans WHERE anio_desembolso = :anio`,
                 { type: _QT.SELECT, replacements: { anio: _anioPrev } }),
             _sequelize.query(
@@ -4933,7 +4946,7 @@ router.get('/executive-stats', async (req, res) => {
                WHERE type='Mensual' AND anioAbonado != '' GROUP BY anioAbonado ORDER BY anio`),
             // Colocación de créditos por año
             q(`SELECT anio_desembolso anio, COUNT(*) creditos,
-                      ROUND(SUM(COALESCE(valor_prestado, valorPrestado, monto))) total
+                      ROUND(SUM(COALESCE(valor_prestado, monto))) total
                FROM DisbursedLoans GROUP BY anio_desembolso ORDER BY anio`),
             // Intereses por año de vencimiento y estado (cobrados vs agendados)
             q(`SELECT strftime('%Y', fecha_pago_max) anio, estado,

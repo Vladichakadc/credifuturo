@@ -10,6 +10,7 @@ import ChartExpandModal, { analyzeMonthlyTrend, analyzeSavingsComposition } from
 import { useUi } from '../../context/UiContext';
 import LoanCapacityWidget from '../../components/admin/LoanCapacityWidget';
 import EstadoPrestamosSection from '../../components/EstadoPrestamosSection';
+import { computeFundProjection } from '../../utils/fundProjection';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
     ResponsiveContainer, Cell, AreaChart, Area, LabelList, ReferenceLine,
@@ -365,18 +366,29 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
     const fetchAll = useCallback(async (isManualRefresh = false) => {
         if (isManualRefresh) setRefreshing(true); else setLoading(true);
         try {
-            const [rankRes, statsRes] = await Promise.allSettled([
+            const [rankRes, statsRes, execRes] = await Promise.allSettled([
                 api.get('/admin/savings/ranking'),
                 api.get('/admin/dashboard-stats'),
+                api.get('/admin/executive-stats'),
             ]);
 
-            // Ganancia real = intereses cobrados + NU + penalidades (idéntico al Executive Panel)
+            // Ganancia real = la MISMA fuente única que Panel Principal y Panel
+            // Ejecutivo (utils/fundProjection.js, gananciaRealYtd) — nunca un
+            // cálculo propio. Antes este panel sumaba sus propios 3 campos y se
+            // quedaba corto frente al Panel Principal (no incluía el descuento
+            // anual de mora ya aplicado, y usaba intereses de toda la vida en vez
+            // de solo los del año en curso) — exactamente el problema que
+            // fundProjection.js existe para evitar entre paneles.
             let gananciaReal = 0;
             if (statsRes.status === 'fulfilled') {
                 const s = statsRes.value.data;
-                gananciaReal = (s.totalInteresesPagados || 0)
-                    + (s.rentabilidadCajaNU || 0)
-                    + (s.totalPenaltyValue || 0);
+                const exec = execRes.status === 'fulfilled' ? execRes.value.data : null;
+                const proyeccion = computeFundProjection({ exec, stats: s, anioActual: new Date().getFullYear() });
+                gananciaReal = proyeccion?.gananciaRealYtd
+                    // Fallback solo si /executive-stats no cargó (computeFundProjection
+                    // devuelve null sin 'exec'): aproximación con lo que sí tenemos,
+                    // nunca un valor guardado/congelado.
+                    || (s.totalInteresesPagados || 0) + (s.rentabilidadCajaNU || 0) + (s.totalPenaltyValue || 0);
                 setGananciaRealFondo(gananciaReal);
             }
 
@@ -405,20 +417,23 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
                 setLastUpdated(d.calculatedAt ? new Date(d.calculatedAt) : new Date());
 
                 if (!utilidadesSinGuardarRef.current) {
-                    // Prioridad: (1) valor del comité en AppSettings (siempre que NO sea el valor legacy erróneo),
-                    // (2) ganancia real del fondo (fuente correcta del dashboard),
-                    // (3) devoluciones históricas como último fallback.
+                    // La ganancia real del fondo — calculada en vivo desde intereses
+                    // cobrados + rendimiento de caja NU + penalidades (arriba) — es
+                    // SIEMPRE la base para calcular la utilidad de cada socio. Un valor
+                    // guardado en AppSettings nunca la reemplaza: el fondo sigue
+                    // generando ganancia día a día, así que un valor congelado queda
+                    // desactualizado tarde o temprano y subestima (o sobreestima) lo
+                    // que le corresponde a cada socio.
                     const valorGuardado = Number(d.utilidadesADistribuir) || 0;
-                    const esValorLegacyErroneo = valorGuardado > 0 && valorGuardado === (d.totalDevolucionIntereses || 0);
-
-                    const sugerido = (valorGuardado > 0 && !esValorLegacyErroneo)
-                        ? valorGuardado
-                        : gananciaReal > 0
-                            ? gananciaReal
-                            : (d.totalDevolucionIntereses || 0);
+                    const sugerido = gananciaReal > 0 ? gananciaReal : (d.totalDevolucionIntereses || 0);
 
                     setUtilidadesDistribuir(sugerido > 0 ? sugerido.toLocaleString('es-CO') : '');
-                    setUtilidadesGuardadas(valorGuardado > 0 && !esValorLegacyErroneo);
+                    // "Confirmado por el comité" solo si lo último guardado coincide
+                    // EXACTAMENTE con la ganancia real actual — si el fondo generó más
+                    // ganancia desde el último guardado, deja de mostrarse como
+                    // confirmado para que sea evidente que hay que revisar y volver a
+                    // guardar, en vez de seguir mostrando una confirmación desactualizada.
+                    setUtilidadesGuardadas(valorGuardado > 0 && valorGuardado === sugerido);
                 }
             }
         } catch (err) {
