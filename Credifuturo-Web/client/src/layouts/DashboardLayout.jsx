@@ -16,7 +16,6 @@ import {
     ClipboardList,
     PlusCircle,
     BarChart2,
-    ClipboardCheck,
     Search,
     TrendingUp,
     Scale,
@@ -300,8 +299,7 @@ const DashboardLayout = ({ user, onLogout }) => {
             label: 'Préstamos y Pagos',
             children: [
                 { icon: List, label: 'Préstamos', path: '/admin/loans/list' },
-                { icon: List, label: 'Lista de Pagos', path: '/admin/payments/list' },
-                { icon: ClipboardCheck, label: 'Registrar Pago', path: '/admin/payments?action=new' },
+                { icon: List, label: 'Pagos', path: '/admin/payments/list' },
                 { icon: Scale, label: 'Analizador', path: '/admin/loans/analyzer' },
                 { icon: Inbox, label: 'Aprobaciones de Préstamos', path: '/admin/loans/approvals' },
                 ...(orphanLoansCount > 0 ? [{ icon: AlertTriangle, label: `Préstamos sin asignar (${orphanLoansCount})`, path: '/admin/loans/orphans' }] : []),

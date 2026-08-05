@@ -11,7 +11,6 @@ import LoansListPage from './pages/admin/LoansListPage';
 import SavingsPage from './pages/admin/SavingsPage';
 import SavingsListPage from './pages/admin/SavingsListPage';
 import ReportsPage from './pages/admin/ReportsPage';
-import PaymentsPage from './pages/admin/PaymentsPage';
 import PaymentsListPage from './pages/admin/PaymentsListPage';
 import InitialContributionsListPage from './pages/admin/InitialContributionsListPage';
 import InitialContributionsPage from './pages/admin/InitialContributionsPage'; // Added this import
@@ -123,7 +122,7 @@ function App() {
                     <Route path="initial-contributions/list" element={<InitialContributionsListPage />} />
                     <Route path="initial-contributions/new" element={<InitialContributionsPage />} />
                     <Route path="initial-contributions/edit/:id" element={<InitialContributionsPage />} />
-                    <Route path="payments" element={<PaymentsPage />} />
+                    <Route path="payments" element={<PaymentsListPage />} />
                     <Route path="payments/list" element={<PaymentsListPage />} />
                     <Route path="reports" element={<ReportsPage />} />
                     <Route path="informes/:filename" element={<InformesViewerPage />} />

@@ -69,15 +69,73 @@ const displayFecha = (dateStr, mesPago) => {
 };
 import api from '../../config/api';
 import * as XLSX from 'xlsx';
-import { Download, RefreshCw, Search, X, AlertTriangle, Inbox, DollarSign, PieChart, CheckCircle, BarChart3, Activity, Clock, ChevronLeft, ChevronRight, Users, Calendar } from 'lucide-react';
+import { Download, RefreshCw, Search, X, AlertTriangle, Inbox, DollarSign, PieChart, CheckCircle, BarChart3, Activity, Clock, ChevronLeft, ChevronRight, Users, Calendar, Plus, Trash2, Edit, FileDown } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
+import { Input, Label } from '../../components/ui/Input';
 import { useUi } from '../../context/UiContext';
 import ListHeader from '../../components/admin/ListHeader';
 import { CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 import YearMultiSelect from '../../components/admin/YearMultiSelect';
 import StatusMultiSelect from '../../components/admin/StatusMultiSelect';
 import PillSingleSelect from '../../components/admin/PillSingleSelect';
+import { notifyUpdate } from '../../utils/sync';
+import { COLOMBIAN_BANKS_WITH_OTHER } from '../../utils/banks';
+
+// ── Input numérico con formato (migrado de PaymentsPage.jsx) — muestra el valor
+// formateado (miles/porcentaje) cuando no tiene foco, y el número crudo mientras se edita.
+const FormattedNumberInput = ({ value, onChange, isPercent = false, className, readOnly, ...props }) => {
+    const [focused, setFocused] = useState(false);
+
+    let displayValue = value;
+    if (!focused && value !== '' && value !== null && value !== undefined) {
+        const num = parseFloat(value);
+        if (!isNaN(num)) {
+            if (isPercent) {
+                displayValue = (num * 100).toLocaleString('es-CO', { maximumFractionDigits: 2 }) + '%';
+            } else {
+                displayValue = num.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+            }
+        }
+    }
+
+    return (
+        <Input
+            {...props}
+            type={focused ? "number" : "text"}
+            value={focused ? value : displayValue}
+            readOnly={readOnly}
+            onChange={onChange}
+            onFocus={(e) => {
+                if (!readOnly) setFocused(true);
+                if (props.onFocus) props.onFocus(e);
+            }}
+            onBlur={(e) => {
+                if (!readOnly) setFocused(false);
+                if (props.onBlur) props.onBlur(e);
+            }}
+            className={className}
+        />
+    );
+};
+
+// ── Toggle Switch — alterna Estado Pago Pago/Pendiente sin abrir el modal ──
+const ToggleSwitch = ({ active, onToggle, disabled }) => (
+    <button
+        type="button"
+        disabled={disabled}
+        onClick={onToggle}
+        title={active ? 'Desactivar' : 'Activar'}
+        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none
+            ${active ? 'bg-green-500' : 'bg-gray-300'}
+            ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+    >
+        <span
+            className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform
+                ${active ? 'translate-x-6' : 'translate-x-1'}`}
+        />
+    </button>
+);
 
 const StatCard = ({ title, value, description, icon: Icon, color, customBg, isDark = false, textColor, onClick }) => (
     <Card
@@ -288,10 +346,51 @@ const ITEMS_PER_PAGE = 20;
 // ════════════════════════════════════════════════════════════════════════════
 const PaymentsListPage = () => {
     const { toast } = useUi();
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
     const [payments, setPayments] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    // ── Estado del modal CRUD "Registrar Pago" (migrado de PaymentsPage.jsx) ──
+    const [clients, setClients] = useState([]);
+    const [disbursedLoans, setDisbursedLoans] = useState([]);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
+    const [editingId, setEditingId] = useState(null);
+    const [isSaving, setIsSaving] = useState(false); // guardado del modal — independiente de `loading` (que gobierna el skeleton de página completa)
+    const [deletingId, setDeletingId] = useState(null);
+    const [togglingId, setTogglingId] = useState(null);
+    const [selectingRecord, setSelectingRecord] = useState(false);
+    const [selectorSearch, setSelectorSearch] = useState('');
+    const [selectorClientId, setSelectorClientId] = useState('');
+    const [selectorIdVm, setSelectorIdVm] = useState('');
+    const [selectorMes, setSelectorMes] = useState('');
+    const [selectorEstado, setSelectorEstado] = useState('');
+    const [selectorCuota, setSelectorCuota] = useState('');
+    const [soporteFile, setSoporteFile] = useState(null);
+    const [paymentForm, setPaymentForm] = useState({
+        externalId: '',
+        clientId: '',
+        nombre: '',
+        apellido: '',
+        idVm: '',
+        mesDesembolso: '',
+        saldoInicial: '',
+        cuotasPrestamo: '',
+        interesMensual: '',
+        valorInteresesAmortizados: '',
+        fechaPagoMax: new Date().toISOString().split('T')[0],
+        mesPago: MONTH_LABELS_ES[new Date().getMonth()],
+        valorCuotaVariable: '',
+        estado: 'Pendiente',
+        valorCuotaPago: '',
+        saldoFinal: '',
+        itemQuantity: '1',
+        banco: '',
+        numeroTransaccion: '',
+        cuentaAhorros: '',
+        observaciones: '',
+        estadoPrestamo: ''
+    });
     // Los 3 filtros abajo aceptan un valor inicial desde la URL (?estado=, ?estadoPrestamo=,
     // ?search=) para que las tarjetas del Panel Ejecutivo (y cualquier otro enlace externo)
     // aterricen ya filtradas en vez de en una lista genérica sin contexto.
@@ -307,7 +406,6 @@ const PaymentsListPage = () => {
     });
     const [selectedYears, setSelectedYears] = useState([new Date().getFullYear(), new Date().getFullYear() + 1]);
     const [filterMes, setFilterMes] = useState([]);        // filtro Mes de Pago (mesPago)
-    const [soportesInfo, setSoportesInfo] = useState({}); // { paymentId: { exists: true, name: '...' } }
     const [showMoraDetail, setShowMoraDetail] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
 
@@ -342,7 +440,35 @@ const PaymentsListPage = () => {
 
     useEffect(() => { fetchPayments(); }, [fetchPayments]);
 
-    // Actualizar cuando PaymentsPage guarda un pago (evento global, misma pes\u00f1a)
+    // Clientes y pr\u00e9stamos desembolsados \u2014 necesarios para los selectores del modal
+    // "Registrar Pago" (socio, Id_VM, autocompletado de banco/cuenta/tasa). No los trae
+    // /payments/list (solo un resumen aplanado del pr\u00e9stamo), por eso van aparte.
+    const fetchClients = useCallback(async () => {
+        try {
+            const res = await api.get('/admin/clients');
+            setClients(Array.isArray(res.data) ? res.data : []);
+        } catch (err) {
+            console.error('Error fetching clients:', err);
+        }
+    }, []);
+    const fetchDisbursedLoans = useCallback(async () => {
+        try {
+            const res = await api.get('/admin/disbursed-loans');
+            setDisbursedLoans(Array.isArray(res.data) ? res.data : []);
+        } catch (err) {
+            console.error('Error fetching disbursed loans:', err);
+        }
+    }, []);
+    useEffect(() => { fetchClients(); }, [fetchClients]);
+    useEffect(() => { fetchDisbursedLoans(); }, [fetchDisbursedLoans]);
+
+    // \u00danico punto que refresca todo tras crear/editar/eliminar/alternar estado.
+    const refreshAll = useCallback(async () => {
+        await Promise.all([fetchPayments(), fetchClients(), fetchDisbursedLoans()]);
+    }, [fetchPayments, fetchClients, fetchDisbursedLoans]);
+
+    // Se actualiza cuando esta misma p\u00e1gina u otra (ej. al desembolsar un pr\u00e9stamo,
+    // que crea/regenera cuotas) dispara notifyUpdate('payments').
     useEffect(() => {
         const handler = () => fetchPayments();
         window.addEventListener('paymentsUpdated', handler);
@@ -381,6 +507,274 @@ const PaymentsListPage = () => {
             toast.error('Error al descargar el archivo: ' + (err.message || ''));
         }
     };
+
+    // ── AUTO-OPEN: navegado desde el sidebar "Registrar Pago" (?action=new) ──
+    // A diferencia del efecto equivalente que ya trae este mismo archivo cuando vivía en
+    // PaymentsPage.jsx, este SÍ limpia el query param al abrir (mismo patrón ya usado en
+    // la fusión de préstamos) — sin limpiarlo, cualquier recarga de datos posterior con el
+    // modal ya cerrado volvería a abrirlo solo, porque el guard nunca deja de ser true.
+    useEffect(() => {
+        if (searchParams.get('action') === 'new' && !loading && !isModalOpen) {
+            handleOpenModal();
+            setSearchParams({}, { replace: true });
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchParams, loading]);
+
+    // ── Form helpers ──────────────────────────────────────────────────────────
+    const resetPaymentForm = () => {
+        setPaymentForm({
+            externalId: '', clientId: '', nombre: '', apellido: '',
+            mesDesembolso: '', saldoInicial: '', cuotasPrestamo: '',
+            interesMensual: '', valorInteresesAmortizados: '',
+            fechaPagoMax: new Date().toISOString().split('T')[0],
+            mesPago: MONTH_LABELS_ES[new Date().getMonth()],
+            valorCuotaVariable: '', estado: 'Pendiente',
+            valorCuotaPago: '', saldoFinal: '',
+            itemQuantity: '1', banco: '', numeroTransaccion: '',
+            cuentaAhorros: '', observaciones: '', idVm: '', estadoPrestamo: ''
+        });
+        setIsEditing(false);
+        setEditingId(null);
+        setSoporteFile(null);
+    };
+
+    const handleCloseModal = () => {
+        setIsModalOpen(false);
+        resetPaymentForm();
+    };
+
+    const handleOpenModal = (payment = null) => {
+        if (payment) {
+            // Fecha de Pago Max: siempre muestra la fecha actual como punto de partida
+            // para que el admin registre el pago en la fecha real de hoy.
+            const today = new Date().toISOString().split('T')[0];
+            const loanRef = disbursedLoans.find(l => (l.idVm || l.orderId) === payment.idVm);
+            // Nombre/apellido vía clientsById (ver comentario arriba) — payment.Client no
+            // existe en las filas de /payments/list.
+            const clientRec = clientsById[payment.clientId];
+
+            setPaymentForm({
+                ...payment,
+                fechaPagoMax: today,
+                cuotasPrestamo: payment.itemQuantity ?? payment.cuotasPrestamo,
+                nombre: clientRec?.name || '',
+                apellido: `${clientRec?.surname1 || ''} ${clientRec?.surname2 || ''}`.trim(),
+                estadoPrestamo: loanRef ? loanRef.estado : payment.estadoPrestamo
+            });
+            setIsEditing(true);
+            setEditingId(payment.id);
+            setSelectingRecord(false);
+        } else {
+            resetPaymentForm();
+            setSelectingRecord(true);
+            setSelectorSearch('');
+            setSelectorClientId('');
+            setSelectorIdVm('');
+            setSelectorMes('');
+            setSelectorEstado('');
+            setSelectorCuota('');
+        }
+        setIsModalOpen(true);
+    };
+
+    // ── Al cambiar cliente, poblar los datos del préstamo (solo al crear) ─────
+    useEffect(() => {
+        if (!paymentForm.clientId) return;
+        if (editingId) return;
+
+        const client = clientsById[paymentForm.clientId] || clients.find(c => c.id.toString() === paymentForm.clientId.toString());
+        if (!client) return;
+
+        const clientLoans = disbursedLoans.filter(l => l.clientId.toString() === paymentForm.clientId.toString());
+        if (clientLoans.length === 0) return;
+
+        const activeLoans = clientLoans.filter(l => l.estado && l.estado.toLowerCase() === 'vigente');
+        activeLoans.sort((a, b) => new Date(b.fechaPrestamo) - new Date(a.fechaPrestamo));
+        clientLoans.sort((a, b) => new Date(b.fechaPrestamo) - new Date(a.fechaPrestamo));
+
+        const latestLoan = activeLoans.length > 0 ? activeLoans[0] : clientLoans[0];
+
+        setPaymentForm(prev => ({
+            ...prev,
+            nombre: client.name || '',
+            apellido: `${client.surname1 || ''} ${client.surname2 || ''}`.trim(),
+            idVm: latestLoan.idVm || latestLoan.orderId || '',
+            mesDesembolso: latestLoan.mesDesembolso || '',
+            saldoInicial: latestLoan.valorPrestado || latestLoan.monto || '',
+            cuotasPrestamo: latestLoan.cuotas || '',
+            interesMensual: latestLoan.interesMensual || '',
+            banco: latestLoan.banco || '',
+            cuentaAhorros: latestLoan.cuentaAhorros || latestLoan.cuenta || '',
+            estadoPrestamo: latestLoan.estado || '',
+            itemQuantity: '',
+            valorInteresesAmortizados: '',
+            valorCuotaVariable: '',
+            valorCuotaPago: '',
+            saldoFinal: '',
+            mesPago: '',
+            fechaPagoMax: '',
+            numeroTransaccion: '',
+            observaciones: '',
+            externalId: ''
+        }));
+        setIsEditing(false);
+        setEditingId(null);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [paymentForm.clientId, editingId]);
+
+    // ── Recalcular saldoFinal reactivamente ────────────────────────────────
+    useEffect(() => {
+        const saldoInicial = parseFloat(paymentForm.saldoInicial) || 0;
+        const valorPago = parseFloat(paymentForm.valorCuotaPago) || 0;
+        const intereses = parseFloat(paymentForm.valorInteresesAmortizados) || 0;
+        const saldoFinal = saldoInicial + intereses - valorPago;
+
+        setPaymentForm(prev => ({
+            ...prev,
+            saldoFinal: saldoFinal > 0 ? saldoFinal.toFixed(0) : '0'
+        }));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [paymentForm.saldoInicial, paymentForm.valorInteresesAmortizados, paymentForm.valorCuotaPago]);
+
+    // ── Toggle Activar/Desactivar (estado Pago <-> Pendiente) ─────────────────
+    const handleToggle = async (payment) => {
+        const newEstado = payment.estado === 'Pago' ? 'Pendiente' : 'Pago';
+        setTogglingId(payment.id);
+        try {
+            await api.put(`/admin/payments/${payment.id}`, { ...payment, estado: newEstado });
+            setPayments(prev => prev.map(p => p.id === payment.id ? { ...p, estado: newEstado } : p));
+            toast.success(`Estado cambiado a "${newEstado}"`);
+            notifyUpdate('payments');
+        } catch (err) {
+            toast.error('Error al cambiar estado: ' + (err.message || ''));
+        } finally {
+            setTogglingId(null);
+        }
+    };
+
+    // ── Submit (crear/editar) ───────────────────────────────────────────────
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setIsSaving(true); // NO reusar `loading` — ese controla el skeleton de página completa y haría desaparecer el modal
+        try {
+            let paymentIdToUse = editingId;
+
+            const payload = {
+                externalId: paymentForm.externalId,
+                clientId: paymentForm.clientId,
+                mesDesembolso: paymentForm.mesDesembolso,
+                cuotasPrestamo: paymentForm.itemQuantity,
+                interesMensual: paymentForm.interesMensual,
+                valorInteresesAmortizados: paymentForm.valorInteresesAmortizados,
+                fechaPagoMax: paymentForm.fechaPagoMax,
+                mesPago: paymentForm.mesPago,
+                valorCuotaVariable: paymentForm.valorCuotaVariable,
+                estado: paymentForm.estado,
+                valorCuotaPago: paymentForm.valorCuotaPago || 0,
+                saldoFinal: paymentForm.saldoFinal,
+                itemQuantity: paymentForm.itemQuantity,
+                banco: paymentForm.banco,
+                numeroTransaccion: paymentForm.numeroTransaccion,
+                cuentaAhorros: paymentForm.cuentaAhorros,
+                observaciones: paymentForm.observaciones,
+                idVm: paymentForm.idVm,
+                estadoPrestamo: paymentForm.estadoPrestamo
+            };
+
+            if (isEditing) {
+                await api.put(`/admin/payments/${editingId}`, payload);
+                toast.success('Registro actualizado correctamente');
+            } else {
+                const response = await api.post('/admin/payments', payload);
+                paymentIdToUse = response.data.id;
+                toast.success('Pago registrado correctamente');
+            }
+
+            if (soporteFile && paymentIdToUse) {
+                const formData = new FormData();
+                formData.append('soporte', soporteFile);
+                try {
+                    await api.post(`/admin/payments/${paymentIdToUse}/soporte`, formData, {
+                        headers: { 'Content-Type': 'multipart/form-data' }
+                    });
+                    toast.success('Soporte adjuntado correctamente');
+                } catch (fileErr) {
+                    console.error('Error uploading file:', fileErr);
+                    toast.error('Guardado, pero falló la subida del soporte: ' + (fileErr.response?.data?.error || fileErr.message));
+                }
+            }
+
+            handleCloseModal();
+            refreshAll();
+            notifyUpdate('payments');
+        } catch (error) {
+            console.error('Error saving payment:', error);
+            const msg = error.response?.data?.error || error.response?.data?.message || error.message || 'Error desconocido';
+            toast.error('Error al guardar: ' + msg);
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    // ── Eliminar registro ────────────────────────────────────────────────────
+    const handleDelete = async (payment) => {
+        if (!window.confirm(`¿Eliminar el registro ${payment.externalId}?`)) return;
+        setDeletingId(payment.id);
+        try {
+            await api.delete(`/admin/payments/${payment.id}`);
+            toast.success('Registro eliminado correctamente');
+            notifyUpdate('payments');
+            refreshAll();
+        } catch (err) {
+            toast.error(err.message || 'Error al eliminar');
+        } finally {
+            setDeletingId(null);
+        }
+    };
+
+    // ── Eliminar soporte ──────────────────────────────────────────────────────
+    const handleDeleteSoporte = async (paymentId) => {
+        if (!window.confirm('¿Eliminar el soporte adjunto? Esta acción no se puede deshacer.')) return;
+        try {
+            await api.delete(`/admin/payments/${paymentId}/soporte`);
+            // soportesInfo se deriva de `payments` — parchar la fila localmente para que
+            // el panel del modal se actualice sin tener que cerrarlo y reabrirlo.
+            setPayments(prev => prev.map(p => p.id === paymentId ? { ...p, soporte: null } : p));
+            toast.success('Soporte eliminado correctamente');
+        } catch (err) {
+            toast.error('Error al eliminar el soporte: ' + (err.response?.data?.error || err.message));
+        }
+    };
+
+    // ── Lookup de clientes por id (migrado: reemplaza a payment.Client, que no existe
+    // en las filas de /payments/list — esas solo traen clientName ya concatenado, no
+    // separable de forma confiable en nombre/apellido). Más robusto que la asociación
+    // embebida original, que podía quedar vieja. ──
+    const clientsById = useMemo(() => {
+        const map = {};
+        clients.forEach(c => { map[c.id] = c; });
+        return map;
+    }, [clients]);
+
+    // ── Soporte por pago, derivado de /payments/list (ya trae soporte:{id,name} por
+    // fila) en vez de mantenerse en un estado aparte que había que sincronizar a mano. ──
+    const soportesInfo = useMemo(() => {
+        const map = {};
+        payments.forEach(p => { if (p.soporte) map[p.id] = { exists: true, id: p.soporte.id, name: p.soporte.name }; });
+        return map;
+    }, [payments]);
+
+    // Socios activos con al menos un préstamo — para el selector "Customer_id" del modal
+    const clientsWithActiveLoans = useMemo(() => {
+        if (!clients || !disbursedLoans) return [];
+        const clientIdsWithLoans = new Set(disbursedLoans.map(loan => loan.clientId?.toString()));
+        return clients.filter(c => {
+            const hasLoan = clientIdsWithLoans.has(c.id.toString());
+            const isActive = c.estatus && c.estatus.toLowerCase().includes('activo');
+            return hasLoan && isActive;
+        });
+    }, [clients, disbursedLoans]);
 
     // ── Opciones dinámicas de filtros (de los datos cargados) ──────────────
     const estadoOptions = useMemo(() =>
@@ -692,6 +1086,37 @@ const PaymentsListPage = () => {
         );
     }
 
+    // ── Variables del selector de registros del modal "Registrar Pago" ────────
+    const selectorUniqueClients = (() => {
+        const idsWithPayments = new Set(payments.map(p => p.clientId).filter(Boolean));
+        return Object.values(clientsById)
+            .filter(c => idsWithPayments.has(c.id))
+            .map(c => [c.id, c])
+            .sort((a, b) => (a[1].name || '').localeCompare(b[1].name || ''));
+    })();
+
+    const selectorUniqueIdVms = [...new Set(
+        payments
+            .filter(p => !selectorClientId || String(p.clientId) === String(selectorClientId))
+            .map(p => p.idVm)
+            .filter(Boolean)
+    )].sort();
+
+    const selectorAnyFilter = selectorSearch.trim() || selectorClientId || selectorIdVm || selectorMes || selectorEstado || selectorCuota;
+    const selectorFiltered = selectorAnyFilter ? payments.filter(p => {
+        const term = selectorSearch.toLowerCase().trim();
+        if (term && !(p.externalId || '').toLowerCase().includes(term)) return false;
+        if (selectorClientId && String(p.clientId) !== String(selectorClientId)) return false;
+        if (selectorIdVm && (p.idVm || '').toLowerCase() !== selectorIdVm.toLowerCase()) return false;
+        if (selectorMes && (p.mesPago || '').toLowerCase() !== selectorMes.toLowerCase()) return false;
+        if (selectorEstado && p.estado !== selectorEstado) return false;
+        if (selectorCuota && String(p.itemQuantity) !== String(selectorCuota)) return false;
+        return true;
+    }) : [];
+
+    const selectorFieldCls = "flex h-10 w-full rounded-lg border-2 border-gray-200 bg-white px-3 py-2 text-sm font-medium focus:ring-2 focus:ring-brand-primary/30 focus:border-brand-primary outline-none transition-colors";
+    const clearSelectorFilters = () => { setSelectorSearch(''); setSelectorClientId(''); setSelectorIdVm(''); setSelectorMes(''); setSelectorEstado(''); setSelectorCuota(''); };
+
     // ── MAIN RENDER ──────────────────────────────────────────────────────────
     return (
         <div className="space-y-6">
@@ -710,6 +1135,9 @@ const PaymentsListPage = () => {
                     </Button>
                     <Button size="sm" onClick={handleExport} className="gap-1.5" disabled={filteredPayments.length === 0}>
                         <Download className="h-3.5 w-3.5" /> Exportar Excel
+                    </Button>
+                    <Button size="sm" onClick={() => handleOpenModal()} className="gap-1.5">
+                        <Edit className="h-3.5 w-3.5" /> Registrar Pago
                     </Button>
                 </div>
             </div>
@@ -895,6 +1323,8 @@ const PaymentsListPage = () => {
                                                     </span>
                                                 </th>
                                             ))}
+                                            <th className="sticky top-0 z-10 bg-brand-primary" style={{ textAlign: 'center', minWidth: '70px' }}>Activo</th>
+                                            <th className="sticky top-0 z-10 bg-brand-primary" style={{ textAlign: 'center', minWidth: '90px' }}>Acciones</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -925,6 +1355,23 @@ const PaymentsListPage = () => {
                                                             />
                                                         </td>
                                                     ))}
+                                                    <td style={{ textAlign: 'center' }}>
+                                                        <ToggleSwitch
+                                                            active={row.estado === 'Pago'}
+                                                            onToggle={() => handleToggle(row)}
+                                                            disabled={togglingId === row.id}
+                                                        />
+                                                    </td>
+                                                    <td style={{ textAlign: 'center' }}>
+                                                        <div className="flex items-center justify-center gap-2">
+                                                            <button type="button" onClick={() => handleOpenModal(row)} title="Editar" className="p-1.5 rounded-lg hover:bg-blue-50 transition-colors">
+                                                                <Edit className="h-4 w-4 text-blue-500" />
+                                                            </button>
+                                                            <button type="button" onClick={() => handleDelete(row)} disabled={deletingId === row.id} title="Eliminar" className="p-1.5 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-40">
+                                                                <Trash2 className="h-4 w-4 text-red-500" />
+                                                            </button>
+                                                        </div>
+                                                    </td>
                                                 </tr>
                                             );
                                         })}
@@ -969,6 +1416,569 @@ const PaymentsListPage = () => {
                 onClose={() => setShowMoraDetail(false)}
                 items={stats.moraItems}
             />
+
+            {/* ═══════════════════════ MODAL REGISTRAR/EDITAR PAGO ═══════════════════════════════ */}
+            {isModalOpen && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+                        <div className="p-6 border-b border-gray-100 flex justify-between items-center sticky top-0 bg-white z-10">
+                            <h2 className="text-xl font-bold text-brand-primary">
+                                {isEditing
+                                    ? '✏️ Modificar Registro Estado Préstamo'
+                                    : '🔍 Seleccionar Registro a Modificar'}
+                            </h2>
+                            <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">✕</button>
+                        </div>
+
+                        {/* ── FORMULARIO DE BÚSQUEDA MULTI-CAMPO (modo selector) ── */}
+                        {selectingRecord ? (
+                            <div className="p-6 space-y-5">
+                                <div className="bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3 flex items-start gap-3">
+                                    <Search className="h-5 w-5 text-indigo-500 mt-0.5 shrink-0" />
+                                    <div>
+                                        <p className="text-sm font-bold text-indigo-800">Filtrar registro a modificar</p>
+                                        <p className="text-xs text-indigo-600 mt-0.5">Usa uno o más campos para encontrar el registro exacto. Los resultados se actualizan automáticamente.</p>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                    <div className="space-y-1">
+                                        <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide">Id_EP</label>
+                                        <input type="text" autoFocus aria-label="Buscar pago por Id_EP" placeholder="Ej: P59, P122..." value={selectorSearch} onChange={e => setSelectorSearch(e.target.value)} className={selectorFieldCls} />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide">Socio</label>
+                                        <select
+                                            aria-label="Socio"
+                                            value={selectorClientId}
+                                            onChange={e => {
+                                                setSelectorClientId(e.target.value);
+                                                setSelectorIdVm('');
+                                            }}
+                                            className={selectorFieldCls}
+                                        >
+                                            <option value="">— Todos los socios —</option>
+                                            {selectorUniqueClients.map(([id, c]) => <option key={id} value={id}>{c.name} {c.surname1}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide">
+                                            Id VM (Préstamo)
+                                            {selectorClientId && <span className="ml-1 text-indigo-500 font-normal normal-case">— filtrado por socio</span>}
+                                        </label>
+                                        <select aria-label="Préstamo (Id_VM)" value={selectorIdVm} onChange={e => setSelectorIdVm(e.target.value)} className={selectorFieldCls}>
+                                            <option value="">— Todos —</option>
+                                            {selectorUniqueIdVms.map(v => <option key={v} value={v}>{v}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                    <div className="space-y-1">
+                                        <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide">Mes de Pago</label>
+                                        <select aria-label="Mes de pago" value={selectorMes} onChange={e => setSelectorMes(e.target.value)} className={selectorFieldCls}>
+                                            <option value="">— Todos los meses —</option>
+                                            {MONTH_LABELS_ES.map(m => <option key={m} value={m}>{m}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide">Estado</label>
+                                        <select aria-label="Estado de la cuota" value={selectorEstado} onChange={e => setSelectorEstado(e.target.value)} className={selectorFieldCls}>
+                                            <option value="">— Todos —</option>
+                                            <option value="Pendiente">Pendiente</option>
+                                            <option value="Pago">Pago</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide"># Cuota</label>
+                                        <input type="number" min="1" aria-label="Filtrar por número de cuota" placeholder="Ej: 1, 2, 3..." value={selectorCuota} onChange={e => setSelectorCuota(e.target.value)} className={selectorFieldCls} />
+                                    </div>
+                                </div>
+
+                                {selectorAnyFilter && (
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-xs text-gray-500">{selectorFiltered.length} resultado(s) encontrado(s)</p>
+                                        <button type="button" onClick={clearSelectorFilters} className="text-xs text-red-500 hover:text-red-700 font-medium underline">Limpiar todos los filtros</button>
+                                    </div>
+                                )}
+
+                                {!selectorAnyFilter && (
+                                    <div className="text-center py-8 text-sm text-gray-400 border-2 border-dashed border-gray-200 rounded-lg">
+                                        <Search className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                                        Selecciona al menos un filtro para ver registros
+                                    </div>
+                                )}
+
+                                {selectorAnyFilter && selectorFiltered.length === 0 && (
+                                    <div className="text-center py-8 text-sm text-gray-400 border border-dashed border-gray-200 rounded-lg">
+                                        No se encontraron registros con los filtros aplicados
+                                    </div>
+                                )}
+
+                                {selectorAnyFilter && selectorFiltered.length > 0 && (
+                                    <div className="space-y-2 max-h-[38vh] overflow-y-auto pr-1">
+                                        {selectorFiltered.map(p => (
+                                            <button
+                                                key={p.id}
+                                                type="button"
+                                                onClick={() => handleOpenModal(p)}
+                                                className="w-full text-left border-2 border-gray-200 hover:border-brand-primary rounded-lg px-4 py-3 transition-all group hover:shadow-md bg-white"
+                                            >
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-4">
+                                                        <span className="inline-flex items-center justify-center min-w-[60px] h-9 rounded-md bg-brand-primary/10 text-brand-primary font-bold text-sm px-2 group-hover:bg-brand-primary group-hover:text-white transition-colors">
+                                                            {p.externalId}
+                                                        </span>
+                                                        <div>
+                                                            <div className="font-semibold text-gray-900 text-sm">{clientsById[p.clientId]?.name} {clientsById[p.clientId]?.surname1}</div>
+                                                            <div className="text-xs text-gray-500 mt-0.5 flex flex-wrap items-center gap-x-2">
+                                                                <span className="font-mono font-semibold">{p.idVm}</span>
+                                                                <span className="text-gray-300">|</span>
+                                                                <span>{p.mesPago}</span>
+                                                                <span className="text-gray-300">|</span>
+                                                                <span>Cuota #{p.itemQuantity}</span>
+                                                                <span className="text-gray-300">|</span>
+                                                                <span className="font-semibold text-gray-700">${parseFloat(p.valorCuotaVariable || 0).toLocaleString('es-CO')}</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 shrink-0">
+                                                        <span className={`text-xs px-2.5 py-1 rounded-full font-bold ${p.estado === 'Pago' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{p.estado}</span>
+                                                        <Edit size={15} className="text-gray-300 group-hover:text-brand-primary transition-colors" />
+                                                    </div>
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+
+                                <div className="flex justify-end pt-2 border-t">
+                                    <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>Cancelar</Button>
+                                </div>
+                            </div>
+                        ) : (
+                        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+                            {/* SECCIÓN 1: IDENTIFICACIÓN */}
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-gray-50 p-4 rounded-lg border border-gray-100">
+                                <div>
+                                    <Label>1. Id_EP</Label>
+                                    <select
+                                        aria-label="Id_EP"
+                                        className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-bold text-brand-primary focus:ring-2 focus:ring-brand-primary/20 outline-none"
+                                        value={paymentForm.externalId || ''}
+                                        onChange={e => {
+                                            const selectedId = e.target.value;
+                                            setPaymentForm(prev => ({ ...prev, externalId: selectedId }));
+                                            if (selectedId) {
+                                                const found = payments.find(p => p.externalId === selectedId);
+                                                if (found) handleOpenModal(found);
+                                            }
+                                        }}
+                                    >
+                                        <option value="">-- Seleccionar Id_EP --</option>
+                                        {[...payments]
+                                            .sort((a, b) => {
+                                                const na = parseInt((a.externalId || '').replace(/\D/g, '') || '0');
+                                                const nb = parseInt((b.externalId || '').replace(/\D/g, '') || '0');
+                                                return nb - na;
+                                            })
+                                            .map(p => (
+                                                <option key={p.id} value={p.externalId}>
+                                                    {p.externalId}
+                                                </option>
+                                            ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <Label>2. Customer_id</Label>
+                                    <select
+                                        aria-label="Customer_id"
+                                        className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-brand-primary/20 outline-none"
+                                        value={paymentForm.clientId}
+                                        onChange={e => {
+                                            setIsEditing(false);
+                                            setEditingId(null);
+                                            setPaymentForm(prev => ({ ...prev, clientId: e.target.value }));
+                                        }}
+                                    >
+                                        <option value="">-- Seleccionar --</option>
+                                        {(clientsWithActiveLoans || []).map(c => <option key={c.id} value={c.id}>{c.customerId || c.id} - {c.name} {c.surname1}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <Label>3. Nombre</Label>
+                                    <Input
+                                        value={paymentForm.nombre || ''}
+                                        onChange={e => setPaymentForm(prev => ({ ...prev, nombre: e.target.value }))}
+                                        className="bg-white"
+                                    />
+                                </div>
+                                <div>
+                                    <Label>4. Apellido</Label>
+                                    <Input
+                                        value={paymentForm.apellido || ''}
+                                        onChange={e => setPaymentForm(prev => ({ ...prev, apellido: e.target.value }))}
+                                        className="bg-white"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* SECCIÓN 2: DETALLES PRÉSTAMO */}
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <div>
+                                    <Label>5. Mes Desembolso</Label>
+                                    <Input
+                                        value={paymentForm.mesDesembolso || ''}
+                                        onChange={e => setPaymentForm(prev => ({ ...prev, mesDesembolso: e.target.value }))}
+                                        className="bg-white"
+                                    />
+                                </div>
+                                <div>
+                                    <Label>6. Saldo Inicial</Label>
+                                    <div className="relative">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-green-900 font-bold">$</span>
+                                        <FormattedNumberInput
+                                            step="0.01"
+                                            value={paymentForm.saldoInicial || ''}
+                                            onChange={e => setPaymentForm(prev => ({ ...prev, saldoInicial: e.target.value }))}
+                                            className="pl-7 bg-white text-green-900 font-bold border-green-200"
+                                        />
+                                    </div>
+                                </div>
+                                <div>
+                                    <Label>7. # Cuota a Pagar</Label>
+                                    <select
+                                        aria-label="# Cuota a pagar"
+                                        className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-brand-primary/20 outline-none"
+                                        value={paymentForm.itemQuantity}
+                                        onChange={e => setPaymentForm(prev => ({ ...prev, itemQuantity: e.target.value ? parseInt(e.target.value, 10) : '' }))}
+                                    >
+                                        <option value="">-- Seleccionar --</option>
+                                        {(() => {
+                                            const realLoan = paymentForm.idVm
+                                                ? disbursedLoans.find(l => (l.idVm || l.orderId) === paymentForm.idVm)
+                                                : null;
+                                            const maxCuotas = parseInt(realLoan?.cuotas || paymentForm.cuotasPrestamo || 12);
+                                            return Array.from({ length: maxCuotas }, (_, i) => (
+                                                <option key={i + 1} value={i + 1}>Cuota {i + 1}</option>
+                                            ));
+                                        })()}
+                                    </select>
+                                </div>
+                                <div>
+                                    <Label>8. Interes Mensual (%)</Label>
+                                    <div className="relative">
+                                        <FormattedNumberInput
+                                            isPercent={true}
+                                            step="0.0001"
+                                            min="0"
+                                            max="1"
+                                            value={paymentForm.interesMensual || ''}
+                                            onChange={e => setPaymentForm(prev => ({ ...prev, interesMensual: e.target.value }))}
+                                            className="bg-white font-medium"
+                                            placeholder="Ej: 0.02 = 2%"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* SECCIÓN 3: AMORTIZACIÓN */}
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-blue-50 p-4 rounded-lg border border-blue-100">
+                                <div>
+                                    <Label>9. Valor Int. Amortizados</Label>
+                                    <div className="relative">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 font-bold">$</span>
+                                        <FormattedNumberInput
+                                            step="0.01"
+                                            value={paymentForm.valorInteresesAmortizados || ''}
+                                            onChange={e => setPaymentForm(prev => ({ ...prev, valorInteresesAmortizados: e.target.value }))}
+                                            className="pl-7 bg-white font-mono"
+                                        />
+                                    </div>
+                                </div>
+                                <div>
+                                    <Label htmlFor="payment-fecha-max">10. Fecha de Pago Max</Label>
+                                    <input
+                                        id="payment-fecha-max"
+                                        type="date"
+                                        className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-brand-primary/20 outline-none"
+                                        value={paymentForm.fechaPagoMax || ''}
+                                        onChange={e => {
+                                            const val = e.target.value;
+                                            let calculatedMes = paymentForm.mesPago;
+                                            if (val) {
+                                                const [, monthStr] = val.split('-');
+                                                const mesIdx = parseInt(monthStr, 10) - 1;
+                                                calculatedMes = MONTH_LABELS_ES[mesIdx] || calculatedMes;
+                                            }
+                                            setPaymentForm(prev => ({ ...prev, fechaPagoMax: val, mesPago: calculatedMes }));
+                                        }}
+                                    />
+                                </div>
+                                <div>
+                                    <Label>11. Mes de Pago</Label>
+                                    <select
+                                        aria-label="Mes de pago"
+                                        className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-brand-primary/20 outline-none"
+                                        value={paymentForm.mesPago}
+                                        onChange={e => setPaymentForm(prev => ({ ...prev, mesPago: e.target.value }))}
+                                    >
+                                        <option value="">-- Seleccionar Mes --</option>
+                                        {MONTH_LABELS_ES.map(m => (
+                                            <option key={m} value={m}>{m}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <Label className="text-blue-800 font-bold">12. Valor Cuota Variable</Label>
+                                    <div className="relative">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-700 font-bold">$</span>
+                                        <FormattedNumberInput
+                                            step="0.01"
+                                            value={paymentForm.valorCuotaVariable || ''}
+                                            onChange={e => setPaymentForm(prev => ({ ...prev, valorCuotaVariable: e.target.value }))}
+                                            className="pl-7 bg-white font-bold text-blue-700 text-lg border-blue-300"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* SECCIÓN 4: ESTADO Y SALDOS */}
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-green-50 p-4 rounded-lg border border-green-100">
+                                <div>
+                                    <Label>13. Estado</Label>
+                                    <select
+                                        aria-label="Estado de la cuota"
+                                        className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+                                        value={paymentForm.estado}
+                                        onChange={e => setPaymentForm({ ...paymentForm, estado: e.target.value })}
+                                    >
+                                        <option value="">-- Seleccionar --</option>
+                                        {estadoOptions.map(est => (
+                                            <option key={est} value={est}>{est}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <Label className="text-green-800 font-bold">14. Valor Cuota Pago</Label>
+                                    <div className="relative">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-green-700 font-bold">$</span>
+                                        <FormattedNumberInput step="0.01" className="pl-7 border-green-500 font-bold text-lg" value={paymentForm.valorCuotaPago} onChange={e => setPaymentForm({ ...paymentForm, valorCuotaPago: e.target.value })} required />
+                                    </div>
+                                </div>
+                                <div>
+                                    <Label className="text-red-800 font-bold">15. Saldo Final</Label>
+                                    <div className="relative">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-red-700 font-bold">$</span>
+                                        <FormattedNumberInput
+                                            step="0.01"
+                                            value={paymentForm.saldoFinal || ''}
+                                            onChange={e => setPaymentForm(prev => ({ ...prev, saldoFinal: e.target.value }))}
+                                            className="pl-7 bg-white font-bold text-red-700"
+                                        />
+                                    </div>
+                                </div>
+                                <div>
+                                    <Label>16. Total Cuotas Plan <span className="ml-1 text-xs font-normal text-gray-400">(informativo)</span></Label>
+                                    <Input
+                                        type="number"
+                                        readOnly
+                                        value={(() => {
+                                            if (!paymentForm.idVm) return paymentForm.cuotasPrestamo || '';
+                                            const loan = disbursedLoans.find(l => (l.idVm || l.orderId) === paymentForm.idVm);
+                                            return loan?.cuotas ?? paymentForm.cuotasPrestamo ?? '';
+                                        })()}
+                                        className="bg-gray-50 text-gray-500 cursor-not-allowed"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* SECCIÓN 5: DETALLES */}
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <div>
+                                    <Label>17. Banco Desembolsado</Label>
+                                    <select
+                                        aria-label="Banco desembolsado"
+                                        className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-brand-primary/20 outline-none"
+                                        value={paymentForm.banco}
+                                        onChange={e => setPaymentForm({ ...paymentForm, banco: e.target.value })}
+                                    >
+                                        <option value="">-- Seleccionar Banco --</option>
+                                        {COLOMBIAN_BANKS_WITH_OTHER.map(bank => (
+                                            <option key={bank} value={bank}>{bank}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <Label>18. # Transaccion</Label>
+                                    <Input value={paymentForm.numeroTransaccion} onChange={e => setPaymentForm({ ...paymentForm, numeroTransaccion: e.target.value })} />
+                                </div>
+                                <div>
+                                    <Label>19. Cuenta de Ahorros</Label>
+                                    <Input value={paymentForm.cuentaAhorros} onChange={e => setPaymentForm({ ...paymentForm, cuentaAhorros: e.target.value })} />
+                                </div>
+                                <div>
+                                    <Label>20. Observaciones</Label>
+                                    <Input value={paymentForm.observaciones} onChange={e => setPaymentForm({ ...paymentForm, observaciones: e.target.value })} />
+                                </div>
+                            </div>
+
+                            {/* SECCIÓN 6: RELACIÓN PRÉSTAMO */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-yellow-50 p-4 rounded-lg border border-yellow-100">
+                                <div>
+                                    <Label>21. Id_VM (Ref. Préstamo)</Label>
+                                    <select
+                                        aria-label="Id_VM (Ref. préstamo)"
+                                        className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+                                        value={paymentForm.idVm}
+                                        onChange={e => {
+                                            const loan = disbursedLoans.find(l => (l.idVm === e.target.value || l.orderId === e.target.value));
+                                            if (loan) {
+                                                const existingPaymentsCount = payments.filter(p => p.idVm === (loan.idVm || loan.orderId)).length;
+                                                setPaymentForm(prev => ({
+                                                    ...prev,
+                                                    idVm: e.target.value,
+                                                    mesDesembolso: loan.mesDesembolso,
+                                                    saldoInicial: loan.valorPrestado || loan.monto,
+                                                    cuotasPrestamo: loan.cuotas,
+                                                    interesMensual: loan.interesMensual,
+                                                    estadoPrestamo: loan.estado,
+                                                    banco: loan.banco,
+                                                    cuentaAhorros: loan.cuentaAhorros,
+                                                    itemQuantity: (existingPaymentsCount + 1).toString()
+                                                }));
+                                            } else {
+                                                setPaymentForm(prev => ({ ...prev, idVm: e.target.value }));
+                                            }
+                                        }}
+                                    >
+                                        <option value="">-- Manual / Ninguno --</option>
+                                        {(disbursedLoans || [])
+                                            .filter(l => l && l.clientId && (!paymentForm.clientId || l.clientId.toString() === paymentForm.clientId.toString()))
+                                            .map(l => (
+                                                <option key={l.id} value={l.idVm || l.orderId}>
+                                                    {l.idVm || l.orderId} - {l.estado} (${parseFloat(l.valorPrestado || l.monto || 0).toLocaleString()})
+                                                </option>
+                                            ))
+                                        }
+                                    </select>
+                                </div>
+                                <div>
+                                    <Label>22. Estado Préstamo</Label>
+                                    {/* Solo lectura a propósito: es el estado REAL del préstamo (idVm),
+                                        no un campo independiente del pago — el backend ya lo deriva del
+                                        préstamo al guardar; esto solo lo muestra. */}
+                                    <div className={`flex h-10 w-full items-center rounded-md border px-3 text-sm font-semibold ${
+                                        (paymentForm.estadoPrestamo || '').toLowerCase().includes('vigente') ? 'bg-blue-50 border-blue-200 text-blue-700'
+                                        : (paymentForm.estadoPrestamo || '').toLowerCase().includes('cancel') ? 'bg-gray-100 border-gray-200 text-gray-500'
+                                        : 'bg-amber-50 border-amber-200 text-amber-700'
+                                    }`}>
+                                        {paymentForm.estadoPrestamo || 'Sin préstamo asociado'}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* SECCIÓN 7: SOPORTE DE PAGO */}
+                            <div className="bg-gray-50 border border-gray-100 rounded-lg p-4 space-y-3">
+                                <Label className="text-gray-800 font-bold block">23. Subir Registro de Pago (Soporte)</Label>
+
+                                {isEditing && soportesInfo[editingId] && !soporteFile && (
+                                    <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
+                                        <div className="flex items-center gap-3">
+                                            <FileDown className="h-5 w-5 text-blue-600 shrink-0" />
+                                            <div>
+                                                <p className="text-sm font-semibold text-blue-800">Soporte adjunto</p>
+                                                <p className="text-xs text-blue-600">{soportesInfo[editingId].name}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleDownloadSoporte(editingId, soportesInfo[editingId].name)}
+                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-100 hover:bg-blue-200 rounded-md transition-colors"
+                                            >
+                                                <FileDown className="h-3.5 w-3.5" /> Descargar
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleDeleteSoporte(editingId)}
+                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-700 bg-red-100 hover:bg-red-200 rounded-md transition-colors"
+                                            >
+                                                <X className="h-3.5 w-3.5" /> Eliminar
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div
+                                    className={`relative border-2 border-dashed rounded-lg p-6 transition-all duration-200 ease-in-out text-center ${soporteFile
+                                        ? 'border-brand-primary bg-brand-primary/5'
+                                        : 'border-gray-300 hover:border-brand-primary hover:bg-gray-50'
+                                        }`}
+                                >
+                                    <input
+                                        type="file"
+                                        aria-label="Subir soporte de pago"
+                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                        accept=".jpg,.jpeg,.png,.pdf"
+                                        onChange={(e) => {
+                                            if (e.target.files && e.target.files[0]) {
+                                                setSoporteFile(e.target.files[0]);
+                                            }
+                                        }}
+                                    />
+                                    <div className="flex flex-col items-center justify-center space-y-2">
+                                        {soporteFile ? (
+                                            <>
+                                                <div className="bg-brand-primary/20 p-3 rounded-full">
+                                                    <FileDown className="h-6 w-6 text-brand-primary" />
+                                                </div>
+                                                <p className="text-sm font-medium text-gray-900">{soporteFile.name}</p>
+                                                <p className="text-xs text-gray-500">{(soporteFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                                                <div className="z-10 relative mt-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            setSoporteFile(null);
+                                                        }}
+                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-700 bg-red-100 hover:bg-red-200 rounded-md transition-colors"
+                                                    >
+                                                        <X className="h-3.5 w-3.5" /> Eliminar Archivo
+                                                    </button>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div className="bg-gray-100 p-3 rounded-full">
+                                                    <Plus className="h-6 w-6 text-gray-400" />
+                                                </div>
+                                                <p className="text-sm font-medium text-gray-900">
+                                                    {isEditing && soportesInfo[editingId]
+                                                        ? 'Arrastra para reemplazar el soporte actual'
+                                                        : <>
+                                                            Arrastra una imagen/PDF aquí o <span className="text-brand-primary">explora</span>
+                                                          </>}
+                                                </p>
+                                                <p className="text-xs text-gray-500">JPG, PNG o PDF (Máximo 10MB)</p>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end gap-3 pt-4 border-t">
+                                <Button type="button" variant="outline" onClick={handleCloseModal}>Cancelar</Button>
+                                <Button type="submit" size="lg" disabled={isSaving}>
+                                    {isSaving ? 'Guardando...' : '💾 Actualizar Registro'}
+                                </Button>
+                            </div>
+                        </form>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
