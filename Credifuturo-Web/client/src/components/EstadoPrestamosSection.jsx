@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
     Calendar, CheckCircle, Activity, Loader2, DollarSign,
-    BarChart3, AlertTriangle, PieChart, Clock, ChevronDown, ChevronLeft, ChevronRight
+    BarChart3, AlertTriangle, PieChart, Clock, ChevronDown, ChevronLeft, ChevronRight,
+    CalendarDays, FilterX
 } from 'lucide-react';
 
 const ITEMS_PER_PAGE = 25;
@@ -77,6 +78,7 @@ const PillSelect = ({ icon: Icon, value, onChange, options, width = 'w-44' }) =>
 };
 
 const fullMonthsLower = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+const monthLabels = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
 const EstadoPrestamosSection = ({
     payments = [], loans = [], loading = false, socioName = '',
@@ -86,12 +88,22 @@ const EstadoPrestamosSection = ({
     showInterestColumn = false
 }) => {
     const [paymentYearFilter, setPaymentYearFilter] = useState('Todos');
+    const [paymentMonthFilter, setPaymentMonthFilter] = useState('Todos');
     const [paymentStatusFilter, setPaymentStatusFilter] = useState('Todos');
     const [paymentLoanStatusFilter, setPaymentLoanStatusFilter] = useState('Todos');
     const [paymentSortConfig, setPaymentSortConfig] = useState({ key: 'idVm', dir: 'desc' });
     const [currentPage, setCurrentPage] = useState(1);
 
-    useEffect(() => { setCurrentPage(1); }, [paymentYearFilter, paymentStatusFilter, paymentLoanStatusFilter]);
+    useEffect(() => { setCurrentPage(1); }, [paymentYearFilter, paymentMonthFilter, paymentStatusFilter, paymentLoanStatusFilter]);
+
+    const activeFilterCount = [paymentYearFilter, paymentMonthFilter, paymentStatusFilter, paymentLoanStatusFilter].filter(v => v !== 'Todos').length;
+
+    const clearFilters = () => {
+        setPaymentYearFilter('Todos');
+        setPaymentMonthFilter('Todos');
+        setPaymentStatusFilter('Todos');
+        setPaymentLoanStatusFilter('Todos');
+    };
 
     const safeParseDate = useCallback((dateVal, mesRef) => {
         if (!dateVal) return null;
@@ -116,6 +128,21 @@ const EstadoPrestamosSection = ({
         return new Date(dateStr + 'T00:00:00');
     }, []);
 
+    const getPaymentMonthLabel = useCallback((p) => {
+        if (p.mesPago) {
+            const idx = fullMonthsLower.indexOf(p.mesPago.toLowerCase().trim());
+            if (idx >= 0) return monthLabels[idx];
+        }
+        if (p.fechaPagoMax) {
+            const parts = p.fechaPagoMax.split('-');
+            if (parts.length === 3) {
+                const m = parseInt(parts[1], 10);
+                if (m >= 1 && m <= 12) return monthLabels[m - 1];
+            }
+        }
+        return null;
+    }, []);
+
     const availablePaymentYears = useMemo(() => {
         const years = new Set();
         payments.forEach(p => {
@@ -132,6 +159,9 @@ const EstadoPrestamosSection = ({
                 const y = p.fechaPagoMax ? p.fechaPagoMax.split('-')[0] : '';
                 if (y !== paymentYearFilter) return false;
             }
+            if (paymentMonthFilter !== 'Todos') {
+                if (getPaymentMonthLabel(p) !== paymentMonthFilter) return false;
+            }
             if (paymentStatusFilter !== 'Todos') {
                 if ((p.estado || '').trim().toLowerCase() !== paymentStatusFilter.toLowerCase()) return false;
             }
@@ -145,7 +175,7 @@ const EstadoPrestamosSection = ({
             }
             return true;
         });
-    }, [payments, paymentYearFilter, paymentStatusFilter, paymentLoanStatusFilter, loans]);
+    }, [payments, paymentYearFilter, paymentMonthFilter, paymentStatusFilter, paymentLoanStatusFilter, loans, getPaymentMonthLabel]);
 
     const sortedSocioPayments = useMemo(() => {
         const { key, dir } = paymentSortConfig;
@@ -255,8 +285,23 @@ const EstadoPrestamosSection = ({
             {/* Filters */}
             <div className="flex flex-wrap items-center gap-3 mb-4 p-3 bg-gray-50/50 border border-gray-100 rounded-xl print:hidden">
                 <PillSelect icon={Calendar} value={paymentYearFilter} onChange={setPaymentYearFilter} options={[{ value: 'Todos', label: 'Año: Todos' }, ...availablePaymentYears.map(y => ({ value: y, label: String(y) }))]} />
+                <PillSelect icon={CalendarDays} value={paymentMonthFilter} onChange={setPaymentMonthFilter} width="w-48" options={[{ value: 'Todos', label: 'Mes: Todos' }, ...monthLabels.map(m => ({ value: m, label: m }))]} />
                 <PillSelect icon={CheckCircle} value={paymentStatusFilter} onChange={setPaymentStatusFilter} width="w-48" options={[{ value: 'Todos', label: 'Estado Pago (Todos)' }, { value: 'pago', label: 'Pago' }, { value: 'pendiente', label: 'Pendiente' }, { value: 'mora', label: 'Mora' }]} />
                 <PillSelect icon={Activity} value={paymentLoanStatusFilter} onChange={setPaymentLoanStatusFilter} width="w-56" options={[{ value: 'Todos', label: 'Estado Préstamo (Todos)' }, { value: 'vigente', label: 'Vigente' }, { value: 'activo', label: 'Activo' }, { value: 'cancelado', label: 'Cancelado' }]} />
+
+                {activeFilterCount > 0 && (
+                    <button
+                        type="button"
+                        onClick={clearFilters}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-rose-200 bg-rose-50 text-rose-600 text-sm font-semibold hover:bg-rose-100 transition-colors"
+                    >
+                        <FilterX className="h-4 w-4" /> Limpiar filtros ({activeFilterCount})
+                    </button>
+                )}
+
+                <span className="ml-auto text-xs text-gray-400 font-medium">
+                    {sortedSocioPayments.length} resultado{sortedSocioPayments.length !== 1 ? 's' : ''}
+                </span>
             </div>
 
             {loading ? (

@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import api from '../../config/api';
 import {
-    Users, DollarSign, PiggyBank, BarChart3, CheckCircle, CreditCard,
-    AlertTriangle, Database, TrendingUp, Landmark, Activity,
+    Users, PiggyBank, BarChart3, CheckCircle, CreditCard,
+    AlertTriangle, Database, TrendingUp, Landmark,
     ChevronRight, ArrowUpRight, Loader2, RefreshCw, X, Search,
     Clock, ShieldAlert, Trophy, Download, Calendar, ChevronDown, Maximize2, Save
 } from 'lucide-react';
 import ChartExpandModal, { analyzeMonthlyTrend, analyzeSavingsComposition } from '../../components/ChartExpandModal';
 import { useUi } from '../../context/UiContext';
 import LoanCapacityWidget from '../../components/admin/LoanCapacityWidget';
+import EstadoPrestamosSection from '../../components/EstadoPrestamosSection';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
     ResponsiveContainer, Cell, AreaChart, Area, LabelList, ReferenceLine,
@@ -1428,12 +1429,6 @@ const SavingsSummaryPage = ({ lockedSocio = null, hideControls = false, preloade
     const [loanAnalysis, setLoanAnalysis] = useState(null);
     const [loadingAnalysis, setLoadingAnalysis] = useState(false);
 
-    // Payment Filters
-    const [paymentYearFilter, setPaymentYearFilter] = useState('Todos');
-    const [paymentStatusFilter, setPaymentStatusFilter] = useState('Todos');
-    const [paymentLoanStatusFilter, setPaymentLoanStatusFilter] = useState('Todos');
-    const [paymentSortConfig, setPaymentSortConfig] = useState({ key: 'idVm', dir: 'desc' });
-
     const [showRankingModal, setShowRankingModal] = useState(false);
     const [expandAccountChart, setExpandAccountChart] = useState(false);
     const [expandTrendChart, setExpandTrendChart] = useState(false);
@@ -1696,138 +1691,6 @@ const SavingsSummaryPage = ({ lockedSocio = null, hideControls = false, preloade
 
         return Math.min(Math.max(h, 300), 620);     // entre 300px y 620px
     }, [userStats?.monthlyTrend, availableYears, selectedYear]);
-
-    const fullMonthsLower = React.useMemo(() => ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"], []);
-
-    const safeParseDate = React.useCallback((dateVal, mesRef) => {
-        if (!dateVal) return null;
-        let dateStr = dateVal instanceof Date ? dateVal.toISOString().split('T')[0] : String(dateVal);
-        if (dateStr.includes('T')) dateStr = dateStr.split('T')[0];
-
-        const parts = dateStr.split('-');
-        if (parts.length !== 3) return new Date(dateStr + 'T00:00:00');
-
-        const [p1, p2, p3] = parts.map(Number);
-        if (String(parts[0]).length === 4) {
-            const y = p1, m = p2, d = p3;
-            if (mesRef) {
-                const targetIdx = fullMonthsLower.indexOf(mesRef.toLowerCase().trim()) + 1;
-                if (targetIdx > 0) {
-                    if (m === targetIdx) return new Date(y, m - 1, d);
-                    if (d === targetIdx) return new Date(y, d - 1, m);
-                }
-            }
-            return new Date(y, m - 1, d);
-        }
-        return new Date(dateStr + 'T00:00:00');
-    }, [fullMonthsLower]);
-
-    // --- Payment Stats Logic ---
-    const availablePaymentYears = React.useMemo(() => {
-        const years = new Set();
-        socioPayments.forEach(p => {
-            if (p.fechaPagoMax) {
-                years.add(p.fechaPagoMax.split('-')[0]);
-            }
-        });
-        return Array.from(years).sort((a, b) => b - a);
-    }, [socioPayments]);
-
-    const filteredSocioPayments = React.useMemo(() => {
-        return socioPayments.filter(p => {
-            if (paymentYearFilter !== 'Todos') {
-                const y = p.fechaPagoMax ? p.fechaPagoMax.split('-')[0] : '';
-                if (y !== paymentYearFilter) return false;
-            }
-            if (paymentStatusFilter !== 'Todos') {
-                if ((p.estado || '').trim().toLowerCase() !== paymentStatusFilter.toLowerCase()) return false;
-            }
-            if (paymentLoanStatusFilter !== 'Todos') {
-                // Find corresponding loan to check its state, or fallback if loan missing
-                const loan = socioLoans.find(l => String(l.idVm) === String(p.idVm));
-                if (loan) {
-                    if ((loan.estado || '').trim().toLowerCase() !== paymentLoanStatusFilter.toLowerCase()) return false;
-                } else {
-                    return false; // If we can't determine loan state, exclude if filtering
-                }
-            }
-            return true;
-        });
-    }, [socioPayments, paymentYearFilter, paymentStatusFilter, paymentLoanStatusFilter, socioLoans]);
-
-    const sortedSocioPayments = React.useMemo(() => {
-        const { key, dir } = paymentSortConfig;
-        const extractNum = (val) => parseInt((val || '').replace(/\D/g, '') || '0');
-        const numericPrefixKeys = ['externalId', 'idVm'];
-        const numericKeys = ['itemQuantity', 'valorCuotaVariable', 'valorCuotaPago', 'saldoFinal'];
-        const dateKeys = ['fechaPagoMax'];
-
-        return [...filteredSocioPayments].sort((a, b) => {
-            let av = a[key], bv = b[key];
-            let cmp = 0;
-            if (numericPrefixKeys.includes(key)) {
-                cmp = extractNum(av) - extractNum(bv);
-            } else if (numericKeys.includes(key)) {
-                cmp = (parseFloat(av) || 0) - (parseFloat(bv) || 0);
-            } else if (dateKeys.includes(key)) {
-                cmp = new Date(av || 0) - new Date(bv || 0);
-            } else {
-                cmp = (av || '').toString().localeCompare((bv || '').toString(), 'es');
-            }
-            return dir === 'asc' ? cmp : -cmp;
-        });
-    }, [filteredSocioPayments, paymentSortConfig]);
-
-    const handlePaymentSort = (key) => {
-        setPaymentSortConfig(prev =>
-            prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }
-        );
-    };
-
-    const paymentStats = React.useMemo(() => {
-        const today = new Date();
-        const todayLocal = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-        
-        return filteredSocioPayments.reduce((acc, curr) => {
-            acc.totalIntereses += parseFloat(curr.valorInteresesAmortizados || 0);
-            acc.totalCuotas++;
-            
-            const valCuota = parseFloat(curr.valorCuotaVariable || 0);
-            const valPago = parseFloat(curr.valorCuotaPago || 0);
-            
-            // Sum loan amounts once per idVm
-            if (curr.idVm && !acc.loanIdsRef.has(curr.idVm)) {
-                acc.loanIdsRef.add(curr.idVm);
-                const loan = socioLoans.find(l => String(l.idVm) === String(curr.idVm));
-                acc.totalValorPrestado += loan ? parseFloat(loan.valorPrestado || 0) : 0;
-            }
-
-            const isPago = (curr.estado || '').trim().toLowerCase() === 'pago';
-            const isPendiente = (curr.estado || '').trim().toLowerCase() === 'pendiente';
-            
-            if (isPago) {
-                acc.cuotasPagadas++;
-                acc.totalRecaudo += valPago;
-            } else if (isPendiente) {
-                acc.carteraActiva += valCuota;
-                const dueDate = safeParseDate(curr.fechaPagoMax, curr.mesPago);
-                if (dueDate && dueDate < todayLocal) {
-                    acc.moraCartera += valCuota;
-                }
-            }
-            return acc;
-        }, {
-            totalIntereses: 0,
-            totalValorPrestado: 0,
-            totalCuotas: 0,
-            cuotasPagadas: 0,
-            totalRecaudo: 0,
-            carteraActiva: 0,
-            moraCartera: 0,
-            loanIdsRef: new Set()
-        });
-    }, [filteredSocioPayments, socioLoans, safeParseDate]);
-
 
     const cards = [
         { id: 'savings', title: 'Capital Ahorrado', value: loading ? '…' : fmt(userStats.totalSavings), icon: PiggyBank, color: 'text-green-500', bgColor: 'bg-green-50', panel: 'savings' },
@@ -2243,119 +2106,12 @@ const SavingsSummaryPage = ({ lockedSocio = null, hideControls = false, preloade
 
                     {/* ── Estado de Préstamos (Cuotas) ────────────────────────── */}
                     {isTotalView && (loadingPayments || socioPayments.length > 0) && (
-                        <div className="w-full mt-5 bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-                            <div className="flex flex-col mb-4">
-                                <h2 className="text-lg font-bold text-brand-primary flex items-center gap-2 mb-1">
-                                    <Activity className="h-5 w-5" /> Lista Estado Préstamos (Cuotas)
-                                </h2>
-                                <p className="text-xs text-gray-400">
-                                    {socioPayments.length} cuota{socioPayments.length !== 1 ? 's' : ''} registrada{socioPayments.length !== 1 ? 's' : ''} · {selectedSocio?.name} {selectedSocio?.surname1}
-                                </p>
-                            </div>
-                            
-                            {/* KPI Cards (Row 1) */}
-                            <div className="grid gap-3 lg:gap-4 grid-cols-2 lg:grid-cols-5 mb-4">
-                                <PaymentStatCard title="Total Valor Prestado" value={`$${paymentStats.totalValorPrestado.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`} description="Suma bruta de préstamos" icon={DollarSign} color="text-emerald-500" />
-                                <PaymentStatCard title="Cartera Activa + intereses" value={`$${paymentStats.carteraActiva.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`} description="Suma cuotas pendientes" icon={Activity} color="text-emerald-700" />
-                                <PaymentStatCard title="Total Recaudo + intereses" value={`$${paymentStats.totalRecaudo.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`} description="Suma cuotas pagadas" icon={CheckCircle} color="text-blue-600" />
-                                <PaymentStatCard title="Total Intereses" value={`$${paymentStats.totalIntereses.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`} description="Intereses amortizados" icon={BarChart3} color="text-amber-500" />
-                                <PaymentStatCard title="Cartera en Mora EP" value={`$${paymentStats.moraCartera.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`} description="Pendiente con fecha vencida" icon={AlertTriangle} color="text-red-500" customBg="linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)" />
-                            </div>
-
-                            {/* KPI Cards (Row 2) */}
-                            <div className="grid gap-3 lg:gap-4 grid-cols-3 mb-6">
-                                <PaymentStatCard title="Cuotas Totales" value={paymentStats.totalCuotas} description="Registros actuales" icon={PieChart} color="text-gray-500" />
-                                <PaymentStatCard title="Cuotas Pagadas" value={paymentStats.cuotasPagadas} description="Estado 'Pago'" icon={CheckCircle} color="text-green-600" />
-                                <PaymentStatCard title="Cuotas Pendientes" value={paymentStats.totalCuotas - paymentStats.cuotasPagadas} description="Estado 'Pendiente'" icon={Clock} color="text-amber-600" />
-                            </div>
-
-                            {/* Filters */}
-                            <div className="flex flex-wrap items-center gap-3 mb-4 p-3 bg-gray-50/50 border border-gray-100 rounded-xl print:hidden">
-                                <PillSelect icon={Calendar} value={paymentYearFilter} onChange={setPaymentYearFilter} options={[{ value: 'Todos', label: 'Año: Todos' }, ...availablePaymentYears.map(y => ({ value: y, label: String(y) }))]} />
-                                <PillSelect icon={CheckCircle} value={paymentStatusFilter} onChange={setPaymentStatusFilter} width="w-48" options={[{ value: 'Todos', label: 'Estado Pago (Todos)' }, { value: 'pago', label: 'Pago' }, { value: 'pendiente', label: 'Pendiente' }, { value: 'mora', label: 'Mora' }]} />
-                                <PillSelect icon={Activity} value={paymentLoanStatusFilter} onChange={setPaymentLoanStatusFilter} width="w-56" options={[{ value: 'Todos', label: 'Estado Préstamo (Todos)' }, { value: 'vigente', label: 'Vigente' }, { value: 'activo', label: 'Activo' }, { value: 'cancelado', label: 'Cancelado' }]} />
-                            </div>
-
-                            {loadingPayments ? (
-                                <div className="flex items-center justify-center py-10"><Loader2 className="h-7 w-7 animate-spin text-brand-primary/30" /></div>
-                            ) : (
-                                <div className="overflow-auto rounded-lg border border-gray-100 max-h-[480px] print:overflow-visible print:max-h-none print:border-gray-200">
-                                    <table className="text-xs border-collapse w-full">
-                                        <thead className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 text-left font-bold text-gray-500 uppercase tracking-wide text-[10px]">
-                                            <tr>
-                                                {[
-                                                    { key: 'externalId',          label: 'ID Pago',      align: '' },
-                                                    { key: 'idVm',                label: 'Préstamo',     align: '' },
-                                                    { key: 'itemQuantity',        label: 'Cuota #',      align: 'text-center' },
-                                                    { key: 'estado',              label: 'Estado',       align: '' },
-                                                    { key: 'fechaPagoMax',        label: 'Fecha Máx',    align: '' },
-                                                    { key: 'valorCuotaVariable',  label: 'Valor Cuota',  align: 'text-right' },
-                                                    { key: 'valorCuotaPago',      label: 'Valor Pagado', align: 'text-right' },
-                                                    { key: 'saldoFinal',          label: 'Saldo Final',  align: 'text-right' },
-                                                ].map(col => (
-                                                    <th
-                                                        key={col.key}
-                                                        className={`px-3 py-2.5 whitespace-nowrap cursor-pointer select-none hover:bg-gray-100 transition-colors ${col.align}`}
-                                                        onClick={() => handlePaymentSort(col.key)}
-                                                    >
-                                                        <span className="inline-flex items-center gap-1">
-                                                            {col.label}
-                                                            <span className="text-[9px] leading-none">
-                                                                {paymentSortConfig.key === col.key
-                                                                    ? (paymentSortConfig.dir === 'asc' ? '▲' : '▼')
-                                                                    : <span className="text-gray-300">⇅</span>}
-                                                            </span>
-                                                        </span>
-                                                    </th>
-                                                ))}
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-gray-50">
-                                            {sortedSocioPayments.map((payment, i) => {
-                                                const isPaid = payment.estado === 'Pago';
-                                                
-                                                // Check Mora intelligently using safeParseDate
-                                                const fechaMax = safeParseDate(payment.fechaPagoMax, payment.mesPago);
-                                                const todayThreshold = new Date();
-                                                todayThreshold.setHours(0, 0, 0, 0);
-                                                const isMora = !isPaid && fechaMax && (fechaMax < todayThreshold);
-                                                
-                                                const isLate = payment.estado?.toLowerCase().includes('mora') || isMora;
-                                                const isPending = !isLate && (payment.estado === 'Pendiente' || payment.estado === 'Vigente');
-                                                
-                                                return (
-                                                    <tr key={payment.id || i} className={`transition-colors hover:bg-brand-primary/5 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
-                                                        <td className="px-3 py-2.5 whitespace-nowrap">
-                                                            <span className="font-bold text-brand-primary bg-brand-primary/10 px-2 py-0.5 rounded text-[11px]">{payment.externalId || `#${payment.id}`}</span>
-                                                        </td>
-                                                        <td className="px-3 py-2.5 whitespace-nowrap text-gray-600 font-bold">{payment.idVm || '—'}</td>
-                                                        <td className="px-3 py-2.5 whitespace-nowrap text-center text-gray-600 font-mono">{payment.itemQuantity || '—'} / {payment.cuotasPrestamo || '—'}</td>
-                                                        <td className="px-3 py-2.5 whitespace-nowrap">
-                                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                                                isPaid ? 'bg-emerald-100 text-emerald-700' :
-                                                                isLate ? 'bg-rose-100 text-rose-700' :
-                                                                isPending ? 'bg-amber-100 text-amber-700' :
-                                                                'bg-gray-100 text-gray-500'
-                                                            }`}>{payment.estado || '—'}</span>
-                                                        </td>
-                                                        <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{payment.fechaPagoMax || payment.date || '—'}</td>
-                                                        <td className="px-3 py-2.5 whitespace-nowrap text-right font-bold text-gray-800 tabular-nums">
-                                                            {payment.valorCuotaVariable ? `$${Math.round(Number(payment.valorCuotaVariable)).toLocaleString('es-CO')}` : '—'}
-                                                        </td>
-                                                        <td className="px-3 py-2.5 whitespace-nowrap text-right font-bold text-emerald-600 tabular-nums">
-                                                            {payment.valorCuotaPago && Number(payment.valorCuotaPago) > 0 ? `$${Math.round(Number(payment.valorCuotaPago)).toLocaleString('es-CO')}` : '—'}
-                                                        </td>
-                                                        <td className="px-3 py-2.5 whitespace-nowrap text-right font-bold text-gray-600 tabular-nums">
-                                                            {payment.saldoFinal !== null && payment.saldoFinal !== undefined ? `$${Math.round(Number(payment.saldoFinal)).toLocaleString('es-CO')}` : '—'}
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
-                        </div>
+                        <EstadoPrestamosSection
+                            payments={socioPayments}
+                            loans={socioLoans}
+                            loading={loadingPayments}
+                            socioName={`${selectedSocio?.name || ''} ${selectedSocio?.surname1 || ''}`.trim()}
+                        />
                     )}
 
                     {/* SOLO IMPRESIÓN: Tabla forzada de Capital Ahorrado que abarca todo el ancho necesario */}
@@ -2386,18 +2142,5 @@ const SavingsSummaryPage = ({ lockedSocio = null, hideControls = false, preloade
 };
 
 const Card = ({ children, className = '', style }) => <div className={`bg-white rounded-2xl border border-gray-100 shadow-sm p-6 ${className}`} style={style}>{children}</div>;
-
-const PaymentStatCard = ({ title, value, description, icon: Icon, color, customBg }) => (
-    <Card className="transition-all duration-200 overflow-hidden relative !p-5" style={customBg ? { background: customBg, border: 'none' } : {}}>
-        <div className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
-            <h3 className="text-[11px] font-bold text-gray-500 tracking-wide uppercase">{title}</h3>
-            <Icon className={`h-4 w-4 ${color}`} />
-        </div>
-        <div className="relative z-10">
-            <div className={`text-xl font-black ${customBg ? 'text-gray-900' : 'text-gray-900'}`}>{value}</div>
-            <p className="text-[10px] mt-1 text-gray-400 font-medium">{description}</p>
-        </div>
-    </Card>
-);
 
 export default SavingsSummaryPage;
