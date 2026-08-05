@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../../config/api';
 import { notifyUpdate } from '../../utils/sync';
-import { Save, Search, Trash2, X, AlertCircle, CheckCircle, Download, KeyRound, Bell, XCircle, FileText, User, MapPin, Percent } from 'lucide-react';
+import { Save, Search, X, AlertCircle, CheckCircle, Download, KeyRound, Bell, XCircle, FileText, User, MapPin, Percent, PowerOff } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Button } from '../../components/ui/Button';
 import { Input, Label, FormField } from '../../components/ui/Input';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { useUi } from '../../context/UiContext';
 
 const clientNormalizeEmailPart = (str) => {
@@ -21,6 +22,7 @@ const clientNormalizeEmailPart = (str) => {
 const ClientsPage = () => {
     const { toast } = useUi();
     const [loading, setLoading] = useState(false);
+    const [showDeactivate, setShowDeactivate] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [emailManuallySet, setEmailManuallySet] = useState(false);
     const [clients, setClients] = useState([]); // For export purposes
@@ -303,23 +305,23 @@ const ClientsPage = () => {
         }
     };
 
-    const handleDelete = async () => {
+    // Desactivación (soft-delete reversible): el endpoint DELETE marca al socio
+    // como Desactivado y conserva su historial. La confirmación usa ConfirmDialog.
+    const runDeactivate = async () => {
         if (!formData.id) return;
-
-        if (window.confirm(`¿Está seguro de eliminar al socio ${formData.name} ${formData.surname1}? Esta acción no se puede deshacer.`)) {
-            setLoading(true);
-            try {
-                await api.delete(`/admin/clients/${formData.id}`);
-                toast.success('Socio eliminado correctamente.');
-                notifyUpdate('clients');
-                handleReset();
-                fetchClients(); // Refresh list
-            } catch (error) {
-                console.error("Delete error:", error);
-                toast.error('Error al eliminar: ' + (error.message));
-            } finally {
-                setLoading(false);
-            }
+        setLoading(true);
+        try {
+            await api.delete(`/admin/clients/${formData.id}`);
+            toast.success('Socio desactivado correctamente.');
+            notifyUpdate('clients');
+            setShowDeactivate(false);
+            handleReset();
+            fetchClients(); // Refresh list
+        } catch (error) {
+            console.error("Deactivate error:", error);
+            toast.error(error.response?.data?.error || 'Error al desactivar el socio.');
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -661,13 +663,13 @@ const ClientsPage = () => {
                                 <>
                                 <Button
                                     type="button"
-                                    variant="destructive"
-                                    onClick={handleDelete}
+                                    variant="danger"
+                                    onClick={() => setShowDeactivate(true)}
                                     disabled={loading}
-                                    className="sm:mr-auto bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 border-red-200"
+                                    className="sm:mr-auto"
                                 >
-                                    <Trash2 className="mr-2 h-4 w-4" />
-                                    Eliminar Socio
+                                    <PowerOff className="mr-2 h-4 w-4" />
+                                    Desactivar Socio
                                 </Button>
                                 <Button
                                     type="button"
@@ -706,6 +708,16 @@ const ClientsPage = () => {
                 </CardContent>
             </Card>
 
+            <ConfirmDialog
+                open={showDeactivate}
+                title="Desactivar socio"
+                message={`Se marcará a ${formData.name || 'este socio'} ${formData.surname1 || ''} como Desactivado. Su historial se conserva y podrás reactivarlo después.`}
+                confirmLabel="Desactivar"
+                variant="danger"
+                loading={loading}
+                onConfirm={runDeactivate}
+                onClose={() => !loading && setShowDeactivate(false)}
+            />
         </div>
     );
 };

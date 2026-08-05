@@ -48,17 +48,18 @@ SQLite3 (Credifuturo-Web/database.sqlite, ~11 MB)
 - **`config/database.js`** — Sequelize SQLite setup; DB path resolves to `Credifuturo-Web/database.sqlite` via `path.join(__dirname, '..', '..', 'database.sqlite')`; `sequelize.sync()` runs on startup
 - **`models/`** — Fourteen Sequelize models. `index.js` wires associations for `Client`, `Saving`, `Loan`, `DisbursedLoan`, `LoanPayment`, `Soporte`, `Propuesta`, `VotoPropuesta`. The rest — `PasswordResetRequest`, `AppSetting`, `LoanRequest`, `LoanBoardVote`, `Notification`, `ScoreSnapshot` — are defined standalone and `require()`'d directly where used (route file or `server.js`), not wired through `index.js`
 - **`routes/auth.js`** — Login (rate-limited), JWT issuance, `PUT /change-password`, and `POST /request-reset` (creates a `PasswordResetRequest` + emails a notification via `EmailService`)
-- **`routes/admin.js`** — All CRUD operations (members, loans, savings, payments) plus the Junta/Propuestas/Notifications modules and the `/my/*` user-facing endpoints. At ~5,500 lines / ~90 routes, this is the bulk of the API — see "Authorization gate in `admin.js`" below before adding a route.
+- **`routes/admin.js`** — All CRUD operations (members, loans, savings, payments) plus the `/my/*` user-facing endpoints and the governance flows (loan-request approval, notifications, proposals, `settings/:key`). At ~5,500 lines / ~90 routes, this is the bulk of the API — see "Authorization gate in `admin.js`" below before adding a route.
 - **`routes/user.js`** — Legacy minimal file; active user-dashboard pages call `/api/admin/my/*` instead
 - **`middleware/authMiddleware.js`** — JWT verification (`verifyToken`); `requireRole(...roles)` accepts one or more roles (e.g. `requireRole('user', 'admin')`); `requireFreshPassword` blocks everything except password-change while `mustChangePassword` is true
 - **`services/BackupService.js`** — Exports all tables to dated Excel files; triggered daily at 8 PM Colombia time (`America/Bogota` timezone) by node-cron and on-demand via admin UI. Output: `C:\Credifuturo\Backups\`
 - **`services/DBClient.js`** — Higher-level DB operations service (upsert/transaction helpers); used by import scripts, not by routes directly
 - **`services/DataImportService.js`** — Excel import logic (currently disabled via `ENABLE_EXCEL_SYNC=false` in `.env`)
-- **`services/EmailService.js`** — nodemailer wrapper; sends password-reset-request notifications
-- **`services/NotificationService.js`** — `createNotification` / `notifyAdmins` / `notifyMany`; writes `Notification` rows consumed by the `/my/notifications*` endpoints and the bell icon in both dashboards
-- **`services/fileValidator.js`** — magic-byte verification (`verifyFileMagicBytes`) and filename sanitization for `Soporte` uploads, beyond multer's mimetype check
-- **`services/sessionActivity.js`** — tracks last-seen-at per user id (`touch()` called on every `verifyToken` pass); backs the admin "Registros de Acceso" page
+- **`services/EmailService.js`** — nodemailer wrapper; sends password-reset-request and loan-approval/rejection notifications
+- **`services/NotificationService.js`** — `createNotification` / `notifyAdmins` / `notifyMany`; writes `Notification` rows consumed by the `/my/notifications*` endpoints, the bell icon in both dashboards, and the loan-approval flow
+- **`services/fileValidator.js`** — magic-byte verification (`verifyFileMagicBytes`) and filename sanitization for `Soporte` uploads, beyond multer's declared MIME type
+- **`services/sessionActivity.js`** — tracks last-seen-at per user id (`touch()` called on every `verifyToken` pass); backs the admin "Registros de Acceso" (Access-Logs) page
 - **`services/passwordPolicy.js` / `securityLogger.js`** — temp-password generation and security-event logging (used by the admin auto-seed and reset flow)
+- **`lib/security-middleware.js`** (at `Credifuturo-Web/lib/`) — `setupSecurity(app)`, the helmet/CORS/logging middleware assembled in `server.js`; `Credifuturo-Web/Dockerfile` builds the single-service Railway container
 
 > The `server/` directory also contains one-off utility/migration scripts from past data-fix operations (root of `server/` and `server/scratch/`). These are not part of the live application. No automated test suite exists (`server/tests/` holds a single manual repro script, not a runnable suite).
 
@@ -67,9 +68,8 @@ Both `routes/auth.js` (token issuance) and `middleware/authMiddleware.js` (token
 
 ### Frontend Structure (`client/src/`)
 - **`App.jsx`** — React Router v6 routes; splits into `/admin` (DashboardLayout) and `/dashboard` (UserDashboardLayout) role trees; root `/` redirects by role
-- **`pages/admin/`** — Active modular admin pages: dashboard, clients, loans, savings, aportes, payments, reports, account detail, plus `LoanApprovalsPage`, `PropuestasPage`, `ExecutivePanelPage`, `AccessLogsPage`, `InformesViewerPage`, `OrphanLoansPage`, `DevolucionesAhorrosPage`
-- **`pages/user/`** — Active member-facing pages: loans, savings, contributions, payments, account details (with PDF export components), plus `JuntaAprobacionesPage` (loan-vote UI for Junta members), `UserResolutionsPage` (Propuestas), `MiPanelPage`, `CapacidadBetaPage`
-- **`utils/loanCapacity.js`** — Single source of truth for `calcScore()` (credit score formula) and `calcVerdict()` (loan-viability verdict); `ScoreSnapshot` rows store only the raw inputs, never the computed score, so the client always recomputes with whatever the current formula is
+- **`pages/admin/`** — Active modular admin pages: dashboard, clients, loans, savings, aportes, payments, reports, account detail, plus `LoanApprovalsPage` (Junta voting), `PropuestasPage`, `ExecutivePanelPage`, `AccessLogsPage`, `InformesViewerPage`, `OrphanLoansPage`, `DevolucionesAhorrosPage`
+- **`pages/user/`** — Active member-facing pages: loans, savings, contributions, payments, account details (with PDF export components), plus `JuntaAprobacionesPage` (loan-vote UI for Junta members), `UserResolutionsPage` (Propuestas), `MiPanelPage`, `CapacidadBetaPage` / `UserLoanAnalyzerPage` (credit-score capacity), `MisCreditosPage`, `UserStatutesPage`
 - **`pages/Login.jsx`** — Authentication entry point
 - **`pages/ChangePasswordPage.jsx`** — Password change page at `/change-password`
 - **`components/ui/`** — Primitive UI components (Button, Card, Input, Badge, DataTable)
@@ -81,6 +81,11 @@ Both `routes/auth.js` (token issuance) and `middleware/authMiddleware.js` (token
 - **`utils/excelUtils.js`** — `exportToExcel()` and `formatDate()` helpers for client-side Excel export
 - **`utils/banks.js`** — Static list of Colombian banks used in loan/payment forms
 - **`utils/useSortTable.js`** — Custom React hook for sortable table columns
+- **`utils/loanCapacity.js`** — **single source of the credit-score formula**: `calcScore()`, `calcVerdict()`, `kpiDescriptions`, `colorMap`. Server-side score snapshots recompute from this same logic — keep it authoritative
+- **`utils/juntaAccess.js`** — `useJuntaAccess()` hook + `JUNTA_CEDULAS_NO_ADMIN` (the non-admin Junta members). Mirrors `JUNTA_CEDULAS` in `server/routes/admin.js` — change both together
+- **`utils/betaAccess.js`** — `useBetaAccess()` hook + `BETA_USERS` name allow-list gating the Propuestas (BETA) feature; mirrors the nav's own list
+- **`utils/fundProjection.js`** — single source for the year-end fund projection ({base, conservador, optimista}) shared by `ExecutivePanelPage` and `DashboardHome` so both panels show identical figures
+- **`utils/sync.js`** — client-side sync helper
 
 > Many `.jsx` files exist flat under `pages/` (e.g., `ClientsPage.jsx`, `DashboardHome.jsx`) — these are earlier versions. The active pages imported by `App.jsx` live in `pages/admin/` and `pages/user/`. `AdminDashboard.jsx` and `UserDashboard.jsx` at the root are accessible via `/admin/legacy` but are fully superseded.
 
@@ -95,17 +100,25 @@ Both `routes/auth.js` (token issuance) and `middleware/authMiddleware.js` (token
 | `LoanPayment` | loan_payments | Individual quota rows per loan; `estado` is "Pendiente", "Pago", or "Mora"; `clientId` is denormalized for query performance; linked to `DisbursedLoan` via `idVm` (not a DB FK) |
 | `Soporte` | soportes | Payment proof files stored as **BLOBs in SQLite** (not on disk); accepted types: JPG, PNG, GIF, WEBP, PDF; 10 MB limit; validated by `services/fileValidator.js` beyond just mimetype |
 | `PasswordResetRequest` | PasswordResetRequests | Member-initiated password-reset requests; `status` is "pending", "resolved", or "rejected"; an admin resolves them from the admin UI |
-| `LoanRequest` | (Sequelize default) | A socio's loan application awaiting Junta approval; stores what was requested (`amount`, `installments`, `monthlyRate`) plus a snapshot of the simulation shown to the socio (`firstInstallment`, `totalInterest`, etc.) |
-| `LoanBoardVote` | (Sequelize default) | One Junta member's approve/reject decision on a `LoanRequest`; the request's aggregate status is only decided once all 3 Junta members have voted (see `PUT /loan-requests/:id/vote` in `admin.js`) |
+| `LoanRequest` | LoanRequests | Member loan applications pending Junta approval; stores the computed installment/interest projection, `scoreAtRequest`, `availableCapacityAtRequest`, `requiresVote`, and `status` ("pending"/"approved"/"rejected") |
+| `LoanBoardVote` | LoanBoardVotes | One `approved`/`rejected` vote (+ optional `note`) per Junta member per `LoanRequest` |
 | `AppSetting` | AppSettings | Generic key/value store for admin-configured globals (e.g. `utilidadesADistribuir`, the year's profit-to-distribute figure) |
-| `Notification` | Notifications | In-app notifications per `clientId` (`type`, `title`, `message`, `link`, `isRead`); written via `services/NotificationService.js`, read via `/my/notifications*` |
-| `ScoreSnapshot` | (Sequelize default) | Monthly snapshot of the **inputs** to a socio's credit score (`datos`, JSON) — never the computed score itself, so the score can always be recalculated with the current formula in `calcScore()` |
-| `Propuesta` | (Sequelize default) | Member-submitted proposal (Buzón de Propuestas): `titulo`, `descripcion`, `categoria`, optional `clientId` (null if authored by admin) |
-| `VotoPropuesta` | VotosPropuesta | One socio's vote on a `Propuesta`; unique-indexed on `(propuestaId, clientId)` to prevent double voting |
+| `Notification` | Notifications | In-app (bell) notifications per `clientId`; `type`, `title`, `message`, `link`, `isRead`/`readAt` |
+| `ScoreSnapshot` | ScoreSnapshots | Monthly snapshot of each socio's credit-score **inputs** (not the score itself — the client recomputes via `calcScore()`) |
+| `Propuesta` | Propuestas | Member suggestion box (BETA): `titulo`, `descripcion`, `categoria` enum, `estado` ("pendiente"/"en_revision"/"aprobada"/"rechazada") |
+| `VotoPropuesta` | VotosPropuesta | One vote per socio per `Propuesta`; unique-indexed on `(propuestaId, clientId)` to prevent double voting |
 
 Relationships: `Client` 1→N `Saving`, `DisbursedLoan`, `LoanPayment`, `Propuesta`, `VotoPropuesta`. `DisbursedLoan` 1→N `LoanPayment` (via `idVm` string match, not a formal FK). `Propuesta` 1→N `VotoPropuesta`. Core associations are declared in `models/index.js`; `LoanRequest`/`LoanBoardVote`/`Notification`/`ScoreSnapshot`/`AppSetting` are used directly by `admin.js` without being wired into `index.js`.
 
 `Propuesta`/`VotoPropuesta` self-sync their tables (`Propuesta.sync({ alter: false })`) on first `require()` in `admin.js`, independent of the main startup `sequelize.sync()` — this is a one-off pattern for that module, not the general convention.
+
+### Governance & Workflows (cross-file subsystems)
+These four flows span the backend, the data model, and the client — read here before touching them.
+
+- **Junta Administrativa loan approval.** The board = the admin (gerente) **plus two hardcoded cédulas** in `JUNTA_CEDULAS` (`79863805`, `52496873`) in `routes/admin.js`. `isJuntaMember` / `requireJuntaMember` gate the board routes via a `JUNTA_ROUTES` allow-list. A member submits a `LoanRequest` (`POST /my/loan-requests`); each Junta member votes at `PUT /loan-requests/:id/vote`. Approval is **unanimous** — `status` flips to `approved` only when every member's vote is `approved`, otherwise `rejected`. On the final decision, EmailService + NotificationService fire. `PUT /loan-requests/:id/mark-disbursed` then links the request to a `DisbursedLoan`. **Gotcha:** the roster is duplicated in `client/src/utils/juntaAccess.js` (`JUNTA_CEDULAS_NO_ADMIN`) — change both together.
+- **Credit scoring.** `calcScore()` in `client/src/utils/loanCapacity.js` is the **single source of the formula**. `ScoreSnapshot` persists monthly *inputs* only; the client recomputes each score from them. `GET /my/score-history` returns the last 12 snapshots. Snapshots run via a second cron (`0 10 20 * * *`, `America/Bogota`) in `server.js`, plus a ~20s post-boot seed run.
+- **In-app notifications.** `services/NotificationService.js` (`createNotification`/`notifyAdmins`/`notifyMany`) writes `Notification` rows consumed by the bell UI. Endpoints: `GET /my/notifications`, `/my/notifications/unread-count`, `PUT /my/notifications/:id/read`, `PUT /my/notifications/read-all`.
+- **Member proposals (BETA).** `Propuesta` + `VotoPropuesta`, gated on the client by the `BETA_USERS` name allow-list in `client/src/utils/betaAccess.js` (mirrored in the nav) and on the server by the cédula-based `BETA_CEDULAS` set in `routes/admin.js` (see "Authorization gate in `admin.js`" above). Endpoints under `/propuestas*` (create, list, update, `/voto`, `/estado`, delete).
 
 ### Authentication & Authorization
 - **Credential is `cedula` + password** (not email). `routes/auth.js` `POST /login` reads `{ cedula, password }` and looks up `Client.findOne({ where: { cedula: cedula.trim() } })`. Email remains stored on the Client record but is no longer used to authenticate. The "Olvidé mi contraseña" flow (`POST /request-reset`) still accepts either cédula OR email — that's the recovery path, not the login path.
@@ -156,6 +169,8 @@ Note: during `npm run dev`, Vite proxies `/api` requests directly to `http://loc
 - **node-cron** — scheduled daily backup trigger
 - **Multer** — file upload handling (memory storage → SQLite BLOB)
 - **Lucide React** — icon set used throughout the UI
+- **framer-motion** — animation/transitions in the newer client pages
+- **jspdf-autotable** — tabular PDF export (extends jspdf) on member/report pages
 - **helmet + express-rate-limit** — security headers and brute-force rate limiting on the backend
 - **nodemailer** — outbound email for password-reset notifications (`EmailService.js`)
 - **react-markdown + remark-gfm** — render the chart analysis text in the dashboard expand modals
@@ -169,7 +184,7 @@ The backend has had a deliberate OWASP-oriented hardening pass (code comments re
 - **Crash logging**: `POST /api/log-crash` (rate-limited, no auth) appends client-side React crash reports to `server/crash_log.txt`.
 
 ### Startup sequence (`server.js` after `sequelize.sync()`)
-`sync()` runs **without `alter`** (to avoid SQLite FK migration issues — schema changes must be applied manually). Then, in order: auto-seed admin if none exists → create performance indexes (`CREATE INDEX IF NOT EXISTS` on Savings, LoanPayments, DisbursedLoans) → `listen()` → register the daily 8 PM `America/Bogota` backup cron. Adding a column requires a manual migration/SQL since `alter` is off.
+`sync()` runs **without `alter`** (to avoid SQLite FK migration issues — schema changes must be applied manually). Then, in order: auto-seed admin if none exists → create performance indexes (`CREATE INDEX IF NOT EXISTS` on Savings, LoanPayments, DisbursedLoans) → `listen()` → register the daily 8 PM `America/Bogota` backup cron **and** the score-snapshot cron (`0 10 20 * * *`, `America/Bogota`), which also fires a ~20s post-boot seed run. Adding a column requires a manual migration/SQL since `alter` is off.
 
 ## Non-obvious Patterns & Gotchas
 

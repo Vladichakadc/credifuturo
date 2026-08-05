@@ -6,6 +6,7 @@ import DashboardLayout from './layouts/DashboardLayout';
 import DashboardHome from './pages/admin/DashboardHome';
 import ClientsPage from './pages/admin/ClientsPage';
 import ClientListPage from './pages/admin/ClientListPage';
+import ClientDetailPage from './pages/admin/ClientDetailPage';
 import LoansPage from './pages/admin/LoansPage';
 import LoansListPage from './pages/admin/LoansListPage';
 import SavingsPage from './pages/admin/SavingsPage';
@@ -44,7 +45,7 @@ import UserRankingAhorroPage from './pages/user/RankingAhorroPage';
 import JuntaAprobacionesPage from './pages/user/JuntaAprobacionesPage';
 
 import Navbar from './components/Navbar';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
     Users,
     LayoutDashboard,
@@ -56,15 +57,23 @@ import {
     PiggyBank
 } from 'lucide-react';
 
-function App() {
-    const [user, setUser] = useState(null);
-
-    useEffect(() => {
+// Lee el usuario de localStorage de forma síncrona en la inicialización del
+// estado (no en un useEffect): un useEffect corre DESPUÉS del primer render,
+// así que en una recarga completa de una ruta /admin/* o /dashboard/* el
+// primer render veía `user === null`, ProtectedRoute redirigía a /login, y
+// para cuando el efecto poblaba `user` la ruta ya había cambiado — la sesión
+// seguía en localStorage pero la URL quedaba varada en /login.
+function getStoredUser() {
+    try {
         const storedUser = localStorage.getItem('user');
-        if (storedUser) {
-            setUser(JSON.parse(storedUser));
-        }
-    }, []);
+        return storedUser ? JSON.parse(storedUser) : null;
+    } catch {
+        return null;
+    }
+}
+
+function App() {
+    const [user, setUser] = useState(getStoredUser);
 
     const ProtectedRoute = ({ children, role, roles }) => {
         if (!user) return <Navigate to="/login" />;
@@ -98,6 +107,7 @@ function App() {
                     {/* Placeholder para futuras páginas - Redirige a inicio por ahora o al legacy dashboard si se requiere */}
                     <Route path="clients" element={<ClientsPage />} />
                     <Route path="clients/list" element={<ClientListPage />} />
+                    <Route path="clients/:id" element={<ClientDetailPage />} />
                     <Route path="loans" element={<LoansPage />} />
                     <Route path="loans/list" element={<LoansListPage />} />
                     <Route path="loans/analyzer" element={<LoanAnalyzerPage />} />

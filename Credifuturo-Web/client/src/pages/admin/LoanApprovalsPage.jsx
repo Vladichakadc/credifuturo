@@ -112,6 +112,7 @@ const LoanApprovalsPage = () => {
                                         <th className="px-4 py-3 text-center">Cuotas</th>
                                         <th className="px-4 py-3 text-center">Estado</th>
                                         <th className="px-4 py-3 text-left">Votos de la Junta</th>
+                                        <th className="px-4 py-3 text-left">Cuenta destino</th>
                                         <th className="px-4 py-3 text-left">Fecha decisión</th>
                                         <th className="px-4 py-3 text-center">Acción</th>
                                     </tr>
@@ -144,6 +145,19 @@ const LoanApprovalsPage = () => {
                                                             ))}
                                                         </div>
                                                     )}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    {(r.banco || r.cuentaAhorros) ? (
+                                                        <div className="text-xs leading-tight">
+                                                            <p className="font-semibold text-gray-700">{r.banco || '—'}</p>
+                                                            <p className="text-gray-500 tabular-nums">{r.cuentaAhorros || '—'}</p>
+                                                            {r.observaciones && (
+                                                                <p className="text-gray-400 italic truncate max-w-[180px] cursor-help" title={r.observaciones}>
+                                                                    "{r.observaciones}"
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    ) : <span className="text-gray-300">—</span>}
                                                 </td>
                                                 <td className="px-4 py-3 text-gray-500">{fmtFecha(r.reviewedAt)}</td>
                                                 <td className="px-4 py-3 text-center">
@@ -294,13 +308,42 @@ const LoanApprovalsPage = () => {
                                 </div>
                             </div>
 
+                            {/* Datos para el desembolso — banco, cuenta y observaciones que el
+                                socio indicó al solicitar. La Junta los necesita a la vista tanto
+                                para votar como, ya aprobada, para hacer el desembolso real. */}
+                            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                                <div className="bg-gradient-to-r from-blue-600 to-blue-500 px-5 py-4 flex items-center gap-3">
+                                    <div className="bg-white/20 rounded-xl p-2"><Banknote className="h-5 w-5 text-white" /></div>
+                                    <div>
+                                        <h3 className="text-white font-bold text-base">Datos para el desembolso</h3>
+                                        <p className="text-blue-100 text-xs">Indicados por {nombreSocio(selected)} al solicitar el préstamo</p>
+                                    </div>
+                                </div>
+                                <div className="p-5 space-y-3">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div className="bg-gray-50 rounded-xl p-3">
+                                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Banco</p>
+                                            <p className="text-sm font-black text-gray-800">{selected.banco || '—'}</p>
+                                        </div>
+                                        <div className="bg-gray-50 rounded-xl p-3">
+                                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Número de cuenta</p>
+                                            <p className="text-sm font-black text-gray-800 tabular-nums">{selected.cuentaAhorros || '—'}</p>
+                                        </div>
+                                    </div>
+                                    <div className="bg-gray-50 rounded-xl p-3">
+                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Observaciones del socio</p>
+                                        <p className="text-sm text-gray-700 whitespace-pre-wrap">{selected.observaciones || '—'}</p>
+                                    </div>
+                                </div>
+                            </div>
+
                             {/* Análisis de viabilidad en vivo (situación actual del socio) */}
                             <LoanCapacityWidget analysis={analysis} loading={loadingAnalysis} />
 
                             {/* Votación de la Junta Administrativa (gerente, subgerente, tesorera) */}
                             <LoanBoardVotingPanel request={selected} onVoted={() => fetchRequests(false)} />
                             <p className="text-[10px] text-gray-400 leading-relaxed px-1">
-                                El desembolso (banco, cuenta, id_VM) se hace después, por separado, desde "Nuevo Desembolso" en Gestión de Préstamos, una vez la solicitud quede aprobada por los 3.
+                                El banco/cuenta de arriba son los que el socio indicó al pedir el préstamo — verifícalos con él antes de desembolsar. El registro formal (id_VM) se crea después, por separado, desde "Nuevo Desembolso" en Gestión de Préstamos, una vez la solicitud quede aprobada por los 3.
                             </p>
                         </>
                     )}

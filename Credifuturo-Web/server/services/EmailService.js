@@ -2,6 +2,16 @@ const nodemailer = require('nodemailer');
 
 const ADMIN_EMAIL = 'vladichakadc@gmail.com';
 
+// Dominio de correo auto-generado para socios sin email propio (ver
+// generateUniqueEmail en routes/admin.js y el importador legacy en
+// DataImportService.js). NO es un dominio real habilitado para recibir
+// correo — cualquier envío a esta dirección rebota/queda en reintento
+// indefinido en el buzón remitente. Los socios sin correo real solo se
+// enteran por la notificación in-app (campana), que siempre se dispara
+// en paralelo a estos envíos.
+const DOMINIO_NO_HABILITADO = '@credifuturo.com';
+const tieneCorreoReal = (email) => !!email && !email.toLowerCase().endsWith(DOMINIO_NO_HABILITADO);
+
 function createTransport() {
     return nodemailer.createTransport({
         service: 'gmail',
@@ -108,8 +118,8 @@ async function sendLoanApprovalNotification(socio, request) {
         console.warn('[EmailService] GMAIL_USER o GMAIL_APP_PASSWORD no configurados. Correo no enviado.');
         return;
     }
-    if (!socio.email) {
-        console.warn('[EmailService] El socio no tiene correo registrado. Notificación de aprobación no enviada.');
+    if (!tieneCorreoReal(socio.email)) {
+        console.warn(`[EmailService] Socio sin correo real (${socio.email || 'ninguno'}) — se omite el email de aprobación; queda la notificación in-app.`);
         return;
     }
     const transporter = createTransport();
@@ -159,8 +169,8 @@ async function sendLoanRejectionNotification(socio, request) {
         console.warn('[EmailService] GMAIL_USER o GMAIL_APP_PASSWORD no configurados. Correo no enviado.');
         return;
     }
-    if (!socio.email) {
-        console.warn('[EmailService] El socio no tiene correo registrado. Notificación de rechazo no enviada.');
+    if (!tieneCorreoReal(socio.email)) {
+        console.warn(`[EmailService] Socio sin correo real (${socio.email || 'ninguno'}) — se omite el email de rechazo; queda la notificación in-app.`);
         return;
     }
     const transporter = createTransport();
