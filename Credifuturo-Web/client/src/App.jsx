@@ -7,7 +7,6 @@ import DashboardHome from './pages/admin/DashboardHome';
 import ClientsPage from './pages/admin/ClientsPage';
 import ClientListPage from './pages/admin/ClientListPage';
 import ClientDetailPage from './pages/admin/ClientDetailPage';
-import LoansPage from './pages/admin/LoansPage';
 import LoansListPage from './pages/admin/LoansListPage';
 import SavingsPage from './pages/admin/SavingsPage';
 import SavingsListPage from './pages/admin/SavingsListPage';
@@ -108,7 +107,7 @@ function App() {
                     <Route path="clients" element={<ClientsPage />} />
                     <Route path="clients/list" element={<ClientListPage />} />
                     <Route path="clients/:id" element={<ClientDetailPage />} />
-                    <Route path="loans" element={<LoansPage />} />
+                    <Route path="loans" element={<LoansListPage />} />
                     <Route path="loans/list" element={<LoansListPage />} />
                     <Route path="loans/analyzer" element={<LoanAnalyzerPage />} />
                     <Route path="loans/approvals" element={<LoanApprovalsPage />} />

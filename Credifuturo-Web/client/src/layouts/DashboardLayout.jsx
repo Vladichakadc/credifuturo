@@ -299,8 +299,7 @@ const DashboardLayout = ({ user, onLogout }) => {
             icon: DollarSign,
             label: 'Préstamos y Pagos',
             children: [
-                { icon: List, label: 'Lista de Préstamos', path: '/admin/loans/list' },
-                { icon: PlusCircle, label: 'Ingresar Préstamo', path: '/admin/loans?action=new' },
+                { icon: List, label: 'Préstamos', path: '/admin/loans/list' },
                 { icon: List, label: 'Lista de Pagos', path: '/admin/payments/list' },
                 { icon: ClipboardCheck, label: 'Registrar Pago', path: '/admin/payments?action=new' },
                 { icon: Scale, label: 'Analizador', path: '/admin/loans/analyzer' },
