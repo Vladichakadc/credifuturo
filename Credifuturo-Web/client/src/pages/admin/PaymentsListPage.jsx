@@ -341,18 +341,15 @@ const PaymentsListPage = () => {
         return () => window.removeEventListener('paymentsUpdated', handler);
     }, [fetchPayments]);
 
-    // Detectar actualizaciones desde otras rutas via localStorage (diferente ruta)
+    // Detectar actualizaciones desde otras pestañas via localStorage (evento 'storage').
+    // Nota: no hay que comparar/reconsultar al montar — el useEffect de arriba ya
+    // hace un fetchPayments() fresco en cada montaje, así que repetirlo aquí solo
+    // duplicaba la descarga completa de la tabla cada vez que se abría esta página
+    // después de cualquier edición reciente en el formulario de pagos.
     useEffect(() => {
-        const lastUpdate = localStorage.getItem('paymentsLastUpdate');
-        const lastFetched = localStorage.getItem('paymentsListLastFetched');
-        if (lastUpdate && lastUpdate !== lastFetched) {
-            fetchPayments();
-            localStorage.setItem('paymentsListLastFetched', lastUpdate);
-        }
         const handler = (e) => {
             if (e.key === 'paymentsLastUpdate') {
                 fetchPayments();
-                localStorage.setItem('paymentsListLastFetched', e.newValue);
             }
         };
         window.addEventListener('storage', handler);

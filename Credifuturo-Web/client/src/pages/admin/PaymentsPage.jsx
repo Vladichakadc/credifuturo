@@ -210,16 +210,20 @@ const PaymentsPage = () => {
             setClients(Array.isArray(resClients.data) ? resClients.data : []);
             setDisbursedLoans(Array.isArray(resDisbursed.data) ? resDisbursed.data : []);
 
-            // Fetch soporte info para cada payment (en background)
+            // El soporte de cada cuota viene incluido en la misma respuesta de
+            // /admin/payments (join a Soporte en el backend) — antes esto era un
+            // request HTTP por cada cuota, uno detrás de otro, y podía tardar
+            // varios segundos con cientos de registros.
             const infoMap = {};
             for (const p of fetchedPayments) {
-                try {
-                    const sRes = await api.get(`/admin/payments/${p.id}/soporte/info`);
-                    if (sRes.data.exists) {
-                        infoMap[p.id] = sRes.data;
-                    }
-                } catch (e) {
-                    // Ignorar errores individuales si no tiene soporte
+                if (p.Soporte) {
+                    infoMap[p.id] = {
+                        exists: true,
+                        id: p.Soporte.id,
+                        name: p.Soporte.originalName,
+                        type: p.Soporte.mimeType,
+                        date: p.Soporte.uploadedAt
+                    };
                 }
             }
             setSoportesInfo(infoMap);
