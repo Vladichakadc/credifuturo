@@ -9,6 +9,10 @@ const MONTH_NAMES_ES = {
     septiembre: '09', octubre: '10', noviembre: '11', diciembre: '12'
 };
 
+// Orden calendario (no alfabético) para el filtro de Mes de Pago
+const MONTH_LABELS_ES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+const capitalizeMonth = (m) => m ? m.trim().charAt(0).toUpperCase() + m.trim().slice(1).toLowerCase() : '';
+
 // Helper to display dates in DD-MM-YYYY regardless of stored format.
 // Uses mesPago as the source of truth to detect if day and month are swapped in DB.
 // Handles: YYYY-MM-DD (standard), YYYY-DD-MM (imported/swapped), DD-MM-YYYY, or just a day number.
@@ -65,7 +69,7 @@ const displayFecha = (dateStr, mesPago) => {
 };
 import api from '../../config/api';
 import * as XLSX from 'xlsx';
-import { Download, RefreshCw, Search, X, AlertTriangle, Inbox, DollarSign, PieChart, CheckCircle, BarChart3, Activity, Clock, ChevronLeft, ChevronRight, Users } from 'lucide-react';
+import { Download, RefreshCw, Search, X, AlertTriangle, Inbox, DollarSign, PieChart, CheckCircle, BarChart3, Activity, Clock, ChevronLeft, ChevronRight, Users, Calendar } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { useUi } from '../../context/UiContext';
@@ -299,6 +303,7 @@ const PaymentsListPage = () => {
         return v ? v.split(',').map(s => s.trim()).filter(Boolean) : [];
     });
     const [selectedYears, setSelectedYears] = useState([new Date().getFullYear(), new Date().getFullYear() + 1]);
+    const [filterMes, setFilterMes] = useState([]);        // filtro Mes de Pago (mesPago)
     const [soportesInfo, setSoportesInfo] = useState({}); // { paymentId: { exists: true, name: '...' } }
     const [showMoraDetail, setShowMoraDetail] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
@@ -383,6 +388,12 @@ const PaymentsListPage = () => {
         [...new Set(payments.map(p => p.estadoPrestamo?.trim()).filter(Boolean))].sort(),
         [payments]);
 
+    // Meses presentes en los datos, en orden calendario (no alfabético)
+    const mesOptions = useMemo(() => {
+        const present = new Set(payments.map(p => capitalizeMonth(p.mesPago)).filter(Boolean));
+        return MONTH_LABELS_ES.filter(m => present.has(m));
+    }, [payments]);
+
     // Opciones únicas de Id_VM ordenadas por número SOL (SOL1, SOL2 … SOL24)
     const idVmOptions = useMemo(() => {
         const unique = [...new Set(payments.map(p => p.idVm?.trim()).filter(Boolean))];
@@ -419,6 +430,11 @@ const PaymentsListPage = () => {
             result = result.filter(p => (p.idVm || '').trim() === filterIdVm.trim());
         }
 
+        // Filtro Mes de Pago — soporte de selección múltiple
+        if (filterMes && filterMes.length > 0) {
+            result = result.filter(p => filterMes.includes(capitalizeMonth(p.mesPago)));
+        }
+
         // Filtro Año — extrae el año directamente del string fechaPagoMax (YYYY-XX-XX)
         if (selectedYears && selectedYears.length > 0) {
             result = result.filter(p => {
@@ -431,12 +447,12 @@ const PaymentsListPage = () => {
         }
 
         return result;
-    }, [payments, filterSearch, filterIdVm, filterEstado, filterEstadoPrestamo, selectedYears]);
+    }, [payments, filterSearch, filterIdVm, filterEstado, filterEstadoPrestamo, filterMes, selectedYears]);
 
     // Reset page to 1 when filters change
     useEffect(() => {
         setCurrentPage(1);
-    }, [filterSearch, filterIdVm, filterEstado, filterEstadoPrestamo, selectedYears]);
+    }, [filterSearch, filterIdVm, filterEstado, filterEstadoPrestamo, filterMes, selectedYears]);
 
     const { sortedData: sortedPayments, sortConfig: paymentsSort, handleSort: handlePaymentsSort } = useSortTable(filteredPayments, 'idVm', 'desc');
 
@@ -587,9 +603,10 @@ const PaymentsListPage = () => {
         setFilterIdVm('');
         setFilterEstado([]);
         setFilterEstadoPrestamo([]);
+        setFilterMes([]);
         setSelectedYears([new Date().getFullYear(), new Date().getFullYear() + 1]);
     };
-    const hasActiveFilters = filterSearch || filterIdVm || filterEstado.length > 0 || filterEstadoPrestamo.length > 0 || selectedYears.length !== 2 || selectedYears[0] !== new Date().getFullYear() || selectedYears[1] !== new Date().getFullYear() + 1;
+    const hasActiveFilters = filterSearch || filterIdVm || filterEstado.length > 0 || filterEstadoPrestamo.length > 0 || filterMes.length > 0 || selectedYears.length !== 2 || selectedYears[0] !== new Date().getFullYear() || selectedYears[1] !== new Date().getFullYear() + 1;
 
     const totalPages = Math.max(1, Math.ceil(filteredPayments.length / ITEMS_PER_PAGE));
 
@@ -799,6 +816,17 @@ const PaymentsListPage = () => {
                             onChange={setFilterEstadoPrestamo}
                             labelPrefix="Estado Préstamo"
                             icon={Activity}
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Mes de Pago</label>
+                        <StatusMultiSelect
+                            options={mesOptions}
+                            selectedValues={filterMes}
+                            onChange={setFilterMes}
+                            labelPrefix="Mes Pago"
+                            icon={Calendar}
                         />
                     </div>
 
