@@ -404,20 +404,23 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
                 setLastUpdated(d.calculatedAt ? new Date(d.calculatedAt) : new Date());
 
                 if (!utilidadesSinGuardarRef.current) {
-                    // Prioridad: (1) valor del comité en AppSettings (siempre que NO sea el valor legacy erróneo),
-                    // (2) ganancia real del fondo (fuente correcta del dashboard),
-                    // (3) devoluciones históricas como último fallback.
+                    // La ganancia real del fondo — calculada en vivo desde intereses
+                    // cobrados + rendimiento de caja NU + penalidades (arriba) — es
+                    // SIEMPRE la base para calcular la utilidad de cada socio. Un valor
+                    // guardado en AppSettings nunca la reemplaza: el fondo sigue
+                    // generando ganancia día a día, así que un valor congelado queda
+                    // desactualizado tarde o temprano y subestima (o sobreestima) lo
+                    // que le corresponde a cada socio.
                     const valorGuardado = Number(d.utilidadesADistribuir) || 0;
-                    const esValorLegacyErroneo = valorGuardado > 0 && valorGuardado === (d.totalDevolucionIntereses || 0);
-
-                    const sugerido = (valorGuardado > 0 && !esValorLegacyErroneo)
-                        ? valorGuardado
-                        : gananciaReal > 0
-                            ? gananciaReal
-                            : (d.totalDevolucionIntereses || 0);
+                    const sugerido = gananciaReal > 0 ? gananciaReal : (d.totalDevolucionIntereses || 0);
 
                     setUtilidadesDistribuir(sugerido > 0 ? sugerido.toLocaleString('es-CO') : '');
-                    setUtilidadesGuardadas(valorGuardado > 0 && !esValorLegacyErroneo);
+                    // "Confirmado por el comité" solo si lo último guardado coincide
+                    // EXACTAMENTE con la ganancia real actual — si el fondo generó más
+                    // ganancia desde el último guardado, deja de mostrarse como
+                    // confirmado para que sea evidente que hay que revisar y volver a
+                    // guardar, en vez de seguir mostrando una confirmación desactualizada.
+                    setUtilidadesGuardadas(valorGuardado > 0 && valorGuardado === sugerido);
                 }
             }
         } catch (err) {

@@ -3838,7 +3838,7 @@ router.get('/dashboard-stats', async (req, res) => {
         const { QueryTypes: _QT } = require('sequelize');
         const [prestamosPrevRow, interesesPrevRow, metaSetting, patrimonioSetting, moraPrevRow, nuCierreSetting] = await Promise.all([
             _sequelize.query(
-                `SELECT ROUND(SUM(COALESCE(valor_prestado, valorPrestado, monto))) total
+                `SELECT ROUND(SUM(COALESCE(valor_prestado, monto))) total
                  FROM DisbursedLoans WHERE anio_desembolso = :anio`,
                 { type: _QT.SELECT, replacements: { anio: _anioPrev } }),
             _sequelize.query(
@@ -4946,7 +4946,7 @@ router.get('/executive-stats', async (req, res) => {
                WHERE type='Mensual' AND anioAbonado != '' GROUP BY anioAbonado ORDER BY anio`),
             // Colocación de créditos por año
             q(`SELECT anio_desembolso anio, COUNT(*) creditos,
-                      ROUND(SUM(COALESCE(valor_prestado, valorPrestado, monto))) total
+                      ROUND(SUM(COALESCE(valor_prestado, monto))) total
                FROM DisbursedLoans GROUP BY anio_desembolso ORDER BY anio`),
             // Intereses por año de vencimiento y estado (cobrados vs agendados)
             q(`SELECT strftime('%Y', fecha_pago_max) anio, estado,
