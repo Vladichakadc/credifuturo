@@ -1,7 +1,15 @@
 # Base de datos (no subir la BD activa local ni copias de respaldo)
+# Patrones amplios a propósito: cualquier variante de nombre de copia/backup de la BD
+# (sufijos de fecha, .restore, .bak_*, etc.) — un patrón demasiado angosto ya dejó pasar
+# database.sqlite.restore y database.sqlite_130626_1100 a un repo público.
 *.db
+*.db.bak*
 *.sqlite
 *.sqlite.bak*
+*.sqlite.restore
+*.sqlite_*
+*.sqlite-*
+database.sqlite*
 
 # Backups Excel (generados automáticamente por el servidor)
 Backups/
