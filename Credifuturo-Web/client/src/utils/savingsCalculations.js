@@ -161,15 +161,18 @@ export const calcularAhorro = ({ date, month, anioAbonado, amount, clientId, isE
     };
 };
 
-// Siguiente Id_VM disponible (formato "AM###"), a partir del mayor existente.
-export const autoIncrementSavingId = (savings) => {
-    if (!savings || savings.length === 0) return 'AM339';
-    const amPattern = /^AM(\d+)$/;
-    const amNumbers = savings
-        .map(s => s.externalId)
-        .filter(id => id && amPattern.test(id))
-        .map(id => parseInt(id.match(amPattern)[1]))
+// Siguiente ID secuencial disponible con un prefijo dado, a partir del mayor
+// existente en `list` (ej. autoIncrementId(savings, { prefix: 'AM', start: 339 })
+// → "AM339", "AM340"...; autoIncrementId(savings, { prefix: 'AI', start: 1, pad: 3 })
+// → "AI001", "AI002"...). Usado tanto por el formulario de Ahorros como por el
+// de Aportes Iniciales — mismo concepto, prefijo/formato distintos.
+export const autoIncrementId = (list, { prefix, start = 1, pad = 0 }) => {
+    const pattern = new RegExp(`^${prefix}(\\d+)$`);
+    const numbers = (list || [])
+        .map(item => item.externalId)
+        .filter(id => id && pattern.test(id))
+        .map(id => parseInt(id.match(pattern)[1], 10))
         .filter(n => !isNaN(n));
-    if (amNumbers.length === 0) return 'AM339';
-    return `AM${Math.max(...amNumbers) + 1}`;
+    const next = numbers.length === 0 ? start : Math.max(...numbers) + 1;
+    return `${prefix}${String(next).padStart(pad, '0')}`;
 };

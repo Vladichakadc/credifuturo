@@ -8,13 +8,7 @@ import { Input, Label, FormField } from '../../components/ui/Input';
 import { Card, CardContent } from '../../components/ui/Card';
 import { useUi } from '../../context/UiContext';
 import { COLOMBIAN_BANKS_WITH_OTHER } from '../../utils/banks';
-
-const monthNames = [
-    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
-];
-
-// Banks imported from utils
+import { MONTH_NAMES as monthNames, autoIncrementId } from '../../utils/savingsCalculations';
 
 const InitialContributionsPage = () => {
     const { toast } = useUi();
@@ -58,12 +52,8 @@ const InitialContributionsPage = () => {
             setSavings(Array.isArray(resSavings.data) ? resSavings.data : []);
 
             if (isEdit) {
-                // Fetch specific saving record for editing
-                const resEdit = await api.get(`/admin/savings`);
-                // Filters from list since we don't have a direct GET /savings/:id that returns flattened data easily in this specific setup sometimes, 
-                // but checking admin.js, router.get('/savings') is for general list. 
-                // Actually, let's search for the saving in the fetched list or fetch directly if endpoint exists.
-                // Looking at admin.js, there isn't a direct GET /savings/:id yet, but let's check.
+                // El registro a editar ya viene en resSavings (filtrado a type=Aporte
+                // Inicial arriba) — no hace falta una segunda llamada a /admin/savings.
                 const savingToEdit = resSavings.data.find(s => String(s.id) === String(id));
                 if (savingToEdit) {
                     setForm({
@@ -71,7 +61,7 @@ const InitialContributionsPage = () => {
                         clientId: savingToEdit.clientId || '',
                         name: '', // Will be populated by useEffect
                         surname: '', // Will be populated by useEffect
-                        status: savingToEdit.status || 'Abono',
+                        status: savingToEdit.status || 'Activo',
                         date: new Date().toISOString().split('T')[0],
                         year: savingToEdit.year || new Date().getFullYear(),
                         month: savingToEdit.month || monthNames[new Date().getMonth()],
@@ -97,18 +87,10 @@ const InitialContributionsPage = () => {
     useEffect(() => { fetchData(); }, [id]);
 
     // --- Auto-Increment Logic for Id_A ---
-    const autoIncrementIdA = useMemo(() => {
-        if (!savings || savings.length === 0) return 'AI001';
-        const aiPattern = /^AI(\d+)$/;
-        const aiNumbers = savings
-            .map(s => s.externalId)
-            .filter(id => id && aiPattern.test(id))
-            .map(id => parseInt(id.match(aiPattern)[1]))
-            .filter(n => !isNaN(n));
-        if (aiNumbers.length === 0) return 'AI001';
-        const nextNum = Math.max(...aiNumbers) + 1;
-        return `AI${String(nextNum).padStart(3, '0')}`;
-    }, [savings]);
+    const autoIncrementIdA = useMemo(
+        () => autoIncrementId(savings, { prefix: 'AI', start: 1, pad: 3 }),
+        [savings]
+    );
 
     useEffect(() => {
         if (!form.externalId && !loading && !isEdit) {
@@ -296,13 +278,13 @@ const InitialContributionsPage = () => {
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <FormField label="# Transaccion">
+                            <FormField label="# Transacción">
                                 <Input
                                     value={form.numeroTransaccion}
                                     onChange={(e) => setForm({ ...form, numeroTransaccion: e.target.value })}
                                 />
                             </FormField>
-                            <FormField label="Desde Cuenta de Ahorro">
+                            <FormField label="Desde Cuenta de Ahorros">
                                 <Input
                                     value={form.origen}
                                     onChange={(e) => setForm({ ...form, origen: e.target.value })}

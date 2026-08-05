@@ -5,7 +5,7 @@ import { useUi } from '../../context/UiContext';
 import { Button } from '../ui/Button';
 import { Input, Label, FormField } from '../ui/Input';
 import { COLOMBIAN_BANKS_WITH_OTHER } from '../../utils/banks';
-import { MONTH_NAMES, calcularAhorro, autoIncrementSavingId } from '../../utils/savingsCalculations';
+import { MONTH_NAMES, calcularAhorro, autoIncrementId } from '../../utils/savingsCalculations';
 
 const emptyForm = () => ({
     id: '',
@@ -58,7 +58,7 @@ const SavingFormModal = ({ isOpen, onClose, isEditing, initialSaving, clients, s
         if (isEditing && initialSaving) {
             setForm({ ...initialSaving, date: new Date().toISOString().split('T')[0] });
         } else {
-            setForm({ ...emptyForm(), externalId: autoIncrementSavingId(savings) });
+            setForm({ ...emptyForm(), externalId: autoIncrementId(savings, { prefix: 'AM', start: 339 }) });
         }
         setSoporteFile(null);
         // eslint-disable-next-line react-hooks/exhaustive-deps
