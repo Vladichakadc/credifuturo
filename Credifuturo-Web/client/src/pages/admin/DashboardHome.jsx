@@ -2686,7 +2686,7 @@ const DashboardHome = () => {
                         description={`${stats?.carteraDiaCount || 0} cuotas vigentes`}
                         icon={TrendingUp}
                         color="text-emerald-600"
-                        onClick={() => handleCardClick('/admin/payments/list', { estadoPrestamo: 'Activo' })}
+                        onClick={() => handleCardClick('/admin/payments/list', { estadoPrestamo: 'Vigente' })}
                     />
                     <StatCard
                         title="Cuotas Recaudadas"

@@ -205,13 +205,16 @@ const EstadoBadge = ({ value }) => {
     return <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${color}`}>{value || '—'}</span>;
 };
 
-// Badge de estado del préstamo
+// Badge de estado del préstamo — 'vigente' es el valor real de un préstamo activo
+// (no 'activ'/'activo', que casi nunca aparece en los datos reales del fondo).
 const LoanBadge = ({ value }) => {
     const v = (value || '').toLowerCase();
-    const color = v.includes('activ') ? 'bg-blue-100 text-blue-700'
+    const color = (v.includes('vigen') || v.includes('activ')) ? 'bg-blue-100 text-blue-700'
         : v.includes('cancel') ? 'bg-gray-100 text-gray-500'
             : v.includes('liquid') ? 'bg-purple-100 text-purple-700'
-                : 'bg-slate-100 text-slate-600';
+                : v.includes('pendien') ? 'bg-amber-100 text-amber-700'
+                    : v.includes('desembols') ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-slate-100 text-slate-600';
     return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${color}`}>{value || '—'}</span>;
 };
 

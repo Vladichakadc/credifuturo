@@ -133,7 +133,6 @@ const EstadoBadge = ({ estado }) => {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 const STATES_PAGO = ['Pendiente', 'Pago', 'Mora', 'Abono', 'Parcial'];
-const STATES_PRESTAMO = ['Pendiente', 'Cancelado'];
 
 const PaymentsPage = () => {
     const { toast } = useUi();
@@ -164,7 +163,10 @@ const PaymentsPage = () => {
     // Filters
     const [searchTerm, setSearchTerm] = useState('');
     const [filterEstado, setFilterEstado] = useState('Todos');
-    const [filterEstadoPrestamo, setFilterEstadoPrestamo] = useState('Pendiente');
+    // 'Todos' por defecto — 'Pendiente' quedó mal como default histórico: el estado real
+    // de un préstamo activo es 'Vigente', nunca 'Pendiente', así que ese default ocultaba
+    // todos los préstamos vigentes de la lista al abrir la página.
+    const [filterEstadoPrestamo, setFilterEstadoPrestamo] = useState('Todos');
 
     // Pagination
     const [currentPage, setCurrentPage] = useState(1);
@@ -278,6 +280,13 @@ const PaymentsPage = () => {
         return Array.from(ests).sort();
     }, [payments]);
 
+    // Igual que availableEstados: se deriva de los datos reales en vez de una lista fija,
+    // que antes era ['Pendiente', 'Cancelado'] y ni siquiera incluía 'Vigente'.
+    const availableEstadoPrestamo = useMemo(() => {
+        const ests = new Set(payments.map(p => p.estadoPrestamo).filter(Boolean));
+        return Array.from(ests).sort();
+    }, [payments]);
+
     // Filtrar socios activos que tienen algún préstamo (sea "Vigente" o no)
     const clientsWithActiveLoans = useMemo(() => {
         if (!clients || !disbursedLoans) return [];
@@ -289,8 +298,6 @@ const PaymentsPage = () => {
             return hasLoan && isActive;
         });
     }, [clients, disbursedLoans]);
-
-    const availableEstadoPrestamo = STATES_PRESTAMO;
 
     useEffect(() => { setCurrentPage(1); }, [searchTerm, filterEstado, filterEstadoPrestamo]);
 
@@ -339,13 +346,20 @@ const PaymentsPage = () => {
             // en lugar de conservar la fecha límite programada originalmente.
             const today = new Date().toISOString().split('T')[0];
 
+            // Estado Préstamo se muestra desde el préstamo real (disbursedLoans), no desde
+            // payment.estadoPrestamo — esa copia por-cuota puede quedar desincronizada del
+            // estado real (el backend ya la deriva igual al guardar, esto es solo para que
+            // el admin vea el valor correcto ANTES de guardar, no uno viejo).
+            const loanRef = disbursedLoans.find(l => (l.idVm || l.orderId) === payment.idVm);
+
             setPaymentForm({
                 ...payment,
                 fechaPagoMax: today,
                 // cuotasPrestamo = número de cuota que se está pagando (mismo que itemQuantity)
                 cuotasPrestamo: payment.itemQuantity ?? payment.cuotasPrestamo,
                 nombre: payment.Client?.name || '',
-                apellido: `${payment.Client?.surname1 || ''} ${payment.Client?.surname2 || ''}`.trim()
+                apellido: `${payment.Client?.surname1 || ''} ${payment.Client?.surname2 || ''}`.trim(),
+                estadoPrestamo: loanRef ? loanRef.estado : payment.estadoPrestamo
             });
             setIsEditing(true);
             setEditingId(payment.id);
@@ -1372,18 +1386,19 @@ const PaymentsPage = () => {
                                     </select>
                                 </div>
                                 <div>
-                                    <Label>22. Estado Prestamo</Label>
-                                    <select
-                                        aria-label="Estado del préstamo"
-                                        className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
-                                        value={paymentForm.estadoPrestamo}
-                                        onChange={e => setPaymentForm({ ...paymentForm, estadoPrestamo: e.target.value })}
-                                    >
-                                        <option value="">-- Seleccionar --</option>
-                                        {availableEstadoPrestamo.map(est => (
-                                            <option key={est} value={est}>{est}</option>
-                                        ))}
-                                    </select>
+                                    <Label>22. Estado Préstamo</Label>
+                                    {/* Solo lectura a propósito: es el estado REAL del préstamo (idVm),
+                                        no un campo independiente del pago. Antes era un <select> editable
+                                        a mano cuyas únicas opciones eran Pendiente/Cancelado (ni siquiera
+                                        incluía "Vigente"), y quedaba desincronizado en cada edición — el
+                                        backend ya lo deriva del préstamo al guardar; esto solo lo muestra. */}
+                                    <div className={`flex h-10 w-full items-center rounded-md border px-3 text-sm font-semibold ${
+                                        (paymentForm.estadoPrestamo || '').toLowerCase().includes('vigente') ? 'bg-blue-50 border-blue-200 text-blue-700'
+                                        : (paymentForm.estadoPrestamo || '').toLowerCase().includes('cancel') ? 'bg-gray-100 border-gray-200 text-gray-500'
+                                        : 'bg-amber-50 border-amber-200 text-amber-700'
+                                    }`}>
+                                        {paymentForm.estadoPrestamo || 'Sin préstamo asociado'}
+                                    </div>
                                 </div>
                             </div>
 

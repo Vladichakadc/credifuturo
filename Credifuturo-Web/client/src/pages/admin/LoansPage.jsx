@@ -1,13 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import api from '../../config/api';
 import { notifyUpdate } from '../../utils/sync';
-import { Plus, Download, Edit, Trash2, FileText, X, Save, Search, Calendar, DollarSign, User, Loader2, CheckCircle, Calculator, AlertTriangle, ChevronDown, Users, ShieldCheck } from 'lucide-react';
+import { Plus, Download, Edit, Trash2, FileText, X, Save, Search, Calendar, DollarSign, User, Loader2, CheckCircle, Calculator, AlertTriangle, ChevronDown, Users, ShieldCheck, Activity, Percent, XCircle } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input, Label, FormField } from '../../components/ui/Input';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 import DataTable from '../../components/ui/DataTable';
 import * as XLSX from 'xlsx';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
 
 const monthNames = [
     'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -29,6 +30,57 @@ const LoansPage = () => {
     const [loans, setLoans] = useState([]); // Requests
     const [disbursedLoans, setDisbursedLoans] = useState([]); // Active
     const [loading, setLoading] = useState(true);
+
+    // ── Datos derivados para tarjetas y gráficas (estado real: 'Vigente' / 'Cancelado' —
+    // nunca 'Activo' ni 'Pendiente', que es lo que el Mini-KPI Bar anterior comprobaba
+    // por error y por eso "Capital Vigente" y "Préstamos Activos" siempre mostraban $0) ──
+    const loanStats = useMemo(() => {
+        const vigentes = disbursedLoans.filter(l => (l.estado || '').trim() === 'Vigente');
+        const cancelados = disbursedLoans.filter(l => (l.estado || '').trim() === 'Cancelado');
+        const capitalTotal = disbursedLoans.reduce((s, l) => s + parseFloat(l.valorPrestado || l.monto || 0), 0);
+        const capitalVigente = vigentes.reduce((s, l) => s + parseFloat(l.valorPrestado || l.monto || 0), 0);
+        const tasaPromedio = vigentes.length > 0
+            ? vigentes.reduce((s, l) => s + parseFloat(l.interesMensual || 0), 0) / vigentes.length
+            : 0;
+        return { vigentes, cancelados, capitalTotal, capitalVigente, tasaPromedio };
+    }, [disbursedLoans]);
+
+    // Desembolsos por mes — orden cronológico real (no alfabético), últimos 12 con datos.
+    const desembolsosPorMes = useMemo(() => {
+        const map = {};
+        disbursedLoans.forEach(l => {
+            if (!l.mesDesembolso || !l.anioDesembolso) return;
+            const mIdx = monthNames.indexOf(l.mesDesembolso);
+            if (mIdx === -1) return;
+            const key = `${l.anioDesembolso}-${String(mIdx).padStart(2, '0')}`;
+            if (!map[key]) map[key] = { key, anio: l.anioDesembolso, mesIdx: mIdx, monto: 0, count: 0 };
+            map[key].monto += parseFloat(l.valorPrestado || l.monto || 0);
+            map[key].count += 1;
+        });
+        return Object.values(map)
+            .sort((a, b) => a.key.localeCompare(b.key))
+            .slice(-12)
+            .map(r => ({ ...r, label: `${monthNames[r.mesIdx].slice(0, 3)} ${String(r.anio).slice(2)}` }));
+    }, [disbursedLoans]);
+
+    // Top socios por capital prestado (histórico, todos los estados) — comparación con
+    // nombres largos → barras horizontales, orden descendente.
+    const topSociosPorMonto = useMemo(() => {
+        const byClient = {};
+        disbursedLoans.forEach(l => {
+            const key = String(l.clientId);
+            if (!byClient[key]) byClient[key] = 0;
+            byClient[key] += parseFloat(l.valorPrestado || l.monto || 0);
+        });
+        return Object.entries(byClient)
+            .map(([clientId, monto]) => {
+                const c = clients.find(cl => String(cl.id) === clientId);
+                const nombre = c ? `${c.name} ${c.surname1 || ''}`.trim() : `Socio ${clientId}`;
+                return { nombre, monto };
+            })
+            .sort((a, b) => b.monto - a.monto)
+            .slice(0, 6);
+    }, [disbursedLoans, clients]);
 
     // Modal States
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -572,48 +624,140 @@ const LoansPage = () => {
             </div>
 
 
-            {/* ── Mini-KPI Bar ─────────────────────────────────────────────────── */}
+            {/* ── KPI Cards ────────────────────────────────────────────────────── */}
             {!loading && disbursedLoans.length > 0 && (() => {
-                const activos = disbursedLoans.filter(l => l.estado === 'Activo' || l.estado === 'Pendiente');
-                const cancelados = disbursedLoans.filter(l => l.estado === 'Cancelado');
-                const capitalVigente = activos.reduce((s, l) => s + parseFloat(l.valorPrestado || 0), 0);
-                const tasaCancelacion = disbursedLoans.length > 0 ? (cancelados.length / disbursedLoans.length) * 100 : 0;
-
+                const { vigentes, cancelados, capitalTotal, capitalVigente, tasaPromedio } = loanStats;
                 const kpis = [
                     {
-                        label: 'Capital Vigente',
+                        label: 'Capital Desembolsado',
+                        value: `$${Math.round(capitalTotal).toLocaleString('es-CO')}`,
+                        sub: `${disbursedLoans.length} préstamos históricos`,
+                        color: 'border-l-emerald-400', icon: DollarSign, iconColor: 'text-emerald-500',
+                    },
+                    {
+                        label: 'Cartera Vigente',
                         value: `$${Math.round(capitalVigente).toLocaleString('es-CO')}`,
-                        sub: `${activos.length} préstamos activos`,
-                        color: 'border-l-blue-400', icon: '💵',
+                        sub: `${vigentes.length} préstamo(s) activos`,
+                        color: 'border-l-blue-400', icon: Activity, iconColor: 'text-blue-500',
                     },
                     {
-                        label: 'Préstamos Activos',
-                        value: activos.length,
-                        sub: `${(activos.length / disbursedLoans.length * 100).toFixed(0)}% del portafolio`,
-                        color: 'border-l-emerald-400', icon: '📋',
+                        label: 'Préstamos Vigentes',
+                        value: vigentes.length,
+                        sub: `${disbursedLoans.length > 0 ? (vigentes.length / disbursedLoans.length * 100).toFixed(0) : 0}% del portafolio`,
+                        color: 'border-l-blue-400', icon: CheckCircle, iconColor: 'text-blue-500',
                     },
                     {
-                        label: 'Tasa de Cancelación',
-                        value: `${tasaCancelacion.toFixed(0)}%`,
-                        sub: `${cancelados.length} préstamos saldados`,
-                        color: tasaCancelacion >= 30 ? 'border-l-emerald-400' : 'border-l-amber-400', icon: '✓',
+                        label: 'Préstamos Cancelados',
+                        value: cancelados.length,
+                        sub: `${disbursedLoans.length > 0 ? (cancelados.length / disbursedLoans.length * 100).toFixed(0) : 0}% ya saldados`,
+                        color: 'border-l-gray-300', icon: XCircle, iconColor: 'text-gray-400',
+                    },
+                    {
+                        label: 'Tasa Promedio (Vigentes)',
+                        value: `${(tasaPromedio * 100).toFixed(2)}%`,
+                        sub: 'Interés mensual',
+                        color: 'border-l-amber-400', icon: Percent, iconColor: 'text-amber-500',
                     },
                 ];
                 return (
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                         {kpis.map((k, i) => (
                             <div key={i} className={`bg-white rounded-xl border border-gray-100 border-l-4 ${k.color} p-4 flex items-center gap-3 shadow-sm`}>
-                                <span className="text-2xl flex-shrink-0">{k.icon}</span>
-                                <div>
-                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{k.label}</p>
-                                    <p className="text-xl font-black text-gray-900 font-mono leading-tight">{k.value}</p>
-                                    <p className="text-[10px] text-gray-500 font-medium">{k.sub}</p>
+                                <k.icon className={`h-6 w-6 flex-shrink-0 ${k.iconColor}`} />
+                                <div className="min-w-0">
+                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest truncate">{k.label}</p>
+                                    <p className="text-xl font-black text-gray-900 font-mono leading-tight truncate">{k.value}</p>
+                                    <p className="text-[10px] text-gray-500 font-medium truncate">{k.sub}</p>
                                 </div>
                             </div>
                         ))}
                     </div>
                 );
             })()}
+
+            {/* ── Gráficas ─────────────────────────────────────────────────────── */}
+            {!loading && disbursedLoans.length > 0 && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <Card>
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-sm font-bold text-gray-700">Desembolsos por mes</CardTitle>
+                            <p className="text-xs text-gray-400">Capital prestado — últimos {desembolsosPorMes.length} mes(es) con movimiento</p>
+                        </CardHeader>
+                        <CardContent>
+                            {desembolsosPorMes.length === 0 ? (
+                                <p className="text-sm text-gray-400 text-center py-16">Sin datos de desembolso para graficar.</p>
+                            ) : (
+                                <div style={{ width: '100%', height: 260 }}>
+                                    <ResponsiveContainer>
+                                        <BarChart data={desembolsosPorMes} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eef2f7" />
+                                            <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#6b7280' }} />
+                                            <YAxis
+                                                axisLine={false} tickLine={false}
+                                                tick={{ fontSize: 10, fill: '#9ca3af' }}
+                                                tickFormatter={(v) => `$${(v / 1000000).toFixed(1)}M`}
+                                                domain={[0, 'auto']}
+                                            />
+                                            <Tooltip
+                                                cursor={{ fill: '#1d4ed808' }}
+                                                formatter={(value, name) => name === 'monto'
+                                                    ? [`$${Math.round(value).toLocaleString('es-CO')}`, 'Capital desembolsado']
+                                                    : [value, name]}
+                                                labelFormatter={(label) => `Mes: ${label}`}
+                                            />
+                                            <Bar dataKey="monto" fill="#2563eb" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-sm font-bold text-gray-700">Top socios por capital prestado</CardTitle>
+                            <p className="text-xs text-gray-400">Histórico acumulado — todos los estados</p>
+                        </CardHeader>
+                        <CardContent>
+                            {topSociosPorMonto.length === 0 ? (
+                                <p className="text-sm text-gray-400 text-center py-16">Sin datos de socios para graficar.</p>
+                            ) : (
+                                <div style={{ width: '100%', height: 260 }}>
+                                    <ResponsiveContainer>
+                                        <BarChart
+                                            data={topSociosPorMonto}
+                                            layout="vertical"
+                                            margin={{ top: 8, right: 24, left: 8, bottom: 0 }}
+                                        >
+                                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#eef2f7" />
+                                            <XAxis
+                                                type="number" axisLine={false} tickLine={false}
+                                                tick={{ fontSize: 10, fill: '#9ca3af' }}
+                                                tickFormatter={(v) => `$${(v / 1000000).toFixed(1)}M`}
+                                                domain={[0, 'auto']}
+                                            />
+                                            <YAxis
+                                                type="category" dataKey="nombre" axisLine={false} tickLine={false}
+                                                tick={{ fontSize: 11, fill: '#374151' }}
+                                                width={110}
+                                            />
+                                            <Tooltip
+                                                cursor={{ fill: '#16653408' }}
+                                                formatter={(value) => [`$${Math.round(value).toLocaleString('es-CO')}`, 'Capital prestado']}
+                                            />
+                                            <Bar dataKey="monto" fill="#166534" radius={[0, 4, 4, 0]} maxBarSize={22}>
+                                                {topSociosPorMonto.map((_, i) => (
+                                                    <Cell key={i} fill={i === 0 ? '#166534' : '#22c55e'} />
+                                                ))}
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                </div>
+            )}
 
             {/* ── Filtro por socio ────────────────────────────────────────── */}
             {!loading && (() => {

@@ -2887,7 +2887,7 @@ router.get('/payments/list', async (req, res) => {
                 {
                     model: DisbursedLoan,
                     as: 'disbursedLoan',
-                    attributes: ['fechaPrestamo', 'valorPrestado']
+                    attributes: ['fechaPrestamo', 'valorPrestado', 'estado']
                 }
             ],
             order: [['id', 'ASC']],
@@ -2920,6 +2920,10 @@ router.get('/payments/list', async (req, res) => {
                 if (key === 'disbursedLoan') {
                     normalized.fechaPrestamo = value ? value.fechaPrestamo : null;
                     normalized.valorPrestado = value ? value.valorPrestado : 0;
+                    // estadoPrestamoVivo guarda el estado REAL y actual del préstamo padre —
+                    // se aplica después del loop (ver abajo) para pisar la copia por-cuota,
+                    // que puede quedar desincronizada (edición manual, datos legacy, etc.)
+                    normalized.estadoPrestamoVivo = value ? value.estado : null;
                     continue;
                 }
                 if (typeof value === 'string') {
@@ -2933,6 +2937,18 @@ router.get('/payments/list', async (req, res) => {
 
             // fechaPagoMax stays as YYYY-MM-DD (frontend year filter uses substring(0,4))
             normalized.fechaPrestamo = formatDateToDMY(normalized.fechaPrestamo);
+
+            // Estado Préstamo mostrado = el estado ACTUAL del DisbursedLoan, no la copia
+            // guardada en la cuota (esa copia se desincroniza: ediciones manuales del
+            // formulario "Registrar Pago", datos legacy de antes de que existiera esta
+            // lógica, etc. — ver validación 2026-07-29: 41 cuotas de 5 préstamos Vigentes
+            // mostraban "Pendiente"). Si la cuota no tiene préstamo padre (huérfana), se
+            // deja el valor guardado tal cual.
+            if (normalized.estadoPrestamoVivo) {
+                normalized.estadoPrestamo = normalized.estadoPrestamoVivo.trim();
+            }
+            delete normalized.estadoPrestamoVivo;
+
             return normalized;
         });
 
@@ -3030,6 +3046,14 @@ router.post('/payments', async (req, res) => {
             itemQuantity: req.body.itemQuantity || 0
         };
 
+        // estadoPrestamo no lo decide el formulario "Registrar Pago" — se deriva del
+        // estado real del préstamo (idVm). Antes era un <select> editable a mano y
+        // podía quedar desincronizado del estado real (ver GET /payments/list).
+        if (data.idVm) {
+            const prestamoRef = await DisbursedLoan.findOne({ where: { idVm: data.idVm }, attributes: ['estado'] });
+            if (prestamoRef) data.estadoPrestamo = (prestamoRef.estado || '').trim();
+        }
+
         const newPayment = await LoanPayment.create(data);
         validateAndFixLoanStatuses().catch(() => { });
         res.status(201).json(newPayment);
@@ -3046,7 +3070,17 @@ router.put('/payments/:id', async (req, res) => {
         const estadoAnterior = payment.estado;
 
         // A08: whitelist; bloquea cambios a externalId.
-        await payment.update(pickFields(req.body, ALLOWED_LOAN_PAYMENT_FIELDS));
+        const updateData = pickFields(req.body, ALLOWED_LOAN_PAYMENT_FIELDS);
+
+        // Igual que en POST /payments: estadoPrestamo se deriva del préstamo real,
+        // nunca del valor que traiga el formulario.
+        const idVmRef = updateData.idVm || payment.idVm;
+        if (idVmRef) {
+            const prestamoRef = await DisbursedLoan.findOne({ where: { idVm: idVmRef }, attributes: ['estado'] });
+            if (prestamoRef) updateData.estadoPrestamo = (prestamoRef.estado || '').trim();
+        }
+
+        await payment.update(updateData);
         validateAndFixLoanStatuses().catch(() => { });
 
         // Notifica al socio solo cuando la cuota PASA a 'Pago' (no en cualquier otra
