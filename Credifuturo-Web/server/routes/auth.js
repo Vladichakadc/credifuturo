@@ -17,7 +17,11 @@ const loginLimiter = rateLimit({
     max: 10,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { message: 'Demasiados intentos. Intente de nuevo en 15 minutos.' }
+    message: { message: 'Demasiados intentos. Intente de nuevo en 15 minutos.' },
+    handler: (req, res, next, options) => {
+        logSecurityEvent('ALERT_RATE_LIMIT_LOGIN', { ip: getClientIp(req) });
+        res.status(options.statusCode).json(options.message);
+    }
 });
 
 const resetLimiter = rateLimit({
@@ -25,7 +29,11 @@ const resetLimiter = rateLimit({
     max: 5,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { message: 'Demasiadas solicitudes de recuperación. Intente más tarde.' }
+    message: { message: 'Demasiadas solicitudes de recuperación. Intente más tarde.' },
+    handler: (req, res, next, options) => {
+        logSecurityEvent('ALERT_RATE_LIMIT_RESET', { ip: getClientIp(req) });
+        res.status(options.statusCode).json(options.message);
+    }
 });
 
 // A02 (Cryptographic Failures): sin fallback hardcodeado.
