@@ -4508,6 +4508,80 @@ router.get('/logs/access', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
+// EVENTOS DE ATAQUE AL SISTEMA — A07/A09
+// Subconjunto de logs/security.log correspondiente a intentos de vulnerar
+// el sistema (no auditoría de uso legítimo): logins fallidos, cambios de
+// contraseña fallidos, alertas de fuerza bruta y bloqueos por rate-limit.
+// Endpoint separado de /logs/access a propósito, para no mezclar
+// "auditoría de acceso" con "eventos de ataque" en la misma lista.
+// ─────────────────────────────────────────────
+const ATTACK_LOG_EVENTS = new Set([
+    'LOGIN_FAIL_USER_NOT_FOUND',
+    'LOGIN_FAIL_BAD_PASSWORD',
+    'LOGIN_FAIL_DEACTIVATED',
+    'PASSWORD_CHANGE_FAIL_BAD_CURRENT',
+    'ALERT_BRUTE_FORCE_SUSPECTED',
+    'ALERT_RATE_LIMIT_LOGIN',
+    'ALERT_RATE_LIMIT_RESET',
+]);
+
+const ATTACK_SEVERITY = {
+    LOGIN_FAIL_USER_NOT_FOUND: 'media',
+    LOGIN_FAIL_BAD_PASSWORD: 'media',
+    LOGIN_FAIL_DEACTIVATED: 'baja',
+    PASSWORD_CHANGE_FAIL_BAD_CURRENT: 'baja',
+    ALERT_BRUTE_FORCE_SUSPECTED: 'alta',
+    ALERT_RATE_LIMIT_LOGIN: 'alta',
+    ALERT_RATE_LIMIT_RESET: 'media',
+};
+
+router.get('/logs/security-events', async (req, res) => {
+    try {
+        if (!fs.existsSync(LOG_FILE)) return res.json({ data: [] });
+
+        const lines = fs.readFileSync(LOG_FILE, 'utf-8').split('\n').filter(Boolean);
+        const limit = Math.min(parseInt(req.query.limit, 10) || 500, 2000);
+
+        const entries = [];
+        for (let i = lines.length - 1; i >= 0 && entries.length < limit; i--) {
+            const jsonStr = lines[i].replace(/^\[SECURITY\]\s*/, '');
+            let obj;
+            try { obj = JSON.parse(jsonStr); } catch { continue; }
+            if (ATTACK_LOG_EVENTS.has(obj.event)) entries.push(obj);
+        }
+
+        const ids = [...new Set(entries.map(e => e.userId).filter(Boolean))];
+        const clients = ids.length
+            ? await Client.findAll({
+                where: { id: ids },
+                attributes: ['id', 'name', 'apellido1', 'apellido2', 'customerId', 'cedula', 'role']
+            })
+            : [];
+        const clientMap = new Map(clients.map(c => [c.id, c]));
+
+        const data = entries.map(({ ts, event, userId, cedula, ip, ...extra }) => {
+            const c = userId ? clientMap.get(userId) : null;
+            return {
+                ts,
+                event,
+                severity: ATTACK_SEVERITY[event] || 'media',
+                userId: userId || null,
+                cedula: c?.cedula || cedula || null,
+                nombre: c ? `${c.name} ${c.apellido1 || ''} ${c.apellido2 || ''}`.trim() : null,
+                customerId: c?.customerId || null,
+                ip: ip || null,
+                extra
+            };
+        });
+
+        res.json({ data });
+    } catch (err) {
+        console.error('logs/security-events error:', err);
+        res.status(500).json({ error: 'Error al leer eventos de seguridad.' });
+    }
+});
+
+// ─────────────────────────────────────────────
 // ENDPOINTS PARA SOCIOS (SOLO LECTURA)
 // ─────────────────────────────────────────────
 
