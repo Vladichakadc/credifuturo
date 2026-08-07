@@ -3923,6 +3923,10 @@ router.get('/dashboard-stats', async (req, res) => {
             nu: nuCierreSetting ? Number(nuCierreSetting.value) : (_anioPrev === 2025 ? 1029139 : 0),
         };
 
+        // Los agregados del fondo (patrimonio, cartera, mora total) son información
+        // que todo socio tiene derecho a ver. Los desgloses persona por persona, no.
+        const isAdminStatsReq = req.user?.role === 'admin';
+
         res.json({
             baselines,
             clientsCount: totalClientsCount,
@@ -3974,11 +3978,20 @@ router.get('/dashboard-stats', async (req, res) => {
             carteraMora,
             moraCarteraEP: Math.round(moraCarteraEP),
             sociosMoraCount: sociosMora,
-            detalleMora,
-            detalleMoraEP,
-            detallePenalidad,
-            recentSavings,
-            recentPayments,
+            // A01 (Broken Access Control): estos cinco campos contienen datos
+            // INDIVIDUALES de otros socios — nombre, cédula, días de mora, montos
+            // ahorrados y pagados. `/dashboard-stats` está en READ_ONLY_FOR_ALL
+            // (cualquier socio autenticado puede llamarlo, porque el Panel Principal
+            // se monta también en /dashboard/fondo), así que hasta ahora un socio
+            // cualquiera podía leer con curl quién está en mora y con qué cédula.
+            // En una cooperativa pequeña, donde todos se conocen, eso es una fuga
+            // real. Ocultarlo en el frontend no bastaba: el dato igual viajaba.
+            // Mismo criterio ya aplicado a `concentracion` en /executive-stats.
+            detalleMora: isAdminStatsReq ? detalleMora : undefined,
+            detalleMoraEP: isAdminStatsReq ? detalleMoraEP : undefined,
+            detallePenalidad: isAdminStatsReq ? detallePenalidad : undefined,
+            recentSavings: isAdminStatsReq ? recentSavings : undefined,
+            recentPayments: isAdminStatsReq ? recentPayments : undefined,
             proximosVencimientos30d,
             sociosAlDiaMes,
             timestamp: now.toISOString()

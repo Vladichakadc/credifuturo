@@ -15,6 +15,8 @@ import {
 import ChartExpandModal, { analyzeIncomeDistribution } from '../../components/ChartExpandModal';
 import { computeFundProjection } from '../../utils/fundProjection';
 import YearComparisonChart from '../../components/admin/YearComparisonChart';
+import YearProgressCard from '../../components/admin/YearProgressCard';
+import { computeFondoIndicadores, fmtVariacion } from '../../utils/fondoIndicadores';
 
 const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
 const fmtCorto = (n) => {
@@ -353,6 +355,15 @@ const ExecutivePanelPage = () => {
         };
     }, [exec, stats, anioActual]);
 
+    // ── Indicadores comparativos del fondo ────────────────────────────────────
+    // Misma fuente que el Panel Principal (utils/fondoIndicadores.js). Se calcula
+    // aquí, no se replica: dos paneles con cifras distintas del mismo año destruyen
+    // la confianza más rápido de lo que la construye cualquier gráfico.
+    const ind = useMemo(
+        () => computeFondoIndicadores({ stats, execStats: exec, yearCmp }),
+        [stats, exec, yearCmp]
+    );
+
     // ── Evolución patrimonial: acumulado mensual real de ahorro (mesAbonado/anioAbonado),
     // fondo completo (sin clientId). Deliberadamente excluye Aporte Inicial — igual que el
     // resto del panel — para no mezclar flujo recurrente con capitalización puntual.
@@ -392,6 +403,20 @@ const ExecutivePanelPage = () => {
     const { cartera, recaudoYtd, flujo30dias, penetracion, vencimientos } = exec;
     const disponible = (stats?.saldoEnBanco || 0) + (stats?.rentabilidadCajaNU || 0);
     const patrimonio = stats?.totalAhorradoGeneral || 0;
+    // Delta interanual con signo, flecha y color DERIVADOS del dato. Antes cada
+    // sitio hardcodeaba '+' y text-emerald-600, así que una caída se anunciaba en
+    // verde con signo positivo ('+-20% vs 2025'). En un panel cuya promesa es
+    // "transparencia total", ese era el defecto más grave.
+    const Delta = ({ pct, anio }) => {
+        if (pct === null || pct === undefined || !Number.isFinite(pct)) return null;
+        const sube = pct >= 0;
+        return (
+            <span className={`font-bold ${sube ? 'text-emerald-600' : 'text-red-600'}`}>
+                {' · '}{sube ? '▲' : '▼'} {fmtVariacion(pct)} vs {anio}
+            </span>
+        );
+    };
+
     const crecimientoAhorro = derived.ahorroPrevio > 0
         ? ((derived.ahorroActual - derived.ahorroPrevio) / derived.ahorroPrevio) * 100
         : null;
@@ -454,14 +479,54 @@ const ExecutivePanelPage = () => {
                 </button>
             </div>
 
+            {/* ── Veredicto del fondo ──────────────────────────────────────────
+                 Traído del Panel Principal. Es la única pieza que responde en UNA
+                 frase la pregunta con la que llega el socio: "¿está bien mi fondo?".
+                 Convierte cinco indicadores técnicos (ahorro, mora, liquidez,
+                 patrimonio, cumplimiento de meta) en un semáforo con explicación en
+                 lenguaje llano, antes de pedirle que interprete un solo número. ── */}
+            {ind && (() => {
+                const v = ind.veredicto;
+                const estilo = v.nivel === 'sano'
+                    ? { fondo: 'from-emerald-600 to-emerald-800', icono: '✓' }
+                    : v.nivel === 'revisar'
+                        ? { fondo: 'from-amber-500 to-amber-700', icono: '▲' }
+                        : { fondo: 'from-red-600 to-red-800', icono: '⚠' };
+                return (
+                    <div className={`bg-gradient-to-r ${estilo.fondo} rounded-2xl px-5 py-4 flex items-center justify-between gap-4 shadow-card`}>
+                        <div className="flex items-center gap-4 min-w-0">
+                            <div className="bg-white/15 rounded-full w-11 h-11 flex items-center justify-center flex-shrink-0">
+                                <span className="text-xl font-black text-white">{estilo.icono}</span>
+                            </div>
+                            <div className="min-w-0">
+                                <h2 className="text-lg font-black text-white leading-tight">{v.titulo}</h2>
+                                <p className="text-sm text-white/80 font-medium mt-0.5">{v.detalle}</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-3 flex-shrink-0">
+                            <span className="hidden sm:inline text-[10px] font-black px-3 py-1 rounded-full bg-white/20 text-white">{v.etiqueta}</span>
+                            <div className="text-right">
+                                <p className="text-[10px] text-white/60 font-bold uppercase tracking-wide">Señales en verde</p>
+                                <p className="text-sm font-black text-white">{ind.puntaje} de 5</p>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
             {/* ── Nivel 1: Hero ejecutivo ── */}
             <div className="grid gap-3 grid-cols-2 lg:grid-cols-5">
+                {/* La flecha y el signo del badge se derivan del dato: antes estaban
+                    fijos en '▲ +' con tono verde, así que una caída del ahorro se
+                    anunciaba como si fuera un crecimiento. */}
                 <HeroKpi
                     label="Patrimonio de socios"
                     value={fmt(patrimonio)}
                     icon={PiggyBank}
-                    badge={crecimientoAhorro != null ? `▲ +${crecimientoAhorro.toFixed(0)}% ahorro vs ${anioActual - 1}` : null}
-                    badgeTone="ok"
+                    badge={crecimientoAhorro != null
+                        ? `${crecimientoAhorro >= 0 ? '▲' : '▼'} ${fmtVariacion(crecimientoAhorro)} ahorro vs ${anioActual - 1}`
+                        : null}
+                    badgeTone={crecimientoAhorro == null ? 'ok' : (crecimientoAhorro >= 0 ? 'ok' : 'risk')}
                     onClick={goToAdmin('/admin/savings/list')}
                 />
                 <HeroKpi
@@ -616,7 +681,7 @@ const ExecutivePanelPage = () => {
                                 <p className="text-[11px] text-gray-500 mt-0.5">
                                     {fmt(derived.intCobradosAnio)} cobrados + {fmt(derived.intAgendadosAnio)} agendados
                                     {derived.intAnioPrevio > 0 && (
-                                        <span className="text-emerald-600 font-bold"> · +{(((derived.intCobradosAnio + derived.intAgendadosAnio) / derived.intAnioPrevio - 1) * 100).toFixed(0)}% vs {anioActual - 1}</span>
+                                        <Delta pct={((derived.intCobradosAnio + derived.intAgendadosAnio) / derived.intAnioPrevio - 1) * 100} anio={anioActual - 1} />
                                     )}
                                 </p>
                                 <ChevronRight className="h-3.5 w-3.5 text-gray-200 group-hover:text-brand-primary/50 absolute bottom-3 right-3 transition-colors" />
@@ -634,7 +699,7 @@ const ExecutivePanelPage = () => {
                                 <p className="text-[11px] text-gray-500 mt-0.5">
                                     {derived.colocActual?.creditos || 0} créditos
                                     {derived.colocPrevio?.total > 0 && (
-                                        <span className="text-emerald-600 font-bold"> · +{(((derived.colocActual?.total || 0) / derived.colocPrevio.total - 1) * 100).toFixed(0)}% vs {anioActual - 1}</span>
+                                        <Delta pct={((derived.colocActual?.total || 0) / derived.colocPrevio.total - 1) * 100} anio={anioActual - 1} />
                                     )}
                                 </p>
                                 <ChevronRight className="h-3.5 w-3.5 text-gray-200 group-hover:text-brand-primary/50 absolute bottom-3 right-3 transition-colors" />
@@ -650,7 +715,7 @@ const ExecutivePanelPage = () => {
                                 <p className="text-[11px] text-gray-500 mt-0.5">
                                     Mes acreditado
                                     {crecimientoAhorro != null && (
-                                        <span className="text-emerald-600 font-bold"> · +{crecimientoAhorro.toFixed(0)}% vs {anioActual - 1}</span>
+                                        <Delta pct={crecimientoAhorro} anio={anioActual - 1} />
                                     )}
                                 </p>
                                 <ChevronRight className="h-3.5 w-3.5 text-gray-200 group-hover:text-brand-primary/50 absolute bottom-3 right-3 transition-colors" />
@@ -913,22 +978,79 @@ const ExecutivePanelPage = () => {
                                 </div>
                             </div>
 
-                            {/* Resultados por año — baselines dinámicos */}
-                            <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
-                                <SectionTitle icon={BarChart3}>Resultados por año</SectionTitle>
-                                <div className="grid grid-cols-3 gap-2">
-                                    <MiniYearBars title="Ahorro" data={derived.seriesCharts.ahorro} currentYear={anioActual} />
-                                    <MiniYearBars title="Préstamos" data={derived.seriesCharts.colocacion} currentYear={anioActual} />
-                                    <MiniYearBars title="Intereses" data={derived.seriesCharts.intereses} currentYear={anioActual} />
-                                </div>
-                                <p className="text-[10px] text-gray-400 mt-2">
-                                    $ COP · año en curso en verde · calculado por año desde la base de datos (sin cifras fijas)
-                                </p>
-                            </div>
                         </div>
                     </div>
                 );
             })()}
+
+            {/* ── Resultados del año, indicador por indicador ───────────────────
+                 Reemplaza a MiniYearBars (tres barras sin contexto) por las mismas
+                 tarjetas del Panel Principal: cada una trae la cifra acumulada, el
+                 veredicto contra el RITMO del año anterior con la base declarada en
+                 pantalla, la barra de avance y la tabla de valores en texto. Es la
+                 pieza mejor preparada para un lector no financiero. ── */}
+            {ind && (
+                <div className="space-y-3">
+                    <h2 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
+                        <BarChart3 className="h-4 w-4 text-brand-primary" />
+                        Resultados del año
+                        <span className="text-[11px] font-semibold text-gray-400">
+                            {ind.nombreMesCorte
+                                ? `cada indicador frente al ritmo de ${ind.baselineAnio}, al ${ind.nombreMesCorte}`
+                                : `cada indicador frente a ${ind.baselineAnio}`}
+                        </span>
+                    </h2>
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        <YearProgressCard
+                            title="Ahorro de los Socios"
+                            subtitle="Ahorro mensual + aportes iniciales, por año"
+                            anioPrev={ind.baselineAnio} anioActual={ind.baselineAnio + 1}
+                            totalPrev={ind.ahorroPrevTotal} actual={ind.ahorroActualTotal}
+                            fraccionAnio={ind.fraccionAnio} nota={ind.ahorroComposicionNota}
+                        />
+                        <YearProgressCard
+                            title="Préstamos Entregados"
+                            subtitle="Dinero colocado en créditos a los socios"
+                            anioPrev={ind.baselineAnio} anioActual={ind.baselineAnio + 1}
+                            totalPrev={ind.baselinePrestamos} actual={ind.colocacionActualYtd}
+                            fraccionAnio={ind.fraccionAnio}
+                        />
+                        {/* El patrimonio es un SALDO a una fecha, no un acumulado del
+                            período: se compara contra el cierre anterior, sin "ritmo". */}
+                        <YearProgressCard
+                            title="Patrimonio del Fondo"
+                            subtitle="Cuánto vale el fondo hoy"
+                            tipo="saldo"
+                            anioPrev={ind.baselineAnio} anioActual={ind.baselineAnio + 1}
+                            totalPrev={ind.baselinePatrimonio} actual={ind.total}
+                            fraccionAnio={ind.fraccionAnio}
+                        />
+                        <YearProgressCard
+                            title="Ganancias por Intereses"
+                            subtitle="Lo que pagan los socios por sus préstamos"
+                            anioPrev={ind.baselineAnio} anioActual={ind.baselineAnio + 1}
+                            totalPrev={ind.baselineIntereses} actual={ind.interesesActualYtd}
+                            proyeccion={ind.proyeccionIntereses} fraccionAnio={ind.fraccionAnio}
+                        />
+                        <YearProgressCard
+                            title="Rendimiento Cuenta NU"
+                            subtitle="Interés que genera el dinero guardado en NU"
+                            anioPrev={ind.baselineAnio} anioActual={ind.baselineAnio + 1}
+                            totalPrev={ind.baselineNU} actual={stats?.rentabilidadCajaNU || 0}
+                            proyeccion={ind.proyeccionNU} fraccionAnio={ind.fraccionAnio}
+                        />
+                        {/* Mora: tono rojo y masEsMejor=false — aquí crecer es mala señal. */}
+                        <YearProgressCard
+                            title="Cobros por Pagos Tardíos"
+                            subtitle="Recargo aplicado a socios con cuotas vencidas"
+                            tono="rojo" masEsMejor={false}
+                            anioPrev={ind.baselineAnio} anioActual={ind.baselineAnio + 1}
+                            totalPrev={ind.baselineMora} actual={ind.moraActualYtd}
+                            proyeccion={ind.proyeccionMora} fraccionAnio={ind.fraccionAnio}
+                        />
+                    </div>
+                </div>
+            )}
 
             {/* ── Riesgo de Cartera y Flujo de Caja ── */}
             <div className="space-y-3">
@@ -976,7 +1098,12 @@ const ExecutivePanelPage = () => {
                     nombre ni el monto pendiente de otro socio, por privacidad. */}
                 <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
                     <SectionTitle icon={ShieldCheck}>{isAdmin ? 'Concentración de cartera por deudor' : 'Diversificación de la cartera'}</SectionTitle>
-                    {derived.donutData.length === 0 ? (
+                    {/* El estado vacío se decide por la CARTERA, no por donutData:
+                        donutData se arma desde `concentracion`, que el backend solo
+                        envía al admin. Al evaluarlo primero, el socio caía siempre en
+                        "Sin cartera pendiente" y nunca veía el indicador anónimo de
+                        diversificación que existe justo abajo, escrito para él. */}
+                    {cartera.total <= 0 ? (
                         <div className="h-[220px] flex items-center justify-center text-sm text-gray-400">
                             Sin cartera pendiente
                         </div>
