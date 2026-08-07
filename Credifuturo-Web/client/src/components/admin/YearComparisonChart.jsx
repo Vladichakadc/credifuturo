@@ -45,11 +45,13 @@ const METRICAS = [
     { key: 'mora', label: 'Cobros por pagos tardíos', corto: 'Mora', color: BRAND.error },
 ];
 
-// Años anteriores: tonos de referencia derivados de la marca (verde apagado y
-// dorado corporativo) en vez de grises neutros, para que el gráfico se lea como
-// parte del sistema visual de Credifuturo. El año en curso siempre lleva el
-// color fuerte del indicador, así la vista va primero al año vivo.
-const COLORES_PREVIOS = ['#6b8f7a', BRAND.gold, '#b8c4bd'];
+// Los años son una dimensión ORDENADA, así que llevan una rampa ordinal de un
+// solo tono (claro = más antiguo, oscuro = año en curso) en vez de colores
+// categóricos sueltos. Verificada con el validador de paletas del proyecto:
+// luminosidad monótona, saltos visibles y extremo claro por encima del piso de
+// contraste. Termina en el verde corporativo. La mora usa su propia rampa roja,
+// porque ahí crecer no es un logro.
+const RAMPA_ANIOS = { verde: ['#6db88c', '#3a8560', '#166534'], rojo: ['#e88a8a', '#d14545', '#b91c1c'] };
 
 const fmtCOP = (v) => `$${Number(v || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}`;
 
@@ -169,9 +171,12 @@ const YearComparisonChart = ({ data, error = false }) => {
 
     const metaMetrica = METRICAS.find(m => m.key === metrica);
 
+    // El año en curso siempre toma el paso más oscuro de la rampa; los anteriores
+    // se aclaran según su antigüedad, así el orden temporal se lee sin leyenda.
+    const rampa = RAMPA_ANIOS[metrica === 'mora' ? 'rojo' : 'verde'];
     const colorDe = (anio, idx) => anio === anioEnCurso
-        ? metaMetrica.color
-        : COLORES_PREVIOS[Math.min(idx, COLORES_PREVIOS.length - 1)];
+        ? rampa[rampa.length - 1]
+        : rampa[Math.max(0, rampa.length - 2 - Math.max(0, idx))];
 
     if (error) {
         return (
@@ -291,7 +296,7 @@ const YearComparisonChart = ({ data, error = false }) => {
                 <ResponsiveContainer width="100%" height="100%">
                     {acumulado ? (
                         <LineChart data={chartData} margin={{ top: 10, right: 16, left: 4, bottom: 4 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                            <CartesianGrid stroke="#f1f5f9" vertical={false} />
                             <XAxis dataKey="mes" tick={{ fontSize: 11, fontWeight: 700, fill: '#6b7280' }}
                                 axisLine={{ stroke: '#e5e7eb' }} tickLine={false} />
                             <YAxis tickFormatter={fmtEje} tick={{ fontSize: 11, fontWeight: 700, fill: '#9ca3af' }}
@@ -315,7 +320,7 @@ const YearComparisonChart = ({ data, error = false }) => {
                         </LineChart>
                     ) : (
                         <BarChart data={chartData} margin={{ top: 10, right: 16, left: 4, bottom: 4 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                            <CartesianGrid stroke="#f1f5f9" vertical={false} />
                             <XAxis dataKey="mes" tick={{ fontSize: 11, fontWeight: 700, fill: '#6b7280' }}
                                 axisLine={{ stroke: '#e5e7eb' }} tickLine={false} />
                             <YAxis tickFormatter={fmtEje} tick={{ fontSize: 11, fontWeight: 700, fill: '#9ca3af' }}

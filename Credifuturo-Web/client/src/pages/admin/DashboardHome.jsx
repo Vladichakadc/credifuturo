@@ -20,6 +20,7 @@ import nuBg from '../../assets/nu-bg.png';
 import logo from '../../assets/logo.jpg';
 import YearMultiSelect from '../../components/admin/YearMultiSelect';
 import YearComparisonChart from '../../components/admin/YearComparisonChart';
+import YearProgressCard from '../../components/admin/YearProgressCard';
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
 const StatCard = ({ title, value, description, icon: Icon, color, onClick, customBg, isDark = false, textColor }) => {
@@ -377,373 +378,12 @@ const PenaltyModal = ({ details, onClose }) => {
     );
 };
 
-// ─── Comparative Bar Chart Component (Expert Financial Analysis) ──────────────
-const ComparativeChart = ({ title, historic, historicYtd, corteLabel, current, color, labelHistoric, labelCurrent, detail, projection, value2027, note, secondaryComparison, counts, compact, onExpand }) => {
-    // historicYtd = el año anterior recortado a la MISMA fecha del calendario.
-    // Cuando existe, es el único denominador válido para el porcentaje: `historic`
-    // son 12 meses y `current` son los meses que van del año, así que compararlos
-    // directamente mide el calendario, no el desempeño. La barra del año completo
-    // se conserva como referencia visual de la meta a superar.
-    const tieneCorte = historicYtd !== null && historicYtd !== undefined;
-    const baseComparacion = tieneCorte ? historicYtd : historic;
-
-    const data = [
-        { name: labelHistoric, value: historic, fill: '#cbd5e1' },
-        ...(tieneCorte ? [{ name: `${labelHistoric} al corte`, value: historicYtd, fill: '#fbbf24' }] : []),
-        { name: labelCurrent, value: current, fill: color },
-        ...(value2027 !== undefined ? [{ name: '2027 (est.)', value: value2027, fill: `${color}55` }] : [])
-    ];
-
-    // ── Métricas financieras ──
-    const deviation = current - baseComparacion;
-    const deviationPct = baseComparacion > 0 ? ((deviation / baseComparacion) * 100) : 0;
-    const isPositive = deviation >= 0;
-    const progressPct = baseComparacion > 0 ? Math.min(((current / baseComparacion) * 100), 150) : 0;
-    const ratio = baseComparacion > 0 ? (current / baseComparacion) : 0;
-    // Etiqueta del período contra el que se mide, para que ningún porcentaje quede huérfano.
-    const refLabel = tieneCorte
-        ? `${labelHistoric}${corteLabel ? ` al ${corteLabel}` : ' al mismo corte'}`
-        : labelHistoric;
-
-    // Proyección al cierre: usa el valor externo si fue provisto (sincronizado con
-    // "Estimado al cierre del año"), si no calcula extrapolación lineal propia.
-    const today = new Date();
-    const dayOfYear = Math.ceil((today - new Date(today.getFullYear(), 0, 1)) / (1000 * 60 * 60 * 24));
-    // Extrapolación del acumulado del año en curso a 12 meses. (Antes se extrapolaba
-    // `current - historic`, la diferencia contra un año COMPLETO, lo que arrojaba
-    // proyecciones muy negativas a mitad de año por pura aritmética del calendario.)
-    const linearProjectedYearEnd = dayOfYear > 0 ? current * (365 / dayOfYear) : current;
-    const projectedYearEnd = projection !== undefined ? projection : linearProjectedYearEnd;
-    const projectedAnnualIncrement = projectedYearEnd - historic;
-    const projectedPctVs2025 = historic > 0 ? ((projectedAnnualIncrement / historic) * 100) : 0;
-    const isPacePositive = projectedAnnualIncrement >= 0;
-
-    // Color coding por nivel de desempeño
-    const getPerformanceLevel = () => {
-        // hex/bgHex/borderHex/dotHex/ringHex: valores exactos para inline styles corporativos
-        if (progressPct >= 100) return { label: 'Superado',  hex: '#166534', bgHex: '#f0fdf4', borderHex: '#16653440', dotHex: '#166534', ringHex: '#16653428', color: 'text-brand-primary' };
-        if (progressPct >= 85)  return { label: 'En Ruta',   hex: '#1d4ed8', bgHex: '#eff6ff', borderHex: '#bfdbfe',   dotHex: '#3b82f6', ringHex: '#bfdbfe',   color: 'text-blue-700' };
-        if (progressPct >= 60)  return { label: 'Moderado',  hex: '#b45309', bgHex: '#fffbeb', borderHex: '#fde68a',   dotHex: '#f59e0b', ringHex: '#fde68a',   color: 'text-amber-700' };
-        return                         { label: 'Rezagado',  hex: '#dc2626', bgHex: '#fef2f2', borderHex: '#fecaca',   dotHex: '#ef4444', ringHex: '#fecaca',   color: 'text-red-700' };
-    };
-    const perf = getPerformanceLevel();
-
-    const fmtCOP = (n) => `$${Number(n).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-
-    const paceLabel = isPacePositive
-        ? `Al ritmo actual, cerraría el año en ${fmtCOP(projectedYearEnd)} (+${projectedPctVs2025.toFixed(1)}% vs ${labelHistoric})`
-        : `Al ritmo actual, cerraría el año en ${fmtCOP(projectedYearEnd)} (${projectedPctVs2025.toFixed(1)}% vs ${labelHistoric})`;
-
-    // ── Estilo Power BI: gradientes por barra, tooltip enriquecido, animación ──
-    const CORP = '#166534'; // brand-primary corporativo
-    const gid = `cmp-${String(color || 'x').replace('#', '')}`;
-    const gradientDefs = (
-        <defs>
-            {/* Barra actual: color corporativo pasado por prop */}
-            <linearGradient id={`${gid}-cur`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={color} stopOpacity={1} />
-                <stop offset="100%" stopColor={color} stopOpacity={0.65} />
-            </linearGradient>
-            {/* Barra histórica (2025): gris neutro refinado */}
-            <linearGradient id={`${gid}-hist`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#94a3b8" stopOpacity={0.85} />
-                <stop offset="100%" stopColor="#64748b" stopOpacity={0.65} />
-            </linearGradient>
-            {/* Barra estimada futura: color suavizado */}
-            <linearGradient id={`${gid}-est`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={color} stopOpacity={0.45} />
-                <stop offset="100%" stopColor={color} stopOpacity={0.15} />
-            </linearGradient>
-            {/* Sombra para línea de tendencia */}
-            <filter id={`${gid}-shadow`}>
-                <feDropShadow dx="0" dy="1" stdDeviation="2.5"
-                    floodColor={isPositive ? CORP : '#dc2626'} floodOpacity="0.3" />
-            </filter>
-        </defs>
-    );
-    const barCells = data.map((d, i) => (
-        <Cell key={i} fill={`url(#${gid}-${i === 0 ? 'hist' : (value2027 !== undefined && i === 2) ? 'est' : 'cur'})`} />
-    ));
-    const CompTooltip = ({ active, payload, label }) => {
-        if (!active || !payload || !payload.length) return null;
-        return (
-            <div className="bg-white/95 backdrop-blur-md rounded-xl shadow-2xl border border-gray-100 overflow-hidden" style={{ minWidth: 160 }}>
-                <div className="px-4 py-2 border-b border-gray-100" style={{ backgroundColor: `${color}14` }}>
-                    <p className="text-[11px] font-black uppercase tracking-widest" style={{ color }}>{label}</p>
-                </div>
-                <div className="px-4 py-2.5">
-                    <p className="text-sm font-black text-gray-900 tabular-nums">{fmtCOP(payload[0].value)}</p>
-                </div>
-            </div>
-        );
-    };
-
-    if (compact) {
-        return (
-            <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={data} margin={{ top: 24, right: 12, left: 10, bottom: 0 }}>
-                    {gradientDefs}
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0fdf4" />
-                    <XAxis dataKey="name" axisLine={false} tickLine={false}
-                        tick={{ fontSize: 10, fontWeight: 900, fill: '#374151' }} />
-                    <YAxis hide domain={[0, 'dataMax + 5000000']} />
-                    <Tooltip cursor={{ fill: `${color}10`, radius: 8 }} content={<CompTooltip />} />
-                    <ReferenceLine y={historic} stroke={CORP} strokeDasharray="5 4"
-                        strokeWidth={1} strokeOpacity={0.3}
-                        label={{ value: labelHistoric, position: 'insideTopRight', fontSize: 8,
-                            fill: CORP, fontWeight: 700, opacity: 0.5 }} />
-                    <Bar dataKey="value" radius={[6, 6, 0, 0]}
-                        barSize={value2027 !== undefined ? 40 : 55}
-                        animationDuration={1100} animationEasing="ease-out">
-                        {barCells}
-                        <LabelList dataKey="value" position="top" formatter={(v) => fmtCOP(v)}
-                            style={{ fontSize: '11px', fontWeight: '900', fill: '#0f172a' }} />
-                    </Bar>
-                    <Line dataKey="value" type="monotone"
-                        stroke={isPositive ? CORP : '#dc2626'}
-                        strokeWidth={2.5}
-                        dot={{ r: 5, fill: isPositive ? CORP : '#dc2626', strokeWidth: 2.5, stroke: '#fff' }}
-                        activeDot={{ r: 7, fill: isPositive ? CORP : '#dc2626', strokeWidth: 0 }}
-                        filter={`url(#${gid}-shadow)`}
-                    />
-                </ComposedChart>
-            </ResponsiveContainer>
-        );
-    }
-
-    return (
-        <div className="flex flex-col bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden"
-            style={{ boxShadow: `0 0 0 1px ${perf.ringHex}` }}>
-            {/* Header con título y badge de estado */}
-            <div className="px-5 pt-5 pb-2 flex flex-col items-center gap-2 text-center relative">
-                <h4 className="text-sm font-black uppercase tracking-widest" style={{ color: '#166534' }}>{title}</h4>
-                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full border"
-                    style={{ backgroundColor: perf.bgHex, borderColor: perf.borderHex, color: perf.hex }}>
-                    <span className="inline-block w-1.5 h-1.5 rounded-full mr-1"
-                        style={{ backgroundColor: perf.dotHex }}></span>
-                    {perf.label}
-                </span>
-                {onExpand && (
-                    <button onClick={onExpand} className="absolute top-3 right-3 p-1.5 hover:bg-gray-100 rounded-lg transition-colors text-gray-400 hover:text-gray-700" title="Ampliar y analizar">
-                        <Maximize2 className="h-4 w-4" />
-                    </button>
-                )}
-            </div>
-
-            {/* Gráfico */}
-            <div className="w-full h-64 px-2">
-                <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={data} margin={{ top: 26, right: 14, left: 10, bottom: 0 }}>
-                        {gradientDefs}
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0fdf4" />
-                        <XAxis dataKey="name" axisLine={false} tickLine={false}
-                            tick={{ fontSize: 10, fontWeight: 900, fill: '#374151' }} />
-                        <YAxis hide domain={[0, 'dataMax + 5000000']} />
-                        <Tooltip cursor={{ fill: `${color}10`, radius: 8 }} content={<CompTooltip />} />
-                        {/* Línea de referencia al nivel histórico (2025) */}
-                        <ReferenceLine y={historic} stroke={CORP} strokeDasharray="5 4"
-                            strokeWidth={1.2} strokeOpacity={0.35}
-                            label={{ value: `Ref. ${labelHistoric}`, position: 'insideTopRight',
-                                fontSize: 8, fill: CORP, fontWeight: 700, opacity: 0.55 }} />
-                        <Bar dataKey="value" radius={[6, 6, 0, 0]}
-                            barSize={value2027 !== undefined ? 40 : 58}
-                            animationDuration={1100} animationEasing="ease-out">
-                            {barCells}
-                            <LabelList dataKey="value" position="top" formatter={(v) => fmtCOP(v)}
-                                style={{ fontSize: '12px', fontWeight: '900', fill: '#0f172a' }} />
-                        </Bar>
-                        {/* Línea de tendencia corporativa */}
-                        <Line
-                            dataKey="value"
-                            type="monotone"
-                            stroke={isPositive ? CORP : '#dc2626'}
-                            strokeWidth={2.5}
-                            dot={{ r: 5.5, fill: isPositive ? CORP : '#dc2626', strokeWidth: 2.5, stroke: '#fff' }}
-                            activeDot={{ r: 7.5, fill: isPositive ? CORP : '#dc2626', strokeWidth: 0 }}
-                            filter={`url(#${gid}-shadow)`}
-                        />
-                    </ComposedChart>
-                </ResponsiveContainer>
-            </div>
-
-            {/* Panel de métricas — lenguaje simple */}
-            <div className="px-5 pb-5 pt-3 border-t border-gray-100 bg-gradient-to-b from-gray-50/80 to-white space-y-4">
-
-                {/* KPI tile: Cambio vs año pasado */}
-                <div className="grid grid-cols-1 gap-2">
-                    <div className="rounded-xl p-3 border text-center"
-                        style={{ backgroundColor: isPositive ? '#f0fdf4' : '#fef2f2', borderColor: isPositive ? '#16653440' : '#fca5a5' }}>
-                        <p className="text-[10px] font-black uppercase tracking-widest mb-1"
-                            style={{ color: isPositive ? '#166534' : '#dc2626' }}>Cambio vs año pasado</p>
-                        <div className="flex items-baseline justify-center gap-1.5">
-                            <span className="text-lg font-black font-mono leading-none"
-                                style={{ color: isPositive ? '#166534' : '#dc2626' }}>
-                                {isPositive ? '+' : ''}{Math.abs(deviationPct).toFixed(1)}%
-                            </span>
-                            <span className="text-[11px] font-bold"
-                                style={{ color: isPositive ? '#166534' : '#ef4444' }}>
-                                {isPositive ? '▲' : '▼'}
-                            </span>
-                        </div>
-                        <p className="text-lg font-black mt-0.5 font-mono"
-                            style={{ color: isPositive ? '#16653499' : '#ef444499' }}>
-                            {isPositive ? '+' : ''}{fmtCOP(deviation)}
-                        </p>
-                    </div>
-                </div>
-
-                {/* Barra de avance del año */}
-                <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-[11px] font-black uppercase tracking-wider" style={{ color: '#166534' }}>Avance del año</span>
-                        <span className="text-xs font-black" style={{ color: perf.hex }}>{progressPct.toFixed(1)}%</span>
-                    </div>
-                    <div className="relative">
-                        <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-                            <div
-                                className="h-full rounded-full transition-all duration-1000 ease-out relative"
-                                style={{
-                                    width: `${Math.min(progressPct, 100)}%`,
-                                    background: `linear-gradient(90deg, ${color}99, ${color})`,
-                                    boxShadow: progressPct >= 100 ? `0 0 12px ${color}50` : 'none'
-                                }}
-                            >
-                                {progressPct >= 15 && (
-                                    <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] font-black text-white drop-shadow-sm">
-                                        {progressPct.toFixed(0)}%
-                                    </span>
-                                )}
-                            </div>
-                        </div>
-                        <div className="flex justify-between mt-1 px-0.5">
-                            <span className="text-[10px] text-gray-500 font-bold">0%</span>
-                            <span className="text-[10px] text-gray-500 font-bold">50%</span>
-                            <span className="text-[10px] text-gray-500 font-bold">100%</span>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Resultado vs 2025 */}
-                <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-200 shadow-sm">
-                    <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-full flex flex-col items-center justify-center border-2"
-                            style={{ borderColor: perf.dotHex, backgroundColor: perf.bgHex }}>
-                            <span className="text-xs font-black font-mono leading-none" style={{ color: perf.hex }}>{Math.round(ratio * 100)}%</span>
-                            <span className="text-[10px] text-gray-500 font-bold leading-none mt-0.5">vs {labelHistoric}</span>
-                        </div>
-                        <div>
-                            <p className="text-[11px] font-black uppercase tracking-wider" style={{ color: '#166534' }}>Logro vs año anterior</p>
-                            <p className="text-[10px] font-bold text-gray-700">
-                                {ratio >= 1
-                                    ? `Se superó el nivel de ${refLabel} en un ${(deviationPct).toFixed(1)}%`
-                                    : ratio >= 0.85
-                                        ? `Se alcanzó el ${Math.round(ratio * 100)}% del nivel de ${refLabel}`
-                                        : `Por debajo del nivel de ${refLabel} (${Math.round(ratio * 100)}%)`
-                                }
-                            </p>
-                        </div>
-                    </div>
-                    <span className="text-[10px] font-black uppercase px-2 py-1 rounded-lg border"
-                        style={{ backgroundColor: perf.bgHex, borderColor: perf.borderHex, color: perf.hex }}>
-                        {perf.label}
-                    </span>
-                </div>
-
-                {/* Qué significa en palabras simples */}
-                <div className="p-3 rounded-lg border"
-                    style={{ backgroundColor: isPositive ? '#f0fdf4' : '#fef2f2', borderColor: isPositive ? '#16653430' : '#fca5a5' }}>
-                    <p className="text-[10px] font-bold text-gray-800 leading-relaxed">
-                        {isPositive
-                            ? <><strong style={{ color: '#166534' }}>Vamos por encima de {refLabel}</strong> — un {Math.abs(deviationPct).toFixed(1)}% más (+{fmtCOP(deviation)}) que el año anterior en el mismo tramo del calendario.</>
-                            : <><strong className="text-red-700">Vamos por debajo de {refLabel}</strong> — un {Math.abs(deviationPct).toFixed(1)}% menos ({fmtCOP(Math.abs(deviation))}) que el año anterior en el mismo tramo del calendario.</>
-                        }
-                    </p>
-                </div>
-
-                {/* Desglose opcional del valor actual */}
-                {detail && detail.length > 0 && (
-                    <div className="bg-gray-50 border border-gray-200 rounded-xl p-3">
-                        <p className="text-[11px] font-black text-gray-500 uppercase tracking-widest mb-2">¿Cómo se calcula?</p>
-                        <div className="space-y-1.5">
-                            {(() => {
-                                const detailTotal = detail.reduce((s, d) => s + (d.value || 0), 0);
-                                return detail.map((item, i) => (
-                                    <div key={i} className="flex items-center justify-between gap-2 text-[11px]">
-                                        <div className="flex items-center gap-1.5 flex-shrink-0">
-                                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
-                                            <span className="text-gray-700 font-bold">{item.label}</span>
-                                        </div>
-                                        <div className="flex items-center gap-2 ml-auto">
-                                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: `${item.color}22`, color: item.color }}>
-                                                {detailTotal > 0 ? ((item.value / detailTotal) * 100).toFixed(1) : '0.0'}%
-                                            </span>
-                                            <span className="font-black text-gray-800 font-mono">${Number(item.value).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span>
-                                        </div>
-                                    </div>
-                                ));
-                            })()}
-                            <div className="border-t border-gray-300 pt-1.5 mt-1.5 flex items-center justify-between text-[11px]">
-                                <span className="font-black text-gray-700 uppercase tracking-wide">Total</span>
-                                <span className="font-black font-mono text-[12px]" style={{ color: '#166534' }}>${Number(detail.reduce((s, d) => s + (d.value || 0), 0)).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</span>
-                            </div>
-                        </div>
-                    </div>
-                )}
-                {/* Nota informativa opcional */}
-                {note && (
-                    <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-200 rounded-xl">
-                        <span className="text-blue-500 text-[13px] flex-shrink-0 mt-0.5">ℹ️</span>
-                        <p className="text-[10px] font-bold text-blue-800 leading-relaxed">{note}</p>
-                    </div>
-                )}
-                {secondaryComparison && (() => {
-                    const { title: secTitle, historic: secHistoric, current: secCurrent, labelHistoric: secLH, labelCurrent: secLC, color: secColor } = secondaryComparison;
-                    const secDiff = secCurrent - secHistoric;
-                    const secPct = secHistoric > 0 ? ((secDiff / secHistoric) * 100).toFixed(1) : '0.0';
-                    const secPositive = secDiff >= 0;
-                    return (
-                        <div key="sec" className="border border-gray-200 rounded-xl overflow-hidden">
-                            <div className="px-3 py-2 flex items-center justify-between" style={{ backgroundColor: `${secColor}15`, borderBottom: `1px solid ${secColor}30` }}>
-                                <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: secColor }}>{secTitle}</p>
-                                <span className={`text-[11px] font-black px-2 py-0.5 rounded-full ${secPositive ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{secPositive ? '+' : ''}{secPct}% vs {secLH}</span>
-                            </div>
-                            <div className="px-3 py-2.5 grid grid-cols-2 gap-2">
-                                <div className="text-center p-2 bg-gray-50 rounded-lg">
-                                    <p className="text-[11px] font-bold text-gray-400 uppercase mb-0.5">{secLH}</p>
-                                    <p className="text-[12px] font-black text-gray-600 font-mono">${Number(secHistoric).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</p>
-                                </div>
-                                <div className="text-center p-2 rounded-lg" style={{ backgroundColor: `${secColor}15` }}>
-                                    <p className="text-[11px] font-bold uppercase mb-0.5" style={{ color: secColor }}>{secLC}</p>
-                                    <p className="text-[12px] font-black font-mono" style={{ color: secColor }}>${Number(secCurrent).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</p>
-                                </div>
-                            </div>
-                        </div>
-                    );
-                })()}
-                {/* Conteo por año */}
-                {counts && (
-                    <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
-                        <p className="text-[11px] font-black text-gray-700 uppercase tracking-widest mb-2">Total préstamos por año</p>
-                        <div className="grid grid-cols-2 gap-2">
-                            <div className="text-center p-2 rounded-lg bg-slate-100">
-                                <p className="text-[11px] font-bold text-gray-500 uppercase mb-0.5">{labelHistoric}</p>
-                                <p className="text-2xl font-black text-gray-700 font-mono leading-none">
-                                    {counts.historic ?? '—'}
-                                </p>
-                                <p className="text-[11px] font-bold text-gray-500 mt-0.5">préstamos</p>
-                            </div>
-                            <div className="text-center p-2 rounded-lg" style={{ backgroundColor: `${color}18` }}>
-                                <p className="text-[11px] font-bold uppercase mb-0.5" style={{ color }}>{labelCurrent}</p>
-                                <p className="text-2xl font-black font-mono leading-none" style={{ color }}>{counts.current}</p>
-                                <p className="text-[11px] font-bold mt-0.5" style={{ color: `${color}99` }}>préstamos</p>
-                            </div>
-                        </div>
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-};
+// (Se retiró aquí el componente ComparativeChart. Comparaba el acumulado del año
+// en curso contra el mismo tramo MEDIDO del año anterior, y cuando ese tramo era
+// pequeño el porcentaje se disparaba: con los intereses reales de 2025 —$104.460
+// hasta agosto frente a $1.206.913 del año completo— marcaba "+1.472,6%". Lo
+// reemplaza components/admin/YearProgressCard.jsx, que compara contra el ritmo
+// del año anterior y presenta el avance en lenguaje llano.)
 
 
 // ─── Gráfica de AHORRO POR AÑO (no acumulable) ───────────────────────────────
@@ -1153,6 +793,9 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
     const comparacionPrematura = fraccionAnio !== null && fraccionAnio < FRACCION_MINIMA;
     // Un crecimiento enorme se comunica mejor como múltiplo: "3,4× el ritmo de 2025"
     // en vez de "+240,0%", que a partir de cierto tamaño se lee como un error.
+    // Ritmo del año anterior para una magnitud dada: su total prorrateado al
+    // calendario transcurrido. Es la base que usan las tarjetas y los análisis.
+    const ritmoPrev = (totalAnterior) => (fraccionAnio > 0 ? totalAnterior * fraccionAnio : totalAnterior);
     const fmtVariacion = (pct) => pct >= 200
         ? `${(1 + pct / 100).toFixed(1).replace('.', ',')}×`
         : `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
@@ -1825,44 +1468,40 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                         totalNetoActivos={stats.totalNetoActivos}
                         onExpand={() => setExpandComp('ahorro')}
                     />
-                    <ComparativeChart
+                    <YearProgressCard
                         title="Préstamos Entregados"
-                        historic={baselinePrestamos}
-                        historicYtd={seriePrev ? seriePrev.ytdAlCorte.colocacion : undefined}
-                        corteLabel={nombreMesCorte}
-                        current={serieActual ? serieActual.ytdAlCorte.colocacion : (stats.totalPrestamos || 0)}
-                        color="#166534"
-                        labelHistoric={String(baselineAnio)}
-                        labelCurrent={String(baselineAnio + 1)}
-                        counts={{ historic: stats?.baselines?.prestamosCount ?? null, current: stats.totalPrestamosCount || 0 }}
+                        subtitle="Dinero colocado en créditos a los socios"
+                        anioPrev={baselineAnio}
+                        anioActual={baselineAnio + 1}
+                        totalPrev={baselinePrestamos}
+                        actual={serieActual ? serieActual.ytdAlCorte.colocacion : (stats.totalPrestamos || 0)}
+                        fraccionAnio={fraccionAnio}
                         onExpand={() => setExpandComp('prestamos')}
                     />
-                    <ComparativeChart
+                    {/* El patrimonio es un SALDO a una fecha, no un acumulado del
+                        período: comparar la foto de hoy con la del cierre anterior sí
+                        es válido, y la noción de "ritmo" no aplica. */}
+                    <YearProgressCard
                         title="Patrimonio del Fondo"
-                        historic={baselinePatrimonio}
-                        current={total}
-                        color="#166534"
-                        labelHistoric={String(baselineAnio)}
-                        labelCurrent={String(baselineAnio + 1)}
-                        projection={baselinePatrimonio + proyeccionTotal}
-                        detail={[
-                            { label: 'Saldo en Banco', value: stats.saldoEnBanco || 0, color: '#166534' },
-                            { label: 'Rentabilidad NU', value: stats.rentabilidadCajaNU || 0, color: '#84cc16' },
-                            { label: 'Cartera al Día', value: prestadoVigente, color: '#fbbf24' },
-                        ]}
+                        subtitle="Cuánto vale el fondo hoy"
+                        tipo="saldo"
+                        anioPrev={baselineAnio}
+                        anioActual={baselineAnio + 1}
+                        totalPrev={baselinePatrimonio}
+                        actual={total}
+                        fraccionAnio={fraccionAnio}
                         onExpand={() => setExpandComp('patrimonio')}
                     />
-                    <ComparativeChart
-                        title="Ganancias por Intereses de los préstamos"
-                        historic={baselineIntereses}
-                        historicYtd={interesesPrevYtd ?? undefined}
-                        corteLabel={nombreMesCorte}
-                        current={interesesActualYtd}
-                        color="#166534"
-                        labelHistoric={String(baselineAnio)}
-                        labelCurrent={String(baselineAnio + 1)}
-                        projection={proyeccionIntereses}
-                        note={`Adicionalmente, hay $${Number(Math.max(0, (stats.totalIntereses || 0) - (stats.totalInteresesPagados || 0))).toLocaleString('es-CO', { maximumFractionDigits: 0 })} en Intereses por Cobrar (cuotas aún no pagadas por los socios). Cuando se paguen, este valor aumentará el total de ganancias del fondo.`}
+                    <YearProgressCard
+                        title="Ganancias por Intereses"
+                        subtitle="Lo que pagan los socios por sus préstamos"
+                        anioPrev={baselineAnio}
+                        anioActual={baselineAnio + 1}
+                        totalPrev={baselineIntereses}
+                        actual={interesesActualYtd}
+                        proyeccion={proyeccionIntereses}
+                        fraccionAnio={fraccionAnio}
+                        nota={`Además hay ${'$'}${Number(Math.max(0, (stats.totalIntereses || 0) - (stats.totalInteresesPagados || 0))).toLocaleString('es-CO', { maximumFractionDigits: 0 })} en intereses por cobrar: cuotas que los socios aún no han pagado. Cuando se paguen, se sumarán a esta cifra.`}
                         onExpand={() => setExpandComp('intereses')}
                     />
                 </div>
@@ -1887,18 +1526,18 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                 </ChartExpandModal>
                 <ChartExpandModal isOpen={expandComp === 'prestamos'} onClose={() => setExpandComp(null)}
                     title={`Préstamos Entregados — Análisis vs ${baselineAnio}`}
-                    analysisResult={analyzeComparativeChart({ title: 'Préstamos Entregados', historic: colocacionPrevYtd ?? baselinePrestamos, current: colocacionActualYtd, progressPct: Math.min((colocacionActualYtd / ((colocacionPrevYtd ?? baselinePrestamos) || 1)) * 100, 150) })}>
-                    <ComparativeChart compact title="Préstamos Entregados" historic={baselinePrestamos} historicYtd={colocacionPrevYtd ?? undefined} corteLabel={nombreMesCorte} current={colocacionActualYtd} color="#166534" labelHistoric={String(baselineAnio)} labelCurrent={String(baselineAnio + 1)} />
+                    analysisResult={analyzeComparativeChart({ title: 'Préstamos Entregados', historic: ritmoPrev(baselinePrestamos), current: colocacionActualYtd, progressPct: Math.min((colocacionActualYtd / (ritmoPrev(baselinePrestamos) || 1)) * 100, 150) })}>
+                    <YearProgressCard compact title="Préstamos Entregados" subtitle="Dinero colocado en créditos a los socios" anioPrev={baselineAnio} anioActual={baselineAnio + 1} totalPrev={baselinePrestamos} actual={colocacionActualYtd} fraccionAnio={fraccionAnio} />
                 </ChartExpandModal>
                 <ChartExpandModal isOpen={expandComp === 'patrimonio'} onClose={() => setExpandComp(null)}
                     title={`Patrimonio del Fondo — Análisis vs ${baselineAnio}`}
                     analysisResult={analyzeComparativeChart({ title: 'Patrimonio del Fondo', historic: baselinePatrimonio, current: total, projectedYearEnd: baselinePatrimonio + proyeccionTotal, progressPct: Math.min((total / (baselinePatrimonio || 1)) * 100, 150) })}>
-                    <ComparativeChart compact title="Patrimonio del Fondo" historic={baselinePatrimonio} current={total} color="#166534" labelHistoric={String(baselineAnio)} labelCurrent={String(baselineAnio + 1)} />
+                    <YearProgressCard compact title="Patrimonio del Fondo" subtitle="Cuánto vale el fondo hoy" tipo="saldo" anioPrev={baselineAnio} anioActual={baselineAnio + 1} totalPrev={baselinePatrimonio} actual={total} fraccionAnio={fraccionAnio} />
                 </ChartExpandModal>
                 <ChartExpandModal isOpen={expandComp === 'intereses'} onClose={() => setExpandComp(null)}
                     title={`Ganancias por Intereses — Análisis vs ${baselineAnio}`}
-                    analysisResult={analyzeComparativeChart({ title: 'Ganancias por Intereses', historic: interesesPrevYtd ?? baselineIntereses, current: interesesActualYtd, projectedYearEnd: proyeccionIntereses, progressPct: Math.min((interesesActualYtd / ((interesesPrevYtd ?? baselineIntereses) || 1)) * 100, 150) })}>
-                    <ComparativeChart compact title="Ganancias por Intereses" historic={baselineIntereses} historicYtd={interesesPrevYtd ?? undefined} corteLabel={nombreMesCorte} current={interesesActualYtd} color="#166534" labelHistoric={String(baselineAnio)} labelCurrent={String(baselineAnio + 1)} />
+                    analysisResult={analyzeComparativeChart({ title: 'Ganancias por Intereses', historic: ritmoPrev(baselineIntereses), current: interesesActualYtd, projectedYearEnd: proyeccionIntereses, progressPct: Math.min((interesesActualYtd / (ritmoPrev(baselineIntereses) || 1)) * 100, 150) })}>
+                    <YearProgressCard compact title="Ganancias por Intereses" subtitle="Lo que pagan los socios por sus préstamos" anioPrev={baselineAnio} anioActual={baselineAnio + 1} totalPrev={baselineIntereses} actual={interesesActualYtd} proyeccion={proyeccionIntereses} fraccionAnio={fraccionAnio} />
                 </ChartExpandModal>
 
                 {/* ── Diagnóstico Financiero — 3 Insight Cards ─────────────────── */}
