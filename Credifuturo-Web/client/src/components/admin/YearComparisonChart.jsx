@@ -52,6 +52,16 @@ const METRICAS = [
 const COLORES_PREVIOS = ['#6b8f7a', BRAND.gold, '#b8c4bd'];
 
 const fmtCOP = (v) => `$${Number(v || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}`;
+
+// Un crecimiento muy grande se lee mejor como múltiplo que como porcentaje:
+// "11,8× lo del año pasado" comunica; "+1.083,8%" parece un error del sistema.
+// Ocurre de verdad cuando el año anterior arrancó lento y su tramo comparable es
+// diminuto — el cociente es correcto, pero el formato porcentual deja de servir.
+const fmtVariacion = (pct) => {
+    if (pct === null || pct === undefined || !Number.isFinite(pct)) return '—';
+    if (pct >= 200) return `${(1 + pct / 100).toFixed(1).replace('.', ',')}×`;
+    return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
+};
 const fmtEje = (v) => {
     const n = Number(v) || 0;
     if (Math.abs(n) >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
@@ -264,7 +274,7 @@ const YearComparisonChart = ({ data, error = false }) => {
                     <div className="flex items-center gap-2">
                         <TrendingUp className={`h-4 w-4 ${resumen.pct >= 0 ? 'text-emerald-600' : 'text-red-500 rotate-180'}`} />
                         <span className={`text-xl font-black font-mono ${resumen.pct >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                            {resumen.pct >= 0 ? '+' : ''}{resumen.pct.toFixed(1)}%
+                            {fmtVariacion(resumen.pct)}
                         </span>
                     </div>
                     <p className="text-xs font-bold text-gray-700 leading-snug">
