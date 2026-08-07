@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import ChartExpandModal, { analyzeIncomeDistribution } from '../../components/ChartExpandModal';
 import { computeFundProjection } from '../../utils/fundProjection';
+import YearComparisonChart from '../../components/admin/YearComparisonChart';
 
 const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
 const fmtCorto = (n) => {
@@ -188,6 +189,8 @@ const ExecutivePanelPage = () => {
     const [stats, setStats] = useState(null);
     const [evolution, setEvolution] = useState(null);
     const [pending, setPending] = useState({ loanRequests: 0, passwordResets: 0, orphanLoans: 0 });
+    const [yearCmp, setYearCmp] = useState(null);
+    const [yearCmpError, setYearCmpError] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [showLdrInfo, setShowLdrInfo] = useState(false);
@@ -228,6 +231,9 @@ const ExecutivePanelPage = () => {
                 // aparte que nadie recuerda revisar, se vuelve visible aquí solo cuando
                 // realmente hay algo que resolver.
                 isAdmin ? api.get('/admin/disbursed-loans/orphans') : Promise.resolve({ status: 'skipped' }),
+                // Serie mensual por año: alimenta el comparador interanual, el mismo
+                // que usa el Panel Principal, para que ambos paneles cuenten lo mismo.
+                api.get('/admin/year-comparison'),
             ]);
             if (results[0].status === 'fulfilled') setExec(results[0].value.data);
             else setError('No se pudieron cargar los indicadores ejecutivos.');
@@ -238,6 +244,8 @@ const ExecutivePanelPage = () => {
                 passwordResets: results[4].status === 'fulfilled' ? (results[4].value.data?.total || 0) : 0,
                 orphanLoans: results[5].status === 'fulfilled' ? (results[5].value.data?.total || 0) : 0,
             });
+            if (results[6]?.status === 'fulfilled') setYearCmp(results[6].value.data);
+            else setYearCmpError(true);
             setLoading(false);
         };
         fetchAll();
@@ -786,6 +794,19 @@ const ExecutivePanelPage = () => {
                     </p>
                 </div>
             )}
+
+            {/* ── Comparador interanual ────────────────────────────────────────
+                 Mismo componente que el Panel Principal, alimentado por el mismo
+                 endpoint: el comité y la gerencia deben ver exactamente la misma
+                 comparación, no dos lecturas distintas del mismo año. ── */}
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
+                <SectionTitle icon={BarChart3}>Comparar con años anteriores</SectionTitle>
+                <p className="text-[11px] text-gray-500 font-semibold -mt-2 mb-4 leading-snug">
+                    Cada año se dibuja sobre los mismos meses, de modo que la comparación siempre
+                    es entre períodos equivalentes. La marca vertical señala el mes en curso.
+                </p>
+                <YearComparisonChart data={yearCmp} error={yearCmpError} />
+            </div>
 
             {/* ── Rentabilidad del Fondo (promovida: responde la pregunta central del
                  comité — cuánto está ganando el fondo — justo después de las alertas,

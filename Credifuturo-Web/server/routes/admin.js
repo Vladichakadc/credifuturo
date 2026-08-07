@@ -111,7 +111,10 @@ async function validateAndFixLoanStatuses() {
 // ahora se monta también en /dashboard/panel-ejecutivo como vista de solo lectura para
 // socios — igual que /dashboard-stats con DashboardHome. El resto exige rol admin.
 // A07: ademas exigimos que el usuario no tenga mustChangePassword pendiente.
-const READ_ONLY_FOR_ALL = new Set(['/dashboard-stats', '/executive-stats', '/savings-evolution']);
+// /year-comparison acompaña a /dashboard-stats: alimenta el mismo Panel de
+// Inteligencia Financiera, que se monta también en /dashboard/fondo para socios.
+// Son agregados por año/mes del fondo, sin nombres ni cédulas de nadie.
+const READ_ONLY_FOR_ALL = new Set(['/dashboard-stats', '/executive-stats', '/savings-evolution', '/year-comparison']);
 const READ_ONLY_PREFIXES = ['/settings/'];
 
 // Funciones "(BETA)" (Ranking de Ahorro, Buzón de Propuestas): el menú del socio ya
@@ -3872,7 +3875,7 @@ router.get('/dashboard-stats', async (req, res) => {
         const { QueryTypes: _QT } = require('sequelize');
         const [prestamosPrevRow, interesesPrevRow, metaSetting, patrimonioSetting, moraPrevRow, nuCierreSetting] = await Promise.all([
             _sequelize.query(
-                `SELECT ROUND(SUM(COALESCE(valor_prestado, monto))) total
+                `SELECT ROUND(SUM(COALESCE(valor_prestado, monto))) total, COUNT(*) cantidad
                  FROM DisbursedLoans WHERE anio_desembolso = :anio`,
                 { type: _QT.SELECT, replacements: { anio: _anioPrev } }),
             _sequelize.query(
@@ -3909,6 +3912,9 @@ router.get('/dashboard-stats', async (req, res) => {
         const baselines = {
             anio: _anioPrev,
             prestamos: Number(prestamosPrevRow[0]?.total) || 0,
+            // Cantidad de créditos del año anterior. El frontend la tenía escrita a
+            // mano ("13"), así que habría quedado congelada al cambiar de año.
+            prestamosCount: Number(prestamosPrevRow[0]?.cantidad) || 0,
             intereses: Number(interesesPrevRow[0]?.total) || 0,
             ahorro: (ahorroPorAnio.find(a => Number(a.anio) === _anioPrev)?.total) || 0,
             patrimonio: patrimonioSetting ? Number(patrimonioSetting.value) : (_anioPrev === 2025 ? 36126201 : 0),
@@ -5118,6 +5124,176 @@ router.get('/executive-stats', async (req, res) => {
     } catch (err) {
         console.error('executive-stats error:', err);
         res.status(500).json({ error: 'Error generando indicadores ejecutivos' });
+    }
+});
+
+// ── Comparación entre años: serie MENSUAL por año ─────────────────────────
+// Existe para corregir una comparación estructuralmente engañosa del Panel
+// Principal: contrastaba el acumulado PARCIAL del año en curso contra el total
+// COMPLETO (12 meses) del año anterior, así que el fondo aparecía "por debajo"
+// aunque fuera mejor — un artefacto del calendario, no un resultado real.
+//
+// Con la serie mensual el frontend puede comparar al MISMO corte del calendario
+// (ene–<mes actual> de cada año), que es la única comparación honesta, y además
+// permite elegir interactivamente qué años contrastar.
+//
+// Nota sobre el rendimiento de la cuenta NU: no tiene serie mensual posible —
+// el admin edita un único saldo acumulado, sin histórico. Se expone solo el
+// cierre por año (AppSetting rentabilidadCajaNUCierre{año}) y se marca como
+// `sinSerieMensual` para que la UI no finja una precisión que no existe.
+router.get('/year-comparison', async (req, res) => {
+    try {
+        const sequelize = require('../config/database');
+        const { QueryTypes, Op } = require('sequelize');
+        const AppSetting = require('../models/AppSetting');
+        const q = (sql) => sequelize.query(sql, { type: QueryTypes.SELECT });
+
+        const hoy = new Date();
+        const anioActual = hoy.getFullYear();
+        const mesCorte = hoy.getMonth() + 1;
+        const diaCorte = hoy.getDate();
+        const inicioAnio = new Date(anioActual, 0, 1);
+        const diaDelAnio = Math.max(1, Math.round((hoy - inicioAnio) / 86400000) + 1);
+        const diasDelAnio = ((anioActual % 4 === 0 && anioActual % 100 !== 0) || anioActual % 400 === 0) ? 366 : 365;
+
+        // Corte con precisión de DÍA para los intereses (LoanPayments.fecha_pago_max es
+        // una fecha real). Mora y ahorro se acreditan por período mes/año (mesAbonado /
+        // anioAbonado), sin día, así que su corte es por mes completo — simétrico en
+        // ambos años, que es lo que importa para que la comparación sea justa.
+        const corteMD = `${String(mesCorte).padStart(2, '0')}-${String(diaCorte).padStart(2, '0')}`;
+
+        const [interesesMes, moraMes, ahorroMes, colocacionMes, interesesYtdRows, nuSettings] = await Promise.all([
+            // Intereses efectivamente cobrados, por año y mes de vencimiento.
+            q(`SELECT CAST(strftime('%Y', fecha_pago_max) AS INTEGER) anio,
+                      CAST(strftime('%m', fecha_pago_max) AS INTEGER) mes,
+                      ROUND(SUM(valor_intereses_amortizados)) total
+               FROM LoanPayments
+               WHERE estado IN ('Pago','Abono') AND fecha_pago_max IS NOT NULL
+               GROUP BY 1, 2 ORDER BY 1, 2`),
+            // Mora: mismo criterio que baselines.mora en /dashboard-stats — el recargo
+            // anual vive en registros 'Descuento Total Anual Penalizacion' (valorAPenalizar
+            // en 0 y el monto real en `amount`, negativo); el resto son recargos mensuales.
+            // Se agrupa por período ACREDITADO (anioAbonado/mesAbonado), no por fecha de
+            // transacción, porque un descuento de 2025 puede registrarse en dic-2024.
+            q(`SELECT CAST(anioAbonado AS INTEGER) anio,
+                      CAST(mesAbonado AS INTEGER) mes,
+                      ROUND(SUM(CASE WHEN status = 'Descuento Total Anual Penalizacion'
+                                     THEN ABS(amount) ELSE valorAPenalizar END)) total
+               FROM Savings
+               WHERE anioAbonado IS NOT NULL AND anioAbonado != ''
+                 AND (valorAPenalizar > 0 OR status = 'Descuento Total Anual Penalizacion')
+               GROUP BY 1, 2 ORDER BY 1, 2`),
+            // Ahorro NETO acreditado por período (valorAhorrado = neto de penalización).
+            q(`SELECT CAST(anioAbonado AS INTEGER) anio,
+                      CAST(mesAbonado AS INTEGER) mes,
+                      ROUND(SUM(valorAhorrado)) total
+               FROM Savings
+               WHERE anioAbonado IS NOT NULL AND anioAbonado != ''
+                 AND status != 'Descuento Total Anual Penalizacion'
+               GROUP BY 1, 2 ORDER BY 1, 2`),
+            // Colocación de créditos por año y mes de desembolso.
+            q(`SELECT CAST(anio_desembolso AS INTEGER) anio,
+                      CAST(strftime('%m', fecha_prestamo) AS INTEGER) mes,
+                      ROUND(SUM(COALESCE(valor_prestado, monto))) total
+               FROM DisbursedLoans
+               WHERE anio_desembolso IS NOT NULL AND fecha_prestamo IS NOT NULL
+               GROUP BY 1, 2 ORDER BY 1, 2`),
+            // Intereses ene → corte exacto (mismo día del calendario) por año.
+            q(`SELECT CAST(strftime('%Y', fecha_pago_max) AS INTEGER) anio,
+                      ROUND(SUM(valor_intereses_amortizados)) total
+               FROM LoanPayments
+               WHERE estado IN ('Pago','Abono') AND fecha_pago_max IS NOT NULL
+                 AND strftime('%m-%d', fecha_pago_max) <= '${corteMD}'
+               GROUP BY 1 ORDER BY 1`),
+            AppSetting.findAll({ where: { key: { [Op.like]: 'rentabilidadCajaNU%' } } }),
+        ]);
+
+        const FUENTES = { intereses: interesesMes, mora: moraMes, ahorro: ahorroMes, colocacion: colocacionMes };
+
+        // Universo de años con algún dato real (se descartan años absurdos por si
+        // hay fechas corruptas en la importación legacy).
+        const aniosSet = new Set();
+        Object.values(FUENTES).forEach(rows => rows.forEach(r => {
+            const a = Number(r.anio);
+            if (Number.isFinite(a) && a >= 2000 && a <= anioActual + 1) aniosSet.add(a);
+        }));
+        aniosSet.add(anioActual);
+        const anios = [...aniosSet].sort((a, b) => a - b);
+
+        // NU por año: solo cierre anual (sin serie mensual). El año en curso usa el
+        // saldo vivo `rentabilidadCajaNU`; los años cerrados, su AppSetting de cierre.
+        const nuMap = new Map(nuSettings.map(s => [s.key, Number(s.value) || 0]));
+        const nuDeAnio = (anio) => anio === anioActual
+            ? (nuMap.get('rentabilidadCajaNU') || 0)
+            : (nuMap.get(`rentabilidadCajaNUCierre${anio}`) || 0);
+
+        const series = anios.map(anio => {
+            const meses = Array.from({ length: 12 }, (_, i) => {
+                const mes = i + 1;
+                const val = (rows) => {
+                    const row = rows.find(r => Number(r.anio) === anio && Number(r.mes) === mes);
+                    return Number(row?.total) || 0;
+                };
+                return {
+                    mes,
+                    intereses: val(interesesMes),
+                    mora: val(moraMes),
+                    ahorro: val(ahorroMes),
+                    colocacion: val(colocacionMes),
+                };
+            });
+
+            const sumar = (campo, hastaMes) => meses
+                .filter(m => m.mes <= hastaMes)
+                .reduce((s, m) => s + m[campo], 0);
+
+            // ytdAlCorte: enero → mes de corte de HOY, para cada año. Es la comparación
+            // manzana-con-manzana. totalAnio: los 12 meses (solo tiene sentido pleno
+            // en años ya cerrados).
+            const totalAnio = {
+                intereses: sumar('intereses', 12),
+                mora: sumar('mora', 12),
+                ahorro: sumar('ahorro', 12),
+                colocacion: sumar('colocacion', 12),
+                nu: nuDeAnio(anio),
+            };
+            const ytdAlCorte = {
+                // Intereses: corte al día exacto (la fecha de la cuota lo permite).
+                intereses: Number(interesesYtdRows.find(r => Number(r.anio) === anio)?.total) || 0,
+                // Mora / ahorro / colocación: corte por mes completo — es la única
+                // granularidad que tiene el período acreditado, e igual en ambos años.
+                mora: sumar('mora', mesCorte),
+                ahorro: sumar('ahorro', mesCorte),
+                colocacion: sumar('colocacion', mesCorte),
+            };
+
+            return {
+                anio,
+                esAnioEnCurso: anio === anioActual,
+                meses,
+                totalAnio: { ...totalAnio, ganancia: totalAnio.intereses + totalAnio.mora + totalAnio.nu },
+                ytdAlCorte,
+            };
+        });
+
+        res.json({
+            corte: {
+                anioActual,
+                mes: mesCorte,
+                dia: diaCorte,
+                diaDelAnio,
+                diasDelAnio,
+                // Fracción del año transcurrida: el divisor honesto para saber si el
+                // fondo va adelante o atrás del ritmo del año anterior.
+                fraccionAnio: +(diaDelAnio / diasDelAnio).toFixed(4),
+            },
+            anios,
+            series,
+            nu: { sinSerieMensual: true, porAnio: Object.fromEntries(anios.map(a => [a, nuDeAnio(a)])) },
+        });
+    } catch (err) {
+        console.error('year-comparison error:', err);
+        res.status(500).json({ error: 'Error generando la comparación entre años' });
     }
 });
 
