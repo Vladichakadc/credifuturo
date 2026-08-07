@@ -15,7 +15,7 @@ import { Button } from '../../components/ui/Button';
 import { useUi } from '../../context/UiContext';
 import DataTable from '../../components/ui/DataTable';
 import nuLogo from '../../assets/nu-logo.png';
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList, ComposedChart, Line, ReferenceLine } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import nuBg from '../../assets/nu-bg.png';
 import logo from '../../assets/logo.jpg';
 import YearMultiSelect from '../../components/admin/YearMultiSelect';
@@ -386,290 +386,10 @@ const PenaltyModal = ({ details, onClose }) => {
 // del año anterior y presenta el avance en lenguaje llano.)
 
 
-// ─── Gráfica de AHORRO POR AÑO (no acumulable) ───────────────────────────────
-// Cada barra es un año independiente: ahorro mensual + aportes iniciales de ese
-// año (apilados). NO acumula años anteriores. Datos: stats.ahorroPorAnio.
-const SavingsByYearChart = ({ data, title = 'Ahorro de los Socios por Año', compact, onExpand, totalNetoActivos }) => {
-    const fmtCOP = (n) => `$${Number(n || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-    const rows = Array.isArray(data) ? data : [];
+// (Se retiró aquí el componente SavingsByYearChart: reemplazado por
+// YearProgressCard, que ahora también rinde el gráfico de Ahorro de los
+// Socios con el mismo formato que Préstamos/Patrimonio/Intereses/NU/Mora.)
 
-    // Cambio del último año vs el anterior
-    const last = rows[rows.length - 1];
-    const prev = rows[rows.length - 2];
-    const deviation = last && prev ? last.total - prev.total : 0;
-    const deviationPct = prev && prev.total > 0 ? (deviation / prev.total) * 100 : 0;
-    const isPositive = deviation >= 0;
-
-    // Tooltip enriquecido estilo Power BI: año + ambos segmentos con % + total
-    const YearTooltip = ({ active, payload, label }) => {
-        if (!active || !payload || !payload.length) return null;
-        const row = payload[0]?.payload || {};
-        const mensual = row.mensual || 0;
-        const aportes = row.aportes || 0;
-        const totalRow = row.total || (mensual + aportes);
-        const pct = (v) => totalRow > 0 ? Math.round((v / totalRow) * 100) : 0;
-        const line = (color, name, value) => (
-            <div className="flex items-center justify-between gap-5">
-                <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                    <span className="text-xs text-gray-500 font-medium">{name}</span>
-                </div>
-                <span className="text-xs font-bold text-gray-900 tabular-nums">{fmtCOP(value)} <span className="text-[10px] text-gray-400 font-semibold">{pct(value)}%</span></span>
-            </div>
-        );
-        return (
-            <div className="bg-white/95 backdrop-blur-md rounded-xl shadow-2xl border border-gray-100 overflow-hidden" style={{ minWidth: 210 }}>
-                <div className="px-4 py-2 border-b border-gray-100"
-                    style={{ background: `linear-gradient(to right, #16653412, #fbbf2410)` }}>
-                    <p className="text-[11px] font-black uppercase tracking-widest" style={{ color: '#166534' }}>Año {label}</p>
-                </div>
-                <div className="px-4 py-3 space-y-2">
-                    {line('#166534', 'Ahorro mensual', mensual)}
-                    {line('#b45309', 'Aportes iniciales', aportes)}
-                    <div className="flex items-center justify-between gap-5 pt-1.5 border-t border-gray-100">
-                        <span className="text-[11px] font-black text-gray-700 uppercase tracking-wide">Total</span>
-                        <span className="text-sm font-black tabular-nums" style={{ color: '#166534' }}>{fmtCOP(totalRow)}</span>
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
-    // Paleta corporativa Credifuturo. `refAnio` es un ámbar más oscuro que
-    // `goldDark` (ya usado para los aportes) — evita que la marca del año de
-    // referencia se confunda con el segmento de aportes del propio gráfico.
-    // Verificado con scripts/validate_palette.js del skill de dataviz: ΔE 14,7
-    // contra el verde de marca, mismo criterio ya aplicado al resto del panel.
-    const BRAND = { primary: '#166534', dark: '#052e16', gold: '#fbbf24', goldDark: '#b45309', refAnio: '#d97706' };
-
-    const chart = (
-        <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={rows} margin={{ top: 30, right: 52, left: 10, bottom: 0 }}>
-                <defs>
-                    {/* Verde corporativo para ahorro mensual */}
-                    <linearGradient id="sbyMensual" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#22c55e" stopOpacity={0.95} />
-                        <stop offset="100%" stopColor={BRAND.primary} stopOpacity={1} />
-                    </linearGradient>
-                    {/* Oro corporativo para aportes */}
-                    <linearGradient id="sbyAportes" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#fcd34d" stopOpacity={0.95} />
-                        <stop offset="100%" stopColor={BRAND.goldDark} stopOpacity={1} />
-                    </linearGradient>
-                    {/* Sombra de la línea de tendencia */}
-                    <filter id="trendShadow">
-                        <feDropShadow dx="0" dy="1" stdDeviation="2" floodColor={BRAND.primary} floodOpacity="0.35" />
-                    </filter>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0fdf4" />
-                <XAxis dataKey="anio" axisLine={false} tickLine={false}
-                    tick={{ fontSize: 11, fontWeight: 900, fill: '#374151' }} />
-                <YAxis hide domain={[0, 'dataMax + 5000000']} />
-                <Tooltip cursor={{ fill: `${BRAND.primary}08`, radius: 8 }} content={<YearTooltip />} />
-                {/* Línea de referencia al nivel del año anterior. En dorado corporativo,
-                    igual que el año de referencia en el resto del panel (comparador
-                    interanual y tarjetas de avance) — antes iba en el mismo verde que
-                    la línea de tendencia, y se perdía dentro de ella. */}
-                {prev && (
-                    <ReferenceLine y={prev.total} stroke={BRAND.refAnio} strokeDasharray="5 4"
-                        strokeWidth={1.4} strokeOpacity={0.6}
-                        label={{ value: `Ref. ${prev.anio}`, position: 'insideTopRight',
-                            fontSize: 9, fill: BRAND.refAnio, fontWeight: 800, opacity: 0.85 }} />
-                )}
-                <Bar dataKey="mensual" stackId="a" fill="url(#sbyMensual)" barSize={55}
-                    animationDuration={1100} animationEasing="ease-out">
-                    <LabelList dataKey="total" position="top" content={({ x, y, width, value, index }) => {
-                        const row = rows[index];
-                        if (!row || row.aportes > 0) return null;
-                        return (
-                            <text x={x + width / 2} y={y - 10} textAnchor="middle"
-                                fontSize={12} fontWeight="900" fill={BRAND.dark}>
-                                {fmtCOP(row.total)}
-                            </text>
-                        );
-                    }} />
-                </Bar>
-                <Bar dataKey="aportes" stackId="a" fill="url(#sbyAportes)"
-                    radius={[6, 6, 0, 0]} barSize={55}
-                    animationDuration={1100} animationBegin={160} animationEasing="ease-out">
-                    <LabelList dataKey="total" position="top" formatter={(v) => fmtCOP(v)}
-                        style={{ fontSize: '12px', fontWeight: '900', fill: BRAND.dark }} />
-                </Bar>
-                {/* Línea de tendencia corporativa sobre los totales. El punto del año de
-                    referencia (el inmediatamente anterior al último) se pinta en dorado
-                    para que se distinga sin leer el eje — mismo rol que en el resto del
-                    panel; los demás puntos, incluido el año en curso, quedan en verde. */}
-                {rows.length > 1 && (
-                    <Line
-                        dataKey="total"
-                        type="monotone"
-                        stroke={BRAND.primary}
-                        strokeWidth={2.5}
-                        dot={({ cx, cy, payload, index }) => {
-                            const esReferencia = prev && payload.anio === prev.anio;
-                            return (
-                                <circle key={`dot-${index}`} cx={cx} cy={cy} r={5}
-                                    fill={esReferencia ? BRAND.refAnio : BRAND.primary}
-                                    strokeWidth={2.5} stroke="#fff" />
-                            );
-                        }}
-                        activeDot={{ r: 7, fill: BRAND.primary, strokeWidth: 0 }}
-                        legendType="none"
-                        filter="url(#trendShadow)"
-                    />
-                )}
-            </ComposedChart>
-        </ResponsiveContainer>
-    );
-
-    // ── Métricas de análisis (experto finanzas) ──
-    // totalNetoActivos = SUM(amount) de todos los movimientos de socios Activos
-    // (incluye Abono, Aportes, Distribucion, Devolucion negativa, Descuentos).
-    // Es el valor neto real del fondo; sustituye la suma bruta de barras.
-    const accumulated = totalNetoActivos > 0 ? totalNetoActivos : rows.reduce((s, r) => s + (r.total || 0), 0);
-    const mensualPct = last && last.total > 0 ? (last.mensual / last.total) * 100 : 0;
-    const aportesPct = last && last.total > 0 ? (last.aportes / last.total) * 100 : 0;
-    const recurrenteDriven = mensualPct >= 50;
-
-    // Veredicto del "experto en finanzas personales"
-    let verdict;
-    if (!last) {
-        verdict = null;
-    } else if (!prev) {
-        verdict = `Primer año con registros (${last.anio}). A partir del próximo año podremos medir el crecimiento real del ahorro.`;
-    } else if (isPositive && recurrenteDriven) {
-        verdict = `El ahorro de ${last.anio} creció ${deviationPct.toFixed(0)}% frente a ${prev.anio}, y el ${mensualPct.toFixed(0)}% viene del ahorro mensual recurrente — la señal más sana: refleja disciplina y hábito de los socios, no aportes puntuales.`;
-    } else if (isPositive && !recurrenteDriven) {
-        verdict = `El ahorro de ${last.anio} creció ${deviationPct.toFixed(0)}%, pero el ${aportesPct.toFixed(0)}% son aportes iniciales (socios nuevos) más que ahorro mensual constante. Conviene impulsar la constancia mensual para que el crecimiento sea sostenible.`;
-    } else {
-        verdict = `En ${last.anio} se ahorró ${Math.abs(deviationPct).toFixed(0)}% menos que en ${prev.anio}. Vale la pena revisar qué socios bajaron el ritmo o dejaron de aportar.`;
-    }
-
-    if (compact) return chart;
-
-    const cardChrome = (children) => (
-        <div className="flex flex-col bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden"
-            style={{ outline: '1px solid #16653420', outlineOffset: '-1px' }}>
-            <div className="px-5 pt-5 pb-2 flex flex-col items-center gap-2 text-center relative">
-                <h4 className="text-sm font-black uppercase tracking-widest" style={{ color: '#166534' }}>{title}</h4>
-                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full border"
-                    style={{ background: '#f0fdf4', borderColor: '#16653440', color: '#166534' }}>
-                    <span className="inline-block w-1.5 h-1.5 rounded-full mr-1" style={{ backgroundColor: '#166534' }}></span>
-                    No acumulable
-                </span>
-                {onExpand && (
-                    <button onClick={onExpand} className="absolute top-3 right-3 p-1.5 hover:bg-gray-100 rounded-lg transition-colors text-gray-400 hover:text-gray-700" title="Ampliar y analizar">
-                        <Maximize2 className="h-4 w-4" />
-                    </button>
-                )}
-            </div>
-            {children}
-        </div>
-    );
-
-    // Estado vacío: nunca mostrar una tarjeta en blanco
-    if (rows.length === 0) {
-        return cardChrome(
-            <div className="px-5 py-16 flex flex-col items-center justify-center text-center gap-2">
-                <PiggyBank className="h-10 w-10 text-gray-300" />
-                <p className="text-sm font-bold text-gray-500">Sin datos de ahorro por año</p>
-                <p className="text-[11px] text-gray-400 max-w-[16rem]">No se encontraron registros de ahorro. Verifica que el servidor esté actualizado y que existan ahorros cargados.</p>
-            </div>
-        );
-    }
-
-    return cardChrome(
-        <>
-            <div className="w-full h-64 px-2">{chart}</div>
-
-            <div className="px-5 pb-5 pt-3 border-t border-gray-100 bg-gradient-to-b from-gray-50/80 to-white space-y-4">
-                {/* Leyenda corporativa */}
-                <div className="flex items-center justify-center gap-5">
-                    <div className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: '#166534' }} />
-                        <span className="text-[10px] font-bold text-gray-600">Ahorro mensual</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: '#b45309' }} />
-                        <span className="text-[10px] font-bold text-gray-600">Aportes iniciales</span>
-                    </div>
-                    {rows.length > 1 && (
-                        <div className="flex items-center gap-1.5">
-                            <span className="inline-block w-5 h-0.5 rounded-full" style={{ backgroundColor: '#166534' }} />
-                            <span className="text-[10px] font-bold text-gray-600">Tendencia</span>
-                        </div>
-                    )}
-                </div>
-
-                {/* KPIs: crecimiento año-a-año + total acumulado */}
-                <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-xl border p-3 text-center"
-                        style={{ backgroundColor: isPositive ? '#f0fdf4' : '#fef2f2', borderColor: isPositive ? '#16653440' : '#fca5a5' }}>
-                        <p className="text-[10px] font-black uppercase tracking-widest mb-1"
-                            style={{ color: isPositive ? '#166534' : '#dc2626' }}>
-                            {last.anio} vs {prev ? prev.anio : '—'}
-                        </p>
-                        <p className="text-xl font-black leading-none"
-                            style={{ color: isPositive ? '#166534' : '#dc2626' }}>
-                            {prev ? `${isPositive ? '+' : ''}${deviationPct.toFixed(1)}%` : '—'} {prev ? (isPositive ? '▲' : '▼') : ''}
-                        </p>
-                        <p className="text-[11px] font-bold mt-1"
-                            style={{ color: isPositive ? '#16653499' : '#ef444499' }}>
-                            {prev ? `${isPositive ? '+' : '−'}${fmtCOP(Math.abs(deviation))}` : 'Primer año'}
-                        </p>
-                    </div>
-                    <div className="rounded-xl border border-gray-200 bg-white p-3 text-center">
-                        <p className="text-[10px] font-black uppercase tracking-widest mb-1 text-gray-500">Total acumulado</p>
-                        <p className="text-xl font-black leading-none text-gray-800 font-mono">{fmtCOP(accumulated)}</p>
-                        <p className="text-[11px] font-bold mt-1 text-gray-400">en {rows.length} año{rows.length > 1 ? 's' : ''}</p>
-                    </div>
-                </div>
-
-                {/* Composición del último año: recurrente vs aportes */}
-                <div className="bg-white border border-gray-200 rounded-xl p-3">
-                    <div className="flex items-center justify-between mb-1.5">
-                        <p className="text-[11px] font-black text-gray-500 uppercase tracking-widest">Composición {last.anio}</p>
-                        <p className="text-[10px] font-bold text-gray-500">{fmtCOP(last.total)}</p>
-                    </div>
-                    <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-gray-100">
-                        <div style={{ width: `${mensualPct}%`, backgroundColor: '#10b981' }} />
-                        <div style={{ width: `${aportesPct}%`, backgroundColor: '#f59e0b' }} />
-                    </div>
-                    <div className="flex items-center justify-between mt-1.5 text-[10px] font-bold">
-                        <span className="text-emerald-700">Mensual {mensualPct.toFixed(0)}%</span>
-                        <span className="text-amber-600">Aportes {aportesPct.toFixed(0)}%</span>
-                    </div>
-                </div>
-
-                {/* Veredicto del experto */}
-                {verdict && (
-                    <div className="flex items-start gap-2 p-3 rounded-xl border"
-                        style={{ backgroundColor: isPositive ? '#f0fdf4' : '#fffbeb', borderColor: isPositive ? '#16653440' : '#fde68a' }}>
-                        <ShieldCheck className="h-4 w-4 flex-shrink-0 mt-0.5" style={{ color: isPositive ? '#166534' : '#b45309' }} />
-                        <p className="text-[11px] font-semibold leading-relaxed" style={{ color: isPositive ? '#14532d' : '#92400e' }}>{verdict}</p>
-                    </div>
-                )}
-
-                {/* Desglose por año (mensual + aportes) */}
-                <div className="bg-gray-50 border border-gray-200 rounded-xl p-3">
-                    <p className="text-[11px] font-black text-gray-500 uppercase tracking-widest mb-2">Ahorrado cada año (mensual + aportes)</p>
-                    <div className="space-y-1.5">
-                        {rows.map((r) => (
-                            <div key={r.anio} className="flex items-center justify-between gap-2 text-[11px]">
-                                <span className="text-gray-700 font-bold w-10">{r.anio}</span>
-                                <span className="text-[11px] text-gray-400 font-mono flex-1 text-right">
-                                    <span style={{ color: '#166534' }}>{fmtCOP(r.mensual)}</span>
-                                    {r.aportes > 0 && <span style={{ color: '#b45309' }}> + {fmtCOP(r.aportes)}</span>}
-                                </span>
-                                <span className="font-black font-mono w-28 text-right" style={{ color: '#166534' }}>{fmtCOP(r.total)}</span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </div>
-        </>
-    );
-};
 
 
 // ─── NUEVO: COMPONENTE DE GRÁFICA PROFESIONAL ────────────────────────────────────────────────────────
@@ -793,6 +513,24 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
         ?? (stats.totalPenaltyValue || 0);
     const colocacionPrevYtd = seriePrev ? seriePrev.ytdAlCorte.colocacion : null;
     const colocacionActualYtd = serieActual ? serieActual.ytdAlCorte.colocacion : (stats.totalPrestamos || 0);
+
+    // Ahorro: mismo criterio que Préstamos/Intereses — el año anterior siempre
+    // está cerrado (12 meses) y el año en curso es naturalmente parcial mientras
+    // dure el año, así que ahorroPorAnio ya trae exactamente lo que
+    // YearProgressCard espera sin necesidad de un corte adicional.
+    const ahorroPorAnioArr = stats.ahorroPorAnio || [];
+    const ahorroFilaPrev = ahorroPorAnioArr.find(a => Number(a.anio) === baselineAnio);
+    const ahorroFilaActual = ahorroPorAnioArr.find(a => Number(a.anio) === baselineAnio + 1);
+    const ahorroPrevTotal = ahorroFilaPrev?.total || 0;
+    const ahorroActualTotal = ahorroFilaActual?.total || 0;
+    const ahorroComposicionNota = (() => {
+        if (!ahorroFilaActual || !ahorroFilaActual.total) return null;
+        const mensualPct = Math.round((ahorroFilaActual.mensual / ahorroFilaActual.total) * 100);
+        const aportesPct = 100 - mensualPct;
+        return aportesPct > 0
+            ? `${mensualPct}% es ahorro mensual recurrente y ${aportesPct}% son aportes iniciales de socios nuevos.`
+            : 'El 100% proviene del ahorro mensual recurrente de los socios — la señal más sana de disciplina de ahorro.';
+    })();
     // El numerador es la MISMA cifra que la tarjeta muestra en grande (la ganancia
     // acumulada del año, incluida la cuenta NU), para que el porcentaje y el monto
     // no puedan contar historias distintas.
@@ -1486,11 +1224,16 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <SavingsByYearChart
-                        data={stats.ahorroPorAnio}
-                        title="Ahorro de los Socios por Año"
-                        totalNetoActivos={stats.totalNetoActivos}
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                    <YearProgressCard
+                        title="Ahorro de los Socios"
+                        subtitle="Ahorro mensual + aportes iniciales, por año"
+                        anioPrev={baselineAnio}
+                        anioActual={baselineAnio + 1}
+                        totalPrev={ahorroPrevTotal}
+                        actual={ahorroActualTotal}
+                        fraccionAnio={fraccionAnio}
+                        nota={ahorroComposicionNota}
                         onExpand={() => setExpandComp('ahorro')}
                     />
                     <YearProgressCard
@@ -1499,7 +1242,7 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                         anioPrev={baselineAnio}
                         anioActual={baselineAnio + 1}
                         totalPrev={baselinePrestamos}
-                        actual={serieActual ? serieActual.ytdAlCorte.colocacion : (stats.totalPrestamos || 0)}
+                        actual={colocacionActualYtd}
                         fraccionAnio={fraccionAnio}
                         onExpand={() => setExpandComp('prestamos')}
                     />
@@ -1529,25 +1272,41 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                         nota={`Además hay ${'$'}${Number(Math.max(0, (stats.totalIntereses || 0) - (stats.totalInteresesPagados || 0))).toLocaleString('es-CO', { maximumFractionDigits: 0 })} en intereses por cobrar: cuotas que los socios aún no han pagado. Cuando se paguen, se sumarán a esta cifra.`}
                         onExpand={() => setExpandComp('intereses')}
                     />
+                    {/* NU no tiene serie mensual (el admin edita un único saldo), pero
+                        sí un cierre anual guardado — se compara igual que Intereses. */}
+                    <YearProgressCard
+                        title="Rendimiento Cuenta NU"
+                        subtitle="Interés que genera el dinero guardado en NU"
+                        anioPrev={baselineAnio}
+                        anioActual={baselineAnio + 1}
+                        totalPrev={baselineNU}
+                        actual={stats.rentabilidadCajaNU || 0}
+                        proyeccion={proyeccionCajaNU}
+                        fraccionAnio={fraccionAnio}
+                        nota="Saldo actualizado a mano por el administrador según el extracto más reciente — no tiene registro mensual, por eso el estimado de cierre es una extrapolación simple."
+                        onExpand={() => setExpandComp('nu')}
+                    />
+                    {/* Mora: tono rojo y masEsMejor=false — aquí crecer es una mala señal. */}
+                    <YearProgressCard
+                        title="Cobros por Pagos Tardíos"
+                        subtitle="Recargo aplicado a socios con cuotas vencidas"
+                        tono="rojo"
+                        masEsMejor={false}
+                        anioPrev={baselineAnio}
+                        anioActual={baselineAnio + 1}
+                        totalPrev={baselineMora}
+                        actual={moraActualYtd}
+                        proyeccion={proyeccionPenalidad}
+                        fraccionAnio={fraccionAnio}
+                        onExpand={() => setExpandComp('mora')}
+                    />
                 </div>
 
                 {/* ── Modales de expansión de gráficas comparativas ── */}
                 <ChartExpandModal isOpen={expandComp === 'ahorro'} onClose={() => setExpandComp(null)}
-                    title="Ahorro de los Socios por Año — Análisis"
-                    analysisResult={(() => {
-                        const arr = stats.ahorroPorAnio || [];
-                        const last = arr[arr.length - 1];
-                        const prev = arr[arr.length - 2];
-                        if (!last) return null;
-                        const hist = prev ? prev.total : 0;
-                        return analyzeComparativeChart({
-                            title: `Ahorro ${last.anio} vs ${prev ? prev.anio : 'año anterior'}`,
-                            historic: hist,
-                            current: last.total,
-                            progressPct: hist > 0 ? Math.min((last.total / hist) * 100, 150) : 100
-                        });
-                    })()}>
-                    <SavingsByYearChart compact data={stats.ahorroPorAnio} totalNetoActivos={stats.totalNetoActivos} />
+                    title={`Ahorro de los Socios — Análisis vs ${baselineAnio}`}
+                    analysisResult={analyzeComparativeChart({ title: 'Ahorro de los Socios', historic: ritmoPrev(ahorroPrevTotal), current: ahorroActualTotal, progressPct: Math.min((ahorroActualTotal / (ritmoPrev(ahorroPrevTotal) || 1)) * 100, 150) })}>
+                    <YearProgressCard compact title="Ahorro de los Socios" subtitle="Ahorro mensual + aportes iniciales, por año" anioPrev={baselineAnio} anioActual={baselineAnio + 1} totalPrev={ahorroPrevTotal} actual={ahorroActualTotal} fraccionAnio={fraccionAnio} />
                 </ChartExpandModal>
                 <ChartExpandModal isOpen={expandComp === 'prestamos'} onClose={() => setExpandComp(null)}
                     title={`Préstamos Entregados — Análisis vs ${baselineAnio}`}
@@ -1563,6 +1322,16 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                     title={`Ganancias por Intereses — Análisis vs ${baselineAnio}`}
                     analysisResult={analyzeComparativeChart({ title: 'Ganancias por Intereses', historic: ritmoPrev(baselineIntereses), current: interesesActualYtd, projectedYearEnd: proyeccionIntereses, progressPct: Math.min((interesesActualYtd / (ritmoPrev(baselineIntereses) || 1)) * 100, 150) })}>
                     <YearProgressCard compact title="Ganancias por Intereses" subtitle="Lo que pagan los socios por sus préstamos" anioPrev={baselineAnio} anioActual={baselineAnio + 1} totalPrev={baselineIntereses} actual={interesesActualYtd} proyeccion={proyeccionIntereses} fraccionAnio={fraccionAnio} />
+                </ChartExpandModal>
+                <ChartExpandModal isOpen={expandComp === 'nu'} onClose={() => setExpandComp(null)}
+                    title={`Rendimiento Cuenta NU — Análisis vs ${baselineAnio}`}
+                    analysisResult={analyzeComparativeChart({ title: 'Rendimiento Cuenta NU', historic: ritmoPrev(baselineNU), current: stats.rentabilidadCajaNU || 0, projectedYearEnd: proyeccionCajaNU, progressPct: Math.min(((stats.rentabilidadCajaNU || 0) / (ritmoPrev(baselineNU) || 1)) * 100, 150) })}>
+                    <YearProgressCard compact title="Rendimiento Cuenta NU" subtitle="Interés que genera el dinero guardado en NU" anioPrev={baselineAnio} anioActual={baselineAnio + 1} totalPrev={baselineNU} actual={stats.rentabilidadCajaNU || 0} proyeccion={proyeccionCajaNU} fraccionAnio={fraccionAnio} />
+                </ChartExpandModal>
+                <ChartExpandModal isOpen={expandComp === 'mora'} onClose={() => setExpandComp(null)}
+                    title={`Cobros por Pagos Tardíos — Análisis vs ${baselineAnio}`}
+                    analysisResult={analyzeComparativeChart({ title: 'Cobros por Pagos Tardíos', historic: ritmoPrev(baselineMora), current: moraActualYtd, projectedYearEnd: proyeccionPenalidad, progressPct: Math.min((moraActualYtd / (ritmoPrev(baselineMora) || 1)) * 100, 150), masEsMejor: false })}>
+                    <YearProgressCard compact title="Cobros por Pagos Tardíos" subtitle="Recargo aplicado a socios con cuotas vencidas" tono="rojo" masEsMejor={false} anioPrev={baselineAnio} anioActual={baselineAnio + 1} totalPrev={baselineMora} actual={moraActualYtd} proyeccion={proyeccionPenalidad} fraccionAnio={fraccionAnio} />
                 </ChartExpandModal>
 
                 {/* ── Diagnóstico Financiero — 3 Insight Cards ─────────────────── */}
@@ -2460,6 +2229,47 @@ const DashboardHome = () => {
                 </div>
             </div>
 
+            {/* ── Primera macro-zona: el estado general del fondo, primero. Antes esta
+                tarjeta vivía debajo de cuatro secciones de indicadores sueltos —
+                un visitante nuevo tenía que bajar toda la página para llegar al
+                veredicto ejecutivo. Ahora es lo primero que se ve. ── */}
+            <div className="flex items-center gap-3">
+                <span className="text-[11px] font-black uppercase tracking-widest text-gray-400">Estado general del fondo</span>
+                <div className="flex-1 h-px bg-gray-200" />
+            </div>
+            <div className="w-full">
+                <Card className="border-none shadow-md">
+                    <CardHeader className="bg-gray-50 border-b border-gray-100 pb-3 rounded-t-xl">
+                        <CardTitle className="text-brand-primary flex items-center gap-2 font-black text-lg">
+                            <Activity className="h-5 w-5 text-brand-primary" />
+                            Panel de Inteligencia Financiera & Actividad
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-0 bg-white rounded-b-xl overflow-hidden">
+                        <FinancialChart
+                            stats={stats}
+                            execStats={execStats}
+                            yearCmp={yearCmp}
+                            yearCmpError={yearCmpError}
+                            selectedYears={selectedYears}
+                            onEditMeta={isAdmin ? () => {
+                                setMetaInputRaw(String(stats?.baselines?.metaGanancia || ''));
+                                setShowMetaModal(true);
+                            } : undefined}
+                        />
+                    </CardContent>
+                </Card>
+            </div>
+
+            {/* ── Segunda macro-zona: indicadores rápidos por área. El panel de
+                análisis de arriba responde "¿cómo va el fondo en general?"; esta
+                zona responde "¿cómo va CADA área?" — socios, préstamos, saldos,
+                riesgo — con acceso directo (clic) al detalle de cada una. ── */}
+            <div className="flex items-center gap-3 pt-2">
+                <span className="text-[11px] font-black uppercase tracking-widest text-gray-400">Indicadores por área</span>
+                <div className="flex-1 h-px bg-gray-200" />
+            </div>
+
             {/* --- SECCIÓN 1: SOCIOS Y AHORROS --- */}
             <div className="mb-8">
                 <h2 className="text-lg font-bold text-brand-primary mb-4 flex items-center gap-2">
@@ -2786,31 +2596,6 @@ const DashboardHome = () => {
                     </div>
                 );
             })()}
-
-            {/* Charts Row */}
-            <div className="w-full">
-                <Card className="border-none shadow-md">
-                    <CardHeader className="bg-gray-50 border-b border-gray-100 pb-3 rounded-t-xl">
-                        <CardTitle className="text-brand-primary flex items-center gap-2 font-black text-lg">
-                            <Activity className="h-5 w-5 text-brand-primary" />
-                            Panel de Inteligencia Financiera & Actividad
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-0 bg-white rounded-b-xl overflow-hidden">
-                        <FinancialChart
-                            stats={stats}
-                            execStats={execStats}
-                            yearCmp={yearCmp}
-                            yearCmpError={yearCmpError}
-                            selectedYears={selectedYears}
-                            onEditMeta={isAdmin ? () => {
-                                setMetaInputRaw(String(stats?.baselines?.metaGanancia || ''));
-                                setShowMetaModal(true);
-                            } : undefined}
-                        />
-                    </CardContent>
-                </Card>
-            </div>
 
             {/* Modals */}
             {showModal && <ValidateModal result={validateResult} onClose={() => setShowModal(false)} />}
