@@ -23,17 +23,33 @@ import { TrendingUp, Calendar, Info } from 'lucide-react';
 
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
+// Paleta corporativa (tailwind.config.js → theme.extend.colors):
+//   brand.primary #166534 · brand.blue #1e40af · brand.light #84cc16
+//   brand.gold #fbbf24 · state.error #ef4444
+// Cada indicador conserva su color en todo el panel para que el usuario lo
+// reconozca sin leer la leyenda.
+const BRAND = {
+    primary: '#166534',
+    dark: '#052e16',
+    light: '#84cc16',
+    gold: '#fbbf24',
+    blue: '#1e40af',
+    error: '#ef4444',
+};
+
 const METRICAS = [
-    { key: 'intereses', label: 'Intereses de préstamos', corto: 'Intereses', color: '#166534' },
-    { key: 'ahorro', label: 'Ahorro de los socios', corto: 'Ahorro', color: '#0369a1' },
-    { key: 'colocacion', label: 'Préstamos entregados', corto: 'Préstamos', color: '#7c3aed' },
-    { key: 'mora', label: 'Cobros por pagos tardíos', corto: 'Mora', color: '#dc2626' },
+    { key: 'intereses', label: 'Intereses de préstamos', corto: 'Intereses', color: BRAND.primary },
+    { key: 'ahorro', label: 'Ahorro de los socios', corto: 'Ahorro', color: BRAND.blue },
+    { key: 'colocacion', label: 'Préstamos entregados', corto: 'Préstamos', color: BRAND.dark },
+    // La mora es riesgo, no logro: lleva el rojo de estado, no un color de marca.
+    { key: 'mora', label: 'Cobros por pagos tardíos', corto: 'Mora', color: BRAND.error },
 ];
 
-// Paleta por antigüedad: el año en curso siempre lleva el color fuerte de la
-// métrica; los años anteriores, grises progresivamente más claros. Así la vista
-// dirige la atención al año vivo sin necesidad de leer la leyenda.
-const COLORES_PREVIOS = ['#94a3b8', '#cbd5e1', '#e2e8f0'];
+// Años anteriores: tonos de referencia derivados de la marca (verde apagado y
+// dorado corporativo) en vez de grises neutros, para que el gráfico se lea como
+// parte del sistema visual de Credifuturo. El año en curso siempre lleva el
+// color fuerte del indicador, así la vista va primero al año vivo.
+const COLORES_PREVIOS = ['#6b8f7a', BRAND.gold, '#b8c4bd'];
 
 const fmtCOP = (v) => `$${Number(v || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}`;
 const fmtEje = (v) => {

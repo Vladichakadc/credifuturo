@@ -1095,8 +1095,16 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
     // anterior parecería más completo, pero fabricaría el dato — y bastaría para
     // torcer el resultado, porque NU pesa tanto como los intereses. Se compara solo
     // lo que está realmente medido mes a mes, y NU se informa aparte.
+    // NU entra en el cálculo. Como no existe un registro mensual (el admin actualiza
+    // un único saldo), su referencia del año anterior se estima prorrateando el
+    // cierre de ese año a la fracción de año transcurrida. Es una estimación, no una
+    // medición, y como tal se rotula en la tabla — pero dejarla fuera distorsionaría
+    // más: NU pesa tanto como los intereses en la ganancia del fondo.
+    const nuPrevYtdEstimado = (seriePrev && fraccionAnio !== null)
+        ? seriePrev.totalAnio.nu * fraccionAnio
+        : null;
     const gananciaPrevYtd = seriePrev
-        ? seriePrev.ytdAlCorte.intereses + seriePrev.ytdAlCorte.mora
+        ? seriePrev.ytdAlCorte.intereses + seriePrev.ytdAlCorte.mora + (nuPrevYtdEstimado || 0)
         : null;
     // Avance sobre el TOTAL del año anterior: sigue siendo útil ("llevamos el 65% de lo
     // que ganamos en todo 2025"), pero es un porcentaje de avance, nunca una caída.
@@ -1109,7 +1117,7 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
     // hasta la UI para mostrar "—" en vez de un 0 que se leería como una caída total.
     const interesesPrevYtd = seriePrev ? seriePrev.ytdAlCorte.intereses : null;
     const moraPrevYtd = seriePrev ? seriePrev.ytdAlCorte.mora : null;
-    const nuPrevYtd = null; // sin histórico mensual: no hay corte comparable para NU
+    const nuPrevYtd = nuPrevYtdEstimado; // estimado por prorrateo (ver arriba)
     // Lado del año en curso: se toma del MISMO corte que el año anterior. Es
     // deliberado no usar aquí `gananciaRealYtd`/`intCobradosAnio` de la proyección:
     // esas cifras abarcan el año calendario completo (incluyen cuotas con
@@ -1126,8 +1134,10 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
         ?? (stats.totalPenaltyValue || 0);
     const colocacionPrevYtd = seriePrev ? seriePrev.ytdAlCorte.colocacion : null;
     const colocacionActualYtd = serieActual ? serieActual.ytdAlCorte.colocacion : (stats.totalPrestamos || 0);
-    // Lado comparable del año en curso: los mismos dos componentes medidos.
-    const gananciaActualComparable = interesesActualYtd + moraActualYtd;
+    // Lado del año en curso: las tres fuentes, incluida NU con el saldo vivo que
+    // registra el administrador.
+    const nuActual = stats.rentabilidadCajaNU || 0;
+    const gananciaActualComparable = interesesActualYtd + moraActualYtd + nuActual;
     const growthVsPrevYtd = (gananciaPrevYtd && gananciaPrevYtd > 0)
         ? ((gananciaActualComparable / gananciaPrevYtd) * 100 - 100)
         : null;
@@ -1330,7 +1340,7 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                         el año anterior AL MISMO CORTE, que es lo que la etiqueta promete. */}
                     {growthVsPrevYtd !== null ? (
                         <span
-                            title={`Intereses + mora del año en curso frente al mismo tramo de ${baselineAnio}. No incluye el rendimiento de la cuenta NU, que no tiene registro mensual.`}
+                            title={`Intereses + mora + rendimiento de la cuenta NU del año en curso, frente al mismo tramo de ${baselineAnio}. La referencia de NU del año anterior se estima a partir de su cierre, porque no tiene registro mensual.`}
                             className={`text-[11px] font-bold px-2 py-0.5 rounded-full self-start border ${growthVsPrevYtd >= 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-red-50 text-red-700 border-red-100'}`}>
                             {growthVsPrevYtd >= 0 ? '▲' : '▼'} {Math.abs(growthVsPrevYtd).toFixed(1)}% vs {baselineAnio} al mismo corte
                         </span>
@@ -1691,7 +1701,7 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                                                 : `Vamos por debajo del ritmo de ${baselineAnio}`}
                                     </span>
                                     <span className="text-[11px] mt-1.5 font-bold text-gray-500 text-center leading-snug">
-                                        Intereses + mora · no incluye cuenta NU
+                                        Intereses + mora + cuenta NU
                                     </span>
                                 </div>
 
@@ -1752,12 +1762,15 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                                                 <p className="text-[10px] text-emerald-700 font-semibold">Intereses que genera el dinero guardado en NU</p>
                                             </td>
                                             <td className="p-3 text-right text-gray-500 font-bold bg-gray-50/50">${baselineNU.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                            {/* NU es un saldo que el admin edita a mano, no una serie de devengo:
-                                                no existe registro de cuánto llevaba en esta misma fecha del año
-                                                pasado. Se deja explícito en vez de prorratear un dato inventado. */}
-                                            <td className="p-3 text-right bg-amber-50/60">
-                                                <span className="text-gray-400 font-black">—</span>
-                                                <span className="block text-[11px] font-bold text-gray-500 normal-case">sin histórico mensual</span>
+                                            {/* NU no tiene registro mensual (es un saldo que se actualiza a
+                                                mano), así que su referencia al corte se estima prorrateando el
+                                                cierre del año anterior. Se marca como estimado para que la
+                                                procedencia del número quede a la vista. */}
+                                            <td className="p-3 text-right text-amber-900 font-black bg-amber-50/60">
+                                                {fmtCorte(nuPrevYtd)}
+                                                {nuPrevYtd !== null && (
+                                                    <span className="block text-[11px] font-bold text-amber-700/80 normal-case">estimado</span>
+                                                )}
                                             </td>
                                             <td className="p-3 text-right font-black text-purple-700">${Math.round(stats.rentabilidadCajaNU || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
                                             <td className="p-3 text-right text-sm font-black border-l">{pctBadge(stats.rentabilidadCajaNU || 0, nuPrevYtd)}</td>
@@ -1778,32 +1791,12 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                                                 ${Math.round(proyeccionPenalidad).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
                                             </td>
                                         </tr>
-                                        {/* Fila comparable: solo las fuentes con serie mensual real. Es la
-                                            única que puede llevar un % honesto. */}
-                                        <tr className="bg-emerald-50/60 border-t-2 border-emerald-200">
-                                            <td className="p-3 text-emerald-900 font-black text-sm uppercase tracking-wide">
-                                                Comparable (intereses + mora)
-                                                <p className="text-[10px] text-gray-500 font-semibold normal-case tracking-normal">Las fuentes con registro mes a mes</p>
-                                            </td>
-                                            <td className="p-3 text-right text-gray-500 font-bold">${(baselineIntereses + baselineMora).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                            <td className="p-3 text-right text-amber-900 font-black text-base bg-amber-50/60">{fmtCorte(gananciaPrevYtd)}</td>
-                                            <td className="p-3 text-right font-black text-emerald-700 text-base">${Math.round(gananciaActualComparable).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                            <td className="p-3 text-right text-base font-black border-l shadow-inner">{pctBadge(gananciaActualComparable, gananciaPrevYtd)}</td>
-                                            <td className="p-3 text-right font-black border-l text-brand-primary">
-                                                ${Math.round(proyeccionIntereses + proyeccionPenalidad).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
-                                            </td>
-                                        </tr>
                                         <tr className="bg-emerald-50 border-t-2 border-emerald-300">
                                             <td className="p-3 text-emerald-900 font-black text-base uppercase tracking-wider">Ganancia total del fondo</td>
                                             <td className="p-3 text-right text-gray-500 font-bold text-base">${gananciaReal2025.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                            <td className="p-3 text-right bg-amber-50/60">
-                                                <span className="text-gray-400 font-black">—</span>
-                                                <span className="block text-[11px] font-bold text-gray-500 normal-case">incluye NU</span>
-                                            </td>
-                                            <td className="p-3 text-right font-black text-emerald-700 text-lg">${Math.round(rentabilidadActual).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                            <td className="p-3 text-right border-l shadow-inner">
-                                                <span className="text-[10px] font-black text-gray-500 bg-gray-100 px-2 py-1 rounded-md">Ver fila comparable</span>
-                                            </td>
+                                            <td className="p-3 text-right text-amber-900 font-black text-lg bg-amber-50/60">{fmtCorte(gananciaPrevYtd)}</td>
+                                            <td className="p-3 text-right font-black text-emerald-700 text-lg">${Math.round(gananciaActualComparable).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
+                                            <td className="p-3 text-right text-lg font-black border-l shadow-inner">{pctBadge(gananciaActualComparable, gananciaPrevYtd)}</td>
                                             <td className="p-3 text-right font-black text-lg border-l rounded-br-lg text-emerald-800">
                                                 ${Math.round(proyeccionTotal).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
                                             </td>
@@ -1814,9 +1807,10 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                                     La variación compara ambos años <strong>hasta la misma fecha</strong>
                                     {nombreMesCorte && <> (1 de enero → {nombreMesCorte})</>}. Comparar lo que llevamos
                                     del año contra un año completo mostraría una caída que solo refleja los meses que
-                                    faltan, no el desempeño del fondo. El <strong>rendimiento de la cuenta NU</strong> queda
-                                    fuera del porcentaje: es un saldo que se actualiza manualmente, sin registro mensual,
-                                    así que no hay un valor del año anterior a esta misma fecha con el cual contrastarlo.
+                                    faltan, no el desempeño del fondo. El <strong>rendimiento de la cuenta NU</strong> sí
+                                    entra en el total; como se registra con un solo saldo actualizado manualmente, su
+                                    referencia del año anterior a esta fecha se <strong>estima</strong> a partir del cierre
+                                    de ese año.
                                 </p>
                             </div>
                         </div>
