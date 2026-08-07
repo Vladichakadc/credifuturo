@@ -435,8 +435,12 @@ const SavingsByYearChart = ({ data, title = 'Ahorro de los Socios por Año', com
         );
     };
 
-    // Paleta corporativa Credifuturo
-    const BRAND = { primary: '#166534', dark: '#052e16', gold: '#fbbf24', goldDark: '#b45309' };
+    // Paleta corporativa Credifuturo. `refAnio` es un ámbar más oscuro que
+    // `goldDark` (ya usado para los aportes) — evita que la marca del año de
+    // referencia se confunda con el segmento de aportes del propio gráfico.
+    // Verificado con scripts/validate_palette.js del skill de dataviz: ΔE 14,7
+    // contra el verde de marca, mismo criterio ya aplicado al resto del panel.
+    const BRAND = { primary: '#166534', dark: '#052e16', gold: '#fbbf24', goldDark: '#b45309', refAnio: '#d97706' };
 
     const chart = (
         <ResponsiveContainer width="100%" height="100%">
@@ -462,12 +466,15 @@ const SavingsByYearChart = ({ data, title = 'Ahorro de los Socios por Año', com
                     tick={{ fontSize: 11, fontWeight: 900, fill: '#374151' }} />
                 <YAxis hide domain={[0, 'dataMax + 5000000']} />
                 <Tooltip cursor={{ fill: `${BRAND.primary}08`, radius: 8 }} content={<YearTooltip />} />
-                {/* Línea de referencia al nivel del año anterior (mismo concepto que ComparativeChart) */}
+                {/* Línea de referencia al nivel del año anterior. En dorado corporativo,
+                    igual que el año de referencia en el resto del panel (comparador
+                    interanual y tarjetas de avance) — antes iba en el mismo verde que
+                    la línea de tendencia, y se perdía dentro de ella. */}
                 {prev && (
-                    <ReferenceLine y={prev.total} stroke={BRAND.primary} strokeDasharray="5 4"
-                        strokeWidth={1.2} strokeOpacity={0.35}
+                    <ReferenceLine y={prev.total} stroke={BRAND.refAnio} strokeDasharray="5 4"
+                        strokeWidth={1.4} strokeOpacity={0.6}
                         label={{ value: `Ref. ${prev.anio}`, position: 'insideTopRight',
-                            fontSize: 8, fill: BRAND.primary, fontWeight: 700, opacity: 0.55 }} />
+                            fontSize: 9, fill: BRAND.refAnio, fontWeight: 800, opacity: 0.85 }} />
                 )}
                 <Bar dataKey="mensual" stackId="a" fill="url(#sbyMensual)" barSize={55}
                     animationDuration={1100} animationEasing="ease-out">
@@ -488,14 +495,24 @@ const SavingsByYearChart = ({ data, title = 'Ahorro de los Socios por Año', com
                     <LabelList dataKey="total" position="top" formatter={(v) => fmtCOP(v)}
                         style={{ fontSize: '12px', fontWeight: '900', fill: BRAND.dark }} />
                 </Bar>
-                {/* Línea de tendencia corporativa sobre los totales */}
+                {/* Línea de tendencia corporativa sobre los totales. El punto del año de
+                    referencia (el inmediatamente anterior al último) se pinta en dorado
+                    para que se distinga sin leer el eje — mismo rol que en el resto del
+                    panel; los demás puntos, incluido el año en curso, quedan en verde. */}
                 {rows.length > 1 && (
                     <Line
                         dataKey="total"
                         type="monotone"
                         stroke={BRAND.primary}
                         strokeWidth={2.5}
-                        dot={{ r: 5, fill: BRAND.primary, strokeWidth: 2.5, stroke: '#fff' }}
+                        dot={({ cx, cy, payload, index }) => {
+                            const esReferencia = prev && payload.anio === prev.anio;
+                            return (
+                                <circle key={`dot-${index}`} cx={cx} cy={cy} r={5}
+                                    fill={esReferencia ? BRAND.refAnio : BRAND.primary}
+                                    strokeWidth={2.5} stroke="#fff" />
+                            );
+                        }}
                         activeDot={{ r: 7, fill: BRAND.primary, strokeWidth: 0 }}
                         legendType="none"
                         filter="url(#trendShadow)"
@@ -1326,6 +1343,14 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                                     <span className={`text-3xl font-black font-mono ${growthVsPrevYtd === null ? 'text-gray-900' : growthOk ? 'text-emerald-700' : 'text-red-700'}`}>
                                         {growthVsPrevYtd === null ? '—' : fmtVariacion(growthVsPrevYtd)}
                                     </span>
+                                    {/* El % solo dice "cuánto más rápido"; el socio también necesita
+                                        "cuánto más rápido EN PESOS" — la diferencia real entre lo
+                                        acumulado y el ritmo del año anterior a esta misma altura. */}
+                                    {gananciaPrevRitmo !== null && (
+                                        <span className={`text-sm font-black font-mono mt-0.5 ${growthOk ? 'text-emerald-700/90' : 'text-red-700/90'}`}>
+                                            {growthOk ? '+' : '−'}${Math.round(Math.abs(rentabilidadActual - gananciaPrevRitmo)).toLocaleString('es-CO')}
+                                        </span>
+                                    )}
                                     <span className={`text-[10px] mt-1 font-semibold text-center leading-snug ${growthVsPrevYtd === null ? 'text-gray-500' : growthOk ? 'text-emerald-700/80' : 'text-red-700/80'}`}>
                                         {growthVsPrevYtd === null
                                             ? (comparacionPrematura
@@ -1337,7 +1362,7 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                                     </span>
                                     <span className="text-[11px] mt-1.5 font-bold text-gray-500 text-center leading-snug">
                                         {gananciaPrevRitmo !== null
-                                            ? `Ritmo de ${baselineAnio} a esta altura: $${Math.round(gananciaPrevRitmo).toLocaleString('es-CO')}`
+                                            ? `Ritmo de ${baselineAnio} a esta altura: $${Math.round(gananciaPrevRitmo).toLocaleString('es-CO')} · llevamos $${Math.round(rentabilidadActual).toLocaleString('es-CO')}`
                                             : 'Intereses + mora + cuenta NU'}
                                     </span>
                                 </div>

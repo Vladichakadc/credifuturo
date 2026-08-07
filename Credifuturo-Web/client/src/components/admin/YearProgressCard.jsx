@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
+import React, { useMemo, useId } from 'react';
+import { ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
 import { Maximize2, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 /**
@@ -89,6 +89,7 @@ const YearProgressCard = ({
     compact = false,
 }) => {
     const colores = TONOS[tono] || TONOS.verde;
+    const reactId = useId();
 
     const m = useMemo(() => {
         const prev = Number(totalPrev) || 0;
@@ -149,9 +150,20 @@ const YearProgressCard = ({
         return `Llevamos el ${m.avancePct.toFixed(0)}% de lo que se logró en todo ${anioPrev}, con el ${Math.round((fraccionAnio || 0) * 100)}% del año transcurrido.`;
     })();
 
+    // Línea de evolución sobre las barras — mismo lenguaje visual que "Ahorro de
+    // los Socios por Año" (utils/ComposedChart con Line + sombra), para que el
+    // panel se lea como un sistema y no como componentes sueltos. El punto de
+    // cada barra toma el color de su propio rol (anterior/actual/proyección),
+    // así la línea no introduce un cuarto color que aprender.
+    const filtroId = `ypc-sombra-${reactId.replace(/:/g, '')}`;
     const chart = (
         <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={m.barras} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+            <ComposedChart data={m.barras} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                <defs>
+                    <filter id={filtroId}>
+                        <feDropShadow dx="0" dy="1" stdDeviation="2" floodColor={colores.actual} floodOpacity="0.3" />
+                    </filter>
+                </defs>
                 {/* Rejilla sólida y tenue: una línea punteada se lee como "proyección" */}
                 <CartesianGrid stroke="#f1f5f9" vertical={false} />
                 <XAxis dataKey="eje" tick={{ fontSize: 10, fontWeight: 700, fill: '#6b7280' }}
@@ -162,7 +174,16 @@ const YearProgressCard = ({
                 <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={44}>
                     {m.barras.map((b, i) => <Cell key={i} fill={colores[b.rol]} />)}
                 </Bar>
-            </BarChart>
+                {m.barras.length > 1 && (
+                    <Line dataKey="value" type="monotone" stroke={colores.actual} strokeWidth={2}
+                        dot={({ cx, cy, payload, index }) => (
+                            <circle key={`dot-${index}`} cx={cx} cy={cy} r={4.5}
+                                fill={colores[payload.rol]} strokeWidth={2} stroke="#fff" />
+                        )}
+                        activeDot={{ r: 6, strokeWidth: 0 }} legendType="none"
+                        filter={`url(#${filtroId})`} />
+                )}
+            </ComposedChart>
         </ResponsiveContainer>
     );
 
