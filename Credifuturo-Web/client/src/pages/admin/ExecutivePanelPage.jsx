@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../config/api';
 import {
@@ -10,13 +10,16 @@ import {
     Gauge, ShieldCheck, AlertTriangle, TrendingUp, Wallet, PiggyBank,
     CalendarClock, Users, Printer, CheckCircle2, Info, Landmark, Percent,
     ChevronDown, DollarSign, Database, Clock, Activity, BarChart3, Coins,
-    ChevronRight, Bell, KeyRound, ClipboardList, Sparkles, UserX
+    ChevronRight, Bell, KeyRound, ClipboardList, Sparkles, UserX, RefreshCw
 } from 'lucide-react';
 import ChartExpandModal, { analyzeIncomeDistribution } from '../../components/ChartExpandModal';
 import { computeFundProjection } from '../../utils/fundProjection';
 import YearComparisonChart from '../../components/admin/YearComparisonChart';
 import YearProgressCard from '../../components/admin/YearProgressCard';
 import { computeFondoIndicadores, fmtVariacion } from '../../utils/fondoIndicadores';
+import { JUNTA_CEDULAS_NO_ADMIN } from '../../utils/juntaAccess';
+import GlosarioFondo, { TerminoAyuda } from '../../components/admin/GlosarioFondo';
+import MiPosicionFondo from '../../components/admin/MiPosicionFondo';
 
 const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
 const fmtCorto = (n) => {
@@ -187,6 +190,15 @@ const ExecutivePanelPage = () => {
         catch { return {}; }
     })();
     const isAdmin = user.role === 'admin';
+    // La Junta Administrativa NO se define por rol: la componen el gerente
+    // (role='admin') MÁS dos socios sin rol admin (JUNTA_CEDULAS_NO_ADMIN, espejo
+    // de JUNTA_CEDULAS en server/routes/admin.js). Antes esta página gateaba todo
+    // con `isAdmin`, así que esos dos miembros —que votan las solicitudes de
+    // préstamo y ejercen control sobre el fondo— recibían la vista de socio raso y
+    // no veían la cola que les toca decidir. El backend sí los reconoce
+    // (JUNTA_ROUTES permite GET /loan-requests), era solo el frontend el que no
+    // se los mostraba.
+    const esJunta = isAdmin || JUNTA_CEDULAS_NO_ADMIN.includes(user.cedula);
     const [exec, setExec] = useState(null);
     const [stats, setStats] = useState(null);
     const [evolution, setEvolution] = useState(null);
@@ -216,42 +228,61 @@ const ExecutivePanelPage = () => {
         document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
 
+    // El badge "En vivo" prometía tiempo real sobre un fetch único al montar. Ahora
+    // hay refresco real: automático cada 2 minutos y manual con el botón. `ultimaCarga`
+    // es lo que sostiene la promesa — se muestra la hora del dato, no un pulso decorativo.
+    const [ultimaCarga, setUltimaCarga] = useState(null);
+    const [refrescando, setRefrescando] = useState(false);
+
+    const fetchAll = useCallback(async ({ esRefresco = false } = {}) => {
+        if (esRefresco) setRefrescando(true);
+        const results = await Promise.allSettled([
+            api.get('/admin/executive-stats'),
+            api.get('/admin/dashboard-stats'),
+            api.get('/admin/savings-evolution'),
+            // Las colas administrativas (solicitudes de préstamo / reset de contraseña)
+            // son exclusivas del admin y de la Junta — un socio normal recibiría 403,
+            // así que ni se piden si quien mira esta página no es admin.
+            // Solicitudes de préstamo: las vota la JUNTA completa, no solo el
+            // gerente — por eso va con `esJunta` y no con `isAdmin`. El backend
+            // ya lo permite (JUNTA_ROUTES). Reset de contraseñas sí es
+            // exclusivo del admin: es una acción operativa, no de control.
+            esJunta ? api.get('/admin/loan-requests') : Promise.resolve({ status: 'skipped' }),
+            isAdmin ? api.get('/admin/password-reset-requests') : Promise.resolve({ status: 'skipped' }),
+            // Préstamos desembolsados sin clientId — solo pasa por scripts de migración
+            // manuales (la importación Excel está deshabilitada y "Nuevo Desembolso"
+            // siempre exige socio). Es un caso raro, así que en vez de ser una página
+            // aparte que nadie recuerda revisar, se vuelve visible aquí solo cuando
+            // realmente hay algo que resolver.
+            isAdmin ? api.get('/admin/disbursed-loans/orphans') : Promise.resolve({ status: 'skipped' }),
+            // Serie mensual por año: alimenta el comparador interanual, el mismo
+            // que usa el Panel Principal, para que ambos paneles cuenten lo mismo.
+            api.get('/admin/year-comparison'),
+        ]);
+        if (results[0].status === 'fulfilled') { setExec(results[0].value.data); setError(null); }
+        else setError('No se pudieron cargar los indicadores ejecutivos.');
+        if (results[1].status === 'fulfilled') setStats(results[1].value.data);
+        if (results[2].status === 'fulfilled') setEvolution(results[2].value.data);
+        setPending({
+            loanRequests: results[3].status === 'fulfilled' ? (results[3].value.data?.total || 0) : 0,
+            passwordResets: results[4].status === 'fulfilled' ? (results[4].value.data?.total || 0) : 0,
+            orphanLoans: results[5].status === 'fulfilled' ? (results[5].value.data?.total || 0) : 0,
+        });
+        if (results[6]?.status === 'fulfilled') { setYearCmp(results[6].value.data); setYearCmpError(false); }
+        else setYearCmpError(true);
+        setUltimaCarga(new Date());
+        setLoading(false);
+        setRefrescando(false);
+    }, [esJunta, isAdmin]);
+
+    useEffect(() => { fetchAll(); }, [fetchAll]);
+
+    // Refresco automático. 2 minutos: suficiente para que el dato no envejezca sin
+    // convertir un panel de consulta en un poller agresivo contra la BD.
     useEffect(() => {
-        const fetchAll = async () => {
-            const results = await Promise.allSettled([
-                api.get('/admin/executive-stats'),
-                api.get('/admin/dashboard-stats'),
-                api.get('/admin/savings-evolution'),
-                // Las colas administrativas (solicitudes de préstamo / reset de contraseña)
-                // son exclusivas del admin y de la Junta — un socio normal recibiría 403,
-                // así que ni se piden si quien mira esta página no es admin.
-                isAdmin ? api.get('/admin/loan-requests') : Promise.resolve({ status: 'skipped' }),
-                isAdmin ? api.get('/admin/password-reset-requests') : Promise.resolve({ status: 'skipped' }),
-                // Préstamos desembolsados sin clientId — solo pasa por scripts de migración
-                // manuales (la importación Excel está deshabilitada y "Nuevo Desembolso"
-                // siempre exige socio). Es un caso raro, así que en vez de ser una página
-                // aparte que nadie recuerda revisar, se vuelve visible aquí solo cuando
-                // realmente hay algo que resolver.
-                isAdmin ? api.get('/admin/disbursed-loans/orphans') : Promise.resolve({ status: 'skipped' }),
-                // Serie mensual por año: alimenta el comparador interanual, el mismo
-                // que usa el Panel Principal, para que ambos paneles cuenten lo mismo.
-                api.get('/admin/year-comparison'),
-            ]);
-            if (results[0].status === 'fulfilled') setExec(results[0].value.data);
-            else setError('No se pudieron cargar los indicadores ejecutivos.');
-            if (results[1].status === 'fulfilled') setStats(results[1].value.data);
-            if (results[2].status === 'fulfilled') setEvolution(results[2].value.data);
-            setPending({
-                loanRequests: results[3].status === 'fulfilled' ? (results[3].value.data?.total || 0) : 0,
-                passwordResets: results[4].status === 'fulfilled' ? (results[4].value.data?.total || 0) : 0,
-                orphanLoans: results[5].status === 'fulfilled' ? (results[5].value.data?.total || 0) : 0,
-            });
-            if (results[6]?.status === 'fulfilled') setYearCmp(results[6].value.data);
-            else setYearCmpError(true);
-            setLoading(false);
-        };
-        fetchAll();
-    }, []);
+        const id = setInterval(() => fetchAll({ esRefresco: true }), 120000);
+        return () => clearInterval(id);
+    }, [fetchAll]);
 
     const anioActual = new Date().getFullYear();
 
@@ -457,19 +488,32 @@ const ExecutivePanelPage = () => {
                         {isAdmin && (
                             <span className="text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Beta</span>
                         )}
-                        <span className="print:hidden text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full flex items-center gap-1.5">
-                            <span className="relative flex h-1.5 w-1.5">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
-                            </span>
-                            En vivo
-                        </span>
+                        {/* Antes decía "En vivo" con un pulso animado sobre un fetch
+                            único al montar: prometía tiempo real y mostraba datos de
+                            hace horas. Ahora el dato se refresca de verdad y el badge
+                            dice a qué hora, que es lo que hace verificable la promesa. */}
+                        {ultimaCarga && (
+                            <button
+                                onClick={() => fetchAll({ esRefresco: true })}
+                                disabled={refrescando}
+                                title="Actualizar ahora"
+                                className="print:hidden text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1.5 transition-colors disabled:opacity-60"
+                            >
+                                <RefreshCw className={`h-3 w-3 ${refrescando ? 'animate-spin' : ''}`} />
+                                {refrescando
+                                    ? 'Actualizando…'
+                                    : `Datos de las ${ultimaCarga.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}`}
+                            </button>
+                        )}
                     </div>
                     <p className="text-sm text-gray-500 mt-0.5">
                         {isAdmin
                             ? 'Indicadores de riesgo, flujo y rendimiento del fondo · misma información que ven los socios'
                             : 'Transparencia total: así está la salud financiera de nuestro fondo, con datos reales y actualizados'}
                     </p>
+                    {/* Varios indicadores usan vocabulario financiero. El glosario evita
+                        que el socio tenga que adivinar si un 3% es bueno o malo. */}
+                    <div className="mt-1"><GlosarioFondo /></div>
                 </div>
                 <button
                     onClick={() => window.print()}
@@ -514,6 +558,21 @@ const ExecutivePanelPage = () => {
                 );
             })()}
 
+            {/* ── Mi posición en el fondo ──────────────────────────────────────
+                 Todo lo demás en esta página es agregado: responde "¿cómo está el
+                 fondo?" pero no "¿y yo qué?". El socio llega con tres preguntas
+                 concretas —cuánto tengo, cuánto me tocaría, cuánto puedo pedir— y
+                 sin ellas las cifras del fondo se leen como un informe ajeno. Va
+                 arriba, justo después del veredicto, porque es lo que engancha al
+                 socio con el resto del panel. Al gerente no se le muestra: consulta
+                 su posición personal desde su propia cuenta, no desde aquí. ── */}
+            {!isAdmin && (
+                <div>
+                    <SectionTitle icon={Sparkles}>Mi posición en el fondo</SectionTitle>
+                    <MiPosicionFondo nombre={user.name} />
+                </div>
+            )}
+
             {/* ── Nivel 1: Hero ejecutivo ── */}
             <div className="grid gap-3 grid-cols-2 lg:grid-cols-5">
                 {/* La flecha y el signo del badge se derivan del dato: antes estaban
@@ -530,7 +589,7 @@ const ExecutivePanelPage = () => {
                     onClick={goToAdmin('/admin/savings/list')}
                 />
                 <HeroKpi
-                    label="Cartera pendiente"
+                    label={<>Cartera pendiente <TerminoAyuda termino="par" /></>}
                     value={fmt(cartera.total)}
                     icon={Wallet}
                     badge={`PAR ${cartera.parPct}%`}
@@ -551,7 +610,7 @@ const ExecutivePanelPage = () => {
                     )}
                 </HeroKpi>
                 <HeroKpi
-                    label="Recaudo del año"
+                    label={<>Recaudo del año <TerminoAyuda termino="recaudo" /></>}
                     value={recaudoYtd.eficienciaPct != null ? `${recaudoYtd.eficienciaPct}%` : '—'}
                     icon={Percent}
                     badge={`${recaudoYtd.pagadas}/${recaudoYtd.exigidas} cuotas`}
@@ -568,7 +627,7 @@ const ExecutivePanelPage = () => {
                     onClick={() => scrollToId('saldos-rendimientos')}
                 />
                 <HeroKpi
-                    label="Apalancamiento del fondo"
+                    label={<>Apalancamiento del fondo <TerminoAyuda termino="apalancamiento" /></>}
                     value={`${derived.ldrPct.toFixed(0)}%`}
                     icon={Gauge}
                     badge={derived.ldrTone === 'risk' ? 'Cerca del límite' : derived.ldrTone === 'warn' ? 'Capacidad ociosa' : 'Sano'}
@@ -660,7 +719,7 @@ const ExecutivePanelPage = () => {
                                 className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 relative cursor-pointer transition-all duration-200 hover:shadow-md hover:border-brand-primary/20 hover:-translate-y-0.5 active:scale-[0.98] group"
                             >
                                 <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
-                                    <Users className="h-3.5 w-3.5" /> Penetración de crédito
+                                    <Users className="h-3.5 w-3.5" /> Penetración de crédito <TerminoAyuda termino="penetracion" />
                                 </p>
                                 <p className="text-xl font-extrabold text-gray-900 mt-1.5 tabular-nums">{derived.penPct.toFixed(0)}%</p>
                                 <p className="text-[11px] text-gray-500 mt-0.5">
@@ -725,7 +784,10 @@ const ExecutivePanelPage = () => {
 
                     <Collapsible defaultOpen icon={Landmark} title="Saldos y Rendimientos" id="saldos-rendimientos">
                         <div className="grid gap-2.5 grid-cols-1 sm:grid-cols-3">
-                            <DetailCard title="Caja Disponible" value={fmt(stats.saldoEnBanco)} sub="Patrimonio − capital prestado + recaudos" icon={Landmark}
+                            {/* NO es un saldo bancario conciliado sino una cifra
+                                contable derivada. El rótulo lo dice para que nadie
+                                la lea como "esto es lo que hay en el banco". */}
+                            <DetailCard title="Disponible estimado (calculado)" value={fmt(stats.saldoEnBanco)} sub="Cifra contable: patrimonio − capital prestado + recaudos · no es un saldo bancario conciliado" icon={Landmark}
                                 customBg="linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)" />
                             <DetailCard title="Rendimiento Cuenta NU" value={fmt(stats.rentabilidadCajaNU)}
                                 sub={
@@ -746,19 +808,24 @@ const ExecutivePanelPage = () => {
                 </div>
             )}
 
-            {/* ── Acciones Pendientes: exclusivo del admin/Junta — cosas que resolver
-                 hoy, con conteo real y enlace directo a la pantalla de gestión. Un
-                 socio no tiene nada que "gestionar" aquí, así que la sección entera
-                 no aplica para su vista de solo lectura. ── */}
-            {isAdmin && (
+            {/* ── Acciones Pendientes: para quien ejerce control sobre el fondo.
+                 Se abre a la JUNTA completa (`esJunta`), no solo al gerente: los dos
+                 miembros sin rol admin votan las solicitudes de préstamo, así que
+                 ocultarles la cola los dejaba sin ver aquello sobre lo que deben
+                 decidir. Cada tarjeta decide aparte si es de Junta o solo de admin.
+                 Un socio raso no gestiona nada aquí, así que no ve la sección. ── */}
+            {esJunta && (
             <div className="space-y-2">
                 <h2 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
                     <Bell className="h-4 w-4 text-brand-primary" />
                     Acciones Pendientes
                 </h2>
                 <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+                    {/* Cada rol va a SU pantalla de votación: el gerente a la vista
+                        admin, los miembros de Junta sin rol admin a
+                        /dashboard/junta-prestamos, que es la que sí pueden abrir. */}
                     <button
-                        onClick={goToAdmin('/admin/loans/approvals')}
+                        onClick={() => goTo(isAdmin ? '/admin/loans/approvals' : '/dashboard/junta-prestamos')}
                         className={`text-left rounded-xl border p-4 flex items-center gap-3 transition-all duration-200 hover:shadow-md active:scale-[0.98] ${
                             pending.loanRequests > 0 ? 'bg-amber-50 border-amber-200 hover:border-amber-300' : 'bg-white border-gray-200 hover:border-brand-primary/20'
                         }`}
@@ -776,6 +843,9 @@ const ExecutivePanelPage = () => {
                         </div>
                         <ChevronRight className="h-4 w-4 text-gray-300 flex-shrink-0" />
                     </button>
+                    {/* Restablecer contraseñas y reasignar préstamos huérfanos son
+                        tareas operativas del gerente, no decisiones de la Junta. */}
+                    {isAdmin && (
                     <button
                         onClick={goToAdmin('/admin/clients')}
                         className={`text-left rounded-xl border p-4 flex items-center gap-3 transition-all duration-200 hover:shadow-md active:scale-[0.98] ${
@@ -795,10 +865,11 @@ const ExecutivePanelPage = () => {
                         </div>
                         <ChevronRight className="h-4 w-4 text-gray-300 flex-shrink-0" />
                     </button>
+                    )}
                     {/* Solo aparece si hay algo que resolver — es un caso raro (solo puede
                         pasar por un script de migración manual, la importación Excel está
                         deshabilitada), no una cola de trabajo diaria como las otras dos. */}
-                    {pending.orphanLoans > 0 && (
+                    {isAdmin && pending.orphanLoans > 0 && (
                         <button
                             onClick={goToAdmin('/admin/loans/orphans')}
                             className="text-left rounded-xl border p-4 flex items-center gap-3 transition-all duration-200 hover:shadow-md active:scale-[0.98] bg-amber-50 border-amber-200 hover:border-amber-300"
