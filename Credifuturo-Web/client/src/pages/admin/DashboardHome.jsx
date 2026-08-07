@@ -1089,22 +1089,26 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
     const fraccionAnio = cmpCorte?.fraccionAnio ?? null;
     const seriePrev = yearCmp?.series?.find(s => Number(s.anio) === Number(baselineAnio)) || null;
 
-    // El rendimiento de la cuenta NU queda FUERA de esta comparación, a propósito.
-    // No es una serie de devengo sino un saldo único que el admin edita a mano: no
-    // existe "cuánto llevaba NU en agosto del año pasado". Prorratear su cierre
-    // anterior parecería más completo, pero fabricaría el dato — y bastaría para
-    // torcer el resultado, porque NU pesa tanto como los intereses. Se compara solo
-    // lo que está realmente medido mes a mes, y NU se informa aparte.
-    // NU entra en el cálculo. Como no existe un registro mensual (el admin actualiza
-    // un único saldo), su referencia del año anterior se estima prorrateando el
-    // cierre de ese año a la fracción de año transcurrida. Es una estimación, no una
-    // medición, y como tal se rotula en la tabla — pero dejarla fuera distorsionaría
-    // más: NU pesa tanto como los intereses en la ganancia del fondo.
-    const nuPrevYtdEstimado = (seriePrev && fraccionAnio !== null)
-        ? seriePrev.totalAnio.nu * fraccionAnio
-        : null;
-    const gananciaPrevYtd = seriePrev
-        ? seriePrev.ytdAlCorte.intereses + seriePrev.ytdAlCorte.mora + (nuPrevYtdEstimado || 0)
+    // ── Base de comparación: el RITMO del año anterior ────────────────────────
+    // Se compara la ganancia acumulada de este año contra la del año anterior
+    // prorrateada a la misma fracción de calendario transcurrida.
+    //
+    // Por qué no se usa el tramo ene–<mes> MEDIDO del año anterior: porque cuando
+    // ese tramo es pequeño el porcentaje se dispara y deja de informar. Caso real
+    // de este fondo: en 2025 casi todo el interés venció en el segundo semestre,
+    // así que su tramo hasta agosto fue de apenas ~$127 mil frente a ~$1,5 M del
+    // año completo. Dividir la ganancia de este año entre esa base daba +2.308%:
+    // aritméticamente cierto, pero ilegible y alarmante sin motivo.
+    //
+    // El prorrateo del año COMPLETO da una base estable (nunca cerca de cero) y
+    // responde justo lo que la tarjeta promete: si el fondo va por encima o por
+    // debajo del ritmo con que cerró el año pasado. Además usa `gananciaReal2025`,
+    // la misma cifra que la tabla muestra en la columna del año completo, así que
+    // no puede desalinearse con ella (antes el NU del comparador podía valer 0 si
+    // faltaba su AppSetting de cierre, mientras la tabla mostraba el valor de
+    // respaldo — dos números distintos para lo mismo).
+    const gananciaPrevRitmo = (gananciaReal2025 > 0 && fraccionAnio !== null)
+        ? gananciaReal2025 * fraccionAnio
         : null;
     // Avance sobre el TOTAL del año anterior: sigue siendo útil ("llevamos el 65% de lo
     // que ganamos en todo 2025"), pero es un porcentaje de avance, nunca una caída.
@@ -1116,8 +1120,6 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
     // Cortes por fuente. `null` significa "no hay serie para comparar" — se propaga
     // hasta la UI para mostrar "—" en vez de un 0 que se leería como una caída total.
     const interesesPrevYtd = seriePrev ? seriePrev.ytdAlCorte.intereses : null;
-    const moraPrevYtd = seriePrev ? seriePrev.ytdAlCorte.mora : null;
-    const nuPrevYtd = nuPrevYtdEstimado; // estimado por prorrateo (ver arriba)
     // Lado del año en curso: se toma del MISMO corte que el año anterior. Es
     // deliberado no usar aquí `gananciaRealYtd`/`intCobradosAnio` de la proyección:
     // esas cifras abarcan el año calendario completo (incluyen cuotas con
@@ -1134,16 +1136,26 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
         ?? (stats.totalPenaltyValue || 0);
     const colocacionPrevYtd = seriePrev ? seriePrev.ytdAlCorte.colocacion : null;
     const colocacionActualYtd = serieActual ? serieActual.ytdAlCorte.colocacion : (stats.totalPrestamos || 0);
-    // Lado del año en curso: las tres fuentes, incluida NU con el saldo vivo que
-    // registra el administrador.
-    const nuActual = stats.rentabilidadCajaNU || 0;
-    const gananciaActualComparable = interesesActualYtd + moraActualYtd + nuActual;
-    const growthVsPrevYtd = (gananciaPrevYtd && gananciaPrevYtd > 0)
-        ? ((gananciaActualComparable / gananciaPrevYtd) * 100 - 100)
+    // El numerador es la MISMA cifra que la tarjeta muestra en grande (la ganancia
+    // acumulada del año, incluida la cuenta NU), para que el porcentaje y el monto
+    // no puedan contar historias distintas.
+    //
+    // Guarda de arranque de año: en enero la fracción transcurrida es tan pequeña
+    // que cualquier cociente se dispara. Antes de que haya un mes corrido no se
+    // muestra porcentaje, se dice que aún es pronto.
+    const FRACCION_MINIMA = 0.08; // ≈ un mes
+    const baseComparableValida = gananciaPrevRitmo !== null
+        && gananciaPrevRitmo > 0
+        && fraccionAnio >= FRACCION_MINIMA;
+    const growthVsPrevYtd = baseComparableValida
+        ? ((rentabilidadActual / gananciaPrevRitmo) * 100 - 100)
         : null;
-    const fmtCorte = (v) => v === null || v === undefined
-        ? <span className="text-gray-400">—</span>
-        : `$${Math.round(v).toLocaleString('es-CO', { maximumFractionDigits: 0 })}`;
+    const comparacionPrematura = fraccionAnio !== null && fraccionAnio < FRACCION_MINIMA;
+    // Un crecimiento enorme se comunica mejor como múltiplo: "3,4× el ritmo de 2025"
+    // en vez de "+240,0%", que a partir de cierto tamaño se lee como un error.
+    const fmtVariacion = (pct) => pct >= 200
+        ? `${(1 + pct / 100).toFixed(1).replace('.', ',')}×`
+        : `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
 
     const rentabilidad2025 = Number(stats?.baselines?.metaGanancia) || 2448052;
     const achievement = (rentabilidadActual / rentabilidad2025) * 100; // Porcentaje de cumplimiento de la meta
@@ -1184,26 +1196,6 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
     const proyeccionPenalidad = proyeccionFondo?.penalidad?.conservador ?? 0;
     const proyeccionTotal = proyeccionFondo?.total?.conservador ?? 0;
 
-    // Estilos de variación. `masEsMejor` importa: para intereses o ahorro, subir es
-    // bueno; para los cobros por mora NO — que crezcan significa que más socios se
-    // están atrasando. Antes se usaba una sola escala y la fila de mora se pintaba
-    // en verde justo cuando la cartera empeoraba, contradiciendo al KPI de mora que
-    // a dos centímetros marcaba lo mismo en rojo.
-    const getVariationStyles = (actual, historical, masEsMejor = true) => {
-        const achievement = (actual / historical) * 100;
-        const bueno = "bg-emerald-50 text-emerald-700 border-emerald-100";
-        const medio = "bg-orange-50 text-orange-700 border-orange-100";
-        const malo = "bg-red-50 text-red-700 border-red-100";
-        if (!masEsMejor) {
-            // Menos mora que el año pasado = buena señal.
-            if (achievement <= 100) return bueno;
-            if (achievement <= 125) return medio;
-            return malo;
-        }
-        if (achievement < 80) return malo;
-        if (achievement < 100) return medio;
-        return bueno;
-    };
 
     return (
         <div className="flex flex-col w-full">
@@ -1340,13 +1332,13 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                         el año anterior AL MISMO CORTE, que es lo que la etiqueta promete. */}
                     {growthVsPrevYtd !== null ? (
                         <span
-                            title={`Intereses + mora + rendimiento de la cuenta NU del año en curso, frente al mismo tramo de ${baselineAnio}. La referencia de NU del año anterior se estima a partir de su cierre, porque no tiene registro mensual.`}
+                            title={`Ganancia acumulada de este año frente al ritmo de ${baselineAnio}: se compara contra el resultado de ese año prorrateado al ${fraccionAnio !== null ? (fraccionAnio * 100).toFixed(0) : '—'}% del calendario ya transcurrido.`}
                             className={`text-[11px] font-bold px-2 py-0.5 rounded-full self-start border ${growthVsPrevYtd >= 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-red-50 text-red-700 border-red-100'}`}>
-                            {growthVsPrevYtd >= 0 ? '▲' : '▼'} {Math.abs(growthVsPrevYtd).toFixed(1)}% vs {baselineAnio} al mismo corte
+                            {growthVsPrevYtd >= 0 ? '▲' : '▼'} {growthVsPrevYtd >= 200 ? fmtVariacion(growthVsPrevYtd) : `${Math.abs(growthVsPrevYtd).toFixed(1)}%`} vs ritmo {baselineAnio}
                         </span>
                     ) : (
                         <span className="text-[11px] font-bold px-2 py-0.5 rounded-full self-start border bg-gray-50 text-gray-600 border-gray-200">
-                            Sin comparativo de {baselineAnio}
+                            {comparacionPrematura ? 'Aún es pronto para comparar' : `Sin comparativo de ${baselineAnio}`}
                         </span>
                     )}
                     <div>
@@ -1372,9 +1364,25 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                         la meta se sembró con el resultado real de 2025; en cuanto el comité edite
                         la meta, la etiqueta habría mentido. */}
                     {(() => {
-                        const pct = ((proyeccionTotal / rentabilidad2025) * 100 - 100).toFixed(1);
+                        const pctExacto = (proyeccionTotal / rentabilidad2025) * 100 - 100;
                         const up = proyeccionTotal >= rentabilidad2025;
-                        return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full self-start ${up ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{up ? '▲' : '▼'} {Math.abs(pct)}% vs meta anual</span>;
+                        // Cuando la proyección cae casi exactamente sobre la meta, el
+                        // redondeo a un decimal daba "▼ 0.0% vs meta anual": una flecha
+                        // hacia abajo junto a un cero, que se lee como si el indicador
+                        // estuviera roto. Por debajo de medio punto se dice lo que
+                        // realmente ocurre — que va en línea con la meta.
+                        if (Math.abs(pctExacto) < 0.5) {
+                            return (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full self-start bg-emerald-100 text-emerald-700">
+                                    ≈ En línea con la meta
+                                </span>
+                            );
+                        }
+                        return (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full self-start ${up ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                {up ? '▲' : '▼'} {Math.abs(pctExacto).toFixed(1)}% vs meta anual
+                            </span>
+                        );
                     })()}
                     <div>
                         <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
@@ -1651,29 +1659,9 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
             {/* Fila Inferior: ¿Cuánto está ganando el fondo? */}
             <div className="p-4 bg-gray-50/50 border-t border-gray-100">
                 {(() => {
-                    // pctBadge: variación %, con guardia contra división por cero cuando el
-                    // baseline del año anterior es 0 (p. ej. mora 2025 = $0 en la BD real —
-                    // antes se mostraba un 212.000 inventado, nunca hubo cobros ese año).
-                    // Un baseline en 0 no es "creció infinito%", es una fuente nueva.
-                    const pctBadge = (actual, historical, masEsMejor = true) => {
-                        // null/undefined = no hay serie del año anterior para esta fuente:
-                        // distinto de "el año anterior fue 0", que sí es una fuente nueva.
-                        if (historical === null || historical === undefined) {
-                            return <span className="text-[10px] font-black text-gray-500 bg-gray-100 px-2 py-1 rounded-md">Sin comparativo</span>;
-                        }
-                        if (!historical) {
-                            return <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-1 rounded-md">Nuevo</span>;
-                        }
-                        const pct = (actual / historical) * 100 - 100;
-                        return (
-                            <span className={`px-2 py-1 rounded-md border ${getVariationStyles(actual, historical, masEsMejor)}`}>
-                                {pct > 0 ? '+' : ''}{pct.toFixed(1)}%
-                            </span>
-                        );
-                    };
-                    // El indicador principal compara contra el MISMO CORTE del año anterior.
-                    // Si la serie mensual no cargó, se declara sin comparativo en vez de caer
-                    // al cociente engañoso contra el año completo.
+                    // El indicador principal compara contra el RITMO del año anterior
+                    // (su resultado completo prorrateado al tiempo transcurrido). Si no
+                    // hay con qué comparar, se declara así en vez de inventar un número.
                     const growthOk = growthVsPrevYtd === null || growthVsPrevYtd >= 0;
 
                     return (
@@ -1685,23 +1673,29 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                                     anterior, en vez de repetir la misma pregunta dos veces. */}
                                 <h3 className="text-base font-extrabold text-gray-900">¿Vamos mejor que el año pasado?</h3>
                                 <p className="inline-block mt-1 text-[11px] font-bold text-blue-800 bg-blue-100 px-2 py-0.5 rounded-md uppercase tracking-wide">
-                                    {nombreMesCorte ? `vs ${baselineAnio} al ${nombreMesCorte}` : `Comparado con ${baselineAnio}`}
+                                    {fraccionAnio !== null
+                                        ? `vs el ritmo de ${baselineAnio} · ${(fraccionAnio * 100).toFixed(0)}% del año`
+                                        : `Comparado con ${baselineAnio}`}
                                 </p>
 
                                 <div className={`mt-3 border rounded-xl p-4 flex flex-col items-center justify-center shadow-sm transition-all duration-500 ${growthVsPrevYtd === null ? 'bg-gray-50 border-gray-200' : growthOk ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
                                     <span className={`text-[10px] font-black uppercase tracking-widest mb-1 ${growthVsPrevYtd === null ? 'text-gray-500' : growthOk ? 'text-emerald-600/70' : 'text-red-600/70'}`}>Resultado total</span>
                                     <span className={`text-3xl font-black font-mono ${growthVsPrevYtd === null ? 'text-gray-900' : growthOk ? 'text-emerald-700' : 'text-red-700'}`}>
-                                        {growthVsPrevYtd === null ? '—' : `${growthVsPrevYtd > 0 ? '+' : ''}${growthVsPrevYtd.toFixed(1)}%`}
+                                        {growthVsPrevYtd === null ? '—' : fmtVariacion(growthVsPrevYtd)}
                                     </span>
                                     <span className={`text-[10px] mt-1 font-semibold text-center leading-snug ${growthVsPrevYtd === null ? 'text-gray-500' : growthOk ? 'text-emerald-700/80' : 'text-red-700/80'}`}>
                                         {growthVsPrevYtd === null
-                                            ? `Sin serie de ${baselineAnio} para comparar`
+                                            ? (comparacionPrematura
+                                                ? 'Aún es pronto en el año para comparar'
+                                                : `Sin datos de ${baselineAnio} para comparar`)
                                             : growthOk
                                                 ? `Vamos por encima del ritmo de ${baselineAnio}`
                                                 : `Vamos por debajo del ritmo de ${baselineAnio}`}
                                     </span>
                                     <span className="text-[11px] mt-1.5 font-bold text-gray-500 text-center leading-snug">
-                                        Intereses + mora + cuenta NU
+                                        {gananciaPrevRitmo !== null
+                                            ? `Ritmo de ${baselineAnio} a esta altura: $${Math.round(gananciaPrevRitmo).toLocaleString('es-CO')}`
+                                            : 'Intereses + mora + cuenta NU'}
                                     </span>
                                 </div>
 
@@ -1726,19 +1720,12 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                             </div>
 
                             <div className="w-full md:w-3/4 bg-white rounded-xl p-1 border border-gray-200 shadow-sm overflow-x-auto">
-                                <table className="w-full text-sm min-w-[760px] border-collapse">
+                                <table className="w-full text-sm min-w-[600px] border-collapse">
                                     <thead>
                                         <tr className="bg-gray-100 text-gray-800 uppercase tracking-wider text-[11px]">
                                             <th className="text-left font-extrabold p-3 rounded-tl-lg">Fuente de ingreso</th>
                                             <th className="text-right font-extrabold p-3">{baselineAnio} completo</th>
-                                            {/* Columna nueva: el mismo tramo del año anterior. Sin ella, la
-                                                variación de la derecha comparaba un año entero contra unos
-                                                pocos meses y siempre salía en rojo. */}
-                                            <th className="text-right font-extrabold p-3 bg-amber-50/60 text-amber-900">
-                                                {baselineAnio} al {nombreMesCorte || 'mismo corte'}
-                                            </th>
-                                            <th className="text-right font-extrabold p-3">{baselineAnio + 1} al {nombreMesCorte || 'corte'}</th>
-                                            <th className="text-right font-extrabold p-3">Variación al mismo corte</th>
+                                            <th className="text-right font-extrabold p-3">Lo que llevamos en {baselineAnio + 1}</th>
                                             <th className="text-right font-extrabold p-3 text-brand-primary rounded-tr-lg">Estimado al cierre del año</th>
                                         </tr>
                                     </thead>
@@ -1749,9 +1736,7 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                                                 <p className="text-[10px] text-emerald-700 font-semibold">Lo que pagan los socios por sus préstamos</p>
                                             </td>
                                             <td className="p-3 text-right text-gray-500 font-bold bg-gray-50/50">${baselineIntereses.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                            <td className="p-3 text-right text-amber-900 font-black bg-amber-50/60">{fmtCorte(interesesPrevYtd)}</td>
-                                            <td className="p-3 text-right font-black text-blue-700">${Math.round(interesesActualYtd).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                            <td className="p-3 text-right text-sm font-black border-l">{pctBadge(interesesActualYtd, interesesPrevYtd)}</td>
+                                            <td className="p-3 text-right font-black text-blue-700 border-l">${Math.round(interesesActualYtd).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
                                             <td className="p-3 text-right font-black border-l text-brand-primary">
                                                 ${Math.round(proyeccionIntereses).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
                                             </td>
@@ -1762,18 +1747,7 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                                                 <p className="text-[10px] text-emerald-700 font-semibold">Intereses que genera el dinero guardado en NU</p>
                                             </td>
                                             <td className="p-3 text-right text-gray-500 font-bold bg-gray-50/50">${baselineNU.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                            {/* NU no tiene registro mensual (es un saldo que se actualiza a
-                                                mano), así que su referencia al corte se estima prorrateando el
-                                                cierre del año anterior. Se marca como estimado para que la
-                                                procedencia del número quede a la vista. */}
-                                            <td className="p-3 text-right text-amber-900 font-black bg-amber-50/60">
-                                                {fmtCorte(nuPrevYtd)}
-                                                {nuPrevYtd !== null && (
-                                                    <span className="block text-[11px] font-bold text-amber-700/80 normal-case">estimado</span>
-                                                )}
-                                            </td>
-                                            <td className="p-3 text-right font-black text-purple-700">${Math.round(stats.rentabilidadCajaNU || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                            <td className="p-3 text-right text-sm font-black border-l">{pctBadge(stats.rentabilidadCajaNU || 0, nuPrevYtd)}</td>
+                                            <td className="p-3 text-right font-black text-purple-700 border-l">${Math.round(stats.rentabilidadCajaNU || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
                                             <td className="p-3 text-right font-black border-l text-brand-primary">
                                                 ${Math.round(proyeccionCajaNU).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
                                             </td>
@@ -1784,9 +1758,7 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                                                 <p className="text-[10px] text-emerald-700 font-semibold">Recargo aplicado a socios con cuotas vencidas</p>
                                             </td>
                                             <td className="p-3 text-right text-gray-500 font-bold bg-gray-50/50">${baselineMora.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                            <td className="p-3 text-right text-amber-900 font-black bg-amber-50/60">{fmtCorte(moraPrevYtd)}</td>
-                                            <td className="p-3 text-right font-black text-red-600">${Math.round(moraActualYtd).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                            <td className="p-3 text-right text-sm font-black border-l">{pctBadge(moraActualYtd, moraPrevYtd, false)}</td>
+                                            <td className="p-3 text-right font-black text-red-600 border-l">${Math.round(moraActualYtd).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
                                             <td className="p-3 text-right font-black border-l text-brand-primary">
                                                 ${Math.round(proyeccionPenalidad).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
                                             </td>
@@ -1794,9 +1766,7 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                                         <tr className="bg-emerald-50 border-t-2 border-emerald-300">
                                             <td className="p-3 text-emerald-900 font-black text-base uppercase tracking-wider">Ganancia total del fondo</td>
                                             <td className="p-3 text-right text-gray-500 font-bold text-base">${gananciaReal2025.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                            <td className="p-3 text-right text-amber-900 font-black text-lg bg-amber-50/60">{fmtCorte(gananciaPrevYtd)}</td>
-                                            <td className="p-3 text-right font-black text-emerald-700 text-lg">${Math.round(gananciaActualComparable).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                            <td className="p-3 text-right text-lg font-black border-l shadow-inner">{pctBadge(gananciaActualComparable, gananciaPrevYtd)}</td>
+                                            <td className="p-3 text-right font-black text-emerald-700 text-lg border-l">${Math.round(rentabilidadActual).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
                                             <td className="p-3 text-right font-black text-lg border-l rounded-br-lg text-emerald-800">
                                                 ${Math.round(proyeccionTotal).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
                                             </td>
@@ -1804,13 +1774,10 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                                     </tbody>
                                 </table>
                                 <p className="text-[11px] text-gray-500 font-semibold px-3 py-2 leading-snug">
-                                    La variación compara ambos años <strong>hasta la misma fecha</strong>
-                                    {nombreMesCorte && <> (1 de enero → {nombreMesCorte})</>}. Comparar lo que llevamos
-                                    del año contra un año completo mostraría una caída que solo refleja los meses que
-                                    faltan, no el desempeño del fondo. El <strong>rendimiento de la cuenta NU</strong> sí
-                                    entra en el total; como se registra con un solo saldo actualizado manualmente, su
-                                    referencia del año anterior a esta fecha se <strong>estima</strong> a partir del cierre
-                                    de ese año.
+                                    La columna de {baselineAnio} es el año <strong>completo</strong> (12 meses); la del año
+                                    en curso es lo acumulado hasta hoy, así que aún le faltan meses. Para saber si vamos
+                                    mejor o peor, mira el indicador de la izquierda: ahí la comparación sí está ajustada al
+                                    tiempo transcurrido. El <strong>rendimiento de la cuenta NU</strong> entra en el total.
                                 </p>
                             </div>
                         </div>
