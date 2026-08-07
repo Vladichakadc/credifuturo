@@ -45,13 +45,25 @@ const METRICAS = [
     { key: 'mora', label: 'Cobros por pagos tardíos', corto: 'Mora', color: BRAND.error },
 ];
 
-// Los años son una dimensión ORDENADA, así que llevan una rampa ordinal de un
-// solo tono (claro = más antiguo, oscuro = año en curso) en vez de colores
-// categóricos sueltos. Verificada con el validador de paletas del proyecto:
-// luminosidad monótona, saltos visibles y extremo claro por encima del piso de
-// contraste. Termina en el verde corporativo. La mora usa su propia rampa roja,
-// porque ahí crecer no es un logro.
-const RAMPA_ANIOS = { verde: ['#6db88c', '#3a8560', '#166534'], rojo: ['#e88a8a', '#d14545', '#b91c1c'] };
+// Color por ROL del año, no por antigüedad ordinal: el año en curso lleva el
+// color de marca del indicador; el año de referencia (el inmediatamente
+// anterior — la comparación que de verdad importa) lleva el dorado
+// corporativo, para que se distinga a simple vista sin leer la leyenda; los
+// años más atrás quedan en un gris neutro deliberadamente recesivo (siempre
+// con su año escrito en el eje y en el tooltip, así que nunca dependen solo
+// del color para identificarse).
+//
+// El dorado de marca (`brand.gold` #fbbf24) es demasiado claro para una línea
+// sobre fondo blanco — falla el piso de contraste del validador de paletas.
+// `AMBAR` es un paso más oscuro de la misma familia que sí lo pasa. Contra el
+// rojo de mora, `AMBAR` queda a solo ΔE 11,8 (por debajo del piso de 15 —
+// casi indistinguible incluso con visión de color normal, porque ámbar y rojo
+// son vecinos en el círculo cromático); `AMBAR_MORA`, un tono más oscuro y
+// terroso, sí se separa del rojo. Ambos verificados con
+// scripts/validate_palette.js del skill de visualización de datos.
+const AMBAR = '#d97706';
+const AMBAR_MORA = '#854d0e';
+const GRIS_ANTIGUO = '#94a3b8';
 
 const fmtCOP = (v) => `$${Number(v || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}`;
 
@@ -170,13 +182,17 @@ const YearComparisonChart = ({ data, error = false }) => {
     }, [data, activos, metrica, mesCorte, anioEnCurso]);
 
     const metaMetrica = METRICAS.find(m => m.key === metrica);
+    const ambarDeReferencia = metrica === 'mora' ? AMBAR_MORA : AMBAR;
 
-    // El año en curso siempre toma el paso más oscuro de la rampa; los anteriores
-    // se aclaran según su antigüedad, así el orden temporal se lee sin leyenda.
-    const rampa = RAMPA_ANIOS[metrica === 'mora' ? 'rojo' : 'verde'];
-    const colorDe = (anio, idx) => anio === anioEnCurso
-        ? rampa[rampa.length - 1]
-        : rampa[Math.max(0, rampa.length - 2 - Math.max(0, idx))];
+    // Año en curso → color de marca del indicador. Año de referencia (el
+    // inmediatamente anterior, p. ej. 2025 visto desde 2026) → dorado
+    // corporativo, para que la comparación que de verdad importa se distinga
+    // a simple vista. Cualquier año más atrás → gris neutro, recesivo.
+    const colorDe = (anio) => {
+        if (anio === anioEnCurso) return metaMetrica.color;
+        if (anio === anioEnCurso - 1) return ambarDeReferencia;
+        return GRIS_ANTIGUO;
+    };
 
     if (error) {
         return (
@@ -205,8 +221,6 @@ const YearComparisonChart = ({ data, error = false }) => {
         );
     }
 
-    const previosActivos = activos.filter(a => a !== anioEnCurso).sort((a, b) => b - a);
-
     return (
         <div className="space-y-4">
             {/* ── Controles ─────────────────────────────────────────────────── */}
@@ -231,9 +245,8 @@ const YearComparisonChart = ({ data, error = false }) => {
 
                 <div className="flex flex-wrap items-center gap-1.5">
                     <span className="text-[11px] font-black uppercase tracking-wider text-gray-400 mr-1">Años</span>
-                    {aniosDisponibles.map((anio, i) => {
+                    {aniosDisponibles.map((anio) => {
                         const on = activos.includes(anio);
-                        const idx = previosActivos.indexOf(anio);
                         return (
                             <button
                                 key={anio}
@@ -243,7 +256,7 @@ const YearComparisonChart = ({ data, error = false }) => {
                                 }`}
                             >
                                 <span className="w-2 h-2 rounded-full"
-                                    style={{ backgroundColor: on ? colorDe(anio, idx < 0 ? i : idx) : '#d1d5db' }} />
+                                    style={{ backgroundColor: on ? colorDe(anio) : '#d1d5db' }} />
                                 {anio}
                                 {anio === anioEnCurso && <span className="text-[9px] opacity-70">en curso</span>}
                             </button>
@@ -309,10 +322,9 @@ const YearComparisonChart = ({ data, error = false }) => {
                             )}
                             {activos.map((anio) => {
                                 const esActual = anio === anioEnCurso;
-                                const idx = previosActivos.indexOf(anio);
                                 return (
                                     <Line key={anio} type="monotone" dataKey={String(anio)} name={String(anio)}
-                                        stroke={colorDe(anio, idx)} strokeWidth={esActual ? 3 : 2}
+                                        stroke={colorDe(anio)} strokeWidth={esActual ? 3 : 2}
                                         dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }}
                                         connectNulls={false} />
                                 );
@@ -328,13 +340,10 @@ const YearComparisonChart = ({ data, error = false }) => {
                             <Tooltip content={<TooltipComparador acumulado={acumulado} metrica={metrica} />}
                                 cursor={{ fill: '#f3f4f6' }} />
                             <Legend wrapperStyle={{ fontSize: 12, fontWeight: 700, paddingTop: 8 }} />
-                            {activos.map((anio) => {
-                                const idx = previosActivos.indexOf(anio);
-                                return (
-                                    <Bar key={anio} dataKey={String(anio)} name={String(anio)}
-                                        fill={colorDe(anio, idx)} radius={[4, 4, 0, 0]} maxBarSize={26} />
-                                );
-                            })}
+                            {activos.map((anio) => (
+                                <Bar key={anio} dataKey={String(anio)} name={String(anio)}
+                                    fill={colorDe(anio)} radius={[4, 4, 0, 0]} maxBarSize={26} />
+                            ))}
                         </BarChart>
                     )}
                 </ResponsiveContainer>

@@ -21,12 +21,24 @@ import { Maximize2, TrendingUp, TrendingDown, Minus } from 'lucide-react';
  * aplica la noción de ritmo.
  */
 
-// Rampa ordinal verde — validada con el verificador de paletas del proyecto:
-// luminosidad monótona, saltos visibles y extremo claro por encima del piso de
-// contraste. Termina en el verde corporativo #166534.
-const RAMPA_VERDE = ['#6db88c', '#3a8560', '#166534'];
-// Rampa ordinal roja para la mora, donde crecer no es un logro. También validada.
-const RAMPA_ROJA = ['#e88a8a', '#d14545', '#b91c1c'];
+// Color por ROL de la barra, no por antigüedad: la barra del año anterior
+// lleva el dorado corporativo (la referencia con la que se compara todo),
+// la del año en curso lleva el color de marca, y el estimado de cierre es
+// ese mismo color de marca aclarado (misma serie, atenuada porque todavía
+// no ocurrió — no un tercer color que haya que aprender).
+//
+// El dorado de marca (`brand.gold` #fbbf24) falla el piso de contraste del
+// validador de paletas sobre fondo blanco; `AMBAR` es un paso más oscuro de
+// la misma familia que sí lo pasa. Contra el rojo de mora, `AMBAR` casi se
+// confunde (ΔE 11,8, por debajo del piso de 15) porque ámbar y rojo son
+// vecinos en el círculo cromático — `AMBAR_MORA` sí se separa. Ambos
+// verificados con scripts/validate_palette.js del skill de visualización.
+const AMBAR = '#d97706';
+const AMBAR_MORA = '#854d0e';
+const TONOS = {
+    verde: { anterior: AMBAR, actual: '#166534', proyeccion: '#166534aa' },
+    rojo: { anterior: AMBAR_MORA, actual: '#b91c1c', proyeccion: '#b91c1caa' },
+};
 
 const fmtCOP = (v) => `$${Math.round(Number(v) || 0).toLocaleString('es-CO')}`;
 const fmtEje = (v) => {
@@ -76,7 +88,7 @@ const YearProgressCard = ({
     // el contenido se sale de esos 300px y queda debajo del panel).
     compact = false,
 }) => {
-    const rampa = tono === 'rojo' ? RAMPA_ROJA : RAMPA_VERDE;
+    const colores = TONOS[tono] || TONOS.verde;
 
     const m = useMemo(() => {
         const prev = Number(totalPrev) || 0;
@@ -104,12 +116,12 @@ const YearProgressCard = ({
         // `eje` es la etiqueta corta del eje X: debe distinguir las barras del mismo
         // año (lo que llevamos vs el estimado), que si no quedarían rotuladas igual.
         const barras = [
-            { name: `${anioPrev} (año completo)`, eje: `${anioPrev}`, value: prev, tono: 0, nota: 'Resultado final del año anterior' },
+            { name: `${anioPrev} (año completo)`, eje: `${anioPrev}`, value: prev, rol: 'anterior', nota: 'Resultado final del año anterior' },
             {
-                name: `${anioActual} (hasta hoy)`, eje: `${anioActual} hoy`, value: act, tono: 2,
+                name: `${anioActual} (hasta hoy)`, eje: `${anioActual} hoy`, value: act, rol: 'actual',
                 nota: tipo === 'saldo' ? 'Saldo a la fecha' : `Acumulado con el ${Math.round((fraccionAnio || 0) * 100)}% del año transcurrido`,
             },
-            ...(proyeccion ? [{ name: `${anioActual} (estimado al cierre)`, eje: `${anioActual} est.`, value: Number(proyeccion) || 0, tono: 1, nota: 'Proyección prudente si se mantiene el ritmo' }] : []),
+            ...(proyeccion ? [{ name: `${anioActual} (estimado al cierre)`, eje: `${anioActual} est.`, value: Number(proyeccion) || 0, rol: 'proyeccion', nota: 'Proyección prudente si se mantiene el ritmo' }] : []),
         ];
 
         return { prev, act, avancePct, esperadoAhora, cambio, bueno, barras };
@@ -148,7 +160,7 @@ const YearProgressCard = ({
                     axisLine={false} tickLine={false} width={52} domain={[0, 'auto']} />
                 <Tooltip content={<TooltipBarra />} cursor={{ fill: '#f8fafc' }} />
                 <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={44}>
-                    {m.barras.map((b, i) => <Cell key={i} fill={rampa[b.tono]} />)}
+                    {m.barras.map((b, i) => <Cell key={i} fill={colores[b.rol]} />)}
                 </Bar>
             </BarChart>
         </ResponsiveContainer>
@@ -206,7 +218,7 @@ const YearProgressCard = ({
                     </div>
                     <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
                         <div className="h-full rounded-full transition-all duration-700"
-                            style={{ width: `${Math.min(m.avancePct, 100)}%`, backgroundColor: rampa[2] }} />
+                            style={{ width: `${Math.min(m.avancePct, 100)}%`, backgroundColor: colores.actual }} />
                     </div>
                 </div>
             )}
@@ -221,7 +233,7 @@ const YearProgressCard = ({
                 {m.barras.map((b, i) => (
                     <div key={i} className="flex items-center justify-between gap-3">
                         <dt className="flex items-center gap-1.5 text-gray-600 font-semibold">
-                            <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: rampa[b.tono] }} />
+                            <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: colores[b.rol] }} />
                             {b.name}
                         </dt>
                         <dd className="font-black text-gray-800 tabular-nums">{fmtCOP(b.value)}</dd>
