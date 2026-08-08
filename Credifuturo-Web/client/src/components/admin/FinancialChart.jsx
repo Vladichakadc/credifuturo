@@ -121,6 +121,12 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
     // Avance sobre el TOTAL del año anterior: sigue siendo útil ("llevamos el 65% de lo
     // que ganamos en todo 2025"), pero es un porcentaje de avance, nunca una caída.
     const avanceSobreAnioCompleto = gananciaReal2025 > 0 ? (rentabilidadActual / gananciaReal2025) * 100 : null;
+    // Delta en pesos contra el año anterior COMPLETO (distinto del delta contra el
+    // RITMO de arriba): mientras el año esté en curso, casi siempre será negativo —
+    // eso es normal, no una caída, así que se lee "faltan $X" en vez de "-$X".
+    // Solo se vuelve positivo si el fondo ya superó en lo que va del año la ganancia
+    // de los 12 meses completos del año anterior.
+    const diferenciaVsAnioCompleto = gananciaReal2025 > 0 ? rentabilidadActual - gananciaReal2025 : null;
     const nombreMesCorte = cmpCorte
         ? new Date(cmpCorte.anioActual, cmpCorte.mes - 1, cmpCorte.dia).toLocaleDateString('es-CO', { day: 'numeric', month: 'long' })
         : null;
@@ -807,19 +813,32 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                                     </span>
                                 </div>
 
-                                {/* Avance sobre el año completo: dato útil, pero rotulado como lo que
-                                    es (progreso), nunca como una caída. */}
+                                {/* Segunda comparación, distinta de la de arriba: esta es contra el
+                                    año anterior COMPLETO (12 meses), no contra su ritmo prorrateado —
+                                    por eso el % siempre queda por debajo de 100 mientras el año esté en
+                                    curso, y por eso NUNCA se rotula como una caída ni en rojo: es
+                                    avance, no desempeño. El delta en pesos es simétrico al de la caja
+                                    de arriba, para que "cuánto" y "qué porcentaje" respondan a la misma
+                                    pregunta en los dos sitios. Superávit >100% si el fondo ya alcanzó,
+                                    con lo acumulado del año, la ganancia completa del año anterior. */}
                                 {avanceSobreAnioCompleto !== null && (
                                     <div className="mt-2 bg-white border border-gray-200 rounded-xl p-3">
                                         <div className="flex items-baseline justify-between gap-2">
-                                            <span className="text-[10px] font-black uppercase tracking-wider text-gray-500">Avance del año</span>
+                                            <span className="text-[10px] font-black uppercase tracking-wider text-gray-500">vs {baselineAnio} completo</span>
                                             <span className="text-sm font-black font-mono text-gray-800">{avanceSobreAnioCompleto.toFixed(0)}%</span>
                                         </div>
                                         <div className="mt-1.5 h-2 bg-gray-100 rounded-full overflow-hidden">
-                                            <div className="h-full rounded-full bg-brand-primary transition-all duration-700"
+                                            <div className={`h-full rounded-full transition-all duration-700 ${avanceSobreAnioCompleto >= 100 ? 'bg-emerald-500' : 'bg-brand-primary'}`}
                                                 style={{ width: `${Math.min(avanceSobreAnioCompleto, 100)}%` }} />
                                         </div>
-                                        <p className="text-[10px] text-gray-500 font-semibold mt-1.5 leading-snug">
+                                        {diferenciaVsAnioCompleto !== null && (
+                                            <p className={`text-[11px] font-black font-mono mt-1.5 ${diferenciaVsAnioCompleto >= 0 ? 'text-emerald-700' : 'text-gray-700'}`}>
+                                                {diferenciaVsAnioCompleto >= 0
+                                                    ? `+$${Math.round(diferenciaVsAnioCompleto).toLocaleString('es-CO')} por encima de todo ${baselineAnio}`
+                                                    : `Faltan $${Math.round(Math.abs(diferenciaVsAnioCompleto)).toLocaleString('es-CO')} para igualar todo ${baselineAnio}`}
+                                            </p>
+                                        )}
+                                        <p className="text-[10px] text-gray-500 font-semibold mt-1 leading-snug">
                                             Llevamos el {avanceSobreAnioCompleto.toFixed(0)}% de lo que se ganó en todo {baselineAnio}
                                             {fraccionAnio !== null && `, con el ${(fraccionAnio * 100).toFixed(0)}% del año transcurrido`}.
                                         </p>
