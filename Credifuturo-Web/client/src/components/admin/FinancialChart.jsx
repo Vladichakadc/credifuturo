@@ -40,6 +40,14 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
     const riskIndex = total > 0 ? ((mora / total) * 100).toFixed(1) : 0;
     const liquidity = total > 0 ? ((disponible / total) * 100).toFixed(1) : 0;
 
+    // Retorno del Capital: ganancia del año / patrimonio de socios activos. Mismo
+    // cálculo que components/admin/RiskReturnIndicators.jsx — se sube al hero junto
+    // a "Proyección al Cierre" porque responde la pregunta que sigue naturalmente a
+    // la proyección ("¿y eso qué tan bien está usando el capital del fondo?").
+    const rentabilidadTotalActual = (stats.totalInteresesPagados || 0) + (stats.rentabilidadCajaNU || 0) + (stats.totalPenaltyValue || 0);
+    const patrimonioActivos = stats.totalAhorradoGeneral || 1;
+    const retornoCapital = (rentabilidadTotalActual / patrimonioActivos) * 100;
+
     // Baselines del año anterior — calculados por el backend desde la BD y AppSettings
     // (plan de mejora de gráficas: sin cifras congeladas en el código; los valores
     // 2025 quedan como semilla por defecto en dashboard-stats si AppSettings está vacío).
@@ -296,7 +304,7 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
             })()}
 
             {/* ── KPIs EJECUTIVOS — 5 métricas con delta vs 2025 ────────────────── */}
-            <div className="grid grid-cols-2 md:grid-cols-5 border-b border-gray-100">
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 border-b border-gray-100">
                 {/* KPI 1: Capital Total */}
                 <div className="bg-gradient-to-br from-emerald-50 to-white p-5 flex flex-col gap-3 border-b md:border-b-0 border-r border-gray-100">
                     <div className="flex items-center justify-between">
@@ -410,10 +418,12 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                     </div>
                 </div>
 
-                {/* KPI 5: Proyección Dic */}
-                <div className="bg-gradient-to-br from-slate-50 to-white p-5 flex flex-col gap-3">
+                {/* KPI 5: Proyección al Cierre — antes decía "Proyección Dic", inconsistente
+                    con el resto del panel (la tabla de fuentes de ingreso y su leyenda ya
+                    dicen "estimado al cierre del año", nunca un mes fijo). */}
+                <div className="bg-gradient-to-br from-slate-50 to-white p-5 flex flex-col gap-3 border-b md:border-b-0 border-r border-gray-100">
                     <div className="flex items-center justify-between">
-                        <p className="text-[11px] font-black text-gray-500 uppercase tracking-widest">Proyección Dic</p>
+                        <p className="text-[11px] font-black text-gray-500 uppercase tracking-widest">Proyección al Cierre</p>
                         <div className="bg-slate-100 p-1.5 rounded-xl"><BarChart3 className="h-3.5 w-3.5 text-slate-600" /></div>
                     </div>
                     <p className="text-[19px] font-black text-gray-900 font-mono leading-none">
@@ -455,6 +465,36 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                         ) : (
                             <p className="text-[10px] text-gray-500 font-bold mt-1">Meta: ${Number(rentabilidad2025).toLocaleString('es-CO')}</p>
                         )}
+                    </div>
+                </div>
+
+                {/* KPI 6: Retorno del Capital — subida aquí desde "Indicadores de Riesgo y
+                    Rendimiento" (más abajo en la página) para que quede al lado de la
+                    proyección de cierre: responde la pregunta que sigue naturalmente a
+                    "¿cuánto vamos a ganar?" — "¿y qué tan bien está rindiendo el capital
+                    de los socios?". Mismo cálculo que RiskReturnIndicators.jsx, así que no
+                    puede mostrar un número distinto al que ya vio el socio más abajo. */}
+                <div className={`p-5 flex flex-col gap-3 bg-gradient-to-br ${retornoCapital >= 5 ? 'from-emerald-50' : retornoCapital >= 2 ? 'from-amber-50' : 'from-gray-50'} to-white`}>
+                    <div className="flex items-center justify-between">
+                        <p className="text-[11px] font-black text-gray-500 uppercase tracking-widest">Retorno del Capital</p>
+                        <div className={`p-1.5 rounded-xl ${retornoCapital >= 5 ? 'bg-emerald-100' : retornoCapital >= 2 ? 'bg-amber-100' : 'bg-gray-100'}`}>
+                            <TrendingUp className={`h-3.5 w-3.5 ${retornoCapital >= 5 ? 'text-emerald-600' : retornoCapital >= 2 ? 'text-amber-600' : 'text-gray-500'}`} />
+                        </div>
+                    </div>
+                    <p className="text-[22px] font-black text-gray-900 font-mono leading-none">
+                        {retornoCapital.toFixed(1)}<span className="text-sm font-bold text-gray-400 ml-0.5">%</span>
+                    </p>
+                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full self-start ${retornoCapital >= 5 ? 'bg-emerald-100 text-emerald-700' : retornoCapital >= 2 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}`}>
+                        {retornoCapital >= 5 ? '▲ Saludable' : retornoCapital >= 2 ? '● Moderado' : '▼ Revisar'}
+                    </span>
+                    <div>
+                        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full ${retornoCapital >= 5 ? 'bg-emerald-500' : retornoCapital >= 2 ? 'bg-amber-500' : 'bg-gray-300'}`}
+                                style={{ width: `${Math.min(retornoCapital * 10, 100)}%` }} />
+                        </div>
+                        <p className="text-[10px] text-gray-500 font-bold mt-1">
+                            ${Number(rentabilidadTotalActual).toLocaleString('es-CO', { maximumFractionDigits: 0 })} ganancia / ${Number(patrimonioActivos).toLocaleString('es-CO', { maximumFractionDigits: 0 })} patrimonio
+                        </p>
                     </div>
                 </div>
             </div>
