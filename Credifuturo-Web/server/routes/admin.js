@@ -3923,6 +3923,10 @@ router.get('/dashboard-stats', async (req, res) => {
             nu: nuCierreSetting ? Number(nuCierreSetting.value) : (_anioPrev === 2025 ? 1029139 : 0),
         };
 
+        // Los agregados del fondo (patrimonio, cartera, mora total) son información
+        // que todo socio tiene derecho a ver. Los desgloses persona por persona, no.
+        const isAdminStatsReq = req.user?.role === 'admin';
+
         res.json({
             baselines,
             clientsCount: totalClientsCount,
@@ -3974,11 +3978,20 @@ router.get('/dashboard-stats', async (req, res) => {
             carteraMora,
             moraCarteraEP: Math.round(moraCarteraEP),
             sociosMoraCount: sociosMora,
-            detalleMora,
-            detalleMoraEP,
-            detallePenalidad,
-            recentSavings,
-            recentPayments,
+            // A01 (Broken Access Control): estos cinco campos contienen datos
+            // INDIVIDUALES de otros socios — nombre, cédula, días de mora, montos
+            // ahorrados y pagados. `/dashboard-stats` está en READ_ONLY_FOR_ALL
+            // (cualquier socio autenticado puede llamarlo, porque el Panel Principal
+            // se monta también en /dashboard/fondo), así que hasta ahora un socio
+            // cualquiera podía leer con curl quién está en mora y con qué cédula.
+            // En una cooperativa pequeña, donde todos se conocen, eso es una fuga
+            // real. Ocultarlo en el frontend no bastaba: el dato igual viajaba.
+            // Mismo criterio ya aplicado a `concentracion` en /executive-stats.
+            detalleMora: isAdminStatsReq ? detalleMora : undefined,
+            detalleMoraEP: isAdminStatsReq ? detalleMoraEP : undefined,
+            detallePenalidad: isAdminStatsReq ? detallePenalidad : undefined,
+            recentSavings: isAdminStatsReq ? recentSavings : undefined,
+            recentPayments: isAdminStatsReq ? recentPayments : undefined,
             proximosVencimientos30d,
             sociosAlDiaMes,
             timestamp: now.toISOString()
@@ -5306,6 +5319,21 @@ router.get('/savings-evolution', async (req, res) => {
         const sequelize = require('../config/database');
         const { QueryTypes } = require('sequelize');
         const clientId = req.query.clientId ? parseInt(req.query.clientId, 10) : null;
+
+        // A01 — Control de acceso roto (IDOR). Esta ruta está en READ_ONLY_FOR_ALL
+        // porque su forma AGREGADA (sin ?clientId) alimenta el Panel Ejecutivo, que
+        // cualquier socio puede ver. Pero con ?clientId devolvía el historial de
+        // ahorro mes a mes de CUALQUIER socio a CUALQUIER socio autenticado: el
+        // desplegable de SavingsEvolutionPage se limita al propio usuario en el
+        // cliente, y ese filtro se saltaba con un curl o desde las devtools.
+        // Iterando clientId=1..N se reconstruía el fondo entero, persona por persona.
+        // Verificado: el socio id=15 leía la serie completa de los socios 17 y 18.
+        //   - sin clientId  -> agregado del fondo, sin datos de nadie en particular
+        //   - con clientId  -> solo el admin, o el propio socio sobre sí mismo
+        if (clientId !== null && req.user?.role !== 'admin' && clientId !== req.user?.id) {
+            return res.status(403).json({ error: 'Solo puedes consultar tu propia evolución de ahorros.' });
+        }
+
         const filtro = clientId ? 'AND clientId = :clientId' : '';
         const replacements = clientId ? { clientId } : {};
 
