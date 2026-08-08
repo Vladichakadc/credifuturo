@@ -814,30 +814,42 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                                 </div>
 
                                 {/* Segunda comparación, distinta de la de arriba: esta es contra el
-                                    año anterior COMPLETO (12 meses), no contra su ritmo prorrateado —
-                                    por eso el % siempre queda por debajo de 100 mientras el año esté en
-                                    curso, y por eso NUNCA se rotula como una caída ni en rojo: es
-                                    avance, no desempeño. El delta en pesos es simétrico al de la caja
-                                    de arriba, para que "cuánto" y "qué porcentaje" respondan a la misma
-                                    pregunta en los dos sitios. Superávit >100% si el fondo ya alcanzó,
-                                    con lo acumulado del año, la ganancia completa del año anterior. */}
-                                {avanceSobreAnioCompleto !== null && (
+                                    año anterior COMPLETO (12 meses), no contra su ritmo prorrateado.
+                                    A pedido explícito: deja las DOS cifras crudas a la vista (2025
+                                    completo y lo que llevamos de 2026), no solo el resultado derivado
+                                    — así nadie tiene que confiar en el cálculo, puede verificarlo.
+                                    El crecimiento (+X%) es SIEMPRE respecto al año anterior COMPLETO,
+                                    nunca se vuelve negativo solo por estar a mitad de año: si el fondo
+                                    aún no alcanza el total de 2025, se ve en la barra de avance (que si
+                                    puede estar por debajo de 100%), no en el signo del %. */}
+                                {avanceSobreAnioCompleto !== null && diferenciaVsAnioCompleto !== null && (
                                     <div className="mt-2 bg-white border border-gray-200 rounded-xl p-3">
                                         <div className="flex items-baseline justify-between gap-2">
-                                            <span className="text-[10px] font-black uppercase tracking-wider text-gray-500">vs {baselineAnio} completo</span>
-                                            <span className="text-sm font-black font-mono text-gray-800">{avanceSobreAnioCompleto.toFixed(0)}%</span>
+                                            <span className="text-[10px] font-black uppercase tracking-wider text-gray-500">{baselineAnio} vs {baselineAnio + 1}</span>
+                                            <span className={`text-sm font-black font-mono ${diferenciaVsAnioCompleto >= 0 ? 'text-emerald-700' : 'text-gray-700'}`}>
+                                                {diferenciaVsAnioCompleto >= 0 ? '▲' : '▼'} {fmtVariacion((rentabilidadActual / gananciaReal2025 - 1) * 100)}
+                                            </span>
                                         </div>
-                                        <div className="mt-1.5 h-2 bg-gray-100 rounded-full overflow-hidden">
+                                        <div className="mt-2 flex items-center justify-between gap-2 text-[11px]">
+                                            <div className="text-left">
+                                                <p className="text-gray-400 font-bold uppercase tracking-wide text-[9px]">{baselineAnio} completo</p>
+                                                <p className="font-black font-mono text-gray-700">${Math.round(gananciaReal2025).toLocaleString('es-CO')}</p>
+                                            </div>
+                                            <span className="text-gray-300">→</span>
+                                            <div className="text-right">
+                                                <p className="text-gray-400 font-bold uppercase tracking-wide text-[9px]">{baselineAnio + 1} a hoy</p>
+                                                <p className="font-black font-mono text-gray-900">${Math.round(rentabilidadActual).toLocaleString('es-CO')}</p>
+                                            </div>
+                                        </div>
+                                        <div className="mt-2 h-2 bg-gray-100 rounded-full overflow-hidden">
                                             <div className={`h-full rounded-full transition-all duration-700 ${avanceSobreAnioCompleto >= 100 ? 'bg-emerald-500' : 'bg-brand-primary'}`}
                                                 style={{ width: `${Math.min(avanceSobreAnioCompleto, 100)}%` }} />
                                         </div>
-                                        {diferenciaVsAnioCompleto !== null && (
-                                            <p className={`text-[11px] font-black font-mono mt-1.5 ${diferenciaVsAnioCompleto >= 0 ? 'text-emerald-700' : 'text-gray-700'}`}>
-                                                {diferenciaVsAnioCompleto >= 0
-                                                    ? `+$${Math.round(diferenciaVsAnioCompleto).toLocaleString('es-CO')} por encima de todo ${baselineAnio}`
-                                                    : `Faltan $${Math.round(Math.abs(diferenciaVsAnioCompleto)).toLocaleString('es-CO')} para igualar todo ${baselineAnio}`}
-                                            </p>
-                                        )}
+                                        <p className={`text-[11px] font-black font-mono mt-1.5 ${diferenciaVsAnioCompleto >= 0 ? 'text-emerald-700' : 'text-gray-700'}`}>
+                                            {diferenciaVsAnioCompleto >= 0
+                                                ? `+$${Math.round(diferenciaVsAnioCompleto).toLocaleString('es-CO')} por encima de todo ${baselineAnio}`
+                                                : `Faltan $${Math.round(Math.abs(diferenciaVsAnioCompleto)).toLocaleString('es-CO')} para igualar todo ${baselineAnio}`}
+                                        </p>
                                         <p className="text-[10px] text-gray-500 font-semibold mt-1 leading-snug">
                                             Llevamos el {avanceSobreAnioCompleto.toFixed(0)}% de lo que se ganó en todo {baselineAnio}
                                             {fraccionAnio !== null && `, con el ${(fraccionAnio * 100).toFixed(0)}% del año transcurrido`}.
