@@ -1,14 +1,19 @@
 // Extraído de DashboardHome.jsx ("Indicadores de Riesgo y Rendimiento", la
 // cuarta sección de "Indicadores por área") para poder mostrarlo también en
 // pages/admin/FinancialIntelligencePage.jsx sin duplicar el cálculo de sus
-// cuatro señales (índice de mora, socios en mora, cobertura, retorno del
-// capital). El detalle nominal de "Socios en Mora" (nombre + cédula por
-// socio) sigue siendo exclusivo del admin: se abre solo si el llamador pasa
-// `onSociosMoraClick`. Sin ese prop la tarjeta NO se pinta clicable — antes
-// un socio veía cursor-pointer y hover sobre una tarjeta cuyo clic no abría
-// nada, porque el backend ya no le envía ese detalle a quien no es admin.
+// señales (índice de mora, socios en mora, cobertura de mora). El detalle
+// nominal de "Socios en Mora" (nombre + cédula por socio) sigue siendo
+// exclusivo del admin: se abre solo si el llamador pasa `onSociosMoraClick`.
+// Sin ese prop la tarjeta NO se pinta clicable — antes un socio veía
+// cursor-pointer y hover sobre una tarjeta cuyo clic no abría nada, porque
+// el backend ya no le envía ese detalle a quien no es admin.
+//
+// "Retorno del Capital" vivía aquí como cuarta tarjeta; se subió al hero de
+// FinancialChart.jsx, junto a "Proyección al Cierre" — ver el comentario
+// sobre KPI 6 ahí. Mismo cálculo en los dos lugares, para que nunca muestren
+// números distintos.
 import React from 'react';
-import { AlertTriangle, Users, ShieldCheck, TrendingUp } from 'lucide-react';
+import { AlertTriangle, Users, ShieldCheck } from 'lucide-react';
 
 const RiskReturnIndicators = ({ stats, loading = false, onSociosMoraClick }) => {
                 const disponible = (stats?.saldoEnBanco || 0) + (stats?.rentabilidadCajaNU || 0);
@@ -38,21 +43,12 @@ const RiskReturnIndicators = ({ stats, loading = false, onSociosMoraClick }) => 
                 const sociosMoraBadge = sociosMora === 0 ? 'bg-emerald-100 text-emerald-700' : sociosMoraPct <= 10 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700';
                 const sociosMoraBadgeLabel = sociosMora === 0 ? '✓ Ninguno' : `${sociosMoraPct.toFixed(0)}% del total`;
 
-                // Retorno del Capital: rentabilidad total / patrimonio activos
-                const rentabilidadTotal = (stats?.totalInteresesPagados || 0) + (stats?.rentabilidadCajaNU || 0) + (stats?.totalPenaltyValue || 0);
-                const patrimonio = stats?.totalAhorradoGeneral || 1;
-                const retornoCapital = (rentabilidadTotal / patrimonio) * 100;
-                const retornoColor = retornoCapital >= 5 ? 'from-emerald-50' : retornoCapital >= 2 ? 'from-amber-50' : 'from-gray-50';
-                const retornoText = retornoCapital >= 5 ? 'text-emerald-700' : retornoCapital >= 2 ? 'text-amber-700' : 'text-gray-600';
-                const retornoBadge = retornoCapital >= 5 ? 'bg-emerald-100 text-emerald-700' : retornoCapital >= 2 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600';
-                const retornoBadgeLabel = retornoCapital >= 5 ? '▲ Saludable' : retornoCapital >= 2 ? '● Moderado' : '▼ Revisar';
-
                 return (
                     <div className="mb-8">
                         <h2 className="text-lg font-bold text-brand-primary mb-4 flex items-center gap-2">
                             <ShieldCheck className="w-5 h-5 text-rose-600" /> Indicadores de Riesgo y Rendimiento
                         </h2>
-                        <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+                        <div className="grid gap-4 grid-cols-2 lg:grid-cols-3">
 
                             {/* Índice de Mora */}
                             <div className={`bg-gradient-to-br ${moraColor} to-white rounded-xl border border-gray-100 p-5 flex flex-col gap-3 shadow-sm`}>
@@ -122,27 +118,6 @@ const RiskReturnIndicators = ({ stats, loading = false, onSociosMoraClick }) => 
                                     </div>
                                     <p className="text-[10px] text-gray-500 font-bold mt-1">
                                         {loading ? '' : cobertura === null ? 'Sin deuda vencida que cubrir' : `$${Number(disponible).toLocaleString('es-CO')} caja / $${Number(mora).toLocaleString('es-CO')} mora`}
-                                    </p>
-                                </div>
-                            </div>
-
-                            {/* Retorno del Capital */}
-                            <div className={`bg-gradient-to-br ${retornoColor} to-white rounded-xl border border-gray-100 p-5 flex flex-col gap-3 shadow-sm`}>
-                                <div className="flex items-center justify-between">
-                                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Retorno del Capital</p>
-                                    <TrendingUp className={`h-4 w-4 ${retornoText}`} />
-                                </div>
-                                <p className={`text-[28px] font-black font-mono leading-none ${loading ? 'text-gray-300' : retornoText}`}>
-                                    {loading ? '...' : `${retornoCapital.toFixed(1)}%`}
-                                </p>
-                                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full self-start ${retornoBadge}`}>{retornoBadgeLabel}</span>
-                                <div>
-                                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                                        <div className={`h-full rounded-full ${retornoCapital >= 5 ? 'bg-emerald-400' : retornoCapital >= 2 ? 'bg-amber-400' : 'bg-gray-300'}`}
-                                            style={{ width: `${Math.min(retornoCapital * 10, 100)}%` }} />
-                                    </div>
-                                    <p className="text-[10px] text-gray-500 font-bold mt-1">
-                                        {loading ? '' : `$${Number(rentabilidadTotal).toLocaleString('es-CO')} ganancia / $${Number(patrimonio).toLocaleString('es-CO')} patrimonio`}
                                     </p>
                                 </div>
                             </div>
