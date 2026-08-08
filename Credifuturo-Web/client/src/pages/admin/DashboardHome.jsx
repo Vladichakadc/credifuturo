@@ -1929,7 +1929,16 @@ const DashboardHome = () => {
             }
             cutPoints.push(imgH);
             const numPages = cutPoints.length - 1;
-            const totalPages = numPages + 1; // +1 por la página de Cartera en Mora EP
+            // El detalle de mora EP es nominal (nombre + cédula + deuda de cada
+            // socio), así que el backend ya no se lo envía a quien no es admin. Sin
+            // esta condición el PDF del socio añadía igual la página y, al ver la
+            // lista vacía, imprimía "No hay cartera en mora EP" en verde — junto a
+            // la tarjeta "Mora de Cartera" del MISMO informe mostrando la mora real.
+            // Un documento con el sello del fondo afirmando lo contrario de sus
+            // propias cifras. Ausencia de permiso no es ausencia de mora: se omite
+            // la página entera, no se rellena con una negación falsa.
+            const incluirMoraEP = isAdmin;
+            const totalPages = numPages + (incluirMoraEP ? 1 : 0);
 
             // ── Encabezado corporativo completo ─────────────────────────────────
             const drawHeader = (pageNum) => {
@@ -2028,7 +2037,8 @@ const DashboardHome = () => {
                 pdf.addImage(sliceData, 'JPEG', margin, headerH + 1.5, printW, sliceHmm);
             }
 
-            // ── Página adicional: Detalle de Cartera en Mora EP ────────────────
+            // ── Página adicional: Detalle de Cartera en Mora EP (solo admin) ───
+            if (incluirMoraEP) {
             pdf.addPage();
             drawHeader(totalPages);
             drawFooter();
@@ -2129,6 +2139,7 @@ const DashboardHome = () => {
                 pdf.text('TOTAL EN MORA EP:', margin + 2, my + 6);
                 pdf.text('$' + totalValor.toLocaleString('es-CO', { minimumFractionDigits: 0 }), pageW - margin - 2, my + 6, { align: 'right' });
             }
+            } // fin de incluirMoraEP
 
             const fileName = `Informe_Credifuturo_${fechaHoy.toISOString().slice(0, 10)}.pdf`;
             pdf.save(fileName);
@@ -2321,13 +2332,20 @@ const DashboardHome = () => {
                         textColor={stats?.totalPenaltyDays > 0 ? 'text-rose-600' : 'text-gray-900'}
                         onClick={() => handleCardClick('/admin/savings/list', { status: 'Penalizacion' })}
                     />
+                    {/* Los tres modales de detalle (recargos, mora EP, socios en mora)
+                        listan nombre y cédula socio por socio, así que el backend ya no
+                        manda esos arrays a quien no es admin — y los modales devuelven
+                        null con la lista vacía. Sin gatear el onClick, la tarjeta se
+                        pintaba clicable para el socio y el clic no abría nada:
+                        comprobado, "Mora de Cartera" era un clic muerto. Prometer un
+                        detalle que nunca llega hace que la página se perciba rota. */}
                     <StatCard
                         title="Recargos por Mora"
                         value={loading ? '...' : `$${Number(stats?.totalPenaltyValue || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
                         description="Cobros por retraso · año actual"
                         icon={DollarSign}
                         color="text-amber-500"
-                        onClick={() => setShowPenaltyModal(true)}
+                        onClick={isAdmin ? () => setShowPenaltyModal(true) : undefined}
                         customBg="linear-gradient(135deg, #FEFDE8 0%, #FEF9C3 100%)"
                     />
                 </div>
@@ -2371,7 +2389,7 @@ const DashboardHome = () => {
                         icon={AlertTriangle}
                         color="text-red-500"
                         customBg="linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)"
-                        onClick={() => setShowMoraEPModal(true)}
+                        onClick={isAdmin ? () => setShowMoraEPModal(true) : undefined}
                     />
                 </div>
                 {/* Fila 2: flujo de intereses */}
@@ -2525,9 +2543,9 @@ const DashboardHome = () => {
 
                             {/* Socios en Mora */}
                             <div
-                                className={`bg-gradient-to-br ${sociosMoraColor} to-white rounded-xl border border-gray-100 p-5 flex flex-col gap-3 shadow-sm transition-all duration-200 ${sociosMora > 0 ? 'cursor-pointer hover:shadow-md hover:border-brand-primary/20 active:scale-[0.99]' : ''}`}
-                                onClick={() => sociosMora > 0 && setShowMoraModal(true)}
-                                title={sociosMora > 0 ? 'Ver detalle de socios en mora' : undefined}
+                                className={`bg-gradient-to-br ${sociosMoraColor} to-white rounded-xl border border-gray-100 p-5 flex flex-col gap-3 shadow-sm transition-all duration-200 ${isAdmin && sociosMora > 0 ? 'cursor-pointer hover:shadow-md hover:border-brand-primary/20 active:scale-[0.99]' : ''}`}
+                                onClick={() => isAdmin && sociosMora > 0 && setShowMoraModal(true)}
+                                title={isAdmin && sociosMora > 0 ? 'Ver detalle de socios en mora' : undefined}
                             >
                                 <div className="flex items-center justify-between">
                                     <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Socios en Mora</p>

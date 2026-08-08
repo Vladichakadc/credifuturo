@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../config/api';
 import {
@@ -233,6 +233,13 @@ const ExecutivePanelPage = () => {
     // es lo que sostiene la promesa — se muestra la hora del dato, no un pulso decorativo.
     const [ultimaCarga, setUltimaCarga] = useState(null);
     const [refrescando, setRefrescando] = useState(false);
+    // Un refresco puede fallar sin que eso invalide lo que ya está en pantalla.
+    // Se avisa con un badge discreto, no vaciando el panel (ver más abajo).
+    const [falloRefresco, setFalloRefresco] = useState(false);
+    // Ref, no estado: fetchAll necesita saber si YA hay datos buenos pintados, y
+    // meter `exec` en las deps del useCallback reiniciaría el intervalo en cada
+    // carga.
+    const execRef = useRef(null);
 
     const fetchAll = useCallback(async ({ esRefresco = false } = {}) => {
         if (esRefresco) setRefrescando(true);
@@ -259,18 +266,41 @@ const ExecutivePanelPage = () => {
             // que usa el Panel Principal, para que ambos paneles cuenten lo mismo.
             api.get('/admin/year-comparison'),
         ]);
-        if (results[0].status === 'fulfilled') { setExec(results[0].value.data); setError(null); }
-        else setError('No se pudieron cargar los indicadores ejecutivos.');
+        // Un fallo del refresco NO puede borrar un panel ya pintado.
+        //
+        // Antes, cualquier tropiezo de /executive-stats hacía setError(...), y la
+        // guarda de render `if (error || !exec || !derived)` sustituía TODA la
+        // página por "Sin datos disponibles" — incluido el encabezado, donde vive
+        // el botón de reintentar, así que el usuario quedaba sin salida hasta el
+        // siguiente tick (2 min) o una recarga manual. En Railway (servicio único)
+        // esto se disparaba en CADA redespliegue para todo el que tuviera el panel
+        // abierto. El fetch al montar sí debe poder mostrar el error: ahí no hay
+        // nada que preservar.
+        const okExec = results[0].status === 'fulfilled';
+        if (okExec) {
+            execRef.current = results[0].value.data;
+            setExec(results[0].value.data);
+            setError(null);
+            setFalloRefresco(false);
+        } else if (!execRef.current) {
+            setError('No se pudieron cargar los indicadores ejecutivos.');
+        } else {
+            setFalloRefresco(true);
+        }
         if (results[1].status === 'fulfilled') setStats(results[1].value.data);
         if (results[2].status === 'fulfilled') setEvolution(results[2].value.data);
-        setPending({
-            loanRequests: results[3].status === 'fulfilled' ? (results[3].value.data?.total || 0) : 0,
-            passwordResets: results[4].status === 'fulfilled' ? (results[4].value.data?.total || 0) : 0,
-            orphanLoans: results[5].status === 'fulfilled' ? (results[5].value.data?.total || 0) : 0,
-        });
+        // Igual que arriba: si las colas fallan, se conserva el conteo anterior en
+        // vez de anunciar "0 pendientes", que sería una afirmación falsa.
+        setPending(prev => ({
+            loanRequests: results[3].status === 'fulfilled' ? (results[3].value.data?.total || 0) : prev.loanRequests,
+            passwordResets: results[4].status === 'fulfilled' ? (results[4].value.data?.total || 0) : prev.passwordResets,
+            orphanLoans: results[5].status === 'fulfilled' ? (results[5].value.data?.total || 0) : prev.orphanLoans,
+        }));
         if (results[6]?.status === 'fulfilled') { setYearCmp(results[6].value.data); setYearCmpError(false); }
         else setYearCmpError(true);
-        setUltimaCarga(new Date());
+        // La hora solo avanza si el dato de verdad se renovó: si no, el badge
+        // estaría fechando datos viejos como si fueran recién traídos.
+        if (okExec) setUltimaCarga(new Date());
         setLoading(false);
         setRefrescando(false);
     }, [esJunta, isAdmin]);
@@ -438,19 +468,44 @@ const ExecutivePanelPage = () => {
     // sitio hardcodeaba '+' y text-emerald-600, así que una caída se anunciaba en
     // verde con signo positivo ('+-20% vs 2025'). En un panel cuya promesa es
     // "transparencia total", ese era el defecto más grave.
-    const Delta = ({ pct, anio }) => {
+    // `base` declara CONTRA QUÉ se compara, porque no todas las tarjetas comparan
+    // lo mismo: las de acumulado parcial (ahorro, colocación) van contra el ritmo
+    // del año anterior, mientras que Intereses ya suma cobrados + agendados —un
+    // año completo— y sí se puede medir contra el año anterior completo. Rotularlas
+    // igual sería mentir en una de las dos.
+    const Delta = ({ pct, anio, base = 'ritmo' }) => {
         if (pct === null || pct === undefined || !Number.isFinite(pct)) return null;
         const sube = pct >= 0;
         return (
             <span className={`font-bold ${sube ? 'text-emerald-600' : 'text-red-600'}`}>
-                {' · '}{sube ? '▲' : '▼'} {fmtVariacion(pct)} vs {anio}
+                {' · '}{sube ? '▲' : '▼'} {fmtVariacion(pct)} vs {base === 'ritmo' ? 'ritmo ' : ''}{anio}
             </span>
         );
     };
 
-    const crecimientoAhorro = derived.ahorroPrevio > 0
-        ? ((derived.ahorroActual - derived.ahorroPrevio) / derived.ahorroPrevio) * 100
-        : null;
+    // Comparación interanual del hero y de las tarjetas de Actividad.
+    //
+    // Aquí vivía el MISMO error de medición que ya costó tres correcciones en
+    // producción: dividir el acumulado PARCIAL del año en curso entre el total
+    // COMPLETO de 12 meses del año anterior. Con el fondo ahorrando igual que el
+    // año pasado, en agosto marcaba -25,6%. Mientras estuvo hardcodeado en '▲ +'
+    // se veía roto ('+-25,6%') y nadie lo creía; al derivar flecha y color del
+    // signo pasó a ser una alarma ROJA creíble... 30 cm por encima de la tarjeta
+    // "Ahorro de los Socios", que compara contra el RITMO y decía +21,7% en verde.
+    // El mismo indicador, dos veredictos opuestos, en una pantalla cuyo encabezado
+    // promete "transparencia total".
+    //
+    // Se comparan ahora contra el ritmo del año anterior y desde `ind`, que es la
+    // fuente única compartida con las YearProgressCard: así las dos cifras no
+    // pueden divergir aunque alguien toque una sola de las dos.
+    const vsRitmo = (actual, totalPrev) => {
+        if (!ind || ind.comparacionPrematura) return null;
+        const base = ind.ritmoPrev(totalPrev);
+        if (!(base > 0)) return null;
+        return ((Number(actual) || 0) / base - 1) * 100;
+    };
+    const crecimientoAhorro = vsRitmo(ind?.ahorroActualTotal, ind?.ahorroPrevTotal);
+    const crecimientoColocacion = vsRitmo(ind?.colocacionActualYtd, ind?.baselinePrestamos);
 
     // Compartido entre la tarjeta "¿Cuánto está ganando el fondo?" y su modal de
     // análisis experto (ChartExpandModal), para no duplicar la lógica de filtrado.
@@ -496,13 +551,19 @@ const ExecutivePanelPage = () => {
                             <button
                                 onClick={() => fetchAll({ esRefresco: true })}
                                 disabled={refrescando}
-                                title="Actualizar ahora"
-                                className="print:hidden text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1.5 transition-colors disabled:opacity-60"
+                                title={falloRefresco
+                                    ? 'El último intento de actualizar falló. Los datos que ves son los de la hora indicada.'
+                                    : 'Actualizar ahora'}
+                                className={`print:hidden text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full flex items-center gap-1.5 transition-colors disabled:opacity-60 ${
+                                    falloRefresco
+                                        ? 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                                        : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                }`}
                             >
                                 <RefreshCw className={`h-3 w-3 ${refrescando ? 'animate-spin' : ''}`} />
                                 {refrescando
                                     ? 'Actualizando…'
-                                    : `Datos de las ${ultimaCarga.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}`}
+                                    : `${falloRefresco ? 'Sin conexión · datos' : 'Datos'} de las ${ultimaCarga.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}`}
                             </button>
                         )}
                     </div>
@@ -577,13 +638,16 @@ const ExecutivePanelPage = () => {
             <div className="grid gap-3 grid-cols-2 lg:grid-cols-5">
                 {/* La flecha y el signo del badge se derivan del dato: antes estaban
                     fijos en '▲ +' con tono verde, así que una caída del ahorro se
-                    anunciaba como si fuera un crecimiento. */}
+                    anunciaba como si fuera un crecimiento. Y la base es el RITMO del
+                    año anterior, la misma que usa la tarjeta "Ahorro de los Socios"
+                    más abajo — antes eran dos bases distintas y la pantalla mostraba
+                    -25,6% en rojo arriba y +21,7% en verde abajo del mismo indicador. */}
                 <HeroKpi
                     label="Patrimonio de socios"
                     value={fmt(patrimonio)}
                     icon={PiggyBank}
                     badge={crecimientoAhorro != null
-                        ? `${crecimientoAhorro >= 0 ? '▲' : '▼'} ${fmtVariacion(crecimientoAhorro)} ahorro vs ${anioActual - 1}`
+                        ? `${crecimientoAhorro >= 0 ? '▲' : '▼'} ${fmtVariacion(crecimientoAhorro)} ahorro vs ritmo ${anioActual - 1}`
                         : null}
                     badgeTone={crecimientoAhorro == null ? 'ok' : (crecimientoAhorro >= 0 ? 'ok' : 'risk')}
                     onClick={goToAdmin('/admin/savings/list')}
@@ -740,7 +804,7 @@ const ExecutivePanelPage = () => {
                                 <p className="text-[11px] text-gray-500 mt-0.5">
                                     {fmt(derived.intCobradosAnio)} cobrados + {fmt(derived.intAgendadosAnio)} agendados
                                     {derived.intAnioPrevio > 0 && (
-                                        <Delta pct={((derived.intCobradosAnio + derived.intAgendadosAnio) / derived.intAnioPrevio - 1) * 100} anio={anioActual - 1} />
+                                        <Delta pct={((derived.intCobradosAnio + derived.intAgendadosAnio) / derived.intAnioPrevio - 1) * 100} anio={anioActual - 1} base="total" />
                                     )}
                                 </p>
                                 <ChevronRight className="h-3.5 w-3.5 text-gray-200 group-hover:text-brand-primary/50 absolute bottom-3 right-3 transition-colors" />
@@ -757,8 +821,8 @@ const ExecutivePanelPage = () => {
                                 </p>
                                 <p className="text-[11px] text-gray-500 mt-0.5">
                                     {derived.colocActual?.creditos || 0} créditos
-                                    {derived.colocPrevio?.total > 0 && (
-                                        <Delta pct={((derived.colocActual?.total || 0) / derived.colocPrevio.total - 1) * 100} anio={anioActual - 1} />
+                                    {crecimientoColocacion != null && (
+                                        <Delta pct={crecimientoColocacion} anio={anioActual - 1} />
                                     )}
                                 </p>
                                 <ChevronRight className="h-3.5 w-3.5 text-gray-200 group-hover:text-brand-primary/50 absolute bottom-3 right-3 transition-colors" />

@@ -5319,6 +5319,21 @@ router.get('/savings-evolution', async (req, res) => {
         const sequelize = require('../config/database');
         const { QueryTypes } = require('sequelize');
         const clientId = req.query.clientId ? parseInt(req.query.clientId, 10) : null;
+
+        // A01 — Control de acceso roto (IDOR). Esta ruta está en READ_ONLY_FOR_ALL
+        // porque su forma AGREGADA (sin ?clientId) alimenta el Panel Ejecutivo, que
+        // cualquier socio puede ver. Pero con ?clientId devolvía el historial de
+        // ahorro mes a mes de CUALQUIER socio a CUALQUIER socio autenticado: el
+        // desplegable de SavingsEvolutionPage se limita al propio usuario en el
+        // cliente, y ese filtro se saltaba con un curl o desde las devtools.
+        // Iterando clientId=1..N se reconstruía el fondo entero, persona por persona.
+        // Verificado: el socio id=15 leía la serie completa de los socios 17 y 18.
+        //   - sin clientId  -> agregado del fondo, sin datos de nadie en particular
+        //   - con clientId  -> solo el admin, o el propio socio sobre sí mismo
+        if (clientId !== null && req.user?.role !== 'admin' && clientId !== req.user?.id) {
+            return res.status(403).json({ error: 'Solo puedes consultar tu propia evolución de ahorros.' });
+        }
+
         const filtro = clientId ? 'AND clientId = :clientId' : '';
         const replacements = clientId ? { clientId } : {};
 

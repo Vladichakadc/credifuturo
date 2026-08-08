@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { HelpCircle, X, BookOpen } from 'lucide-react';
 
 /**
@@ -49,24 +50,60 @@ export const TERMINOS = {
     },
 };
 
-/** Icono de ayuda junto a un término; abre su definición. */
+/**
+ * Icono de ayuda junto a un término; abre su definición.
+ *
+ * Dos detalles que parecen menores y no lo son. Este control se inyecta dentro
+ * del `label` de una HeroKpi, y HeroKpi se renderiza como <button> cuando tiene
+ * onClick — así que:
+ *
+ * 1. El disparador NO puede ser un <button>: anidar botones es HTML inválido.
+ *    Va como <span role="button"> con manejo de teclado, que es accesible y
+ *    válido dentro de contenido de botón.
+ * 2. El modal es DESCENDIENTE React del elemento clicable, y los eventos
+ *    sintéticos de React burbujean por el árbol de React, no por el del DOM —
+ *    ni el portal ni `position: fixed` lo desconectan. Sin stopPropagation en el
+ *    fondo oscuro, cerrar el glosario clicando fuera disparaba también el
+ *    onClick de la tarjeta: en "Cartera pendiente" sacaba al gerente a
+ *    /admin/payments/list, y en "Apalancamiento" abría otro modal encima.
+ * 3. Y va en un PORTAL a document.body porque HeroKpi tiene `hover:scale-[1.02]`:
+ *    un `transform` en un ancestro convierte `position: fixed` en relativo a ESE
+ *    ancestro, no al viewport. Sin el portal el modal salía encajonado dentro de
+ *    la tarjeta (medido: 225×164 px en la esquina derecha) y encima recortado por
+ *    su `overflow-hidden` — el texto quedaba ilegible.
+ */
+
+/** Envuelve el modal fuera del subárbol con transform/overflow de la tarjeta. */
+const Overlay = ({ onCerrar, children, etiqueta }) => createPortal(
+    <div
+        className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+        onClick={(e) => { e.stopPropagation(); onCerrar(); }}
+        aria-label={etiqueta}
+    >
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+        {children}
+    </div>,
+    document.body
+);
 export const TerminoAyuda = ({ termino, className = '' }) => {
     const [abierto, setAbierto] = useState(false);
     const def = TERMINOS[termino];
     if (!def) return null;
+    const abrir = (e) => { e.stopPropagation(); e.preventDefault(); setAbierto(true); };
     return (
         <>
-            <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setAbierto(true); }}
+            <span
+                role="button"
+                tabIndex={0}
+                onClick={abrir}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') abrir(e); }}
                 aria-label={`Qué significa ${def.titulo}`}
-                className={`print:hidden inline-flex items-center justify-center rounded-full hover:bg-white/20 transition-colors ${className}`}
+                className={`print:hidden inline-flex items-center justify-center rounded-full hover:bg-white/20 transition-colors cursor-pointer ${className}`}
             >
                 <HelpCircle className="h-3.5 w-3.5 opacity-60 hover:opacity-100" />
-            </button>
+            </span>
             {abierto && (
-                <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" onClick={() => setAbierto(false)}>
-                    <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+                <Overlay onCerrar={() => setAbierto(false)}>
                     <div
                         role="dialog" aria-modal="true" aria-label={def.titulo}
                         className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-5"
@@ -74,10 +111,17 @@ export const TerminoAyuda = ({ termino, className = '' }) => {
                     >
                         <div className="flex items-start justify-between gap-3 mb-2">
                             <h3 className="text-base font-black text-gray-900">{def.titulo}</h3>
-                            <button onClick={() => setAbierto(false)} aria-label="Cerrar"
-                                className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
+                            {/* También <span>: este modal vive dentro del <button> de
+                                la HeroKpi, donde un <button> anidado es HTML inválido. */}
+                            <span
+                                role="button"
+                                tabIndex={0}
+                                onClick={(e) => { e.stopPropagation(); setAbierto(false); }}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); setAbierto(false); } }}
+                                aria-label="Cerrar"
+                                className="p-1 rounded-lg hover:bg-gray-100 text-gray-400 cursor-pointer">
                                 <X className="h-4 w-4" />
-                            </button>
+                            </span>
                         </div>
                         <p className="text-sm text-gray-700 leading-relaxed">{def.texto}</p>
                         {def.rango && (
@@ -86,7 +130,7 @@ export const TerminoAyuda = ({ termino, className = '' }) => {
                             </p>
                         )}
                     </div>
-                </div>
+                </Overlay>
             )}
         </>
     );
@@ -105,8 +149,7 @@ const GlosarioFondo = () => {
                 <BookOpen className="h-3.5 w-3.5" /> ¿Qué significan estos términos?
             </button>
             {abierto && (
-                <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" onClick={() => setAbierto(false)}>
-                    <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+                <Overlay onCerrar={() => setAbierto(false)}>
                     <div
                         role="dialog" aria-modal="true" aria-label="Glosario"
                         className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col"
@@ -135,7 +178,7 @@ const GlosarioFondo = () => {
                             ))}
                         </div>
                     </div>
-                </div>
+                </Overlay>
             )}
         </>
     );
