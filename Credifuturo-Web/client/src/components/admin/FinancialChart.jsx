@@ -127,6 +127,13 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
     // Solo se vuelve positivo si el fondo ya superó en lo que va del año la ganancia
     // de los 12 meses completos del año anterior.
     const diferenciaVsAnioCompleto = gananciaReal2025 > 0 ? rentabilidadActual - gananciaReal2025 : null;
+    // % de crecimiento vs el año anterior COMPLETO — el dato principal que pide el
+    // comité para "Resultado total". A diferencia de growthVsPrevYtd (que compara
+    // contra el RITMO prorrateado y por eso puede evaluarse como "bien/mal"), este
+    // será negativo la mayor parte del año por pura aritmética de calendario —
+    // comparar un acumulado parcial contra 12 meses completos — así que NUNCA se
+    // pinta en rojo ni se lee como desempeño débil; ver el uso más abajo.
+    const crecimientoVsAnioCompleto = gananciaReal2025 > 0 ? ((rentabilidadActual / gananciaReal2025) - 1) * 100 : null;
     const nombreMesCorte = cmpCorte
         ? new Date(cmpCorte.anioActual, cmpCorte.mes - 1, cmpCorte.dia).toLocaleDateString('es-CO', { day: 'numeric', month: 'long' })
         : null;
@@ -779,58 +786,41 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                                     anterior, en vez de repetir la misma pregunta dos veces. */}
                                 <h3 className="text-base font-extrabold text-gray-900">¿Vamos mejor que el año pasado?</h3>
                                 <p className="inline-block mt-1 text-[11px] font-bold text-blue-800 bg-blue-100 px-2 py-0.5 rounded-md uppercase tracking-wide">
-                                    {fraccionAnio !== null
-                                        ? `vs el ritmo de ${baselineAnio} · ${(fraccionAnio * 100).toFixed(0)}% del año`
-                                        : `Comparado con ${baselineAnio}`}
+                                    vs {baselineAnio} completo
                                 </p>
 
-                                <div className={`mt-3 border rounded-xl p-4 flex flex-col items-center justify-center shadow-sm transition-all duration-500 ${growthVsPrevYtd === null ? 'bg-gray-50 border-gray-200' : growthOk ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
-                                    <span className={`text-[10px] font-black uppercase tracking-widest mb-1 ${growthVsPrevYtd === null ? 'text-gray-500' : growthOk ? 'text-emerald-600/70' : 'text-red-600/70'}`}>Resultado total</span>
-                                    <span className={`text-3xl font-black font-mono ${growthVsPrevYtd === null ? 'text-gray-900' : growthOk ? 'text-emerald-700' : 'text-red-700'}`}>
-                                        {growthVsPrevYtd === null ? '—' : fmtVariacion(growthVsPrevYtd)}
+                                {/* "Resultado total" — a pedido explícito, el dato PRINCIPAL de esta
+                                    tarjeta es la comparación contra el año anterior COMPLETO (12
+                                    meses): las dos cifras crudas, el delta en pesos y el % de
+                                    crecimiento, todo en un solo lugar. El ritmo (que compara contra
+                                    el año anterior prorrateado a lo transcurrido) queda como nota de
+                                    contexto más abajo, no como titular — sigue siendo útil para saber
+                                    si vamos "a tiempo", pero no es lo que se pidió como dato principal.
+                                    Por eso este bloque NUNCA se pinta en rojo cuando el % es negativo:
+                                    mientras el año esté en curso, ir por debajo del total del año
+                                    anterior es lo normal (se compara un acumulado parcial contra 12
+                                    meses enteros) — no es una señal de que algo va mal. */}
+                                <div className={`mt-3 border rounded-xl p-4 flex flex-col items-center justify-center shadow-sm transition-all duration-500 ${crecimientoVsAnioCompleto === null ? 'bg-gray-50 border-gray-200' : crecimientoVsAnioCompleto >= 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-blue-50 border-blue-100'}`}>
+                                    <span className={`text-[10px] font-black uppercase tracking-widest mb-1 ${crecimientoVsAnioCompleto === null ? 'text-gray-500' : crecimientoVsAnioCompleto >= 0 ? 'text-emerald-600/70' : 'text-blue-700/70'}`}>Resultado total</span>
+                                    <span className={`text-3xl font-black font-mono ${crecimientoVsAnioCompleto === null ? 'text-gray-900' : crecimientoVsAnioCompleto >= 0 ? 'text-emerald-700' : 'text-blue-800'}`}>
+                                        {crecimientoVsAnioCompleto === null ? '—' : `${crecimientoVsAnioCompleto >= 0 ? '▲' : '▼'} ${fmtVariacion(crecimientoVsAnioCompleto)}`}
                                     </span>
-                                    {/* El % solo dice "cuánto más rápido"; el socio también necesita
-                                        "cuánto más rápido EN PESOS" — la diferencia real entre lo
-                                        acumulado y el ritmo del año anterior a esta misma altura. */}
-                                    {gananciaPrevRitmo !== null && (
-                                        <span className={`text-sm font-black font-mono mt-0.5 ${growthOk ? 'text-emerald-700/90' : 'text-red-700/90'}`}>
-                                            {growthOk ? '+' : '−'}${Math.round(Math.abs(rentabilidadActual - gananciaPrevRitmo)).toLocaleString('es-CO')}
+                                    {diferenciaVsAnioCompleto !== null && (
+                                        <span className={`text-sm font-black font-mono mt-0.5 ${diferenciaVsAnioCompleto >= 0 ? 'text-emerald-700/90' : 'text-blue-800/90'}`}>
+                                            {diferenciaVsAnioCompleto >= 0 ? '+' : '−'}${Math.round(Math.abs(diferenciaVsAnioCompleto)).toLocaleString('es-CO')}
                                         </span>
                                     )}
-                                    <span className={`text-[10px] mt-1 font-semibold text-center leading-snug ${growthVsPrevYtd === null ? 'text-gray-500' : growthOk ? 'text-emerald-700/80' : 'text-red-700/80'}`}>
-                                        {growthVsPrevYtd === null
-                                            ? (comparacionPrematura
-                                                ? 'Aún es pronto en el año para comparar'
-                                                : `Sin datos de ${baselineAnio} para comparar`)
-                                            : growthOk
-                                                ? `Vamos por encima del ritmo de ${baselineAnio}`
-                                                : `Vamos por debajo del ritmo de ${baselineAnio}`}
+                                    <span className={`text-[10px] mt-1 font-semibold text-center leading-snug ${crecimientoVsAnioCompleto === null ? 'text-gray-500' : crecimientoVsAnioCompleto >= 0 ? 'text-emerald-700/80' : 'text-blue-800/80'}`}>
+                                        {crecimientoVsAnioCompleto === null
+                                            ? `Sin datos de ${baselineAnio} para comparar`
+                                            : diferenciaVsAnioCompleto >= 0
+                                                ? `Ya superamos toda la ganancia de ${baselineAnio}`
+                                                : `Vamos construyendo hacia igualar todo ${baselineAnio}`}
                                     </span>
-                                    <span className="text-[11px] mt-1.5 font-bold text-gray-500 text-center leading-snug">
-                                        {gananciaPrevRitmo !== null
-                                            ? `Ritmo de ${baselineAnio} a esta altura: $${Math.round(gananciaPrevRitmo).toLocaleString('es-CO')} · llevamos $${Math.round(rentabilidadActual).toLocaleString('es-CO')}`
-                                            : 'Intereses + mora + cuenta NU'}
-                                    </span>
-                                </div>
 
-                                {/* Segunda comparación, distinta de la de arriba: esta es contra el
-                                    año anterior COMPLETO (12 meses), no contra su ritmo prorrateado.
-                                    A pedido explícito: deja las DOS cifras crudas a la vista (2025
-                                    completo y lo que llevamos de 2026), no solo el resultado derivado
-                                    — así nadie tiene que confiar en el cálculo, puede verificarlo.
-                                    El crecimiento (+X%) es SIEMPRE respecto al año anterior COMPLETO,
-                                    nunca se vuelve negativo solo por estar a mitad de año: si el fondo
-                                    aún no alcanza el total de 2025, se ve en la barra de avance (que si
-                                    puede estar por debajo de 100%), no en el signo del %. */}
-                                {avanceSobreAnioCompleto !== null && diferenciaVsAnioCompleto !== null && (
-                                    <div className="mt-2 bg-white border border-gray-200 rounded-xl p-3">
-                                        <div className="flex items-baseline justify-between gap-2">
-                                            <span className="text-[10px] font-black uppercase tracking-wider text-gray-500">{baselineAnio} vs {baselineAnio + 1}</span>
-                                            <span className={`text-sm font-black font-mono ${diferenciaVsAnioCompleto >= 0 ? 'text-emerald-700' : 'text-gray-700'}`}>
-                                                {diferenciaVsAnioCompleto >= 0 ? '▲' : '▼'} {fmtVariacion((rentabilidadActual / gananciaReal2025 - 1) * 100)}
-                                            </span>
-                                        </div>
-                                        <div className="mt-2 flex items-center justify-between gap-2 text-[11px]">
+                                    {/* Las dos cifras crudas, siempre a la vista — nada implícito. */}
+                                    {gananciaReal2025 > 0 && (
+                                        <div className="mt-2.5 w-full flex items-center justify-between gap-2 text-[11px] border-t border-black/5 pt-2.5">
                                             <div className="text-left">
                                                 <p className="text-gray-400 font-bold uppercase tracking-wide text-[9px]">{baselineAnio} completo</p>
                                                 <p className="font-black font-mono text-gray-700">${Math.round(gananciaReal2025).toLocaleString('es-CO')}</p>
@@ -841,21 +831,27 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                                                 <p className="font-black font-mono text-gray-900">${Math.round(rentabilidadActual).toLocaleString('es-CO')}</p>
                                             </div>
                                         </div>
-                                        <div className="mt-2 h-2 bg-gray-100 rounded-full overflow-hidden">
-                                            <div className={`h-full rounded-full transition-all duration-700 ${avanceSobreAnioCompleto >= 100 ? 'bg-emerald-500' : 'bg-brand-primary'}`}
+                                    )}
+                                    {avanceSobreAnioCompleto !== null && (
+                                        <div className="mt-2 w-full h-2 bg-white/60 rounded-full overflow-hidden">
+                                            <div className={`h-full rounded-full transition-all duration-700 ${avanceSobreAnioCompleto >= 100 ? 'bg-emerald-500' : 'bg-blue-400'}`}
                                                 style={{ width: `${Math.min(avanceSobreAnioCompleto, 100)}%` }} />
                                         </div>
-                                        <p className={`text-[11px] font-black font-mono mt-1.5 ${diferenciaVsAnioCompleto >= 0 ? 'text-emerald-700' : 'text-gray-700'}`}>
-                                            {diferenciaVsAnioCompleto >= 0
-                                                ? `+$${Math.round(diferenciaVsAnioCompleto).toLocaleString('es-CO')} por encima de todo ${baselineAnio}`
-                                                : `Faltan $${Math.round(Math.abs(diferenciaVsAnioCompleto)).toLocaleString('es-CO')} para igualar todo ${baselineAnio}`}
+                                    )}
+
+                                    {/* Ritmo: contexto secundario, no el titular. Responde una pregunta
+                                        distinta ("¿vamos a tiempo respecto a como cerró el año pasado?")
+                                        de la que responde el dato principal de arriba ("¿ya generamos
+                                        más que todo el año pasado?"). */}
+                                    {gananciaPrevRitmo !== null && (
+                                        <p className="mt-2.5 w-full text-[10px] text-gray-500 font-semibold text-center leading-snug border-t border-black/5 pt-2">
+                                            Ajustado al {fraccionAnio !== null ? `${(fraccionAnio * 100).toFixed(0)}% del año transcurrido` : 'ritmo'} (comparación vs. el ritmo de {baselineAnio}):{' '}
+                                            <span className={`font-black ${growthOk ? 'text-emerald-700' : 'text-amber-700'}`}>
+                                                {growthVsPrevYtd === null ? '—' : fmtVariacion(growthVsPrevYtd)}
+                                            </span>
                                         </p>
-                                        <p className="text-[10px] text-gray-500 font-semibold mt-1 leading-snug">
-                                            Llevamos el {avanceSobreAnioCompleto.toFixed(0)}% de lo que se ganó en todo {baselineAnio}
-                                            {fraccionAnio !== null && `, con el ${(fraccionAnio * 100).toFixed(0)}% del año transcurrido`}.
-                                        </p>
-                                    </div>
-                                )}
+                                    )}
+                                </div>
                             </div>
 
                             <div className="w-full md:w-3/4 bg-white rounded-xl p-1 border border-gray-200 shadow-sm overflow-x-auto">
