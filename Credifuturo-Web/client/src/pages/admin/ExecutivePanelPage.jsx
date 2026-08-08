@@ -8,7 +8,7 @@ import {
 } from 'recharts';
 import {
     Gauge, ShieldCheck, AlertTriangle, TrendingUp, Wallet, PiggyBank,
-    CalendarClock, Users, Printer, CheckCircle2, Info, Landmark, Percent,
+    CalendarClock, Users, Printer, CheckCircle2, Info, Landmark,
     ChevronDown, DollarSign, Database, Clock, Activity, BarChart3, Coins,
     ChevronRight, Bell, KeyRound, ClipboardList, Sparkles, UserX, RefreshCw
 } from 'lucide-react';
@@ -38,56 +38,6 @@ const mesLabel = (ym) => {
 
 // Paleta con semántica financiera: verde = ingreso/ahorro, dorado = flujo, rojo = solo riesgo
 const DONUT_COLORS = ['#166534', '#15803d', '#22c55e', '#84cc16', '#a3e635', '#d1d5db'];
-
-// Análisis experto del Apalancamiento del Fondo (Loan-to-Deposit Ratio), espejo a
-// nivel-fondo de la regla 3× que ya se aplica por socio en el Simulador de Préstamo.
-function analyzeLeverage({ ldrPct, carteraTotal, patrimonio }) {
-    const narrative = ldrPct > 85
-        ? `El fondo tiene colocado el ${ldrPct.toFixed(0)}% del patrimonio de los socios (${fmt(carteraTotal)} de ${fmt(patrimonio)}). Este nivel deja muy poco margen de maniobra: cualquier solicitud nueva de crédito o retiro significativo de un socio puede tensionar la caja disponible. Recomendación: priorizar recaudo de cartera vigente antes de aprobar nuevos desembolsos grandes, y mantener un colchón de liquidez visible en "Disponible total".`
-        : ldrPct < 40
-            ? `Solo el ${ldrPct.toFixed(0)}% del patrimonio de los socios está colocado en préstamos (${fmt(carteraTotal)} de ${fmt(patrimonio)}). Hay capacidad ociosa: capital que podría generar el interés propio del fondo en vez de quedar en caja o rendimientos de bajo retorno. Recomendación: revisar si hay solicitudes represadas o socios sin crédito vigente que puedan aprovechar el cupo disponible (ver "Penetración de crédito").`
-            : `El fondo tiene colocado el ${ldrPct.toFixed(0)}% del patrimonio de los socios (${fmt(carteraTotal)} de ${fmt(patrimonio)}), un nivel sano: suficiente colocación para generar interés sin comprometer la liquidez frente a retiros o nuevas solicitudes.`;
-    return {
-        headline: `${ldrPct.toFixed(0)}% de apalancamiento`,
-        narrative,
-        insights: [
-            { label: 'Cartera pendiente', value: fmt(carteraTotal), icon: Wallet, color: 'blue' },
-            { label: 'Patrimonio de socios', value: fmt(patrimonio), icon: PiggyBank, color: 'emerald' },
-            { label: 'Umbral sano', value: '40% – 85%', icon: Gauge, color: 'gray' },
-            { label: 'Estado', value: ldrPct > 85 ? 'Cerca del límite' : ldrPct < 40 ? 'Capacidad ociosa' : 'Sano', icon: ldrPct > 85 ? AlertTriangle : CheckCircle2, color: ldrPct > 85 ? 'red' : ldrPct < 40 ? 'amber' : 'emerald' },
-        ],
-    };
-}
-
-const HeroKpi = ({ label, value, sub, badge, badgeTone = 'ok', icon: Icon, onClick, children }) => {
-    const tones = {
-        ok: 'bg-emerald-100 text-emerald-700',
-        warn: 'bg-amber-100 text-amber-700',
-        risk: 'bg-red-100 text-red-700',
-        neutral: 'bg-white/15 text-white/80',
-    };
-    const Comp = onClick ? 'button' : 'div';
-    return (
-        <Comp
-            onClick={onClick}
-            className={`rounded-2xl p-4 lg:p-5 text-white relative overflow-hidden text-left w-full ${onClick ? 'cursor-pointer transition-transform duration-200 hover:scale-[1.02] hover:shadow-lg hover:shadow-emerald-900/30 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300' : ''}`}
-            style={{ background: 'linear-gradient(135deg, #052e16 0%, #166534 80%)' }}>
-            <div className="flex items-center justify-between">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-white/55">{label}</p>
-                {Icon && <Icon className="h-4 w-4 text-white/40" />}
-            </div>
-            <p className="text-xl lg:text-2xl font-extrabold mt-1.5 tracking-tight tabular-nums">{value}</p>
-            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                {badge && (
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${tones[badgeTone]}`}>{badge}</span>
-                )}
-                {sub && <span className="text-[11px] text-white/60">{sub}</span>}
-            </div>
-            {children}
-            {onClick && <ChevronRight className="h-3.5 w-3.5 text-white/30 absolute bottom-3 right-3" />}
-        </Comp>
-    );
-};
 
 const SectionTitle = ({ icon: Icon, children }) => (
     <h2 className="text-base font-extrabold text-gray-900 flex items-center gap-2 mb-3">
@@ -207,7 +157,6 @@ const ExecutivePanelPage = () => {
     const [yearCmpError, setYearCmpError] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [showLdrInfo, setShowLdrInfo] = useState(false);
     const [expandIngresos, setExpandIngresos] = useState(false);
 
     // Mismo click-through que las StatCard del Panel Principal: navega a la lista
@@ -220,13 +169,10 @@ const ExecutivePanelPage = () => {
     };
 
     // Devuelve el handler solo si es admin; si no, undefined — el mismo `undefined`
-    // que ya usan HeroKpi/DetailCard para desactivar el cursor-pointer y el hover,
+    // que ya usa DetailCard para desactivar el cursor-pointer y el hover,
     // así un socio ve la tarjeta puramente informativa, sin una promesa de clic rota.
     const goToAdmin = (path, params = {}) => isAdmin ? () => goTo(path, params) : undefined;
 
-    const scrollToId = (id) => {
-        document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    };
 
     // El badge "En vivo" prometía tiempo real sobre un fetch único al montar. Ahora
     // hay refresco real: automático cada 2 minutos y manual con el botón. `ultimaCarga`
@@ -359,13 +305,6 @@ const ExecutivePanelPage = () => {
         const pen = exec.penetracion || { conCredito: 0, activos: 0 };
         const penPct = pen.activos > 0 ? (pen.conCredito / pen.activos) * 100 : 0;
 
-        // Apalancamiento del fondo (Loan-to-Deposit Ratio): cuánta cartera pendiente
-        // hay por cada peso de patrimonio de socios. Espejo, a nivel de fondo, de la
-        // regla 3× que ya se usa por socio individual en el Simulador de Préstamo.
-        const patrimonioSocios = stats?.totalAhorradoGeneral || 0;
-        const ldrPct = patrimonioSocios > 0 ? (cartera.total / patrimonioSocios) * 100 : 0;
-        const ldrTone = ldrPct > 85 ? 'risk' : ldrPct < 40 ? 'warn' : 'ok';
-
         // ── Centro de alertas: reglas sobre los datos reales ──────────
         const alertas = [];
         if ((cartera.vencida || 0) > 0) {
@@ -409,7 +348,7 @@ const ExecutivePanelPage = () => {
         const proyeccion = computeFundProjection({ exec, stats, anioActual });
 
         return {
-            top3, top3Pct, donutData, ldrPct, ldrTone, proyeccion,
+            top3, top3Pct, donutData, proyeccion,
             ahorroActual, ahorroPrevio, colocActual, colocPrevio,
             intCobradosAnio, intAgendadosAnio, intAnioPrevio,
             penPct, alertas, seriesCharts,
@@ -461,8 +400,10 @@ const ExecutivePanelPage = () => {
         );
     }
 
-    const { cartera, recaudoYtd, flujo30dias, penetracion, vencimientos } = exec;
+    const { cartera, flujo30dias, penetracion, vencimientos } = exec;
     const disponible = (stats?.saldoEnBanco || 0) + (stats?.rentabilidadCajaNU || 0);
+    // Sigue en uso pese a retirarse la tarjeta hero: es el denominador del
+    // retorno sobre capital en "Rentabilidad del Fondo".
     const patrimonio = stats?.totalAhorradoGeneral || 0;
     // Delta interanual con signo, flecha y color DERIVADOS del dato. Antes cada
     // sitio hardcodeaba '+' y text-emerald-600, así que una caída se anunciaba en
@@ -634,72 +575,13 @@ const ExecutivePanelPage = () => {
                 </div>
             )}
 
-            {/* ── Nivel 1: Hero ejecutivo ── */}
-            <div className="grid gap-3 grid-cols-2 lg:grid-cols-5">
-                {/* La flecha y el signo del badge se derivan del dato: antes estaban
-                    fijos en '▲ +' con tono verde, así que una caída del ahorro se
-                    anunciaba como si fuera un crecimiento. Y la base es el RITMO del
-                    año anterior, la misma que usa la tarjeta "Ahorro de los Socios"
-                    más abajo — antes eran dos bases distintas y la pantalla mostraba
-                    -25,6% en rojo arriba y +21,7% en verde abajo del mismo indicador. */}
-                <HeroKpi
-                    label="Patrimonio de socios"
-                    value={fmt(patrimonio)}
-                    icon={PiggyBank}
-                    badge={crecimientoAhorro != null
-                        ? `${crecimientoAhorro >= 0 ? '▲' : '▼'} ${fmtVariacion(crecimientoAhorro)} ahorro vs ritmo ${anioActual - 1}`
-                        : null}
-                    badgeTone={crecimientoAhorro == null ? 'ok' : (crecimientoAhorro >= 0 ? 'ok' : 'risk')}
-                    onClick={goToAdmin('/admin/savings/list')}
-                />
-                <HeroKpi
-                    label={<>Cartera pendiente <TerminoAyuda termino="par" /></>}
-                    value={fmt(cartera.total)}
-                    icon={Wallet}
-                    badge={`PAR ${cartera.parPct}%`}
-                    badgeTone={cartera.parPct <= 3 ? 'ok' : cartera.parPct <= 5 ? 'warn' : 'risk'}
-                    sub={`${cartera.cuotasPendientes} cuotas`}
-                    onClick={goToAdmin('/admin/payments/list', { estado: 'Pendiente' })}
-                >
-                    {cartera.total > 0 && (
-                        <div className="mt-2">
-                            <div className="flex h-1.5 rounded-full overflow-hidden bg-white/10">
-                                <div className="bg-emerald-300" style={{ width: `${(cartera.vigente / cartera.total) * 100}%` }} />
-                                <div className="bg-red-400" style={{ width: `${(cartera.vencida / cartera.total) * 100}%` }} />
-                            </div>
-                            <p className="text-[9px] text-white/50 mt-1">
-                                {fmtCorto(cartera.vigente)} vigente · {fmtCorto(cartera.vencida)} vencida
-                            </p>
-                        </div>
-                    )}
-                </HeroKpi>
-                <HeroKpi
-                    label={<>Recaudo del año <TerminoAyuda termino="recaudo" /></>}
-                    value={recaudoYtd.eficienciaPct != null ? `${recaudoYtd.eficienciaPct}%` : '—'}
-                    icon={Percent}
-                    badge={`${recaudoYtd.pagadas}/${recaudoYtd.exigidas} cuotas`}
-                    badgeTone={recaudoYtd.eficienciaPct >= 95 ? 'ok' : recaudoYtd.eficienciaPct >= 90 ? 'warn' : 'risk'}
-                    sub={fmt(recaudoYtd.valorRecaudado)}
-                    onClick={goToAdmin('/admin/payments/list', { estado: 'Pago' })}
-                />
-                <HeroKpi
-                    label="Disponible total"
-                    value={fmt(disponible)}
-                    icon={Landmark}
-                    sub="Caja + rendimientos NU"
-                    badge={null}
-                    onClick={() => scrollToId('saldos-rendimientos')}
-                />
-                <HeroKpi
-                    label={<>Apalancamiento del fondo <TerminoAyuda termino="apalancamiento" /></>}
-                    value={`${derived.ldrPct.toFixed(0)}%`}
-                    icon={Gauge}
-                    badge={derived.ldrTone === 'risk' ? 'Cerca del límite' : derived.ldrTone === 'warn' ? 'Capacidad ociosa' : 'Sano'}
-                    badgeTone={derived.ldrTone}
-                    sub="Cartera vs. patrimonio de socios"
-                    onClick={() => setShowLdrInfo(true)}
-                />
-            </div>
+            {/* La fila de cinco KPI verdes que iba aquí se retiró por decisión del
+                comité: repetía cifras que el "Detalle completo del fondo" ya muestra
+                más abajo —Patrimonio de Socios, Disponible Total y la cartera— y
+                empujaba hacia abajo lo que de verdad importa (el veredicto y la
+                posición personal del socio). Recaudo del año y Apalancamiento se
+                retiran con ella; no estaban repetidos, pero se consideraron
+                indicadores operativos, no información de lectura para el socio. */}
 
             {/* ── Centro de alertas ── */}
             <div className="space-y-2">
@@ -1329,31 +1211,6 @@ const ExecutivePanelPage = () => {
                     ? ' · Los indicadores siguen el plan de mejora del Panel Principal (jul 2026). Baselines por año calculados dinámicamente — sin cifras fijas en el código.'
                     : ' · Cifras calculadas directamente desde los registros del fondo, sin valores fijos ni estimaciones manuales.'}
             </p>
-
-            {/* ── Modal: Apalancamiento del Fondo ── */}
-            <ChartExpandModal
-                isOpen={showLdrInfo}
-                onClose={() => setShowLdrInfo(false)}
-                title="Apalancamiento del Fondo (Loan-to-Deposit Ratio)"
-                analysisResult={analyzeLeverage({ ldrPct: derived.ldrPct, carteraTotal: cartera.total, patrimonio })}
-            >
-                <div className="h-full flex flex-col items-center justify-center gap-3 px-6">
-                    <div className="w-full max-w-md">
-                        <div className="flex justify-between text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
-                            <span>0%</span><span>Umbral sano 40–85%</span><span>100%+</span>
-                        </div>
-                        <div className="relative h-4 rounded-full bg-gray-100 overflow-hidden">
-                            <div className="absolute inset-y-0 left-[40%] w-[45%] bg-emerald-100" />
-                            <div
-                                className={`absolute inset-y-0 left-0 rounded-full ${derived.ldrTone === 'risk' ? 'bg-red-500' : derived.ldrTone === 'warn' ? 'bg-amber-400' : 'bg-emerald-500'}`}
-                                style={{ width: `${Math.min(100, derived.ldrPct)}%` }}
-                            />
-                        </div>
-                        <p className="text-center text-3xl font-black text-gray-900 mt-4 tabular-nums">{derived.ldrPct.toFixed(0)}%</p>
-                        <p className="text-center text-xs text-gray-400 mt-1">{fmt(cartera.total)} colocados de {fmt(patrimonio)} en patrimonio de socios</p>
-                    </div>
-                </div>
-            </ChartExpandModal>
 
             {/* ── Modal: análisis experto de ingresos del fondo (mismo motor que el Panel Principal) ── */}
             <ChartExpandModal
