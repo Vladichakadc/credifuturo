@@ -20,7 +20,8 @@ import {
     MessageSquareMore,
     Vote,
     Activity,
-    ClipboardList
+    ClipboardList,
+    BarChart3
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { Button } from '../components/ui/Button';
@@ -198,6 +199,12 @@ const UserDashboardLayout = ({ user, onLogout }) => {
             icon: Activity,
             label: 'Panel Ejecutivo',
             path: '/dashboard/panel-ejecutivo'
+        },
+        {
+            type: 'link',
+            icon: BarChart3,
+            label: 'Inteligencia Financiera',
+            path: '/dashboard/inteligencia-financiera'
         },
         {
             type: 'submenu',

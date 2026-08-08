@@ -24,6 +24,7 @@ import LoanApprovalsPage from './pages/admin/LoanApprovalsPage';
 import OrphanLoansPage from './pages/admin/OrphanLoansPage';
 import AccessLogsPage from './pages/admin/AccessLogsPage';
 import ExecutivePanelPage from './pages/admin/ExecutivePanelPage';
+import FinancialIntelligencePage from './pages/admin/FinancialIntelligencePage';
 import SavingsEvolutionPage from './pages/admin/SavingsEvolutionPage';
 import PropuestasPage from './pages/admin/PropuestasPage';
 
@@ -150,6 +151,11 @@ function App() {
                     {/* Panel Ejecutivo: misma página que /admin/executive, reutilizada como
                         vista de solo lectura para socios (igual patrón que "fondo" arriba) */}
                     <Route path="panel-ejecutivo" element={<ExecutivePanelPage />} />
+                    {/* Inteligencia Financiera: el comparador interanual + diagnóstico que antes
+                        solo vivía dentro de "Nuestro Fondo", ahora también en su propio menú para
+                        no obligar al socio a cargar el resto del Panel Principal alrededor, y sin
+                        sumarlo al Panel Ejecutivo (que ya tiene su propio comparador). */}
+                    <Route path="inteligencia-financiera" element={<FinancialIntelligencePage />} />
                     {/* UserDashboardHome queda accesible en /dashboard/mi-resumen */}
                     <Route path="mi-resumen" element={<UserDashboardHome />} />
                     <Route path="mis-creditos" element={<MisCreditosPage />} />
