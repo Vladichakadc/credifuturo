@@ -120,16 +120,23 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
     // Cortes por fuente. `null` significa "no hay serie para comparar" — se propaga
     // hasta la UI para mostrar "—" en vez de un 0 que se leería como una caída total.
     const interesesPrevYtd = seriePrev ? seriePrev.ytdAlCorte.intereses : null;
-    // Lado del año en curso: se toma del MISMO corte que el año anterior. Es
-    // deliberado no usar aquí `gananciaRealYtd`/`intCobradosAnio` de la proyección:
-    // esas cifras abarcan el año calendario completo (incluyen cuotas con
-    // vencimiento en octubre o diciembre que un socio ya prepagó), así que
-    // dividirlas entre un baseline cortado a agosto volvería a comparar tramos
-    // distintos — el mismo error, en sentido contrario. `gananciaRealYtd` sí se
-    // usa para MOSTRAR la ganancia acumulada; aquí solo se calcula el %.
     const serieActual = yearCmp?.series?.find(s => s.esAnioEnCurso) || null;
-    const interesesActualYtd = serieActual?.ytdAlCorte.intereses
-        ?? proyeccionFondo?.intCobradosAnio
+    // Intereses de préstamos — bug real detectado y corregido: esta celda usaba
+    // serieActual.ytdAlCorte.intereses, que corta las cuotas por su FECHA DE
+    // VENCIMIENTO (fechaPagoMax) hasta el día de hoy. LoanPayment no guarda
+    // fecha de pago real, solo la de vencimiento — así que cuando un socio paga
+    // por adelantado una cuota con vencimiento posterior a hoy, ese corte la
+    // excluye aunque el dinero YA esté cobrado. Consecuencia verificada: la fila
+    // de la tabla mostraba $1.642.748 mientras "Ganancia total del fondo" (que sí
+    // usa intCobradosAnio, sin cortar por día) sumaba $3.051.668 — las filas no
+    // cuadraban con el total de su propia tabla, por $343.266 exactos: el valor
+    // de las cuotas futuras ya pagadas. Se prioriza ahora intCobradosAnio (lo
+    // realmente cobrado este año), que es lo que la columna promete ("lo que
+    // llevamos") y lo mismo que ya usa el encabezado de ganancia — así ambas
+    // cifras vuelven a sumar exacto. ytdAlCorte queda de respaldo si el endpoint
+    // de comparación no cargó.
+    const interesesActualYtd = proyeccionFondo?.intCobradosAnio
+        ?? serieActual?.ytdAlCorte.intereses
         ?? (stats.totalInteresesPagados || 0);
     const moraActualYtd = serieActual?.ytdAlCorte.mora
         ?? proyeccionFondo?.moraYtdReal
@@ -176,7 +183,39 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
     const ritmoPrev = (totalAnterior) => (fraccionAnio > 0 ? totalAnterior * fraccionAnio : totalAnterior);
     const fmtVariacion = (pct) => pct >= 200
         ? `${(1 + pct / 100).toFixed(1).replace('.', ',')}×`
-        : `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
+        : `${pct >= 0 ? '+' : ''}${pct.toFixed(1).replace('.', ',')}%`;
+
+    // Dos % de cumplimiento por fila de la tabla "Fuente de ingreso", pedidos
+    // explícitamente por el comité para no depender solo de las cifras en pesos:
+    //
+    // 1. "vs ritmo {año anterior}": compara lo que llevamos contra el RITMO del
+    //    año anterior (su total prorrateado a la fracción de calendario ya
+    //    transcurrida) — el mismo criterio "manzana con manzana" que usa el resto
+    //    del panel, nunca contra el año anterior completo. `masEsMejor=false`
+    //    invierte el color en Mora, donde crecer es una mala señal, no un logro.
+    // 2. "% del estimado ya en caja": cuánto de la proyección de cierre ya está
+    //    cobrado — responde "¿qué tan lejos vamos de la meta del año?", una
+    //    pregunta distinta a la comparación con el año anterior.
+    const badgeRitmo = (actual, baseline, masEsMejor = true) => {
+        const base = ritmoPrev(baseline);
+        if (!(base > 0) || comparacionPrematura) return null;
+        const pct = ((actual / base) - 1) * 100;
+        const favorable = masEsMejor ? pct >= 0 : pct < 0;
+        return (
+            <span className={`block text-[10px] font-bold mt-0.5 ${favorable ? 'text-emerald-600' : 'text-red-600'}`}>
+                {pct >= 0 ? '▲' : '▼'} {fmtVariacion(pct)} vs ritmo {baselineAnio}
+            </span>
+        );
+    };
+    const badgeAvance = (actual, estimado) => {
+        if (!(estimado > 0)) return null;
+        const pct = Math.min(999, (actual / estimado) * 100);
+        return (
+            <span className="block text-[10px] font-semibold text-gray-400 mt-0.5">
+                {pct.toFixed(0)}% del estimado ya en caja
+            </span>
+        );
+    };
 
     const rentabilidad2025 = Number(stats?.baselines?.metaGanancia) || 2448052;
     const achievement = (rentabilidadActual / rentabilidad2025) * 100; // Porcentaje de cumplimiento de la meta
@@ -765,9 +804,13 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                                                 <p className="text-[10px] text-emerald-700 font-semibold">Lo que pagan los socios por sus préstamos</p>
                                             </td>
                                             <td className="p-3 text-right text-gray-500 font-bold bg-gray-50/50">${baselineIntereses.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                            <td className="p-3 text-right font-black text-blue-700 border-l">${Math.round(interesesActualYtd).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
+                                            <td className="p-3 text-right font-black text-blue-700 border-l">
+                                                ${Math.round(interesesActualYtd).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                                                {badgeRitmo(interesesActualYtd, baselineIntereses)}
+                                            </td>
                                             <td className="p-3 text-right font-black border-l text-brand-primary">
                                                 ${Math.round(proyeccionIntereses).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                                                {badgeAvance(interesesActualYtd, proyeccionIntereses)}
                                             </td>
                                         </tr>
                                         <tr className="hover:bg-gray-50 transition-colors">
@@ -776,9 +819,13 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                                                 <p className="text-[10px] text-emerald-700 font-semibold">Intereses que genera el dinero guardado en NU</p>
                                             </td>
                                             <td className="p-3 text-right text-gray-500 font-bold bg-gray-50/50">${baselineNU.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                            <td className="p-3 text-right font-black text-purple-700 border-l">${Math.round(stats.rentabilidadCajaNU || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
+                                            <td className="p-3 text-right font-black text-purple-700 border-l">
+                                                ${Math.round(stats.rentabilidadCajaNU || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                                                {badgeRitmo(stats.rentabilidadCajaNU || 0, baselineNU)}
+                                            </td>
                                             <td className="p-3 text-right font-black border-l text-brand-primary">
                                                 ${Math.round(proyeccionCajaNU).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                                                {badgeAvance(stats.rentabilidadCajaNU || 0, proyeccionCajaNU)}
                                             </td>
                                         </tr>
                                         <tr className="hover:bg-gray-50 transition-colors">
@@ -787,26 +834,37 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                                                 <p className="text-[10px] text-emerald-700 font-semibold">Recargo aplicado a socios con cuotas vencidas</p>
                                             </td>
                                             <td className="p-3 text-right text-gray-500 font-bold bg-gray-50/50">${baselineMora.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                            <td className="p-3 text-right font-black text-red-600 border-l">${Math.round(moraActualYtd).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
+                                            <td className="p-3 text-right font-black text-red-600 border-l">
+                                                ${Math.round(moraActualYtd).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                                                {badgeRitmo(moraActualYtd, baselineMora, false)}
+                                            </td>
                                             <td className="p-3 text-right font-black border-l text-brand-primary">
                                                 ${Math.round(proyeccionPenalidad).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                                                {badgeAvance(moraActualYtd, proyeccionPenalidad)}
                                             </td>
                                         </tr>
                                         <tr className="bg-emerald-50 border-t-2 border-emerald-300">
                                             <td className="p-3 text-emerald-900 font-black text-base uppercase tracking-wider">Ganancia total del fondo</td>
                                             <td className="p-3 text-right text-gray-500 font-bold text-base">${gananciaReal2025.toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
-                                            <td className="p-3 text-right font-black text-emerald-700 text-lg border-l">${Math.round(rentabilidadActual).toLocaleString('es-CO', { maximumFractionDigits: 0 })}</td>
+                                            <td className="p-3 text-right font-black text-emerald-700 text-lg border-l">
+                                                ${Math.round(rentabilidadActual).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                                                {badgeRitmo(rentabilidadActual, gananciaReal2025)}
+                                            </td>
                                             <td className="p-3 text-right font-black text-lg border-l rounded-br-lg text-emerald-800">
                                                 ${Math.round(proyeccionTotal).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                                                {badgeAvance(rentabilidadActual, proyeccionTotal)}
                                             </td>
                                         </tr>
                                     </tbody>
                                 </table>
                                 <p className="text-[11px] text-gray-500 font-semibold px-3 py-2 leading-snug">
                                     La columna de {baselineAnio} es el año <strong>completo</strong> (12 meses); la del año
-                                    en curso es lo acumulado hasta hoy, así que aún le faltan meses. Para saber si vamos
-                                    mejor o peor, mira el indicador de la izquierda: ahí la comparación sí está ajustada al
-                                    tiempo transcurrido. El <strong>rendimiento de la cuenta NU</strong> entra en el total.
+                                    en curso es lo acumulado hasta hoy, así que aún le faltan meses. El porcentaje bajo cada
+                                    fila de <strong>"lo que llevamos"</strong> compara contra el <strong>ritmo</strong> de
+                                    {' '}{baselineAnio} (su resultado completo prorrateado a lo que ha transcurrido del año) —
+                                    nunca contra el año anterior completo, que siempre marcaría "por debajo" hasta diciembre.
+                                    El de <strong>"estimado al cierre"</strong> dice qué porcentaje de esa proyección ya está
+                                    cobrado. El <strong>rendimiento de la cuenta NU</strong> entra en el total.
                                 </p>
                             </div>
                         </div>
