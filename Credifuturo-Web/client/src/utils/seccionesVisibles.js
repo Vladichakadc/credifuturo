@@ -1,0 +1,98 @@
+// Catálogo ÚNICO de las secciones que el comité puede ocultar o volver a mostrar
+// a los socios, desde el menú "Cambios" del panel de administración.
+//
+// Por qué existe: durante la puesta a punto del Panel Ejecutivo se fueron
+// ocultando tarjetas, gráficos y menús a los socios — cada uno borrando código.
+// Eso hacía irreversible cada decisión: para volver a mostrar algo había que
+// tocar el código otra vez. Ahora cada sección ocultable vive aquí con un
+// identificador estable, y el componente que la pinta consulta si está visible.
+// Ocultar y volver a mostrar deja de ser un despliegue y pasa a ser un clic.
+//
+// Cómo agregar una sección nueva:
+//   1. Añadir una entrada a SECCIONES (id estable, nunca reutilizar uno viejo).
+//   2. En el componente, envolver el bloque en `{esVisible('mi.id') && (...)}`.
+//   3. Listo — aparece sola en el menú "Cambios", sin tocar esa página.
+//
+// El estado real vive en AppSettings, clave `visibilidadSecciones`, como un JSON
+// { [id]: boolean }. Solo se guardan las decisiones EXPLÍCITAS del comité; un id
+// ausente usa el `visiblePorDefecto` de aquí. Así, si mañana se agrega una
+// sección nueva, no queda oculta por accidente ni exige migrar el AppSetting.
+
+export const CLAVE_VISIBILIDAD = 'visibilidadSecciones';
+
+export const SECCIONES = [
+    {
+        id: 'ejecutivo.heroKpis',
+        titulo: 'Banda de 5 indicadores verdes',
+        ubicacion: 'Panel Ejecutivo',
+        detalle: 'Patrimonio de socios · Cartera pendiente · Recaudo del año · Disponible total · Apalancamiento del fondo, en la franja verde del encabezado.',
+        motivo: 'Se ocultó porque tres de las cinco cifras (patrimonio, disponible y cartera) ya aparecen más abajo en "Detalle completo del fondo".',
+        visiblePorDefecto: false,
+    },
+    {
+        id: 'ejecutivo.comparadorAnios',
+        titulo: 'Comparar con años anteriores',
+        ubicacion: 'Panel Ejecutivo',
+        detalle: 'Gráfico interactivo mes a mes: permite elegir el indicador (intereses, ahorro, préstamos, mora) y qué años contrastar.',
+        motivo: 'Se ocultó por decisión del comité para aligerar el panel.',
+        visiblePorDefecto: false,
+    },
+    {
+        id: 'ejecutivo.resultadosAnio',
+        titulo: 'Resultados del año (6 tarjetas)',
+        ubicacion: 'Panel Ejecutivo',
+        detalle: 'Ahorro de los Socios · Préstamos Entregados · Patrimonio del Fondo · Ganancias por Intereses · Rendimiento Cuenta NU · Cobros por Pagos Tardíos, cada una con su avance frente al año anterior.',
+        motivo: 'Se ocultó por decisión del comité para aligerar el panel.',
+        visiblePorDefecto: false,
+    },
+    {
+        id: 'miPosicion.parteEstimada',
+        titulo: 'Tarjeta "Mi parte estimada"',
+        ubicacion: 'Panel Ejecutivo · Mi posición en el fondo',
+        detalle: 'Estimación de cuánto le correspondería a cada socio de la ganancia del año, según su ahorro mensual.',
+        motivo: 'Es una estimación sobre resultados parciales, no una cifra aprobada ni distribuida — el comité decide cuándo mostrarla.',
+        visiblePorDefecto: false,
+    },
+    {
+        id: 'menu.nuestroFondo',
+        titulo: 'Menú "Nuestro Fondo" (Panel Principal)',
+        ubicacion: 'Menú lateral del socio',
+        detalle: 'Enlace al Panel Principal completo. El admin siempre lo ve, independientemente de este control.',
+        motivo: 'Se ocultó porque el Panel Ejecutivo ya reemplaza su contenido para los socios.',
+        visiblePorDefecto: false,
+    },
+];
+
+/** Mapa id → definición, para consultas puntuales. */
+export const SECCIONES_POR_ID = Object.fromEntries(SECCIONES.map(s => [s.id, s]));
+
+/**
+ * Resuelve si una sección debe mostrarse.
+ *
+ * @param {object|null} mapa  Overrides guardados por el comité ({ id: boolean }).
+ *                            `null` significa "aún no cargó" — en ese caso se usa
+ *                            el default, nunca se asume oculto: un fallo de red no
+ *                            debe hacer desaparecer contenido que sí está aprobado.
+ * @param {string} id         Identificador de la sección.
+ */
+export function esSeccionVisible(mapa, id) {
+    const def = SECCIONES_POR_ID[id];
+    // Un id desconocido se muestra: es preferible que una sección nueva aparezca
+    // sin registrar a que desaparezca en silencio por un typo en el identificador.
+    const porDefecto = def ? def.visiblePorDefecto : true;
+    if (!mapa || typeof mapa[id] !== 'boolean') return porDefecto;
+    return mapa[id];
+}
+
+/** Parsea el valor crudo del AppSetting, tolerando null/JSON inválido. */
+export function parsearVisibilidad(valorCrudo) {
+    if (!valorCrudo) return {};
+    try {
+        const parsed = JSON.parse(valorCrudo);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+        // Un JSON corrupto no debe tumbar la app ni ocultar todo: se ignora y se
+        // cae a los defaults del catálogo.
+        return {};
+    }
+}

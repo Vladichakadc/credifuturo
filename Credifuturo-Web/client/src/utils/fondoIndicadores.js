@@ -102,8 +102,19 @@ export function computeFondoIndicadores({ stats, execStats, yearCmp }) {
     const avanceSobreAnioPrev = gananciaAnioPrev > 0 ? (gananciaYtd / gananciaAnioPrev) * 100 : null;
 
     // ── Valores por fuente, al mismo corte en ambos lados ─────────────────────
-    const interesesActualYtd = serieActual?.ytdAlCorte.intereses
-        ?? proyeccion?.intCobradosAnio
+    // Intereses cobrados en el año. La prioridad importa y ya costó una corrección
+    // en producción (ver components/admin/FinancialChart.jsx): `ytdAlCorte.intereses`
+    // corta las cuotas por su FECHA DE VENCIMIENTO hasta hoy, y LoanPayment no guarda
+    // fecha de pago real — así que excluye las cuotas que un socio ya pagó por
+    // adelantado con vencimiento posterior. Eso hacía que la fila de intereses no
+    // cuadrara con el total de su propia tabla.
+    //
+    // Aquella corrección se aplicó solo en FinancialChart y no se propagó aquí, así
+    // que el Panel Ejecutivo y el de Inteligencia Financiera mostraban cifras
+    // distintas para el MISMO indicador. Ahora ambos priorizan `intCobradosAnio`
+    // (lo realmente cobrado este año); ytdAlCorte queda de respaldo.
+    const interesesActualYtd = proyeccion?.intCobradosAnio
+        ?? serieActual?.ytdAlCorte.intereses
         ?? (stats.totalInteresesPagados || 0);
     const moraActualYtd = serieActual?.ytdAlCorte.mora
         ?? proyeccion?.moraYtdReal

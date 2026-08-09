@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { PiggyBank, Coins, TrendingUp, Gauge, ChevronRight, Info } from 'lucide-react';
 import api from '../../config/api';
 import { calcVerdict } from '../../utils/loanCapacity';
+import { useVisibilidad } from '../../context/VisibilidadContext';
 
 /**
  * "Mi posición en el fondo" — el puente entre el panel agregado y el socio.
@@ -64,6 +65,7 @@ const Esqueleto = () => (
 
 const MiPosicionFondo = ({ nombre }) => {
     const navigate = useNavigate();
+    const { esVisible } = useVisibilidad();
     const [capacidad, setCapacidad] = useState(null);
     const [utilidades, setUtilidades] = useState(null);
     const [cargando, setCargando] = useState(true);
@@ -120,9 +122,15 @@ const MiPosicionFondo = ({ nombre }) => {
             ? `Techo 3× tu ahorro: ${fmt(v.montoMaxSinVotacion)} · deuda vigente: ${fmt(deuda)}`
             : 'Regla del fondo: hasta 3× tu ahorro acreditado';
 
+    // La rejilla se ajusta a cuántas tarjetas quedan visibles: con "Mi parte
+    // estimada" oculta serían 3, y dejar la rejilla fija en 4 columnas abriría
+    // un hueco al final.
+    const mostrarParteEstimada = esVisible('miPosicion.parteEstimada');
+    const columnas = mostrarParteEstimada ? 'lg:grid-cols-4' : 'lg:grid-cols-3';
+
     return (
         <div className="space-y-2.5">
-            <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+            <div className={`grid gap-3 grid-cols-2 ${columnas}`}>
                 <Tarjeta
                     icon={PiggyBank}
                     etiqueta="Mi ahorro acreditado"
@@ -131,6 +139,7 @@ const MiPosicionFondo = ({ nombre }) => {
                     nota={capacidad.mesesComoSocio ? `${capacidad.mesesComoSocio} meses como socio` : null}
                     onClick={() => navigate('/dashboard/cuenta')}
                 />
+                {mostrarParteEstimada && (
                 <Tarjeta
                     icon={Coins}
                     etiqueta={`Mi parte estimada ${utilidades?.anio || ''}`.trim()}
@@ -144,6 +153,7 @@ const MiPosicionFondo = ({ nombre }) => {
                        un pago comprometido. */
                     nota={utilidades ? 'Estimación sobre el año en curso · no es una cifra aprobada ni distribuida' : null}
                 />
+                )}
                 <Tarjeta
                     icon={TrendingUp}
                     etiqueta="Puedo pedir hasta"
@@ -172,10 +182,14 @@ const MiPosicionFondo = ({ nombre }) => {
                     onClick={() => navigate('/dashboard/loan-capacity-beta')}
                 />
             </div>
+            {/* El conteo y la frase sobre utilidades se ajustan a las tarjetas que
+                de verdad quedaron visibles: decir "cuatro cifras" mostrando tres, o
+                explicar cómo se reparten las utilidades con esa tarjeta oculta,
+                dejaría un texto que no corresponde con lo que el socio está viendo. */}
             <p className="text-[11px] text-gray-400 leading-snug">
-                {primerNombre ? `${primerNombre}, estas` : 'Estas'} cuatro cifras son solo tuyas: se calculan con tus ahorros y tus
-                cuotas, y ningún otro socio las ve. Tu participación en las utilidades se reparte según el ahorro mensual del año en
-                curso, no según el ahorro acumulado de todos los años.
+                {primerNombre ? `${primerNombre}, estas` : 'Estas'} {mostrarParteEstimada ? 'cuatro' : 'tres'} cifras son solo tuyas:
+                se calculan con tus ahorros y tus cuotas, y ningún otro socio las ve.
+                {mostrarParteEstimada && ' Tu participación en las utilidades se reparte según el ahorro mensual del año en curso, no según el ahorro acumulado de todos los años.'}
             </p>
         </div>
     );

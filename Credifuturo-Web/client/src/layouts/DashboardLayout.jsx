@@ -27,7 +27,8 @@ import {
     Wallet,
     Inbox,
     Lightbulb,
-    MessageSquareMore
+    MessageSquareMore,
+    Eye
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import api, { apiWithRetry } from '../config/api';
@@ -377,6 +378,8 @@ const DashboardLayout = ({ user, onLogout }) => {
         },
         { type: 'link', icon: FileText, label: 'Copias de Seguridad', path: '/admin/reports' },
         { type: 'link', icon: History, label: 'Logs del Sistema', path: '/admin/logs' },
+        // Control de qué secciones ven los socios (tarjetas, gráficos, menús).
+        { type: 'link', icon: Eye, label: 'Cambios', path: '/admin/cambios' },
         {
             type: 'submenu',
             key: 'estatutos',

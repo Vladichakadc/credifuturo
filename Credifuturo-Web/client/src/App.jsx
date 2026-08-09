@@ -25,6 +25,8 @@ import OrphanLoansPage from './pages/admin/OrphanLoansPage';
 import AccessLogsPage from './pages/admin/AccessLogsPage';
 import ExecutivePanelPage from './pages/admin/ExecutivePanelPage';
 import FinancialIntelligencePage from './pages/admin/FinancialIntelligencePage';
+import CambiosPage from './pages/admin/CambiosPage';
+import { VisibilidadProvider } from './context/VisibilidadContext';
 import SavingsEvolutionPage from './pages/admin/SavingsEvolutionPage';
 import PropuestasPage from './pages/admin/PropuestasPage';
 
@@ -89,6 +91,7 @@ function App() {
     };
 
     return (
+        <VisibilidadProvider user={user}>
         <Router>
             <Routes>
                 <Route path="/login" element={<Login setUser={setUser} />} />
@@ -131,6 +134,9 @@ function App() {
                     <Route path="statutes" element={<UserStatutesPage />} />
                     <Route path="resolutions" element={<UserResolutionsPage />} />
                     <Route path="logs" element={<AccessLogsPage />} />
+                    {/* Cambios: control de qué secciones ven los socios. Solo admin
+                        (vive bajo /admin, que ya exige role="admin"). */}
+                    <Route path="cambios" element={<CambiosPage />} />
                     <Route path="propuestas" element={<PropuestasPage />} />
 
                     {/* Ruta Legacy para acceder al dashboard antiguo si es necesario durante la migración */}
@@ -187,6 +193,7 @@ function App() {
                 <Route path="/" element={<Navigate to={user ? (user.role === 'admin' ? '/admin' : '/dashboard') : '/login'} />} />
             </Routes>
         </Router>
+        </VisibilidadProvider>
     );
 }
 
