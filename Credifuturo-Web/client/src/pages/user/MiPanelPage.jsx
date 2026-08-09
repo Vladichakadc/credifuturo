@@ -657,8 +657,11 @@ const MiPanelPage = () => {
                     </div>
                 )}
                 
+                {/* Antes iba a /dashboard/fondo (Panel Principal), que ya no está en el
+                    menú del socio — el Panel Ejecutivo lo reemplaza como el panel de
+                    fondo que ven los socios. */}
                 <Link
-                    to="/dashboard/fondo"
+                    to="/dashboard/panel-ejecutivo"
                     className="inline-flex items-center gap-1.5 mt-4 border border-brand-primary text-brand-primary hover:bg-brand-primary/5 text-xs font-bold px-4 py-2 rounded-lg transition-colors min-h-[38px]"
                 >
                     <ChevronRight className="h-3.5 w-3.5" />
