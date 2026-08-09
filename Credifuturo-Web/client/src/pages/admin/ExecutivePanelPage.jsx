@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../../config/api';
 import {
     ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -181,6 +181,7 @@ const Collapsible = ({ icon: Icon, title, sub, children, defaultOpen = true, id 
 
 const ExecutivePanelPage = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const { esVisible } = useVisibilidad();
     // Misma página montada en dos rutas: /admin/executive (admin) y
     // /dashboard/panel-ejecutivo (socio, solo lectura) — idéntico patrón a
@@ -322,6 +323,20 @@ const ExecutivePanelPage = () => {
         const id = setInterval(() => fetchAll({ esRefresco: true }), 120000);
         return () => clearInterval(id);
     }, [fetchAll]);
+
+    // Llega aquí con un hash cuando "Cambios" activa la vista previa de una
+    // sección oculta (ver CambiosPage). El navegador no hace scroll automático
+    // en una navegación de React Router, así que se hace a mano una vez que la
+    // sección ya tiene datos para pintarse — antes de eso el id todavía no
+    // existe en el DOM.
+    useEffect(() => {
+        if (!location.hash || loading) return;
+        const id = decodeURIComponent(location.hash.slice(1));
+        const timer = setTimeout(() => {
+            document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [location.hash, loading]);
 
     const anioActual = new Date().getFullYear();
 
@@ -665,7 +680,7 @@ const ExecutivePanelPage = () => {
                  "Apalancamiento 0% · Capacidad ociosa" como si fueran cifras
                  reales — un diagnóstico falso sobre un dato que no cargó. ── */}
             {stats && esVisible('ejecutivo.heroKpis') && (
-                <div className="grid gap-3 grid-cols-2 lg:grid-cols-5">
+                <div id="ejecutivo.heroKpis" className="grid gap-3 grid-cols-2 lg:grid-cols-5">
                     {/* La flecha y el signo del badge se derivan del dato: antes estaban
                         fijos en '▲ +' con tono verde, así que una caída del ahorro se
                         anunciaba como si fuera un crecimiento. Y la base es el RITMO del
@@ -1032,7 +1047,7 @@ const ExecutivePanelPage = () => {
                  comparación, no dos lecturas distintas del mismo año.
                  Visible solo si el comité lo habilita en admin → Cambios. ── */}
             {esVisible('ejecutivo.comparadorAnios') && (
-                <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
+                <div id="ejecutivo.comparadorAnios" className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
                     <SectionTitle icon={BarChart3}>Comparar con años anteriores</SectionTitle>
                     <p className="text-[11px] text-gray-500 font-semibold -mt-2 mb-4 leading-snug">
                         Cada año se dibuja sobre los mismos meses, de modo que la comparación siempre
@@ -1160,7 +1175,7 @@ const ExecutivePanelPage = () => {
                  pieza mejor preparada para un lector no financiero.
                  Visible solo si el comité lo habilita en admin → Cambios. ── */}
             {ind && esVisible('ejecutivo.resultadosAnio') && (
-                <div className="space-y-3">
+                <div id="ejecutivo.resultadosAnio" className="space-y-3">
                     <h2 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
                         <BarChart3 className="h-4 w-4 text-brand-primary" />
                         Resultados del año

@@ -52,6 +52,14 @@ export const VisibilidadProvider = ({ children, user }) => {
     const [mapa, setMapa] = useState(leerCache);
     const [cargando, setCargando] = useState(false);
 
+    // Vista previa: ids que el admin fuerza a "visible" en SU propia sesión desde
+    // Cambios, para ver una sección oculta con datos reales antes de decidir si la
+    // vuelve a mostrar a los socios. Vive solo en memoria de este componente — no
+    // se guarda en el AppSetting ni en localStorage — así que nunca se filtra a
+    // otro usuario ni sobrevive a un refresco de página: es una lupa temporal
+    // sobre el estado real, no una decisión.
+    const [previewIds, setPreviewIds] = useState([]);
+
     const cargar = useCallback(async () => {
         // Sin sesión el endpoint responde 401 — no tiene sentido pedirlo desde el
         // login. Se conserva la caché (no se pone en null) para que al volver a
@@ -79,7 +87,18 @@ export const VisibilidadProvider = ({ children, user }) => {
     // configuración quedaría con lo que hubiera al abrir la pestaña.
     useEffect(() => { cargar(); }, [cargar]);
 
-    const esVisible = useCallback((id) => esSeccionVisible(mapa, id), [mapa]);
+    // La vista previa gana sobre el estado real: es justamente para eso — ver una
+    // sección oculta como si estuviera visible, sin tocar la configuración guardada.
+    const esVisible = useCallback(
+        (id) => esSeccionVisible(mapa, id) || previewIds.includes(id),
+        [mapa, previewIds]
+    );
+
+    const activarVistaPrevia = useCallback((id) => {
+        setPreviewIds(prev => (prev.includes(id) ? prev : [...prev, id]));
+    }, []);
+
+    const salirVistaPrevia = useCallback(() => setPreviewIds([]), []);
 
     /** Guarda el mapa completo (solo admin; el backend rechaza a los demás). */
     const guardar = useCallback(async (nuevoMapa) => {
@@ -92,7 +111,10 @@ export const VisibilidadProvider = ({ children, user }) => {
     }, []);
 
     return (
-        <VisibilidadContext.Provider value={{ mapa, cargando, esVisible, guardar, recargar: cargar }}>
+        <VisibilidadContext.Provider value={{
+            mapa, cargando, esVisible, guardar, recargar: cargar,
+            previewIds, activarVistaPrevia, salirVistaPrevia,
+        }}>
             {children}
         </VisibilidadContext.Provider>
     );
@@ -112,6 +134,9 @@ export const useVisibilidad = () => {
             esVisible: (id) => esSeccionVisible(null, id),
             guardar: async () => { throw new Error('VisibilidadProvider no está montado'); },
             recargar: async () => {},
+            previewIds: [],
+            activarVistaPrevia: () => {},
+            salirVistaPrevia: () => {},
         };
     }
     return ctx;

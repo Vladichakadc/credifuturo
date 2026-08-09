@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Eye, EyeOff, Save, RotateCcw, Info, CheckCircle2, MapPin } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Eye, EyeOff, Save, RotateCcw, Info, CheckCircle2, MapPin, Landmark } from 'lucide-react';
 import { useUi } from '../../context/UiContext';
 import { useVisibilidad } from '../../context/VisibilidadContext';
 import { SECCIONES, esSeccionVisible } from '../../utils/seccionesVisibles';
+import MiPosicionFondo from '../../components/admin/MiPosicionFondo';
 
 /**
  * "Cambios" — control de qué ve el socio.
@@ -19,7 +21,20 @@ import { SECCIONES, esSeccionVisible } from '../../utils/seccionesVisibles';
 
 const CambiosPage = () => {
     const { toast } = useUi();
-    const { mapa, cargando, esVisible, guardar, recargar } = useVisibilidad();
+    const navigate = useNavigate();
+    const { mapa, cargando, esVisible, guardar, recargar, previewIds, activarVistaPrevia, salirVistaPrevia } = useVisibilidad();
+    // Solo "Nuestro Fondo" (menú lateral) no tiene página propia que previsualizar
+    // — el admin siempre ve ese enlace en su cuenta, sin importar el interruptor
+    // — así que su vista previa es una réplica estática que se expande aquí
+    // mismo, sin pasar por VisibilidadContext.
+    const [mockMenuAbierto, setMockMenuAbierto] = useState(false);
+
+    // Entrar a Cambios cierra cualquier vista previa que hubiera quedado activa
+    // de una visita anterior (p. ej. si el admin volvió con el botón "atrás" del
+    // navegador en vez de "Salir de vista previa"): esta pantalla es el único
+    // lugar desde el que tiene sentido activarla, así que también es el punto
+    // natural donde se apaga sola.
+    useEffect(() => { salirVistaPrevia(); }, [salirVistaPrevia]);
 
     // Borrador local: los cambios no se aplican hasta pulsar "Guardar", para que
     // el comité pueda revisar varios interruptores antes de que los socios los vean.
@@ -218,6 +233,57 @@ const CambiosPage = () => {
                                             <Info className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-gray-400" />
                                             <span><b className="text-gray-600">Por qué se ocultó:</b> {seccion.motivo}</span>
                                         </p>
+                                    )}
+
+                                    {/* Vista previa: solo para lo que hoy está oculto — ver cómo
+                                        luciría antes de decidir si se vuelve a mostrar. */}
+                                    {!visible && (
+                                        seccion.ruta ? (
+                                            <button
+                                                onClick={() => {
+                                                    activarVistaPrevia(seccion.id);
+                                                    navigate(`${seccion.ruta}#${encodeURIComponent(seccion.id)}`);
+                                                }}
+                                                className="mt-2.5 inline-flex items-center gap-1.5 text-[11px] font-bold text-brand-primary border border-brand-primary/30 hover:bg-brand-primary/5 px-3 py-1.5 rounded-lg transition-colors"
+                                            >
+                                                <Eye className="h-3.5 w-3.5" /> Vista previa — verla con datos reales
+                                            </button>
+                                        ) : seccion.id === 'miPosicion.parteEstimada' ? (
+                                            previewIds.includes(seccion.id) ? (
+                                                <div className="mt-2.5 bg-gray-50 border border-dashed border-gray-300 rounded-xl p-3">
+                                                    <p className="text-[10px] font-black uppercase tracking-wider text-gray-400 mb-2">
+                                                        Así se vería · con tus propios datos, a modo de muestra
+                                                    </p>
+                                                    <MiPosicionFondo nombre="" />
+                                                </div>
+                                            ) : (
+                                                <button
+                                                    onClick={() => activarVistaPrevia(seccion.id)}
+                                                    className="mt-2.5 inline-flex items-center gap-1.5 text-[11px] font-bold text-brand-primary border border-brand-primary/30 hover:bg-brand-primary/5 px-3 py-1.5 rounded-lg transition-colors"
+                                                >
+                                                    <Eye className="h-3.5 w-3.5" /> Vista previa — verla con datos reales
+                                                </button>
+                                            )
+                                        ) : (
+                                            <div className="mt-2.5">
+                                                <button
+                                                    onClick={() => setMockMenuAbierto(v => !v)}
+                                                    className="inline-flex items-center gap-1.5 text-[11px] font-bold text-brand-primary border border-brand-primary/30 hover:bg-brand-primary/5 px-3 py-1.5 rounded-lg transition-colors"
+                                                >
+                                                    <Eye className="h-3.5 w-3.5" /> {mockMenuAbierto ? 'Ocultar vista previa' : 'Vista previa'}
+                                                </button>
+                                                {mockMenuAbierto && (
+                                                    <div className="mt-2">
+                                                        <p className="text-[10px] font-black uppercase tracking-wider text-gray-400 mb-1.5">
+                                                            Así se vería en su menú lateral
+                                                        </p>
+                                                        <div className="inline-flex items-center gap-2 bg-brand-dark text-white text-sm font-semibold px-3.5 py-2.5 rounded-lg w-fit">
+                                                            <Landmark className="h-5 w-5 text-white/80" /> Nuestro Fondo
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )
                                     )}
                                 </div>
 
