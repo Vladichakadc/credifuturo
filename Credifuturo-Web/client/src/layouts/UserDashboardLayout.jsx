@@ -221,7 +221,11 @@ const UserDashboardLayout = ({ user, onLogout }) => {
             label: 'Ahorros',
             children: [
                 { icon: Wallet, label: 'Mi Cuenta', path: '/dashboard/cuenta' },
-                { icon: TrendingUp, label: 'Evolución', path: '/dashboard/savings-evolution' }
+                // Visible para el socio solo si el comité lo habilita desde admin →
+                // Cambios, mismo patrón que "Nuestro Fondo": el admin siempre lo ve.
+                ...(user?.role === 'admin' || esVisible('menu.evolucionAhorros') ? [
+                    { icon: TrendingUp, label: 'Evolución', path: '/dashboard/savings-evolution' }
+                ] : []),
             ]
         },
         {

@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../../config/api';
 import { Activity, Printer, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card';
 import FinancialChart from '../../components/admin/FinancialChart';
 import RiskReturnIndicators from '../../components/admin/RiskReturnIndicators';
 import YearMultiSelect from '../../components/admin/YearMultiSelect';
+import MovimientoMensualChart from '../../components/admin/MovimientoMensualChart';
+import { buildSerieMensual } from '../../utils/savingsSeries';
 
 /**
  * Página dedicada del "Panel de Inteligencia Financiera & Actividad" — el
@@ -31,6 +33,10 @@ const FinancialIntelligencePage = () => {
     const [execStats, setExecStats] = useState(null);
     const [yearCmp, setYearCmp] = useState(null);
     const [yearCmpError, setYearCmpError] = useState(false);
+    // "Movimiento mensual" (antes en Evolución de Ahorros) — siempre de todo el
+    // fondo agregado, sin selector de socio: esta página ya es de solo lectura
+    // para cualquier rol, así que no expone el desglose de un socio en particular.
+    const [savingsEvo, setSavingsEvo] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
@@ -50,6 +56,7 @@ const FinancialIntelligencePage = () => {
             api.get(`/admin/dashboard-stats?status=Activo${yearsParam}`),
             api.get('/admin/executive-stats'),
             api.get('/admin/year-comparison'),
+            api.get('/admin/savings-evolution'),
         ]);
         const okStats = results[0].status === 'fulfilled';
         if (okStats) {
@@ -65,11 +72,20 @@ const FinancialIntelligencePage = () => {
         if (results[1].status === 'fulfilled') setExecStats(results[1].value.data);
         if (results[2].status === 'fulfilled') { setYearCmp(results[2].value.data); setYearCmpError(false); }
         else setYearCmpError(true);
+        // Silencioso a propósito, igual que execStats/yearCmp: un fallo aquí no
+        // debe tumbar el resto del panel, solo dejar sin datos esta tarjeta.
+        if (results[3].status === 'fulfilled') setSavingsEvo(results[3].value.data);
         setLoading(false);
         setRefrescando(false);
     }, [selectedYears]);
 
     useEffect(() => { fetchAll(); }, [fetchAll]);
+
+    const hoyKey = useMemo(() => {
+        const d = new Date();
+        return d.getFullYear() * 12 + d.getMonth();
+    }, []);
+    const serieMovimiento = useMemo(() => buildSerieMensual(savingsEvo, hoyKey), [savingsEvo, hoyKey]);
 
     // Refresco automático cada 2 minutos, igual que el Panel Ejecutivo — el dato
     // se refresca de verdad en vez de prometer "en vivo" sobre un fetch único.
@@ -169,6 +185,15 @@ const FinancialIntelligencePage = () => {
                 Mora" no se pinta clicable — nunca promete un detalle que no puede
                 abrir. */}
             <RiskReturnIndicators stats={stats} loading={loading} />
+
+            {/* Trasladado desde Evolución de Ahorros: aquí siempre a nivel de todo
+                el fondo (esta página no tiene selector de socio). */}
+            {serieMovimiento && (
+                <MovimientoMensualChart
+                    serie={serieMovimiento.serie}
+                    subtitulo="Todo el fondo · abonos en verde, retiros y devoluciones en rojo hacia abajo ($ COP)"
+                />
+            )}
         </div>
     );
 };
