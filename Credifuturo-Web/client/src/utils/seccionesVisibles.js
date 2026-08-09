@@ -28,6 +28,11 @@ export const SECCIONES = [
         detalle: 'Patrimonio de socios · Cartera pendiente · Recaudo del año · Disponible total · Apalancamiento del fondo, en la franja verde del encabezado.',
         motivo: 'Se ocultó porque tres de las cinco cifras (patrimonio, disponible y cartera) ya aparecen más abajo en "Detalle completo del fondo".',
         visiblePorDefecto: false,
+        // Ruta real donde vive la sección, para la vista previa: navega ahí y
+        // fuerza la sección a visible SOLO en la sesión del admin (ver
+        // VisibilidadContext.activarVistaPrevia). `null` = no se previsualiza
+        // navegando (ver CambiosPage para el caso especial de esa sección).
+        ruta: '/admin/executive',
     },
     {
         id: 'ejecutivo.comparadorAnios',
@@ -36,6 +41,7 @@ export const SECCIONES = [
         detalle: 'Gráfico interactivo mes a mes: permite elegir el indicador (intereses, ahorro, préstamos, mora) y qué años contrastar.',
         motivo: 'Se ocultó por decisión del comité para aligerar el panel.',
         visiblePorDefecto: false,
+        ruta: '/admin/executive',
     },
     {
         id: 'ejecutivo.resultadosAnio',
@@ -44,6 +50,7 @@ export const SECCIONES = [
         detalle: 'Ahorro de los Socios · Préstamos Entregados · Patrimonio del Fondo · Ganancias por Intereses · Rendimiento Cuenta NU · Cobros por Pagos Tardíos, cada una con su avance frente al año anterior.',
         motivo: 'Se ocultó por decisión del comité para aligerar el panel.',
         visiblePorDefecto: false,
+        ruta: '/admin/executive',
     },
     {
         id: 'miPosicion.parteEstimada',
@@ -52,6 +59,12 @@ export const SECCIONES = [
         detalle: 'Estimación de cuánto le correspondería a cada socio de la ganancia del año, según su ahorro mensual.',
         motivo: 'Es una estimación sobre resultados parciales, no una cifra aprobada ni distribuida — el comité decide cuándo mostrarla.',
         visiblePorDefecto: false,
+        // Esta sección no aparece nunca en /admin/executive (el gerente no
+        // consulta su propia posición ahí — ver ExecutivePanelPage), así que no
+        // hay página a la que navegar para previsualizarla. CambiosPage la
+        // previsualiza en línea, montando el componente real con los datos del
+        // propio admin.
+        ruta: null,
     },
     {
         id: 'menu.nuestroFondo',
@@ -60,6 +73,11 @@ export const SECCIONES = [
         detalle: 'Enlace al Panel Principal completo. El admin siempre lo ve, independientemente de este control.',
         motivo: 'Se ocultó porque el Panel Ejecutivo ya reemplaza su contenido para los socios.',
         visiblePorDefecto: false,
+        // El admin siempre ve este enlace en su propio menú (bypass explícito en
+        // UserDashboardLayout), así que no existe una página propia donde
+        // comprobar el efecto real de ocultarlo. CambiosPage muestra una réplica
+        // estática del enlace en su lugar.
+        ruta: null,
     },
 ];
 

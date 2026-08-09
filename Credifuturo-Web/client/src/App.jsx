@@ -27,6 +27,7 @@ import ExecutivePanelPage from './pages/admin/ExecutivePanelPage';
 import FinancialIntelligencePage from './pages/admin/FinancialIntelligencePage';
 import CambiosPage from './pages/admin/CambiosPage';
 import { VisibilidadProvider } from './context/VisibilidadContext';
+import VistaPreviaBanner from './components/admin/VistaPreviaBanner';
 import SavingsEvolutionPage from './pages/admin/SavingsEvolutionPage';
 import PropuestasPage from './pages/admin/PropuestasPage';
 
@@ -93,6 +94,7 @@ function App() {
     return (
         <VisibilidadProvider user={user}>
         <Router>
+            <VistaPreviaBanner />
             <Routes>
                 <Route path="/login" element={<Login setUser={setUser} />} />
                 <Route path="/change-password" element={<ChangePasswordPage user={user} setUser={setUser} />} />
