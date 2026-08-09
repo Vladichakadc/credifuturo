@@ -14,8 +14,6 @@ import {
 } from 'lucide-react';
 import ChartExpandModal, { analyzeIncomeDistribution } from '../../components/ChartExpandModal';
 import { computeFundProjection } from '../../utils/fundProjection';
-import YearComparisonChart from '../../components/admin/YearComparisonChart';
-import YearProgressCard from '../../components/admin/YearProgressCard';
 import { computeFondoIndicadores, fmtVariacion } from '../../utils/fondoIndicadores';
 import { JUNTA_CEDULAS_NO_ADMIN } from '../../utils/juntaAccess';
 import GlosarioFondo, { TerminoAyuda } from '../../components/admin/GlosarioFondo';
@@ -153,8 +151,12 @@ const ExecutivePanelPage = () => {
     const [stats, setStats] = useState(null);
     const [evolution, setEvolution] = useState(null);
     const [pending, setPending] = useState({ loanRequests: 0, passwordResets: 0, orphanLoans: 0 });
+    // yearCmp ya no alimenta ninguna sección visible directamente (se retiraron
+    // "Comparar con años anteriores" y "Resultados del año"), pero sigue siendo
+    // insumo de `ind` (computeFondoIndicadores) más abajo, que sí es visible
+    // (veredicto del fondo, badges de crecimiento) — por eso se conserva el
+    // fetch. yearCmpError no sobrevive: solo la consumía el gráfico retirado.
     const [yearCmp, setYearCmp] = useState(null);
-    const [yearCmpError, setYearCmpError] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [expandIngresos, setExpandIngresos] = useState(false);
@@ -242,8 +244,7 @@ const ExecutivePanelPage = () => {
             passwordResets: results[4].status === 'fulfilled' ? (results[4].value.data?.total || 0) : prev.passwordResets,
             orphanLoans: results[5].status === 'fulfilled' ? (results[5].value.data?.total || 0) : prev.orphanLoans,
         }));
-        if (results[6]?.status === 'fulfilled') { setYearCmp(results[6].value.data); setYearCmpError(false); }
-        else setYearCmpError(true);
+        if (results[6]?.status === 'fulfilled') setYearCmp(results[6].value.data);
         // La hora solo avanza si el dato de verdad se renovó: si no, el badge
         // estaría fechando datos viejos como si fueran recién traídos.
         if (okExec) setUltimaCarga(new Date());
@@ -877,19 +878,6 @@ const ExecutivePanelPage = () => {
                 </div>
             )}
 
-            {/* ── Comparador interanual ────────────────────────────────────────
-                 Mismo componente que el Panel Principal, alimentado por el mismo
-                 endpoint: el comité y la gerencia deben ver exactamente la misma
-                 comparación, no dos lecturas distintas del mismo año. ── */}
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
-                <SectionTitle icon={BarChart3}>Comparar con años anteriores</SectionTitle>
-                <p className="text-[11px] text-gray-500 font-semibold -mt-2 mb-4 leading-snug">
-                    Cada año se dibuja sobre los mismos meses, de modo que la comparación siempre
-                    es entre períodos equivalentes. La marca vertical señala el mes en curso.
-                </p>
-                <YearComparisonChart data={yearCmp} error={yearCmpError} />
-            </div>
-
             {/* ── Rentabilidad del Fondo (promovida: responde la pregunta central del
                  comité — cuánto está ganando el fondo — justo después de las alertas,
                  en vez de quedar enterrada al final de la página) ── */}
@@ -999,75 +987,6 @@ const ExecutivePanelPage = () => {
                     </div>
                 );
             })()}
-
-            {/* ── Resultados del año, indicador por indicador ───────────────────
-                 Reemplaza a MiniYearBars (tres barras sin contexto) por las mismas
-                 tarjetas del Panel Principal: cada una trae la cifra acumulada, el
-                 veredicto contra el RITMO del año anterior con la base declarada en
-                 pantalla, la barra de avance y la tabla de valores en texto. Es la
-                 pieza mejor preparada para un lector no financiero. ── */}
-            {ind && (
-                <div className="space-y-3">
-                    <h2 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
-                        <BarChart3 className="h-4 w-4 text-brand-primary" />
-                        Resultados del año
-                        <span className="text-[11px] font-semibold text-gray-400">
-                            {ind.nombreMesCorte
-                                ? `cada indicador frente al ritmo de ${ind.baselineAnio}, al ${ind.nombreMesCorte}`
-                                : `cada indicador frente a ${ind.baselineAnio}`}
-                        </span>
-                    </h2>
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                        <YearProgressCard
-                            title="Ahorro de los Socios"
-                            subtitle="Ahorro mensual + aportes iniciales, por año"
-                            anioPrev={ind.baselineAnio} anioActual={ind.baselineAnio + 1}
-                            totalPrev={ind.ahorroPrevTotal} actual={ind.ahorroActualTotal}
-                            fraccionAnio={ind.fraccionAnio} nota={ind.ahorroComposicionNota}
-                        />
-                        <YearProgressCard
-                            title="Préstamos Entregados"
-                            subtitle="Dinero colocado en créditos a los socios"
-                            anioPrev={ind.baselineAnio} anioActual={ind.baselineAnio + 1}
-                            totalPrev={ind.baselinePrestamos} actual={ind.colocacionActualYtd}
-                            fraccionAnio={ind.fraccionAnio}
-                        />
-                        {/* El patrimonio es un SALDO a una fecha, no un acumulado del
-                            período: se compara contra el cierre anterior, sin "ritmo". */}
-                        <YearProgressCard
-                            title="Patrimonio del Fondo"
-                            subtitle="Cuánto vale el fondo hoy"
-                            tipo="saldo"
-                            anioPrev={ind.baselineAnio} anioActual={ind.baselineAnio + 1}
-                            totalPrev={ind.baselinePatrimonio} actual={ind.total}
-                            fraccionAnio={ind.fraccionAnio}
-                        />
-                        <YearProgressCard
-                            title="Ganancias por Intereses"
-                            subtitle="Lo que pagan los socios por sus préstamos"
-                            anioPrev={ind.baselineAnio} anioActual={ind.baselineAnio + 1}
-                            totalPrev={ind.baselineIntereses} actual={ind.interesesActualYtd}
-                            proyeccion={ind.proyeccionIntereses} fraccionAnio={ind.fraccionAnio}
-                        />
-                        <YearProgressCard
-                            title="Rendimiento Cuenta NU"
-                            subtitle="Interés que genera el dinero guardado en NU"
-                            anioPrev={ind.baselineAnio} anioActual={ind.baselineAnio + 1}
-                            totalPrev={ind.baselineNU} actual={stats?.rentabilidadCajaNU || 0}
-                            proyeccion={ind.proyeccionNU} fraccionAnio={ind.fraccionAnio}
-                        />
-                        {/* Mora: tono rojo y masEsMejor=false — aquí crecer es mala señal. */}
-                        <YearProgressCard
-                            title="Cobros por Pagos Tardíos"
-                            subtitle="Recargo aplicado a socios con cuotas vencidas"
-                            tono="rojo" masEsMejor={false}
-                            anioPrev={ind.baselineAnio} anioActual={ind.baselineAnio + 1}
-                            totalPrev={ind.baselineMora} actual={ind.moraActualYtd}
-                            proyeccion={ind.proyeccionMora} fraccionAnio={ind.fraccionAnio}
-                        />
-                    </div>
-                </div>
-            )}
 
             {/* ── Riesgo de Cartera y Flujo de Caja ── */}
             <div className="space-y-3">
