@@ -79,6 +79,28 @@ export const SECCIONES = [
         // estática del enlace en su lugar.
         ruta: null,
     },
+    {
+        id: 'menu.evolucionAhorros',
+        titulo: 'Menú "Evolución" (Ahorros)',
+        ubicacion: 'Menú lateral del socio · submenú Ahorros',
+        detalle: 'Enlace a Evolución de Ahorros (stock, flujo y composición del patrimonio). El admin siempre lo ve, independientemente de este control.',
+        motivo: 'Se ocultó por decisión del comité; "Movimiento mensual" ya se puede ver desde Inteligencia Financiera.',
+        visiblePorDefecto: false,
+        ruta: null,
+    },
+    {
+        id: 'evolucion.todoElFondo',
+        titulo: 'Botón "Todo el fondo" en Evolución',
+        ubicacion: 'Evolución de Ahorros (vista del socio)',
+        detalle: 'Alterna la página entre "Mi evolución" y la evolución agregada de todo el fondo. Sin este botón, el socio solo puede ver la suya.',
+        motivo: 'Se ocultó por decisión del comité para no exponer la evolución agregada del fondo a cualquier socio desde esta página.',
+        visiblePorDefecto: false,
+        // El botón vive dentro de la misma página que el menú que lo lleva ahí
+        // (menu.evolucionAhorros) — previsualizarlo solo tiene sentido si esa
+        // sección también está visible; CambiosPage lo previsualiza en línea con
+        // una réplica del botón, igual que el enlace del menú.
+        ruta: null,
+    },
 ];
 
 /** Mapa id → definición, para consultas puntuales. */

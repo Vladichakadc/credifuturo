@@ -1,23 +1,20 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import api from '../../config/api';
 import {
-    ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis,
-    CartesianGrid, Tooltip as RechartsTooltip, Cell, ReferenceLine, PieChart, Pie
+    ResponsiveContainer, AreaChart, Area, XAxis, YAxis,
+    CartesianGrid, Tooltip as RechartsTooltip, Cell, PieChart, Pie
 } from 'recharts';
-import { TrendingUp, Activity, PieChart as PieIcon, AlertTriangle, Users, Info } from 'lucide-react';
-
-const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
-const fmtCorto = (n) => {
-    const v = Number(n) || 0;
-    const abs = Math.abs(v);
-    const sign = v < 0 ? '−' : '';
-    if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1).replace('.', ',')}M`;
-    if (abs >= 1_000) return `${sign}$${Math.round(abs / 1_000)}k`;
-    return `${sign}$${abs}`;
-};
-const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+import { TrendingUp, PieChart as PieIcon, AlertTriangle, Users, Info } from 'lucide-react';
+import { useVisibilidad } from '../../context/VisibilidadContext';
+import { fmt, fmtCorto, buildSerieMensual } from '../../utils/savingsSeries';
 
 const SavingsEvolutionPage = ({ user }) => {
+    const { esVisible } = useVisibilidad();
+    // El botón "Todo el fondo" solo aparece en la vista del socio (la del admin
+    // usa el <select> de abajo, siempre disponible). Se oculta por defecto desde
+    // admin → Cambios: sin él, un socio solo puede ver su propia evolución, no
+    // la agregada de todo el fondo.
+    const mostrarBotonTodoElFondo = esVisible('evolucion.todoElFondo');
     const [data, setData] = useState(null);
     const [clients, setClients] = useState([]);
     const [clientId, setClientId] = useState('');
@@ -41,6 +38,16 @@ const SavingsEvolutionPage = ({ user }) => {
             .catch(() => {});
     }, [user]);
 
+    // Sin el botón "Todo el fondo", un socio no tiene forma de pedir la vista
+    // agregada — pero clientId arranca en '' (agregado). Sin este efecto, un
+    // socio con el botón oculto vería igualmente el fondo entero por defecto,
+    // justo lo que el interruptor de Cambios dice que está apagado.
+    useEffect(() => {
+        if (user && user.role !== 'admin' && !mostrarBotonTodoElFondo) {
+            setClientId(String(user.id));
+        }
+    }, [user, mostrarBotonTodoElFondo]);
+
     useEffect(() => {
         setLoading(true);
         setError(null);
@@ -55,60 +62,7 @@ const SavingsEvolutionPage = ({ user }) => {
         return d.getFullYear() * 12 + d.getMonth();
     }, []);
 
-    const derived = useMemo(() => {
-        if (!data?.serieMensual?.length) return null;
-
-        // Serie continua mes a mes (meses sin abono = flujo 0, acumulado plano)
-        const porKey = {};
-        data.serieMensual.forEach(r => {
-            const k = Number(r.anio) * 12 + (Number(r.mes) - 1);
-            porKey[k] = { 
-                neto: Number(r.neto) || 0, 
-                bruto: Number(r.bruto) || 0,
-                abonos: Number(r.abonos) || 0,
-                retiros: Number(r.retiros) || 0
-            };
-        });
-        const keys = Object.keys(porKey).map(Number);
-        const minK = Math.min(...keys);
-        const maxK = Math.max(...keys);
-
-        const serie = [];
-        let acum = 0;
-        for (let k = minK; k <= maxK; k++) {
-            const flujo = porKey[k]?.neto || 0;
-            const abonos = porKey[k]?.abonos || 0;
-            const retiros = porKey[k]?.retiros || 0;
-            acum += flujo;
-            const esFuturo = k > hoyKey;
-            const esBorde = k === hoyKey || (k === minK && minK > hoyKey);
-            serie.push({
-                key: k,
-                label: `${MESES[k % 12]} ${String(Math.floor(k / 12)).slice(2)}`,
-                flujo,
-                abonos,
-                retiros,
-                // Dos series para el área: causado (sólido) y futuro/prepagos (punteado).
-                // El mes actual pertenece a ambas para que la línea conecte sin salto.
-                acumCausado: !esFuturo ? acum : null,
-                acumFuturo: esFuturo || esBorde ? acum : null,
-                esFuturo,
-            });
-        }
-
-        const mesesNegativos = serie.filter(s => s.flujo < 0);
-        const acumHoy = [...serie].reverse().find(s => !s.esFuturo)?.acumCausado ?? acum;
-        const totalNeto = serie.reduce((s, r) => s + r.flujo, 0);
-        const aportes = Number(data.aportes?.total) || 0;
-        const composicion = [
-            { name: 'Ahorros netos', value: Math.max(0, totalNeto), color: '#166534' },
-            { name: 'Aportes iniciales', value: aportes, color: '#f59e0b' },
-        ].filter(d => d.value > 0);
-        const patrimonio = Math.max(0, totalNeto) + aportes;
-        const tienePrepagos = serie.some(s => s.esFuturo && s.flujo !== 0);
-
-        return { serie, mesesNegativos, acumHoy, totalNeto, aportes, composicion, patrimonio, tienePrepagos };
-    }, [data, hoyKey]);
+    const derived = useMemo(() => buildSerieMensual(data, hoyKey), [data, hoyKey]);
 
     const socioSel = clients.find(c => String(c.id) === String(clientId));
     const titulo = socioSel ? `${socioSel.name} ${socioSel.apellido1 || socioSel.surname1 || ''}`.trim() : 'Todo el fondo';
@@ -150,16 +104,18 @@ const SavingsEvolutionPage = ({ user }) => {
                 {/* Selector de socio / Filtros */}
                 {user && user.role !== 'admin' ? (
                     <div className="flex items-center gap-2">
-                        <button
-                            onClick={() => setClientId('')}
-                            className={`inline-flex items-center gap-1.5 border text-xs font-bold px-4 py-2 rounded-lg transition-colors min-h-[38px] ${
-                                clientId === '' 
-                                    ? 'bg-brand-primary border-brand-primary text-white' 
-                                    : 'border-brand-primary text-brand-primary hover:bg-brand-primary/5'
-                            }`}
-                        >
-                            Todo el fondo
-                        </button>
+                        {mostrarBotonTodoElFondo && (
+                            <button
+                                onClick={() => setClientId('')}
+                                className={`inline-flex items-center gap-1.5 border text-xs font-bold px-4 py-2 rounded-lg transition-colors min-h-[38px] ${
+                                    clientId === ''
+                                        ? 'bg-brand-primary border-brand-primary text-white'
+                                        : 'border-brand-primary text-brand-primary hover:bg-brand-primary/5'
+                                }`}
+                            >
+                                Todo el fondo
+                            </button>
+                        )}
                         <button
                             onClick={() => setClientId(String(user.id))}
                             className={`inline-flex items-center gap-1.5 border text-xs font-bold px-4 py-2 rounded-lg transition-colors min-h-[38px] ${
@@ -271,81 +227,40 @@ const SavingsEvolutionPage = ({ user }) => {
                         )}
                     </div>
 
-                    <div className="grid gap-4 lg:grid-cols-2">
-                        {/* ── 2 · FLUJO: movimiento mensual con negativos ── */}
-                        <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
-                            <h2 className="text-base font-extrabold text-gray-900 flex items-center gap-2 mb-1">
-                                <Activity className="h-4 w-4 text-brand-primary" />
-                                Movimiento mensual
-                            </h2>
-                            <p className="text-[11px] text-gray-400 mb-3">
-                                Abonos en verde · retiros y devoluciones en rojo, hacia abajo ($ COP)
-                            </p>
-                            <div className="h-[230px]">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart data={derived.serie} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                        <XAxis dataKey="label" axisLine={false} tickLine={false}
-                                            tick={{ fill: '#94a3b8', fontSize: 9.5, fontWeight: 600 }} minTickGap={14} />
-                                        <YAxis axisLine={false} tickLine={false} tickFormatter={fmtCorto}
-                                            tick={{ fill: '#94a3b8', fontSize: 10 }} width={52} />
-                                        <RechartsTooltip
-                                            content={({ active, payload, label }) => {
-                                                if (active && payload && payload.length) {
-                                                    const d = payload[0].payload;
-                                                    return (
-                                                        <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 shadow-xl text-xs text-left min-w-[150px]">
-                                                            <p className="text-gray-400 font-medium mb-1.5">{label}</p>
-                                                            {d.abonos > 0 && <p className="text-gray-200">Abonos: <span className="font-semibold text-green-400">{fmt(d.abonos)}</span></p>}
-                                                            {d.retiros < 0 && <p className="text-gray-200">Devolución / Recargo: <span className="font-semibold text-red-400">{fmt(d.retiros)}</span></p>}
-                                                            <div className="h-px bg-gray-800 my-1.5" />
-                                                            <p className="text-gray-200">Neto: <span className={`font-semibold ${d.flujo < 0 ? 'text-red-400' : 'text-gray-100'}`}>{fmt(d.flujo)}</span></p>
-                                                        </div>
-                                                    );
-                                                }
-                                                return null;
-                                            }}
-                                            cursor={{ fill: '#f1f5f9' }}
-                                        />
-                                        <ReferenceLine y={0} stroke="#9ca3af" strokeWidth={1} />
-                                        <Bar dataKey="abonos" stackId="a" fill="#166534" radius={[3, 3, 0, 0]} maxBarSize={26} isAnimationActive={false} />
-                                        <Bar dataKey="retiros" stackId="a" fill="#dc2626" radius={[0, 0, 3, 3]} maxBarSize={26} isAnimationActive={false} />
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </div>
-
-                        {/* ── 3 · COMPOSICIÓN del patrimonio ── */}
-                        <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
-                            <h2 className="text-base font-extrabold text-gray-900 flex items-center gap-2 mb-1">
-                                <PieIcon className="h-4 w-4 text-brand-primary" />
-                                Composición del Patrimonio
-                            </h2>
-                            <p className="text-[11px] text-gray-400 mb-3">
-                                Ahorros netos acumulados + aportes iniciales ($ COP)
-                            </p>
-                            {derived.composicion.length === 0 ? (
-                                <div className="h-[230px] flex items-center justify-center text-sm text-gray-400">Sin datos</div>
-                            ) : (
-                                <div className="flex items-center gap-4 h-[230px]">
-                                    <div className="relative w-[180px] h-full flex-shrink-0">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <PieChart>
-                                                <Pie data={derived.composicion} cx="50%" cy="50%"
-                                                    innerRadius="58%" outerRadius="86%" paddingAngle={3}
-                                                    dataKey="value" isAnimationActive={false} stroke="none">
-                                                    {derived.composicion.map((d, i) => <Cell key={i} fill={d.color} />)}
-                                                </Pie>
-                                                <RechartsTooltip formatter={(v) => fmt(v)} />
-                                            </PieChart>
-                                        </ResponsiveContainer>
-                                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                                            <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400">Patrimonio</span>
-                                            <span className="text-sm font-black text-gray-800 tabular-nums">{fmtCorto(derived.patrimonio)}</span>
-                                        </div>
+                    {/* ── 2 · COMPOSICIÓN del patrimonio ──
+                         "Movimiento mensual" se trasladó a Inteligencia Financiera
+                         (components/admin/MovimientoMensualChart.jsx) — de ahí queda
+                         esta como única tarjeta de la fila, a ancho completo. ── */}
+                    <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5 max-w-xl">
+                        <h2 className="text-base font-extrabold text-gray-900 flex items-center gap-2 mb-1">
+                            <PieIcon className="h-4 w-4 text-brand-primary" />
+                            Composición del Patrimonio
+                        </h2>
+                        <p className="text-[11px] text-gray-400 mb-3">
+                            Ahorros netos acumulados + aportes iniciales ($ COP)
+                        </p>
+                        {derived.composicion.length === 0 ? (
+                            <div className="h-[230px] flex items-center justify-center text-sm text-gray-400">Sin datos</div>
+                        ) : (
+                            <div className="flex items-center gap-4 h-[230px]">
+                                <div className="relative w-[180px] h-full flex-shrink-0">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <PieChart>
+                                            <Pie data={derived.composicion} cx="50%" cy="50%"
+                                                innerRadius="58%" outerRadius="86%" paddingAngle={3}
+                                                dataKey="value" isAnimationActive={false} stroke="none">
+                                                {derived.composicion.map((d, i) => <Cell key={i} fill={d.color} />)}
+                                            </Pie>
+                                            <RechartsTooltip formatter={(v) => fmt(v)} />
+                                        </PieChart>
+                                    </ResponsiveContainer>
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                        <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400">Patrimonio</span>
+                                        <span className="text-sm font-black text-gray-800 tabular-nums">{fmtCorto(derived.patrimonio)}</span>
                                     </div>
-                                    <div className="flex-1 min-w-0 space-y-2.5">
-                                        {derived.composicion.map(d => (
+                                </div>
+                                <div className="flex-1 min-w-0 space-y-2.5">
+                                    {derived.composicion.map(d => (
                                             <div key={d.name}>
                                                 <div className="flex items-center gap-2">
                                                     <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
@@ -360,7 +275,6 @@ const SavingsEvolutionPage = ({ user }) => {
                                     </div>
                                 </div>
                             )}
-                        </div>
                     </div>
 
                     <p className="text-[11px] text-gray-400 pb-2">

@@ -1,10 +1,43 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Save, RotateCcw, Info, CheckCircle2, MapPin, Landmark } from 'lucide-react';
+import { Eye, EyeOff, Save, RotateCcw, Info, CheckCircle2, MapPin, Landmark, TrendingUp } from 'lucide-react';
 import { useUi } from '../../context/UiContext';
 import { useVisibilidad } from '../../context/VisibilidadContext';
 import { SECCIONES, esSeccionVisible } from '../../utils/seccionesVisibles';
 import MiPosicionFondo from '../../components/admin/MiPosicionFondo';
+
+// Réplicas estáticas para secciones sin página propia donde comprobar el efecto
+// real de ocultarlas (el admin siempre las ve, sin importar el interruptor — ver
+// el comentario `ruta: null` de cada una en seccionesVisibles.js). No están en
+// ese catálogo porque son puramente de presentación, específicas de esta pantalla.
+const MOCKS_ESTATICOS = {
+    'menu.nuestroFondo': {
+        etiqueta: 'Así se vería en su menú lateral',
+        Mock: () => (
+            <div className="inline-flex items-center gap-2 bg-brand-dark text-white text-sm font-semibold px-3.5 py-2.5 rounded-lg w-fit">
+                <Landmark className="h-5 w-5 text-white/80" /> Nuestro Fondo
+            </div>
+        ),
+    },
+    'menu.evolucionAhorros': {
+        etiqueta: 'Así se vería en su menú lateral, dentro de Ahorros',
+        Mock: () => (
+            <div className="inline-flex items-center gap-2 bg-brand-dark text-white text-sm font-semibold px-3.5 py-2.5 rounded-lg w-fit">
+                <TrendingUp className="h-5 w-5 text-white/80" /> Evolución
+            </div>
+        ),
+    },
+    'evolucion.todoElFondo': {
+        etiqueta: 'Así se vería el botón, dentro de Evolución de Ahorros',
+        Mock: () => (
+            <button type="button" disabled
+                className="inline-flex items-center gap-1.5 border border-brand-primary bg-brand-primary text-white text-xs font-bold px-4 py-2 rounded-lg w-fit cursor-default"
+            >
+                Todo el fondo
+            </button>
+        ),
+    },
+};
 
 /**
  * "Cambios" — control de qué ve el socio.
@@ -23,11 +56,11 @@ const CambiosPage = () => {
     const { toast } = useUi();
     const navigate = useNavigate();
     const { mapa, cargando, esVisible, guardar, recargar, previewIds, activarVistaPrevia, salirVistaPrevia } = useVisibilidad();
-    // Solo "Nuestro Fondo" (menú lateral) no tiene página propia que previsualizar
-    // — el admin siempre ve ese enlace en su cuenta, sin importar el interruptor
-    // — así que su vista previa es una réplica estática que se expande aquí
-    // mismo, sin pasar por VisibilidadContext.
-    const [mockMenuAbierto, setMockMenuAbierto] = useState(false);
+    // Secciones sin página propia (ver MOCKS_ESTATICOS): su vista previa es una
+    // réplica estática que se expande aquí mismo, sin pasar por
+    // VisibilidadContext — por id, para que abrir una no expanda las demás.
+    const [mocksAbiertos, setMocksAbiertos] = useState({});
+    const alternarMock = (id) => setMocksAbiertos(prev => ({ ...prev, [id]: !prev[id] }));
 
     // Entrar a Cambios cierra cualquier vista previa que hubiera quedado activa
     // de una visita anterior (p. ej. si el admin volvió con el botón "atrás" del
@@ -264,26 +297,27 @@ const CambiosPage = () => {
                                                     <Eye className="h-3.5 w-3.5" /> Vista previa — verla con datos reales
                                                 </button>
                                             )
-                                        ) : (
-                                            <div className="mt-2.5">
-                                                <button
-                                                    onClick={() => setMockMenuAbierto(v => !v)}
-                                                    className="inline-flex items-center gap-1.5 text-[11px] font-bold text-brand-primary border border-brand-primary/30 hover:bg-brand-primary/5 px-3 py-1.5 rounded-lg transition-colors"
-                                                >
-                                                    <Eye className="h-3.5 w-3.5" /> {mockMenuAbierto ? 'Ocultar vista previa' : 'Vista previa'}
-                                                </button>
-                                                {mockMenuAbierto && (
-                                                    <div className="mt-2">
-                                                        <p className="text-[10px] font-black uppercase tracking-wider text-gray-400 mb-1.5">
-                                                            Así se vería en su menú lateral
-                                                        </p>
-                                                        <div className="inline-flex items-center gap-2 bg-brand-dark text-white text-sm font-semibold px-3.5 py-2.5 rounded-lg w-fit">
-                                                            <Landmark className="h-5 w-5 text-white/80" /> Nuestro Fondo
+                                        ) : MOCKS_ESTATICOS[seccion.id] ? (() => {
+                                            const { etiqueta, Mock } = MOCKS_ESTATICOS[seccion.id];
+                                            return (
+                                                <div className="mt-2.5">
+                                                    <button
+                                                        onClick={() => alternarMock(seccion.id)}
+                                                        className="inline-flex items-center gap-1.5 text-[11px] font-bold text-brand-primary border border-brand-primary/30 hover:bg-brand-primary/5 px-3 py-1.5 rounded-lg transition-colors"
+                                                    >
+                                                        <Eye className="h-3.5 w-3.5" /> {mocksAbiertos[seccion.id] ? 'Ocultar vista previa' : 'Vista previa'}
+                                                    </button>
+                                                    {mocksAbiertos[seccion.id] && (
+                                                        <div className="mt-2">
+                                                            <p className="text-[10px] font-black uppercase tracking-wider text-gray-400 mb-1.5">
+                                                                {etiqueta}
+                                                            </p>
+                                                            <Mock />
                                                         </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )
+                                                    )}
+                                                </div>
+                                            );
+                                        })() : null
                                     )}
                                 </div>
 
