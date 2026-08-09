@@ -28,6 +28,7 @@ import { Button } from '../components/ui/Button';
 import NotificationBell from '../components/NotificationBell';
 import logo from '../assets/logo.jpg';
 import api from '../config/api';
+import { useVisibilidad } from '../context/VisibilidadContext';
 
 // ——— Bottom nav items (mobile only) ———
 const USER_BOTTOM_NAV = [
@@ -139,6 +140,7 @@ const UserDashboardLayout = ({ user, onLogout }) => {
     const [propuestasEnabled, setPropuestasEnabled] = useState(false);
     const [informesList, setInformesList] = useState([]);
     const location = useLocation();
+    const { esVisible } = useVisibilidad();
 
     useEffect(() => {
         // Fetch config
@@ -188,16 +190,13 @@ const UserDashboardLayout = ({ user, onLogout }) => {
             label: 'Mi Panel',
             path: '/dashboard'
         },
-        // "Nuestro Fondo" (Panel Principal) queda oculto para socios — a pedido
-        // explícito, el Panel Ejecutivo es ahora el único panel de fondo que ven:
-        // ya tiene portado lo mejor de "Nuestro Fondo" (KPIs, comparación vs año
-        // anterior con delta y %, diagnóstico) más lo que "Nuestro Fondo" nunca
-        // tuvo (posición personal del socio, glosario, acceso de Junta). El admin
-        // sigue viéndolo aquí porque solo desde ahí puede editar la meta anual y
-        // el valor de NU — ExecutivePanelPage es de solo lectura para todos. La
-        // ruta /dashboard/fondo sigue existiendo (no se tocó), solo se oculta el
-        // enlace del menú.
-        ...(user?.role === 'admin' ? [{
+        // "Nuestro Fondo" (Panel Principal): visible para el socio solo si el
+        // comité lo habilita desde admin → Cambios. El admin siempre lo ve, sin
+        // importar ese interruptor, porque es la única pantalla desde donde puede
+        // editar la meta anual y el valor de NU (el Panel Ejecutivo es de solo
+        // lectura para todos). La ruta /dashboard/fondo existe siempre; esto solo
+        // gobierna el enlace del menú.
+        ...(user?.role === 'admin' || esVisible('menu.nuestroFondo') ? [{
             type: 'link',
             icon: Landmark,
             label: 'Nuestro Fondo',
