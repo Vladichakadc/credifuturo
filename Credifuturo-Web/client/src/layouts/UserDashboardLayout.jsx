@@ -188,12 +188,21 @@ const UserDashboardLayout = ({ user, onLogout }) => {
             label: 'Mi Panel',
             path: '/dashboard'
         },
-        {
+        // "Nuestro Fondo" (Panel Principal) queda oculto para socios — a pedido
+        // explícito, el Panel Ejecutivo es ahora el único panel de fondo que ven:
+        // ya tiene portado lo mejor de "Nuestro Fondo" (KPIs, comparación vs año
+        // anterior con delta y %, diagnóstico) más lo que "Nuestro Fondo" nunca
+        // tuvo (posición personal del socio, glosario, acceso de Junta). El admin
+        // sigue viéndolo aquí porque solo desde ahí puede editar la meta anual y
+        // el valor de NU — ExecutivePanelPage es de solo lectura para todos. La
+        // ruta /dashboard/fondo sigue existiendo (no se tocó), solo se oculta el
+        // enlace del menú.
+        ...(user?.role === 'admin' ? [{
             type: 'link',
             icon: Landmark,
             label: 'Nuestro Fondo',
             path: '/dashboard/fondo'
-        },
+        }] : []),
         {
             type: 'link',
             icon: Activity,
