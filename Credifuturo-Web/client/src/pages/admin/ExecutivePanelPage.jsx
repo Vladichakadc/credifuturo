@@ -656,8 +656,15 @@ const ExecutivePanelPage = () => {
             {/* ── Nivel 1: Hero ejecutivo ─────────────────────────────────────
                  Visible solo si el comité lo habilita en admin → Cambios: tres de
                  sus cinco cifras (patrimonio, disponible y cartera) también
-                 aparecen en "Detalle completo del fondo" más abajo. ── */}
-            {esVisible('ejecutivo.heroKpis') && (
+                 aparecen en "Detalle completo del fondo" más abajo.
+                 La guarda `stats &&` es obligatoria, igual que en el resto de la
+                 página: /admin/dashboard-stats puede fallar mientras
+                 /admin/executive-stats responde (fetchAll ignora ese fallo en
+                 silencio y `derived` solo comprueba `exec`). Sin ella, con stats
+                 en null estas tarjetas afirmarían "Patrimonio $0" y
+                 "Apalancamiento 0% · Capacidad ociosa" como si fueran cifras
+                 reales — un diagnóstico falso sobre un dato que no cargó. ── */}
+            {stats && esVisible('ejecutivo.heroKpis') && (
                 <div className="grid gap-3 grid-cols-2 lg:grid-cols-5">
                     {/* La flecha y el signo del badge se derivan del dato: antes estaban
                         fijos en '▲ +' con tono verde, así que una caída del ahorro se
@@ -1360,8 +1367,11 @@ const ExecutivePanelPage = () => {
             </p>
 
             {/* ── Modal: Apalancamiento del Fondo — solo se abre desde la banda
-                 de 5 indicadores, así que se monta únicamente con ella. ── */}
-            {esVisible('ejecutivo.heroKpis') && (
+                 de 5 indicadores, así que se monta con ella y bajo la misma
+                 guarda de datos: su narrativa afirma un diagnóstico ("hay
+                 capacidad ociosa", "revisar solicitudes represadas") que sería
+                 falso si el patrimonio no cargó. ── */}
+            {stats && esVisible('ejecutivo.heroKpis') && (
                 <ChartExpandModal
                     isOpen={showLdrInfo}
                     onClose={() => setShowLdrInfo(false)}

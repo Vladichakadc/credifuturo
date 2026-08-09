@@ -19,18 +19,32 @@ import { SECCIONES, esSeccionVisible } from '../../utils/seccionesVisibles';
 
 const CambiosPage = () => {
     const { toast } = useUi();
-    const { mapa, esVisible, guardar, recargar } = useVisibilidad();
+    const { mapa, cargando, esVisible, guardar, recargar } = useVisibilidad();
 
     // Borrador local: los cambios no se aplican hasta pulsar "Guardar", para que
     // el comité pueda revisar varios interruptores antes de que los socios los vean.
     const [borrador, setBorrador] = useState({});
     const [guardando, setGuardando] = useState(false);
+    // Marca si el admin ya tocó algún interruptor. Sin esto, cualquier refresco
+    // del mapa (incluido el que dispara un guardado fallido) reescribía el
+    // borrador y borraba en silencio los cambios que el admin llevaba hechos —
+    // `parsearVisibilidad` devuelve SIEMPRE un objeto nuevo, así que el efecto se
+    // disparaba aunque el contenido fuera idéntico.
+    const [tocado, setTocado] = useState(false);
+
+    // `mapa === null` significa "nunca se pudo leer la configuración" (ni del
+    // servidor ni de la caché local). Es distinto de "leída y vacía": en ese
+    // estado NO se sabe qué están viendo los socios, así que la página no puede
+    // dejar guardar — enviaría el mapa completo con los defaults (todo oculto) y
+    // apagaría secciones que sí estaban aprobadas.
+    const configuracionDisponible = mapa !== null;
 
     useEffect(() => {
+        if (tocado) return;   // no pisar el trabajo en curso del admin
         const inicial = {};
         SECCIONES.forEach(s => { inicial[s.id] = esSeccionVisible(mapa, s.id); });
         setBorrador(inicial);
-    }, [mapa]);
+    }, [mapa, tocado]);
 
     const cambiosPendientes = useMemo(
         () => SECCIONES.filter(s => borrador[s.id] !== esSeccionVisible(mapa, s.id)),
@@ -39,12 +53,16 @@ const CambiosPage = () => {
 
     const visiblesCount = SECCIONES.filter(s => borrador[s.id]).length;
 
-    const alternar = (id) => setBorrador(prev => ({ ...prev, [id]: !prev[id] }));
+    const alternar = (id) => {
+        setTocado(true);
+        setBorrador(prev => ({ ...prev, [id]: !prev[id] }));
+    };
 
     const descartar = () => {
         const inicial = {};
         SECCIONES.forEach(s => { inicial[s.id] = esSeccionVisible(mapa, s.id); });
         setBorrador(inicial);
+        setTocado(false);
     };
 
     const onGuardar = async () => {
@@ -52,14 +70,20 @@ const CambiosPage = () => {
         try {
             // Se guarda el mapa COMPLETO del catálogo, no solo lo que cambió: así
             // el AppSetting siempre refleja una decisión explícita por sección y no
-            // depende de que el default del código nunca cambie.
+            // depende de que el default del código nunca cambie. Por eso mismo esta
+            // acción está bloqueada mientras la configuración no se haya podido
+            // leer: escribir el mapa completo sin conocer el estado real apagaría
+            // secciones aprobadas.
             const nuevo = {};
             SECCIONES.forEach(s => { nuevo[s.id] = !!borrador[s.id]; });
             await guardar(nuevo);
+            setTocado(false);
             toast.success(`Cambios aplicados · ${visiblesCount} de ${SECCIONES.length} secciones visibles para los socios`);
         } catch (err) {
-            toast.error(err?.response?.data?.error || 'No se pudieron guardar los cambios.');
-            recargar();
+            // NO se recarga ni se limpia el borrador: los interruptores que el
+            // admin marcó siguen en pantalla para que pueda reintentar sin volver
+            // a marcarlos uno por uno.
+            toast.error(err?.response?.data?.error || 'No se pudieron guardar los cambios. Tus cambios siguen aquí — puedes reintentar.');
         } finally {
             setGuardando(false);
         }
@@ -89,9 +113,9 @@ const CambiosPage = () => {
                     )}
                     <button
                         onClick={onGuardar}
-                        disabled={!hayCambios || guardando}
+                        disabled={!hayCambios || guardando || !configuracionDisponible}
                         className={`inline-flex items-center gap-2 text-white text-xs font-bold px-4 py-2.5 rounded-lg transition-colors min-h-[44px] ${
-                            hayCambios && !guardando
+                            hayCambios && !guardando && configuracionDisponible
                                 ? 'bg-brand-primary hover:bg-brand-dark'
                                 : 'bg-gray-300 cursor-not-allowed'
                         }`}
@@ -102,18 +126,50 @@ const CambiosPage = () => {
                 </div>
             </div>
 
+            {/* Configuración ilegible: se dice claramente que NO se sabe qué ven
+                los socios, en vez de mostrar los interruptores en un estado
+                inventado. Guardar queda bloqueado arriba por la misma razón. */}
+            {!configuracionDisponible && (
+                <div className="bg-amber-50 border border-amber-300 rounded-2xl px-5 py-4 flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-3 min-w-0">
+                        <Info className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                            <h2 className="text-sm font-black text-amber-900">No se pudo leer la configuración actual</h2>
+                            <p className="text-xs text-amber-800 mt-1 leading-relaxed">
+                                Los interruptores de abajo muestran los valores por defecto, <b>no</b> lo que los socios están viendo ahora.
+                                Guardar está bloqueado para no apagar por error secciones que sí estén aprobadas. Reintenta la carga.
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={recargar}
+                        disabled={cargando}
+                        className="inline-flex items-center gap-2 border border-amber-400 text-amber-800 hover:bg-amber-100 text-xs font-bold px-3 py-2 rounded-lg transition-colors min-h-[40px] flex-shrink-0 disabled:opacity-60"
+                    >
+                        <RotateCcw className={`h-4 w-4 ${cargando ? 'animate-spin' : ''}`} />
+                        {cargando ? 'Cargando…' : 'Reintentar'}
+                    </button>
+                </div>
+            )}
+
             {/* Resumen del estado actual */}
-            <div className="bg-gradient-to-r from-emerald-700 to-emerald-900 rounded-2xl px-5 py-4 flex items-center justify-between gap-4 shadow-card">
+            <div className={`rounded-2xl px-5 py-4 flex items-center justify-between gap-4 shadow-card ${
+                configuracionDisponible ? 'bg-gradient-to-r from-emerald-700 to-emerald-900' : 'bg-gradient-to-r from-gray-500 to-gray-700'
+            }`}>
                 <div className="flex items-center gap-4 min-w-0">
                     <div className="bg-white/15 rounded-full w-11 h-11 flex items-center justify-center flex-shrink-0">
                         <Eye className="h-5 w-5 text-white" />
                     </div>
                     <div className="min-w-0">
                         <h2 className="text-lg font-black text-white leading-tight">
-                            {visiblesCount} de {SECCIONES.length} secciones visibles
+                            {configuracionDisponible
+                                ? `${visiblesCount} de ${SECCIONES.length} secciones visibles`
+                                : 'Configuración desconocida'}
                         </h2>
                         <p className="text-sm text-white/80 font-medium mt-0.5">
-                            {hayCambios
+                            {!configuracionDisponible
+                                ? 'No se pudo leer qué están viendo los socios.'
+                                : hayCambios
                                 ? `${cambiosPendientes.length} cambio(s) sin guardar — los socios todavía ven la configuración anterior.`
                                 : 'Los socios están viendo exactamente esta configuración.'}
                         </p>
