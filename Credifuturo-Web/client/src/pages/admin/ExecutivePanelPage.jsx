@@ -383,28 +383,8 @@ const ExecutivePanelPage = () => {
         const pen = exec.penetracion || { conCredito: 0, activos: 0 };
         const penPct = pen.activos > 0 ? (pen.conCredito / pen.activos) * 100 : 0;
 
-        // ── Centro de alertas: reglas sobre los datos reales ──────────
-        const alertas = [];
-        if ((cartera.vencida || 0) > 0) {
-            alertas.push({ tone: 'risk', icon: AlertTriangle, texto: `Cartera vencida por ${fmt(cartera.vencida)} — revisar cuotas en mora EP y gestionar cobro.` });
-        }
-        if (top3Pct > 60) {
-            alertas.push({ tone: 'risk', icon: AlertTriangle, texto: `Concentración crítica: el top 3 de deudores acumula el ${top3Pct.toFixed(0)}% de la cartera.` });
-        } else if (top3Pct > 40) {
-            alertas.push({ tone: 'warn', icon: Info, texto: `Concentración a vigilar: el top 3 de deudores acumula el ${top3Pct.toFixed(0)}% de la cartera (${fmt(top3)}). Diversificar los próximos préstamos.` });
-        }
-        const efic = exec.recaudoYtd?.eficienciaPct;
-        if (efic != null && efic < 90) {
-            alertas.push({ tone: 'risk', icon: AlertTriangle, texto: `Eficiencia de recaudo en ${efic}% — por debajo del umbral del 90%.` });
-        } else if (efic != null && efic < 95) {
-            alertas.push({ tone: 'warn', icon: Info, texto: `Eficiencia de recaudo en ${efic}% — vigilar cuotas próximas.` });
-        }
-        if (penPct < 50 && pen.activos > 0) {
-            alertas.push({ tone: 'info', icon: Info, texto: `Oportunidad: ${pen.activos - pen.conCredito} socios activos sin crédito vigente (penetración ${penPct.toFixed(0)}%). Los intereses son el motor de ingresos del fondo.` });
-        }
-        if (alertas.filter(a => a.tone === 'risk').length === 0) {
-            alertas.unshift({ tone: 'ok', icon: CheckCircle2, texto: 'Sin alertas críticas: cartera al día y recaudo dentro de los umbrales.' });
-        }
+        // Las reglas del Centro de Alertas se fueron con él a
+        // components/admin/CentroDeAlertas.jsx (ver construirAlertas).
 
         // Series por año para "Resultados del Año" (baselines dinámicos desde la BD)
         const interesesCobradosPorAnio = {};
@@ -436,7 +416,7 @@ const ExecutivePanelPage = () => {
             top3, top3Pct, donutData, ldrPct, ldrTone, proyeccion,
             ahorroActual, ahorroPrevio, colocActual, colocPrevio,
             intCobradosAnio, intAgendadosAnio, intAnioPrevio,
-            penPct, alertas, seriesCharts,
+            penPct, seriesCharts,
         };
     }, [exec, stats, anioActual]);
 
@@ -540,16 +520,6 @@ const ExecutivePanelPage = () => {
         { name: 'Rendimientos NU', value: Number(stats?.rentabilidadCajaNU || 0), color: '#84cc16' },
         { name: 'Recargos por mora', value: Number(stats?.totalPenaltyValue || 0), color: '#f59e0b' },
     ].filter(d => d.value > 0);
-
-    const toneStyles = {
-        ok:   'bg-emerald-50 border-emerald-200 text-emerald-800',
-        warn: 'bg-amber-50 border-amber-200 text-amber-800',
-        risk: 'bg-red-50 border-red-200 text-red-800',
-        info: 'bg-blue-50 border-blue-200 text-blue-800',
-    };
-    const toneIcon = {
-        ok: 'text-emerald-500', warn: 'text-amber-500', risk: 'text-red-500', info: 'text-blue-500',
-    };
 
     return (
         <div className="space-y-5 max-w-6xl mx-auto animate-fade-in">
@@ -747,22 +717,9 @@ const ExecutivePanelPage = () => {
                 </div>
             )}
 
-            {/* ── Centro de alertas ── */}
-            <div className="space-y-2">
-                <h2 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4 text-brand-primary" />
-                    Centro de Alertas
-                </h2>
-                {derived.alertas.map((a, i) => {
-                    const AIcon = a.icon;
-                    return (
-                        <div key={i} className={`flex items-start gap-2.5 border rounded-xl px-4 py-3 text-sm ${toneStyles[a.tone]}`}>
-                            <AIcon className={`h-4 w-4 mt-0.5 flex-shrink-0 ${toneIcon[a.tone]}`} />
-                            <p className="leading-snug">{a.texto}</p>
-                        </div>
-                    );
-                })}
-            </div>
+            {/* El Centro de Alertas se trasladó a "Mi Panel" (components/admin/
+                CentroDeAlertas.jsx), que es la primera pantalla que ve el socio
+                al entrar: allí se lee, aquí había que bajar hasta encontrarlo. */}
 
             {/* ── Detalle operativo/completo del fondo (siempre desplegado) ── */}
             {stats && (
