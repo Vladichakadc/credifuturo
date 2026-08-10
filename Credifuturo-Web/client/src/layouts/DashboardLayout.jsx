@@ -67,8 +67,11 @@ const SidebarItem = ({ icon: Icon, label, path, isActive, collapsed }) => {
 };
 
 // ——— Expandable sidebar group with dynamic children ———
-const SidebarSubmenu = ({ icon: Icon, label, children, isOpen, onToggle, location, collapsed, searchValue, onSearch }) => {
-    const hasActiveChild = children.some(child => location.pathname === child.path.split('?')[0]);
+// `items` (antes `children`): son los enlaces del submenú como DATOS, no
+// hijos de React. Pasarlos por la prop `children` hacía que React los tratara
+// como contenido anidado y confundía a quien leyera el componente.
+const SidebarSubmenu = ({ icon: Icon, label, items, isOpen, onToggle, location, collapsed, searchValue, onSearch }) => {
+    const hasActiveChild = items.some(child => location.pathname === child.path.split('?')[0]);
 
     return (
         <div className="mr-2">
@@ -119,7 +122,7 @@ const SidebarSubmenu = ({ icon: Icon, label, children, isOpen, onToggle, locatio
                         </div>
                     )}
                     <div className="ml-4 pl-3 border-l-2 border-white/15 space-y-0.5 py-1">
-                        {children.map(child => {
+                        {items.map(child => {
                             const childBasePath = child.path.split('?')[0];
                             const childQuery = child.path.includes('?') ? '?' + child.path.split('?')[1] : null;
                             const isChildActive = childQuery
@@ -531,7 +534,7 @@ const DashboardLayout = ({ user, onLogout }) => {
                                     key={item.key}
                                     icon={item.icon}
                                     label={item.label}
-                                    children={item.children}
+                                    items={item.children}
                                     isOpen={!!openSubmenus[item.key]}
                                     onToggle={() => toggleSubmenu(item.key)}
                                     location={location}

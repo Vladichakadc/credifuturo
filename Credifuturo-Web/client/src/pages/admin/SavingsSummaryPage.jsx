@@ -1239,8 +1239,10 @@ export const AccountSummaryChart = ({ stats }) => {
 };
 
 export const MonthlySavingsTrendChart = ({ data, availableYears, selectedYear }) => {
-    if (!data || data.length === 0) return null;
-
+    // El "no hay datos → null" vivía aquí arriba, por delante de los dos useMemo
+    // de más abajo, así que en los renders sin datos esos hooks no llegaban a
+    // llamarse y el orden cambiaba en cuanto llegaban. Ahora la salida temprana
+    // está después de los hooks y estos toleran `data` vacío.
     const showMultiple = selectedYear === 'Todos' && availableYears && availableYears.length > 0;
     const sortedYears = showMultiple ? [...availableYears].sort((a, b) => Number(a) - Number(b)) : [];
     const mainYear   = sortedYears[sortedYears.length - 1];
@@ -1268,12 +1270,12 @@ export const MonthlySavingsTrendChart = ({ data, availableYears, selectedYear })
     // Solo los meses SIN movimiento (0) pasan a null para no dibujar línea plana falsa.
     // Los negativos (retiros/devoluciones) se conservan: son eventos financieros reales.
     const processedData = useMemo(() => showMultiple
-        ? data.map(d => {
+        ? (data || []).map(d => {
             const row = { name: d.name };
             sortedYears.forEach(yr => { row[yr] = d[yr] !== 0 ? d[yr] : null; });
             return row;
           })
-        : data,
+        : (data || []),
     [data, showMultiple, sortedYears]);
 
     const avgOf = (key) => {
@@ -1293,6 +1295,10 @@ export const MonthlySavingsTrendChart = ({ data, availableYears, selectedYear })
         });
         return { maxIdx, lastIdx };
     }, [processedData, dataKey]);
+
+    // Salida temprana, ya con todos los hooks llamados (ver el comentario de la
+    // cabecera del componente).
+    if (!data || data.length === 0) return null;
 
     const customDot = (props, isMain) => {
         const { cx, cy, index, value } = props;
