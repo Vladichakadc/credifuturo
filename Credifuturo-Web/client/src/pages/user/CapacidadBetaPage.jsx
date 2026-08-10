@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../config/api';
 import { calcVerdict, calcScore, colorMap } from '../../utils/loanCapacity';
+import { useVisibilidad } from '../../context/VisibilidadContext';
 import { COLOMBIAN_BANKS_WITH_OTHER } from '../../utils/banks';
 import { useUi } from '../../context/UiContext';
 import EstadoPrestamosSection from '../../components/EstadoPrestamosSection';
@@ -18,7 +19,6 @@ import {
     CheckCircle,
     AlertTriangle,
     Lock,
-    Target,
     Info,
     Vote,
     Send,
@@ -79,6 +79,7 @@ const accionCoach = (comp, a) => {
 };
 
 const CapacidadBetaPage = () => {
+    const { esVisible } = useVisibilidad();
     const { toast } = useUi();
     const [analysis, setAnalysis] = useState(null);
     const [scoreHistory, setScoreHistory] = useState([]);
@@ -226,16 +227,8 @@ const CapacidadBetaPage = () => {
             .sort((a, b) => b.potencial - a.potencial);
     }, [v]);
 
-    // ── Proyección de cupo a 3/6/12 meses ────────────────────────────
-    const proyeccion = useMemo(() => {
-        if (!analysis || !v) return null;
-        const prom = Number(analysis.promedioAhorroMensual || 0);
-        if (prom <= 0) return null;
-        return [3, 6, 12].map(m => {
-            const cupoFuturo = (analysis.ahorroTotal + m * prom) * 3 - analysis.totalDeudaPendiente;
-            return { meses: m, cupo: Math.max(0, cupoFuturo), delta: cupoFuturo - v.capacidadDisponible };
-        });
-    }, [analysis, v]);
+    // El cálculo de la proyección de cupo se fue con la tarjeta a
+    // components/user/ProyeccionCupo.jsx (calcularProyeccion).
 
     // Tasa Efectiva Anual: equivalente anualizado de la tasa mensual (interés compuesto)
     const tasaEfectivaAnual = (Math.pow(1 + tasa / 100, 12) - 1) * 100;
@@ -607,9 +600,12 @@ const CapacidadBetaPage = () => {
                 </div>
             </div>
 
-            {/* Coach del score + Proyección */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            {/* "Proyección de tu cupo" se fue a Mi Panel (components/user/
+                ProyeccionCupo.jsx): es lo que un socio quiere ver sin entrar a
+                una pantalla en evaluación. Queda el coach del score, ahora a
+                ancho completo y ocultable desde el menú "Cambios". */}
+            {esVisible('capacidad.coachScore') && (
+                <div id="capacidad.coachScore" className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
                     <div className="flex items-center gap-2 mb-3">
                         <Sparkles className="h-4 w-4 text-amber-500" />
                         <h2 className="text-sm font-bold text-gray-800">Cómo subir tu score</h2>
@@ -617,7 +613,7 @@ const CapacidadBetaPage = () => {
                     {coach.length === 0 ? (
                         <p className="text-xs text-gray-500">¡Score perfecto! No hay puntos por recuperar — mantén tus hábitos.</p>
                     ) : (
-                        <div className="space-y-2.5">
+                        <div className="grid gap-2.5 sm:grid-cols-2">
                             {coach.map(comp => (
                                 <div key={comp.key} className="flex items-start gap-3 bg-gray-50 rounded-xl p-3">
                                     <span className="shrink-0 bg-emerald-100 text-emerald-700 text-[10px] font-black rounded-full px-2 py-0.5 mt-0.5 whitespace-nowrap">
@@ -632,33 +628,7 @@ const CapacidadBetaPage = () => {
                         </div>
                     )}
                 </div>
-
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                    <div className="flex items-center gap-2 mb-3">
-                        <Target className="h-4 w-4 text-brand-primary" />
-                        <h2 className="text-sm font-bold text-gray-800">Proyección de tu cupo</h2>
-                    </div>
-                    {!proyeccion ? (
-                        <p className="text-xs text-gray-500">Aún no hay historial de ahorro mensual suficiente para proyectar tu cupo.</p>
-                    ) : (
-                        <>
-                            <div className="grid grid-cols-3 gap-2">
-                                {proyeccion.map(p => (
-                                    <div key={p.meses} className="bg-gradient-to-br from-emerald-50 to-white border border-emerald-100 rounded-xl p-3 text-center">
-                                        <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">En {p.meses} meses</p>
-                                        <p className="text-sm font-black text-gray-800 tabular-nums mt-1">{fmt(p.cupo)}</p>
-                                        <p className="text-[10px] text-emerald-600 font-bold mt-0.5">+{fmt(Math.max(0, p.delta))}</p>
-                                    </div>
-                                ))}
-                            </div>
-                            <p className="text-[11px] text-gray-500 mt-3 leading-snug">
-                                Si mantienes tu ahorro promedio de <b>{fmt(analysis.promedioAhorroMensual)}/mes</b>, cada peso ahorrado suma $3 de cupo.
-                                Cálculo conservador: asume tu deuda actual sin cambios — como tus cuotas la van bajando, el cupo real será igual o mayor.
-                            </p>
-                        </>
-                    )}
-                </div>
-            </div>
+            )}
 
             {/* Cuotas simuladas en la MISMA tabla "Lista Estado Préstamos" del admin */}
             {sim && (
