@@ -225,12 +225,16 @@ const FinancialIntelligencePage = () => {
             </div>
 
             {/* Trasladado desde Evolución de Ahorros: aquí siempre a nivel de todo
-                el fondo (esta página no tiene selector de socio). */}
-            {serieMovimiento && (
-                <MovimientoMensualChart
-                    serie={serieMovimiento.serie}
-                    subtitulo="Todo el fondo · abonos en verde, retiros y devoluciones en rojo hacia abajo ($ COP)"
-                />
+                el fondo (esta página no tiene selector de socio). Ocultable desde
+                el menú "Cambios" — el comité lo consideró redundante frente al
+                resto del análisis de esta página. */}
+            {esVisible('inteligencia.movimientoMensual') && serieMovimiento && (
+                <div id="inteligencia.movimientoMensual">
+                    <MovimientoMensualChart
+                        serie={serieMovimiento.serie}
+                        subtitulo="Todo el fondo · abonos en verde, retiros y devoluciones en rojo hacia abajo ($ COP)"
+                    />
+                </div>
             )}
         </div>
     );
