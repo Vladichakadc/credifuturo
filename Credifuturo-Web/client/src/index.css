@@ -74,3 +74,17 @@ html {
     @apply absolute top-0 left-0 right-0 h-[3px] bg-brand-primary;
   }
 }
+
+@layer utilities {
+  /* Scroll horizontal sin barra visible — para tiras de pestañas o filtros que
+     en móvil no caben pero que se desplazan con el dedo, donde la barra del
+     sistema solo ensucia el control. */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}

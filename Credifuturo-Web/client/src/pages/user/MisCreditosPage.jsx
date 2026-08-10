@@ -315,24 +315,6 @@ const MisCreditosPage = () => {
                             <p className="text-white/80 text-sm mt-0.5">Tus préstamos y el estado de tus cuotas, en un solo lugar</p>
                         </div>
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                        <motion.button
-                            whileHover={{ scale: 1.03 }}
-                            whileTap={{ scale: 0.96 }}
-                            onClick={handleExport}
-                            className="flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/15 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-colors"
-                        >
-                            <Download className="h-4 w-4" /> Exportar
-                        </motion.button>
-                        <motion.button
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.92, rotate: 180 }}
-                            onClick={fetchAll}
-                            className="p-2.5 bg-white/10 hover:bg-white/20 border border-white/15 rounded-xl transition-colors"
-                        >
-                            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                        </motion.button>
-                    </div>
                 </div>
 
                 {/* Resumen combinado — visible sin importar la pestaña activa */}
@@ -366,18 +348,27 @@ const MisCreditosPage = () => {
                     </motion.div>
                 )}
 
-                {/* Selector de pestañas — pill deslizante (layoutId compartido entre botones) */}
-                <div className="relative inline-flex bg-white/10 backdrop-blur rounded-2xl p-1 border border-white/15 mt-6">
+            </motion.div>
+
+            {/* ── BARRA DE ACCIONES ──
+                Pestañas y acciones salieron del hero. Las pestañas van pegadas al
+                contenido que conmutan, que es donde se las busca; "Exportar" actúa
+                sobre lo que esa pestaña está mostrando, así que vive con ellas y no
+                arriba junto al título. El hero queda solo informativo.
+                En móvil las pestañas hacen scroll horizontal en vez de partirse. */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white rounded-2xl border border-gray-200 shadow-sm p-2 sm:p-2.5">
+                <div className="relative inline-flex bg-gray-100 rounded-xl p-1 overflow-x-auto no-scrollbar">
                     {TABS.map(tab => {
                         const Icon = tab.icon;
                         const isActive = activeTab === tab.key;
                         return (
                             <button key={tab.key} onClick={() => changeTab(tab.key)}
-                                className={`relative flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl text-sm font-bold transition-colors duration-200 ${isActive ? 'text-brand-dark' : 'text-white/70 hover:text-white'}`}>
+                                aria-current={isActive ? 'page' : undefined}
+                                className={`relative flex items-center gap-2 px-3.5 sm:px-5 py-2 rounded-lg text-[13px] sm:text-sm font-bold whitespace-nowrap transition-colors duration-200 min-h-[40px] ${isActive ? 'text-brand-dark' : 'text-gray-500 hover:text-gray-800'}`}>
                                 {isActive && (
                                     <motion.div
                                         layoutId="misCreditosActivePill"
-                                        className="absolute inset-0 bg-white rounded-xl shadow-lg"
+                                        className="absolute inset-0 bg-white rounded-lg shadow-sm ring-1 ring-gray-200"
                                         transition={{ type: 'spring', stiffness: 500, damping: 34 }}
                                     />
                                 )}
@@ -389,7 +380,28 @@ const MisCreditosPage = () => {
                         );
                     })}
                 </div>
-            </motion.div>
+
+                <div className="flex items-center gap-2 flex-shrink-0">
+                    <motion.button
+                        whileHover={{ scale: 1.03 }}
+                        whileTap={{ scale: 0.96 }}
+                        onClick={handleExport}
+                        className="flex-1 sm:flex-none justify-center flex items-center gap-2 bg-brand-primary hover:bg-brand-dark text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-colors min-h-[44px]"
+                    >
+                        <Download className="h-4 w-4" /> Exportar
+                    </motion.button>
+                    <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.92, rotate: 180 }}
+                        onClick={fetchAll}
+                        aria-label="Actualizar"
+                        title="Actualizar"
+                        className="p-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
+                    >
+                        <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                    </motion.button>
+                </div>
+            </div>
 
             {/* ── CONTENIDO POR PESTAÑA ── */}
             <AnimatePresence mode="wait">
