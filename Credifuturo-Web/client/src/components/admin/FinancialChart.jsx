@@ -16,7 +16,12 @@ import logo from '../../assets/logo.jpg';
 import YearComparisonChart from './YearComparisonChart';
 import YearProgressCard from './YearProgressCard';
 
-const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selectedYears = [], onEditMeta }) => {
+// `slotRiesgo` se pinta justo bajo el veredicto ejecutivo: es el detalle que
+// explica esa franja de color ("Alerta Operativa" / "Fondo Saludable") antes
+// de que el lector baje a las cifras. Es un slot y no un import fijo porque el
+// Panel Principal ya trae esas tarjetas en su propia sección de indicadores
+// por área, y no debe mostrarlas dos veces.
+const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selectedYears = [], onEditMeta, slotRiesgo = null }) => {
     // Etiqueta del período que cubren las cifras (regla de gobernanza: declarar el período)
     const periodoLabel = selectedYears.length > 0 ? selectedYears.join(' – ') : 'todos los años';
     const [expandDonut, setExpandDonut] = useState(false);
@@ -315,6 +320,8 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                     </div>
                 );
             })()}
+
+            {slotRiesgo}
 
             {/* ── KPIs EJECUTIVOS — 5 métricas con delta vs 2025 ────────────────── */}
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 border-b border-gray-100">

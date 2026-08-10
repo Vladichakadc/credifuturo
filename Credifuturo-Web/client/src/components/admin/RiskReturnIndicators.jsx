@@ -12,118 +12,202 @@
 // FinancialChart.jsx, junto a "Proyección al Cierre" — ver el comentario
 // sobre KPI 6 ahí. Mismo cálculo en los dos lugares, para que nunca muestren
 // números distintos.
+//
+// ── Orden y lenguaje de las tres tarjetas ─────────────────────────────────
+// El orden no es arbitrario: va de lo concreto a lo abstracto y termina en la
+// tranquilidad, que es como un socio lee esto sin ser financiero.
+//   1. Socios en Mora  — ¿a cuántas personas afecta?   (un conteo, lo más fácil)
+//   2. Índice de Mora  — ¿cuánto dinero está vencido?  (un % de la cartera)
+//   3. Cobertura       — ¿alcanza la caja para cubrirlo? (el veredicto)
+// Antes empezaba por el índice: el dato más abstracto de los tres.
+//
+// Las tres comparten una sola gramática visual — pregunta en español llano,
+// cifra, estado, y la MISMA escala de tres zonas con marcador — para que el
+// lector aprenda a leerla una vez y le sirva en las tres. Antes la primera
+// tarjeta traía una escala de zonas y las otras dos una barra de progreso,
+// que se parecen pero significan cosas distintas. Cada escala dice además
+// hacia qué lado está lo bueno, porque "11,8×" no se interpreta solo.
 import React from 'react';
 import { AlertTriangle, Users, ShieldCheck } from 'lucide-react';
 
-const RiskReturnIndicators = ({ stats, loading = false, onSociosMoraClick }) => {
-                const disponible = (stats?.saldoEnBanco || 0) + (stats?.rentabilidadCajaNU || 0);
-                const carteraTotal = (stats?.carteraDia || 0) + (stats?.moraCarteraEP || 0);
-                const mora = stats?.moraCarteraEP || 0;
-                const sociosMora = stats?.sociosMoraCount || 0;
-                const totalSocios = stats?.activeClientsCount || 1;
+const TONOS = {
+    ok: { texto: 'text-emerald-700', fondo: 'from-emerald-50', badge: 'bg-emerald-100 text-emerald-700' },
+    medio: { texto: 'text-amber-700', fondo: 'from-amber-50', badge: 'bg-amber-100 text-amber-700' },
+    malo: { texto: 'text-red-700', fondo: 'from-red-50', badge: 'bg-red-100 text-red-700' },
+};
 
-                // Índice de Mora: % de la cartera que está vencida
-                const indiceMora = carteraTotal > 0 ? (mora / carteraTotal) * 100 : 0;
-                const moraColor = indiceMora <= 3 ? 'from-emerald-50' : indiceMora <= 5 ? 'from-amber-50' : 'from-red-50';
-                const moraText = indiceMora <= 3 ? 'text-emerald-700' : indiceMora <= 5 ? 'text-amber-700' : 'text-red-700';
-                const moraBadge = indiceMora <= 3 ? 'bg-emerald-100 text-emerald-700' : indiceMora <= 5 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700';
-                const moraBadgeLabel = indiceMora <= 3 ? '● Bajo' : indiceMora <= 5 ? '▲ Moderado' : '⚠ Alto';
+const COP = (v) => `$${Number(v || 0).toLocaleString('es-CO')}`;
 
-                // Cobertura de Mora: cuántas veces el efectivo cubre la mora
-                const cobertura = mora > 0 ? disponible / mora : null;
-                const coberturaColor = cobertura === null ? 'from-emerald-50' : cobertura >= 5 ? 'from-emerald-50' : cobertura >= 2 ? 'from-amber-50' : 'from-red-50';
-                const coberturaText = cobertura === null ? 'text-emerald-700' : cobertura >= 5 ? 'text-emerald-700' : cobertura >= 2 ? 'text-amber-700' : 'text-red-700';
-                const coberturaBadge = cobertura === null ? 'bg-emerald-100 text-emerald-700' : cobertura >= 5 ? 'bg-emerald-100 text-emerald-700' : cobertura >= 2 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700';
-                const coberturaBadgeLabel = cobertura === null ? '✓ Sin mora' : cobertura >= 5 ? '✓ Sólida' : cobertura >= 2 ? '● Adecuada' : '⚠ Débil';
+// Escala de tres zonas con marcador. `zonas` va siempre de izquierda a derecha
+// en el orden en que se pintan; `pos` es 0–100 sobre ese ancho.
+const Escala = ({ zonas, pos, mejorHacia, referencia, ariaLabel }) => (
+    <div>
+        <div className="relative flex h-2 rounded-full overflow-hidden" role="img" aria-label={ariaLabel}>
+            {zonas.map((z, i) => (
+                <div key={i} className={z.color} style={{ width: `${z.ancho}%` }} />
+            ))}
+            <div
+                className="absolute top-0 bottom-0 w-[3px] bg-gray-900 rounded-full shadow-sm"
+                /* Nunca pegada al borde: en 0 o en el tope, la marca se perdería
+                   contra el extremo de la barra y no se vería dónde estamos. */
+                style={{ left: `${Math.max(1.5, Math.min(pos, 98))}%` }}
+            />
+        </div>
+        <div className="flex items-center justify-between gap-2 mt-1.5">
+            <span className="text-[10px] font-black uppercase tracking-wide text-gray-400">
+                {mejorHacia === 'izquierda' ? '◀ Mejor' : referencia}
+            </span>
+            <span className="text-[10px] font-black uppercase tracking-wide text-gray-400">
+                {mejorHacia === 'izquierda' ? referencia : 'Mejor ▶'}
+            </span>
+        </div>
+    </div>
+);
 
-                // Socios en Mora: count y % del total
-                const sociosMoraPct = totalSocios > 0 ? (sociosMora / totalSocios) * 100 : 0;
-                const sociosMoraColor = sociosMora === 0 ? 'from-emerald-50' : sociosMoraPct <= 10 ? 'from-amber-50' : 'from-red-50';
-                const sociosMoraText = sociosMora === 0 ? 'text-emerald-700' : sociosMoraPct <= 10 ? 'text-amber-700' : 'text-red-700';
-                const sociosMoraBadge = sociosMora === 0 ? 'bg-emerald-100 text-emerald-700' : sociosMoraPct <= 10 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700';
-                const sociosMoraBadgeLabel = sociosMora === 0 ? '✓ Ninguno' : `${sociosMoraPct.toFixed(0)}% del total`;
+const Tarjeta = ({
+    titulo, pregunta, Icono, tono, loading,
+    valor, complemento, badge, zonas, pos, mejorHacia, referencia, ariaEscala, lectura,
+    onClick,
+}) => {
+    const t = TONOS[tono] || TONOS.ok;
+    const clicable = Boolean(onClick);
+    return (
+        <div
+            className={`bg-gradient-to-br ${t.fondo} to-white rounded-2xl border border-gray-100 p-5 flex flex-col gap-3 shadow-sm transition-all duration-200 ${
+                clicable ? 'cursor-pointer hover:shadow-md hover:border-brand-primary/20 active:scale-[0.99]' : ''
+            }`}
+            onClick={onClick}
+            title={clicable ? 'Ver detalle' : undefined}
+        >
+            <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">{titulo}</p>
+                    {/* La pregunta es lo que convierte un indicador técnico en algo
+                        que un socio puede leer sin glosario. Altura fija para que
+                        las tres cifras grandes queden alineadas entre columnas. */}
+                    <p className="text-[11px] font-semibold text-gray-500 leading-snug mt-1 min-h-[30px]">{pregunta}</p>
+                </div>
+                <Icono className={`h-4 w-4 shrink-0 ${t.texto}`} />
+            </div>
 
-                return (
-                    <div className="mb-8">
-                        <h2 className="text-lg font-bold text-brand-primary mb-4 flex items-center gap-2">
-                            <ShieldCheck className="w-5 h-5 text-rose-600" /> Indicadores de Riesgo y Rendimiento
-                        </h2>
-                        <div className="grid gap-4 grid-cols-2 lg:grid-cols-3">
+            <div className="flex items-end gap-1.5">
+                <p className={`text-[30px] font-black font-mono leading-none ${loading ? 'text-gray-300' : t.texto}`}>
+                    {loading ? '…' : valor}
+                </p>
+                {!loading && complemento && (
+                    <p className="text-[13px] font-bold text-gray-400 mb-0.5">{complemento}</p>
+                )}
+            </div>
 
-                            {/* Índice de Mora */}
-                            <div className={`bg-gradient-to-br ${moraColor} to-white rounded-xl border border-gray-100 p-5 flex flex-col gap-3 shadow-sm`}>
-                                <div className="flex items-center justify-between">
-                                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Índice de Mora</p>
-                                    <AlertTriangle className={`h-4 w-4 ${moraText}`} />
-                                </div>
-                                <p className={`text-[28px] font-black font-mono leading-none ${loading ? 'text-gray-300' : moraText}`}>
-                                    {loading ? '...' : `${indiceMora.toFixed(1)}%`}
-                                </p>
-                                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full self-start ${moraBadge}`}>{moraBadgeLabel}</span>
-                                <div>
-                                    <div className="relative flex h-1.5 rounded-full overflow-hidden">
-                                        <div className="bg-emerald-400 w-[30%]" />
-                                        <div className="bg-amber-400 w-[20%]" />
-                                        <div className="bg-red-400 flex-1" />
-                                        <div className="absolute top-0 bottom-0 w-0.5 bg-gray-900 rounded-full" style={{ left: `${Math.min(indiceMora * 4, 98)}%` }} />
-                                    </div>
-                                    <p className="text-[10px] text-gray-500 font-bold mt-1">
-                                        {loading ? '' : `$${Number(mora).toLocaleString('es-CO')} de $${Number(carteraTotal).toLocaleString('es-CO')} cartera`}
-                                    </p>
-                                </div>
-                            </div>
+            <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full self-start ${t.badge}`}>{badge}</span>
 
-                            {/* Socios en Mora */}
-                            <div
-                                className={`bg-gradient-to-br ${sociosMoraColor} to-white rounded-xl border border-gray-100 p-5 flex flex-col gap-3 shadow-sm transition-all duration-200 ${onSociosMoraClick && sociosMora > 0 ? 'cursor-pointer hover:shadow-md hover:border-brand-primary/20 active:scale-[0.99]' : ''}`}
-                                onClick={() => onSociosMoraClick && sociosMora > 0 && onSociosMoraClick()}
-                                title={onSociosMoraClick && sociosMora > 0 ? 'Ver detalle de socios en mora' : undefined}
-                            >
-                                <div className="flex items-center justify-between">
-                                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Socios en Mora</p>
-                                    <Users className={`h-4 w-4 ${sociosMoraText}`} />
-                                </div>
-                                <div className="flex items-end gap-1.5">
-                                    <p className={`text-[28px] font-black font-mono leading-none ${loading ? 'text-gray-300' : sociosMoraText}`}>
-                                        {loading ? '...' : sociosMora}
-                                    </p>
-                                    {!loading && <p className="text-[13px] font-bold text-gray-400 mb-0.5">de {totalSocios}</p>}
-                                </div>
-                                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full self-start ${sociosMoraBadge}`}>{sociosMoraBadgeLabel}</span>
-                                <div>
-                                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                                        <div className={`h-full rounded-full ${sociosMora === 0 ? 'bg-emerald-400' : sociosMoraPct <= 10 ? 'bg-amber-400' : 'bg-red-400'}`}
-                                            style={{ width: `${Math.min(sociosMoraPct, 100)}%` }} />
-                                    </div>
-                                    <p className="text-[10px] text-gray-500 font-bold mt-1">
-                                        {loading ? '' : sociosMora === 0 ? 'Todos al día con sus pagos' : `${sociosMoraPct.toFixed(0)}% de socios activos`}
-                                    </p>
-                                </div>
-                            </div>
+            <Escala zonas={zonas} pos={pos} mejorHacia={mejorHacia} referencia={referencia} ariaLabel={ariaEscala} />
 
-                            {/* Cobertura de Mora */}
-                            <div className={`bg-gradient-to-br ${coberturaColor} to-white rounded-xl border border-gray-100 p-5 flex flex-col gap-3 shadow-sm`}>
-                                <div className="flex items-center justify-between">
-                                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Cobertura de Mora</p>
-                                    <ShieldCheck className={`h-4 w-4 ${coberturaText}`} />
-                                </div>
-                                <p className={`text-[28px] font-black font-mono leading-none ${loading ? 'text-gray-300' : coberturaText}`}>
-                                    {loading ? '...' : cobertura === null ? '∞' : `${cobertura.toFixed(1)}×`}
-                                </p>
-                                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full self-start ${coberturaBadge}`}>{coberturaBadgeLabel}</span>
-                                <div>
-                                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                                        <div className={`h-full rounded-full ${coberturaText.includes('emerald') ? 'bg-emerald-400' : coberturaText.includes('amber') ? 'bg-amber-400' : 'bg-red-400'}`}
-                                            style={{ width: `${cobertura === null ? 100 : Math.min((cobertura / 10) * 100, 100)}%` }} />
-                                    </div>
-                                    <p className="text-[10px] text-gray-500 font-bold mt-1">
-                                        {loading ? '' : cobertura === null ? 'Sin deuda vencida que cubrir' : `$${Number(disponible).toLocaleString('es-CO')} caja / $${Number(mora).toLocaleString('es-CO')} mora`}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                );
+            <p className="text-[11px] text-gray-600 font-semibold leading-snug">{loading ? '' : lectura}</p>
+        </div>
+    );
+};
+
+const RiskReturnIndicators = ({ stats, loading = false, onSociosMoraClick, className = 'mb-8' }) => {
+    const disponible = (stats?.saldoEnBanco || 0) + (stats?.rentabilidadCajaNU || 0);
+    const carteraTotal = (stats?.carteraDia || 0) + (stats?.moraCarteraEP || 0);
+    const mora = stats?.moraCarteraEP || 0;
+    const sociosMora = stats?.sociosMoraCount || 0;
+    const totalSocios = stats?.activeClientsCount || 1;
+
+    // ── 1. Socios en Mora — cuántas personas, y qué parte del padrón son
+    const sociosMoraPct = totalSocios > 0 ? (sociosMora / totalSocios) * 100 : 0;
+    const sociosTono = sociosMora === 0 ? 'ok' : sociosMoraPct <= 10 ? 'medio' : 'malo';
+
+    // ── 2. Índice de Mora — qué parte de la cartera está vencida
+    const indiceMora = carteraTotal > 0 ? (mora / carteraTotal) * 100 : 0;
+    const moraTono = indiceMora <= 3 ? 'ok' : indiceMora <= 5 ? 'medio' : 'malo';
+
+    // ── 3. Cobertura de Mora — cuántas veces la caja cubre lo vencido
+    const cobertura = mora > 0 ? disponible / mora : null;
+    const coberturaTono = cobertura === null || cobertura >= 5 ? 'ok' : cobertura >= 2 ? 'medio' : 'malo';
+
+    return (
+        <div className={className}>
+            <h2 className="text-lg font-bold text-brand-primary flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-rose-600" /> Indicadores de Riesgo y Rendimiento
+            </h2>
+            <p className="text-xs text-gray-500 font-semibold mt-1 mb-4">
+                Tres señales para saber si el dinero que el fondo prestó se está recuperando bien. En cada escala,
+                la marca negra indica dónde estamos hoy.
+            </p>
+
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+                <Tarjeta
+                    titulo="Socios en Mora"
+                    pregunta="¿A cuántos socios se les venció una cuota sin pagar?"
+                    Icono={Users}
+                    tono={sociosTono}
+                    loading={loading}
+                    valor={sociosMora}
+                    complemento={`de ${totalSocios}`}
+                    badge={sociosMora === 0 ? '✓ Ninguno' : `${sociosMoraPct.toFixed(0)}% del total`}
+                    zonas={[
+                        { color: 'bg-emerald-400', ancho: 10 },
+                        { color: 'bg-amber-400', ancho: 15 },
+                        { color: 'bg-red-400', ancho: 75 },
+                    ]}
+                    pos={Math.min(sociosMoraPct, 100)}
+                    mejorHacia="izquierda"
+                    referencia="Alerta sobre 10%"
+                    ariaEscala={`${sociosMoraPct.toFixed(0)}% de los socios activos está en mora`}
+                    lectura={sociosMora === 0
+                        ? 'Todos los socios están al día con sus cuotas.'
+                        : `${sociosMora} de ${totalSocios} socios activos (${sociosMoraPct.toFixed(0)}%) tiene cuotas vencidas.`}
+                    onClick={onSociosMoraClick && sociosMora > 0 ? onSociosMoraClick : undefined}
+                />
+
+                <Tarjeta
+                    titulo="Índice de Mora"
+                    pregunta="¿Qué parte del dinero prestado está vencido sin cobrar?"
+                    Icono={AlertTriangle}
+                    tono={moraTono}
+                    loading={loading}
+                    valor={`${indiceMora.toFixed(1)}%`}
+                    badge={indiceMora <= 3 ? '● Bajo' : indiceMora <= 5 ? '▲ Moderado' : '⚠ Alto'}
+                    zonas={[
+                        { color: 'bg-emerald-400', ancho: 12 },
+                        { color: 'bg-amber-400', ancho: 8 },
+                        { color: 'bg-red-400', ancho: 80 },
+                    ]}
+                    pos={indiceMora * 4}
+                    mejorHacia="izquierda"
+                    referencia="Alerta sobre 5%"
+                    ariaEscala={`Índice de mora de ${indiceMora.toFixed(1)}% sobre la cartera`}
+                    lectura={`${COP(mora)} vencidos de ${COP(carteraTotal)} prestados en total.`}
+                />
+
+                <Tarjeta
+                    titulo="Cobertura de Mora"
+                    pregunta="¿Cuántas veces alcanza la caja para cubrir lo vencido?"
+                    Icono={ShieldCheck}
+                    tono={coberturaTono}
+                    loading={loading}
+                    valor={cobertura === null ? '∞' : `${cobertura.toFixed(1)}×`}
+                    badge={cobertura === null ? '✓ Sin mora' : cobertura >= 5 ? '✓ Sólida' : cobertura >= 2 ? '● Adecuada' : '⚠ Débil'}
+                    zonas={[
+                        { color: 'bg-red-400', ancho: 20 },
+                        { color: 'bg-amber-400', ancho: 30 },
+                        { color: 'bg-emerald-400', ancho: 50 },
+                    ]}
+                    pos={cobertura === null ? 100 : Math.min((cobertura / 10) * 100, 100)}
+                    mejorHacia="derecha"
+                    referencia="Débil bajo 2×"
+                    ariaEscala={cobertura === null
+                        ? 'Sin deuda vencida que cubrir'
+                        : `La caja cubre ${cobertura.toFixed(1)} veces la mora`}
+                    lectura={cobertura === null
+                        ? 'No hay deuda vencida que cubrir.'
+                        : `${COP(disponible)} disponibles en caja frente a ${COP(mora)} en mora.`}
+                />
+            </div>
+        </div>
+    );
 };
 
 export default RiskReturnIndicators;

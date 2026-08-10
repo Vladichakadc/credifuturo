@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import {
     ResponsiveContainer, LineChart, Line, BarChart, Bar,
-    XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, Cell
+    XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, LabelList
 } from 'recharts';
 import { TrendingUp, Calendar, Info } from 'lucide-react';
 
@@ -76,11 +76,41 @@ const fmtVariacion = (pct) => {
     if (pct >= 200) return `${(1 + pct / 100).toFixed(1).replace('.', ',')}×`;
     return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
 };
+// Formato corto del eje y de las etiquetas sobre los datos: el valor al peso
+// vive en el tooltip; aquí "$1,2M" se lee de un vistazo donde "$1.206.913" no.
+// Coma decimal, que es la convención en Colombia.
 const fmtEje = (v) => {
     const n = Number(v) || 0;
-    if (Math.abs(n) >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
+    if (Math.abs(n) >= 1_000_000) {
+        // Se redondea ANTES de decidir si lleva decimal: 2.010.000 debe salir
+        // como "$2M", no como "$2,0M" (un decimal que siempre es cero).
+        const millones = Math.round((n / 1_000_000) * 10) / 10;
+        return `$${Number.isInteger(millones) ? millones : String(millones).replace('.', ',')}M`;
+    }
     if (Math.abs(n) >= 1_000) return `$${Math.round(n / 1_000)}k`;
     return `$${n}`;
+};
+
+// Etiqueta de valor al final de cada línea. En diciembre —el borde derecho del
+// lienzo— se coloca encima del punto en vez de a su derecha, donde quedaría
+// recortada. El halo blanco (trazo pintado por debajo del relleno) mantiene el
+// número legible si dos años terminan casi a la misma altura.
+const etiquetaFinDeLinea = ({ x, y, value, index }, indiceFinal) => {
+    if (index !== indiceFinal) return null;
+    const n = Number(value) || 0;
+    if (!n) return null;
+    const enElBorde = index >= MESES.length - 1;
+    return (
+        <text
+            x={enElBorde ? x : x + 8}
+            y={enElBorde ? y - 11 : y + 4}
+            textAnchor={enElBorde ? 'middle' : 'start'}
+            fontSize={11} fontWeight={800} fill="#374151"
+            stroke="#ffffff" strokeWidth={3} paintOrder="stroke"
+        >
+            {fmtEje(n)}
+        </text>
+    );
 };
 
 const TooltipComparador = ({ active, payload, label, acumulado, metrica }) => {
@@ -166,6 +196,29 @@ const YearComparisonChart = ({ data, error = false }) => {
             return fila;
         });
     }, [data, activos, metrica, acumulado, mesCorte]);
+
+    // Último mes con dato de cada año: donde se ancla su etiqueta de valor. El
+    // año en curso termina en el mes de corte, los anteriores en diciembre, así
+    // que sus etiquetas caen en x distintas y rara vez se estorban.
+    const finDeSerie = useMemo(() => {
+        const fin = {};
+        activos.forEach((anio) => {
+            const k = String(anio);
+            let idx = -1;
+            chartData.forEach((fila, i) => { if (fila[k] !== null && fila[k] !== undefined) idx = i; });
+            fin[k] = idx;
+        });
+        return fin;
+    }, [chartData, activos]);
+
+    // En "mes a mes" hay hasta 12 barras por año: rotularlas todas sería ilegible.
+    // Se rotula solo la serie protagonista —el año en curso, o el más reciente de
+    // los activos si se deseleccionó—; los demás años conservan su valor en el eje
+    // y en el tooltip.
+    const anioProtagonista = useMemo(() => {
+        if (!activos.length) return null;
+        return activos.includes(anioEnCurso) ? anioEnCurso : Math.max(...activos);
+    }, [activos, anioEnCurso]);
 
     // Resumen al corte: el número que responde "¿vamos mejor o peor?".
     const resumen = useMemo(() => {
@@ -308,7 +361,9 @@ const YearComparisonChart = ({ data, error = false }) => {
             <div className="h-[320px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                     {acumulado ? (
-                        <LineChart data={chartData} margin={{ top: 10, right: 16, left: 4, bottom: 4 }}>
+                        /* `right: 62` reserva el ancho de la etiqueta de valor que
+                           cuelga del final de la línea del año en curso. */
+                        <LineChart data={chartData} margin={{ top: 20, right: 62, left: 4, bottom: 4 }}>
                             <CartesianGrid stroke="#f1f5f9" vertical={false} />
                             <XAxis dataKey="mes" tick={{ fontSize: 11, fontWeight: 700, fill: '#6b7280' }}
                                 axisLine={{ stroke: '#e5e7eb' }} tickLine={false} />
@@ -326,12 +381,19 @@ const YearComparisonChart = ({ data, error = false }) => {
                                     <Line key={anio} type="monotone" dataKey={String(anio)} name={String(anio)}
                                         stroke={colorDe(anio)} strokeWidth={esActual ? 3 : 2}
                                         dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }}
-                                        connectNulls={false} />
+                                        connectNulls={false}>
+                                        {/* Etiqueta solo en el extremo de cada línea: un
+                                            número sobre los doce meses sería ruido. */}
+                                        <LabelList
+                                            dataKey={String(anio)}
+                                            content={(props) => etiquetaFinDeLinea(props, finDeSerie[String(anio)])}
+                                        />
+                                    </Line>
                                 );
                             })}
                         </LineChart>
                     ) : (
-                        <BarChart data={chartData} margin={{ top: 10, right: 16, left: 4, bottom: 4 }}>
+                        <BarChart data={chartData} margin={{ top: 24, right: 16, left: 4, bottom: 4 }}>
                             <CartesianGrid stroke="#f1f5f9" vertical={false} />
                             <XAxis dataKey="mes" tick={{ fontSize: 11, fontWeight: 700, fill: '#6b7280' }}
                                 axisLine={{ stroke: '#e5e7eb' }} tickLine={false} />
@@ -342,7 +404,15 @@ const YearComparisonChart = ({ data, error = false }) => {
                             <Legend wrapperStyle={{ fontSize: 12, fontWeight: 700, paddingTop: 8 }} />
                             {activos.map((anio) => (
                                 <Bar key={anio} dataKey={String(anio)} name={String(anio)}
-                                    fill={colorDe(anio)} radius={[4, 4, 0, 0]} maxBarSize={26} />
+                                    fill={colorDe(anio)} radius={[4, 4, 0, 0]} maxBarSize={26}>
+                                    {anio === anioProtagonista && (
+                                        <LabelList
+                                            dataKey={String(anio)} position="top" offset={6}
+                                            formatter={(v) => (Number(v) ? fmtEje(v) : '')}
+                                            style={{ fontSize: 10, fontWeight: 800, fill: '#374151' }}
+                                        />
+                                    )}
+                                </Bar>
                             ))}
                         </BarChart>
                     )}

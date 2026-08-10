@@ -175,16 +175,25 @@ const FinancialIntelligencePage = () => {
                         yearCmp={yearCmp}
                         yearCmpError={yearCmpError}
                         selectedYears={selectedYears}
+                        /* Las tarjetas de riesgo suben aquí, pegadas al veredicto
+                           ejecutivo que encabeza el panel: son el detalle que explica
+                           esa franja. Antes cerraban la página, después del
+                           diagnóstico, donde casi nadie llegaba a leerlas.
+                           Sin onSociosMoraClick: el detalle nominal (nombre + cédula
+                           de cada socio en mora) es exclusivo del admin, y esta
+                           página es de solo lectura para cualquier rol. Sin el
+                           callback la tarjeta no se pinta clicable — nunca promete
+                           un detalle que no puede abrir. */
+                        slotRiesgo={(
+                            <RiskReturnIndicators
+                                stats={stats}
+                                loading={loading}
+                                className="px-6 pt-5 pb-6 bg-gray-50/70 border-b border-gray-100"
+                            />
+                        )}
                     />
                 </CardContent>
             </Card>
-
-            {/* Sin onSociosMoraClick: el detalle nominal (nombre + cédula de cada
-                socio en mora) es exclusivo del admin, y esta página es de solo
-                lectura para cualquier rol. Sin el callback, la tarjeta "Socios en
-                Mora" no se pinta clicable — nunca promete un detalle que no puede
-                abrir. */}
-            <RiskReturnIndicators stats={stats} loading={loading} />
 
             {/* Trasladado desde Evolución de Ahorros: aquí siempre a nivel de todo
                 el fondo (esta página no tiene selector de socio). */}
