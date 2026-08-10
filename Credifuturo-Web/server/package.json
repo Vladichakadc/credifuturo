@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "lint": "eslint . --ext .js"
   },
   "dependencies": {
     "archiver": "^7.0.1",
@@ -27,6 +28,7 @@
     "xlsx": "npm:@e965/xlsx@^0.20.3"
   },
   "devDependencies": {
+    "eslint": "^9.39.2",
     "nodemon": "^3.1.0"
   },
   "overrides": {
@@ -36,3 +38,4 @@
     "node": ">=18.0.0"
   }
 }
+
