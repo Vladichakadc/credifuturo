@@ -42,10 +42,11 @@ const MOCKS_ESTATICOS = {
 /**
  * "Cambios" — control de qué ve el socio.
  *
- * Cada tarjeta, gráfico o menú que en algún momento se ocultó a los socios
- * aparece aquí con un interruptor. Antes, ocultar algo significaba borrar código
- * y volver a mostrarlo exigía otro despliegue; ahora es una decisión reversible
- * del comité, sin pasar por desarrollo.
+ * Cada tarjeta, gráfico o menú cuya publicación es una decisión del comité
+ * aparece aquí con un interruptor — tanto lo que en su momento se ocultó como lo
+ * que hoy está visible pero podría no convenir publicar. Antes, ocultar algo
+ * significaba borrar código y volver a mostrarlo exigía otro despliegue; ahora
+ * es una decisión reversible del comité, sin pasar por desarrollo.
  *
  * El catálogo NO se define aquí: vive en utils/seccionesVisibles.js, junto a la
  * regla que lo resuelve. Esta página solo lo pinta — así, registrar una sección
@@ -83,7 +84,7 @@ const CambiosPage = () => {
     // `mapa === null` significa "nunca se pudo leer la configuración" (ni del
     // servidor ni de la caché local). Es distinto de "leída y vacía": en ese
     // estado NO se sabe qué están viendo los socios, así que la página no puede
-    // dejar guardar — enviaría el mapa completo con los defaults (todo oculto) y
+    // dejar guardar — enviaría el mapa completo con los defaults del catálogo y
     // apagaría secciones que sí estaban aprobadas.
     const configuracionDisponible = mapa !== null;
 
@@ -264,7 +265,16 @@ const CambiosPage = () => {
                                     {seccion.motivo && (
                                         <p className="text-[11px] text-gray-500 mt-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 leading-relaxed flex items-start gap-1.5">
                                             <Info className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-gray-400" />
-                                            <span><b className="text-gray-600">Por qué se ocultó:</b> {seccion.motivo}</span>
+                                            {/* El catálogo tiene dos clases de entrada: las que
+                                                documentan una decisión ya tomada de ocultar, y las
+                                                que nacen visibles y se registran por adelantado
+                                                (`visiblePorDefecto: true`). Para estas últimas
+                                                "Por qué se ocultó" sería falso — nunca se ocultó. */}
+                                            <span>
+                                                <b className="text-gray-600">
+                                                    {seccion.visiblePorDefecto ? 'Qué implica ocultarla:' : 'Por qué se ocultó:'}
+                                                </b> {seccion.motivo}
+                                            </span>
                                         </p>
                                     )}
 

@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import api from '../../config/api';
 import { Activity, Printer, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card';
 import FinancialChart from '../../components/admin/FinancialChart';
 import RiskReturnIndicators from '../../components/admin/RiskReturnIndicators';
+import { useVisibilidad } from '../../context/VisibilidadContext';
 import YearMultiSelect from '../../components/admin/YearMultiSelect';
 import MovimientoMensualChart from '../../components/admin/MovimientoMensualChart';
 import { buildSerieMensual } from '../../utils/savingsSeries';
@@ -28,6 +30,14 @@ import { buildSerieMensual } from '../../utils/savingsSeries';
  */
 
 const FinancialIntelligencePage = () => {
+    const location = useLocation();
+    // Ocultable desde el menú "Cambios". Al apagarse, `slotRiesgo` va en `null` y
+    // FinancialChart vuelve a pintar su KPI "Mora Cartera" (seis columnas otra
+    // vez): la página cae exactamente al aspecto que tenía antes de subir estas
+    // tarjetas, en vez de quedarse sin ninguna señal de mora.
+    const { esVisible } = useVisibilidad();
+    const riesgoVisible = esVisible('inteligencia.indicadoresRiesgo');
+
     const [selectedYears, setSelectedYears] = useState([new Date().getFullYear(), new Date().getFullYear() + 1]);
     const [stats, setStats] = useState(null);
     const [execStats, setExecStats] = useState(null);
@@ -93,6 +103,18 @@ const FinancialIntelligencePage = () => {
         const id = setInterval(() => fetchAll({ esRefresco: true }), 120000);
         return () => clearInterval(id);
     }, [fetchAll]);
+
+    // Llega con hash cuando "Cambios" activa la vista previa de una sección
+    // oculta. React Router no hace el scroll del navegador, y el ancla no existe
+    // en el DOM hasta que hay datos que pintar — de ahí la espera.
+    useEffect(() => {
+        if (!location.hash || loading) return;
+        const id = decodeURIComponent(location.hash.slice(1));
+        const timer = setTimeout(() => {
+            document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [location.hash, loading]);
 
     if (loading && !stats) {
         return <div className="flex items-center justify-center min-h-[300px] text-gray-400 text-sm">Cargando indicadores financieros…</div>;
@@ -184,13 +206,15 @@ const FinancialIntelligencePage = () => {
                            página es de solo lectura para cualquier rol. Sin el
                            callback la tarjeta no se pinta clicable — nunca promete
                            un detalle que no puede abrir. */
-                        slotRiesgo={(
-                            <RiskReturnIndicators
-                                stats={stats}
-                                loading={loading}
-                                className="px-6 pt-5 pb-6 bg-gray-50/70 border-b border-gray-100"
-                            />
-                        )}
+                        slotRiesgo={riesgoVisible ? (
+                            <div id="inteligencia.indicadoresRiesgo">
+                                <RiskReturnIndicators
+                                    stats={stats}
+                                    loading={loading}
+                                    className="px-6 pt-5 pb-6 bg-gray-50/70 border-b border-gray-100"
+                                />
+                            </div>
+                        ) : null}
                     />
                 </CardContent>
             </Card>
