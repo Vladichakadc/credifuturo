@@ -101,6 +101,20 @@ export const SECCIONES = [
         // una réplica del botón, igual que el enlace del menú.
         ruta: null,
     },
+    {
+        id: 'inteligencia.indicadoresRiesgo',
+        titulo: 'Indicadores de Riesgo y Rendimiento',
+        ubicacion: 'Inteligencia Financiera',
+        detalle: 'Socios en Mora · Índice de Mora · Cobertura de Mora, las tres tarjetas de escala al inicio de la página.',
+        // Primera entrada del catálogo que nace VISIBLE. Las demás documentan una
+        // decisión ya tomada de ocultar; esta se registra por adelantado, porque
+        // "Inteligencia Financiera" está en el menú de todos los socios y estas
+        // tarjetas dicen a cuántos socios se les venció una cuota. Si algún día el
+        // comité prefiere no publicarlo, que sea un clic y no un despliegue.
+        motivo: 'Muestra a todos los socios cuántos están en mora. Al ocultarla, la página conserva el KPI "Mora Cartera" en la banda de indicadores, que da el porcentaje del fondo sin señalar a cuántos socios corresponde.',
+        visiblePorDefecto: true,
+        ruta: '/dashboard/inteligencia-financiera',
+    },
 ];
 
 /** Mapa id → definición, para consultas puntuales. */

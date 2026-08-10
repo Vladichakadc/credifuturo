@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 const fs = require('fs');
@@ -57,6 +58,18 @@ const isProduction = process.env.NODE_ENV === 'production';
 if (isProduction) {
     app.set('trust proxy', 1);
 }
+
+// Compresión gzip de TODA respuesta (estáticos y JSON de la API).
+//
+// Va antes que helmet, la API y express.static: `compression` envuelve
+// res.write/res.end, así que tiene que estar montado antes que cualquier
+// middleware que escriba una respuesta, o no la alcanza a comprimir.
+//
+// Por qué importa: el bundle de React son ~2,9 MB de JavaScript y Railway NO
+// comprime por su cuenta lo que responde la app. Cada visita descargaba los
+// 2,9 MB enteros; con gzip bajan a ~0,8 MB. Es la causa principal de la
+// lentitud al abrir la página, sobre todo en móvil.
+app.use(compression());
 
 // A05 (Security Misconfiguration): headers de seguridad por defecto
 app.use(helmet({
@@ -114,7 +127,25 @@ app.use(express.json({ limit: '1mb' })); // A04: límite explícito al body JSON
 // Servir frontend React en producción
 if (isProduction) {
     const clientDist = path.join(__dirname, '..', 'client', 'dist');
-    app.use(express.static(clientDist));
+    app.use(express.static(clientDist, {
+        // Vite pone un hash del contenido en el nombre de cada asset
+        // (index-CcMlYeKq.js), así que un archivo con ese nombre nunca cambia:
+        // se puede cachear un año y marcarlo `immutable`, y el navegador deja de
+        // preguntar por él en cada visita. Si el contenido cambia, cambia el
+        // hash y por tanto la URL.
+        //
+        // index.html es la excepción y NO puede cachearse: es quien apunta a los
+        // assets con hash. Si el navegador se quedara con una copia vieja,
+        // seguiría pidiendo el bundle anterior y un despliegue nuevo no llegaría
+        // nunca al socio.
+        setHeaders: (res, filePath) => {
+            if (filePath.endsWith('index.html')) {
+                res.setHeader('Cache-Control', 'no-cache');
+            } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+                res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            }
+        },
+    }));
 }
 
 // Request Logger — excluye rutas de auth para no exponer contraseñas en consola.
@@ -135,6 +166,13 @@ function redactSensitiveBody(body) {
     return out;
 }
 app.use((req, res, next) => {
+    // Solo la API. Antes se registraba también cada asset estático (JS, CSS,
+    // fuentes, favicon), lo que en producción son decenas de líneas por visita
+    // que no dicen nada: quién pidió qué ya se ve en la petición de la API que
+    // viene detrás. Escribir a stdout bloquea el event loop, así que ese ruido
+    // se pagaba en latencia de las peticiones reales.
+    if (!req.url.startsWith('/api/')) return next();
+
     const isSensitiveRoute = req.url.startsWith('/api/auth');
     const start = Date.now();
     const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip;

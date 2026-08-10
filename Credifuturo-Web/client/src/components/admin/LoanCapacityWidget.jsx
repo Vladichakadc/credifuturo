@@ -3,6 +3,13 @@ import { Scale, CheckCircle, XCircle, AlertCircle, AlertTriangle, PiggyBank, Cre
 import { calcVerdict, colorMap, kpiDescriptions } from '../../utils/loanCapacity';
 import { useSortTable, SortIcon } from '../../utils/useSortTable';
 const LoanCapacityWidget = ({ analysis, loading }) => {
+    // Arriba del todo, antes de cualquier `return` temprano: estaba más abajo, y
+    // como los dos returns de carga/vacío lo saltaban, el hook se llamaba unas
+    // veces sí y otras no. En cuanto `loading` pasaba a false React se
+    // encontraba con más hooks que en el render anterior y rompía la vista.
+    const { sortedData: sortedVigentes, sortConfig: vigentesSort, handleSort: handleVigentesSort } =
+        useSortTable(analysis?.prestamosVigentes || []);
+
     if (loading) {
         return (
             <div className="flex items-center justify-center py-12 gap-3 text-brand-primary bg-white rounded-2xl border border-gray-100 mt-5">
@@ -16,9 +23,6 @@ const LoanCapacityWidget = ({ analysis, loading }) => {
 
     const v = calcVerdict(analysis, { audience: 'admin' });
     const c = v ? (colorMap[v.color] || colorMap.green) : null;
-
-    const { sortedData: sortedVigentes, sortConfig: vigentesSort, handleSort: handleVigentesSort } =
-        useSortTable(analysis?.prestamosVigentes || []);
 
     return (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mt-5">

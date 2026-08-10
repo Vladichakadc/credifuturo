@@ -1,5 +1,5 @@
 import React, { useMemo, useId } from 'react';
-import { ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
+import { ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Cell, LabelList } from 'recharts';
 import { Maximize2, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 /**
@@ -41,9 +41,18 @@ const TONOS = {
 };
 
 const fmtCOP = (v) => `$${Math.round(Number(v) || 0).toLocaleString('es-CO')}`;
+// Formato corto para el eje y para las etiquetas sobre las barras: a esta
+// escala el número exacto no aporta —el valor al peso ya está en el tooltip y
+// en la lista de abajo—, y "$1,2M" se lee de un vistazo donde "$1.206.913" no.
+// Coma decimal, que es la convención en Colombia.
 const fmtEje = (v) => {
     const n = Number(v) || 0;
-    if (Math.abs(n) >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
+    if (Math.abs(n) >= 1_000_000) {
+        // Se redondea ANTES de decidir si lleva decimal: 2.010.000 debe salir
+        // como "$2M", no como "$2,0M" (un decimal que siempre es cero).
+        const millones = Math.round((n / 1_000_000) * 10) / 10;
+        return `$${Number.isInteger(millones) ? millones : String(millones).replace('.', ',')}M`;
+    }
     if (Math.abs(n) >= 1_000) return `$${Math.round(n / 1_000)}k`;
     return `$${n}`;
 };
@@ -158,7 +167,9 @@ const YearProgressCard = ({
     const filtroId = `ypc-sombra-${reactId.replace(/:/g, '')}`;
     const chart = (
         <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={m.barras} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+            {/* `top: 24` deja aire para la etiqueta de valor sobre la barra más
+                alta, que si no queda recortada por el borde del lienzo. */}
+            <ComposedChart data={m.barras} margin={{ top: 24, right: 8, left: 0, bottom: 0 }}>
                 <defs>
                     <filter id={filtroId}>
                         <feDropShadow dx="0" dy="1" stdDeviation="2" floodColor={colores.actual} floodOpacity="0.3" />
@@ -173,6 +184,17 @@ const YearProgressCard = ({
                 <Tooltip content={<TooltipBarra />} cursor={{ fill: '#f8fafc' }} />
                 <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={44}>
                     {m.barras.map((b, i) => <Cell key={i} fill={colores[b.rol]} />)}
+                    {/* Etiqueta directa en la cima: son dos o tres barras, así que
+                        rotularlas todas sigue siendo legible (con una serie larga
+                        habría que ser selectivo). Va en gris de texto, no en el
+                        color de la serie: el color lo lleva la barra, no el número.
+                        El desplazamiento salva el punto de la línea, que cae
+                        exactamente sobre la cima. */}
+                    <LabelList
+                        dataKey="value" position="top" offset={12}
+                        formatter={fmtEje}
+                        style={{ fontSize: 11, fontWeight: 800, fill: '#374151' }}
+                    />
                 </Bar>
                 {m.barras.length > 1 && (
                     <Line dataKey="value" type="monotone" stroke={colores.actual} strokeWidth={2}
@@ -245,7 +267,7 @@ const YearProgressCard = ({
             )}
 
             {/* Gráfico: barras comparables, con el eje rotulado y sin adornos */}
-            <div className="h-[150px] -mx-1">
+            <div className="h-[172px] -mx-1">
                 {chart}
             </div>
 

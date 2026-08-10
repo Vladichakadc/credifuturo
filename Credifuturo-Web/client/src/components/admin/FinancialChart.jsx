@@ -16,7 +16,12 @@ import logo from '../../assets/logo.jpg';
 import YearComparisonChart from './YearComparisonChart';
 import YearProgressCard from './YearProgressCard';
 
-const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selectedYears = [], onEditMeta }) => {
+// `slotRiesgo` se pinta justo bajo el veredicto ejecutivo: es el detalle que
+// explica esa franja de color ("Alerta Operativa" / "Fondo Saludable") antes
+// de que el lector baje a las cifras. Es un slot y no un import fijo porque el
+// Panel Principal ya trae esas tarjetas en su propia sección de indicadores
+// por área, y no debe mostrarlas dos veces.
+const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selectedYears = [], onEditMeta, slotRiesgo = null }) => {
     // Etiqueta del período que cubren las cifras (regla de gobernanza: declarar el período)
     const periodoLabel = selectedYears.length > 0 ? selectedYears.join(' – ') : 'todos los años';
     const [expandDonut, setExpandDonut] = useState(false);
@@ -316,8 +321,15 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                 );
             })()}
 
+            {slotRiesgo}
+
             {/* ── KPIs EJECUTIVOS — 5 métricas con delta vs 2025 ────────────────── */}
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 border-b border-gray-100">
+            {/* Con `slotRiesgo` arriba, "Mora Cartera" repetiría el mismo número que
+                la tarjeta "Índice de Mora" a dos centímetros de distancia. Se quita
+                aquí —no en el Panel Principal, donde esas tarjetas quedan mucho más
+                abajo y el KPI sí adelanta información— y la fila pasa a cinco
+                columnas para no dejar un hueco. */}
+            <div className={`grid grid-cols-2 md:grid-cols-3 border-b border-gray-100 ${slotRiesgo ? 'xl:grid-cols-5' : 'xl:grid-cols-6'}`}>
                 {/* KPI 1: Capital Total */}
                 <div className="bg-gradient-to-br from-emerald-50 to-white p-5 flex flex-col gap-3 border-b md:border-b-0 border-r border-gray-100">
                     <div className="flex items-center justify-between">
@@ -371,7 +383,9 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                     </div>
                 </div>
 
-                {/* KPI 3: Mora en Cartera */}
+                {/* KPI 3: Mora en Cartera — se omite cuando el detalle de mora ya
+                    está pintado justo arriba (ver el comentario de la rejilla). */}
+                {!slotRiesgo && (
                 <div className={`p-5 flex flex-col gap-3 border-b md:border-b-0 border-r border-gray-100 ${parseFloat(riskIndex) > 5 ? 'bg-gradient-to-br from-red-50 to-white' : 'bg-gradient-to-br from-blue-50 to-white'}`}>
                     <div className="flex items-center justify-between">
                         <p className="text-[11px] font-black text-gray-500 uppercase tracking-widest">Mora Cartera</p>
@@ -395,6 +409,7 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                         <p className="text-[10px] text-gray-500 font-bold mt-1">${Number(mora).toLocaleString('es-CO')} en mora</p>
                     </div>
                 </div>
+                )}
 
                 {/* KPI 4: Ganancia YTD */}
                 <div className={`p-5 flex flex-col gap-3 border-b md:border-b-0 border-r border-gray-100 bg-gradient-to-br ${achievement >= 100 ? 'from-emerald-50' : achievement >= 80 ? 'from-amber-50' : 'from-red-50'} to-white`}>
