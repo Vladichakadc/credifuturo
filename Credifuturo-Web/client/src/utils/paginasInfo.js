@@ -68,7 +68,10 @@ export const PAGINAS_INFO = {
         encontraras: [
             'Indicadores de riesgo y rendimiento de la cartera',
             'Comparador interanual por indicador y resultados del año',
-            'Diagnóstico financiero y movimiento mensual del fondo',
+            // No menciona "movimiento mensual": ese gráfico está oculto por
+            // defecto (inteligencia.movimientoMensual en Cambios) y la
+            // presentación no debe prometer algo que no está en la página.
+            'Diagnóstico financiero con recomendaciones por área',
         ],
     },
     '/dashboard/cuenta': {

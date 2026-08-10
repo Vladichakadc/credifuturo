@@ -144,6 +144,15 @@ export const SECCIONES = [
         visiblePorDefecto: false,
         ruta: '/dashboard/loan-capacity-beta',
     },
+    {
+        id: 'inteligencia.movimientoMensual',
+        titulo: 'Gráfico "Movimiento mensual"',
+        ubicacion: 'Inteligencia Financiera',
+        detalle: 'Barras de abonos y retiros del fondo mes a mes, al final de la página.',
+        motivo: 'Sobra frente al resto del análisis de la página: el comparador interanual y los resultados del año ya cuentan la misma evolución con más contexto. Se conserva por si el comité lo quiere de vuelta.',
+        visiblePorDefecto: false,
+        ruta: '/dashboard/inteligencia-financiera',
+    },
 ];
 
 /** Mapa id → definición, para consultas puntuales. */

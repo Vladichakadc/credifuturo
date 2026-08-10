@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import PageHeroRuta from '../components/ui/PageHeroRuta';
+import useDrawerMovil from '../utils/useDrawerMovil';
+import { motion } from 'framer-motion';
 import { Outlet, useLocation, Link } from 'react-router-dom';
 import {
     CreditCard,
@@ -137,6 +139,9 @@ const SidebarSubmenu = ({ icon: Icon, label, children, isOpen, onToggle, locatio
 
 const UserDashboardLayout = ({ user, onLogout }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    // Cierre al navegar, bloqueo del scroll de fondo, Escape y arrastre para
+    // cerrar — ver utils/useDrawerMovil.js.
+    const { cerrar: cerrarDrawer, propsArrastre } = useDrawerMovil(sidebarOpen, setSidebarOpen);
     const [openSubmenus, setOpenSubmenus] = useState({ ahorros: true, estatutos: true, prestamos: true, propuestas: true });
     const [propuestasEnabled, setPropuestasEnabled] = useState(false);
     const [informesList, setInformesList] = useState([]);
@@ -307,20 +312,39 @@ const UserDashboardLayout = ({ user, onLogout }) => {
 
     return (
         <div className="min-h-[100dvh] bg-ui-background flex relative">
-            {/* Mobile Sidebar Overlay */}
-            {sidebarOpen && (
-                <div
-                    className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-sm"
-                    onClick={() => setSidebarOpen(false)}
-                />
-            )}
+            {/* Velo del menú móvil. Montado siempre y conmutado por opacidad, no
+                por montaje: al montarlo y desmontarlo aparecía y desaparecía de
+                golpe, que es parte de lo que hacía sentir la navegación tosca.
+                `pointer-events-none` cuando está cerrado para que no intercepte
+                toques sobre la página. */}
+            <div
+                onClick={cerrarDrawer}
+                aria-hidden="true"
+                className={cn(
+                    "fixed inset-0 bg-black/50 z-40 lg:hidden backdrop-blur-[2px] transition-opacity duration-300 ease-out",
+                    sidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+                )}
+            />
 
             {/* Sidebar — dark brand */}
-            <aside className={cn(
-                "fixed lg:sticky top-0 left-0 z-50 h-screen w-64 flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0",
-                "bg-brand-dark shadow-sidebar",
-                sidebarOpen ? "translate-x-0" : "-translate-x-full"
-            )}>
+            {/* Cerrado, el panel solo estaba desplazado fuera de la pantalla: sus
+                enlaces seguían siendo alcanzables con el tabulador y los leía un
+                lector de pantalla. `invisible` los saca del orden de foco sin
+                romper la animación (a diferencia de `hidden`), y en pantalla
+                grande se fuerza `visible` porque ahí siempre está. */}
+            <aside
+                {...propsArrastre}
+                id="menu-lateral"
+                aria-label="Menú principal"
+                className={cn(
+                    "fixed lg:sticky top-0 left-0 z-50 h-[100dvh] w-64 flex flex-col lg:translate-x-0 lg:visible",
+                    "bg-brand-dark shadow-sidebar will-change-transform",
+                    // Curva propia: sale rápido y frena al final, como un panel
+                    // con inercia. `ease-in-out` repartía el tiempo por igual y
+                    // por eso se sentía plano.
+                    "transition-[transform,visibility] duration-[380ms] [transition-timing-function:cubic-bezier(0.32,0.72,0,1)]",
+                    sidebarOpen ? "translate-x-0 visible" : "-translate-x-full invisible"
+                )}>
                 {/* Logo header */}
                 <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
                     <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm overflow-hidden flex-shrink-0">
@@ -441,11 +465,20 @@ const UserDashboardLayout = ({ user, onLogout }) => {
                             : item.path && location.pathname.startsWith(item.path) && item.path !== '/dashboard';
 
                         if (item.action === 'menu') {
+                            // Sin aria-label: el botón ya tiene el texto visible
+                            // "Menú"; ponerle uno lo pisaría y dejaría dos
+                            // controles con el mismo nombre accesible que el del
+                            // encabezado.
                             return (
                                 <button
                                     key="menu"
                                     onClick={() => setSidebarOpen(true)}
-                                    className="flex-1 flex flex-col items-center justify-center gap-0.5 text-gray-400 hover:text-brand-primary active:scale-95 transition-all"
+                                    aria-expanded={sidebarOpen}
+                                    aria-controls="menu-lateral"
+                                    className={cn(
+                                        "flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors duration-200 active:scale-90 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)]",
+                                        sidebarOpen ? "text-brand-primary" : "text-gray-400"
+                                    )}
                                 >
                                     <Icon className="h-5 w-5" />
                                     <span className="text-[10px] font-medium">{item.label}</span>
@@ -457,15 +490,27 @@ const UserDashboardLayout = ({ user, onLogout }) => {
                             <Link
                                 key={item.path}
                                 to={item.path}
+                                aria-current={isActive ? 'page' : undefined}
                                 className={cn(
-                                    "flex-1 flex flex-col items-center justify-center gap-0.5 relative transition-all active:scale-95",
-                                    isActive ? "text-brand-primary" : "text-gray-400 hover:text-gray-600"
+                                    "flex-1 flex flex-col items-center justify-center gap-0.5 relative active:scale-90",
+                                    "transition-[color,transform] duration-200 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)]",
+                                    isActive ? "text-brand-primary" : "text-gray-400"
                                 )}
                             >
+                                {/* La marca del apartado activo se DESLIZA de una
+                                    pestaña a otra en vez de apagarse aquí y
+                                    encenderse allá: `layoutId` la trata como el
+                                    mismo elemento entre renders, así que el cambio
+                                    de sección se ve como un movimiento y no como un
+                                    parpadeo. */}
                                 {isActive && (
-                                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-primary rounded-full" />
+                                    <motion.div
+                                        layoutId="navMovilActivo"
+                                        className="absolute top-0 left-1/2 -translate-x-1/2 w-9 h-[3px] bg-brand-primary rounded-b-full"
+                                        transition={{ type: 'spring', stiffness: 480, damping: 38 }}
+                                    />
                                 )}
-                                <Icon className="h-5 w-5" />
+                                <Icon className={cn("h-5 w-5 transition-transform duration-200", isActive && "-translate-y-px scale-110")} />
                                 <span className="text-[10px] font-medium">{item.label}</span>
                             </Link>
                         );
