@@ -135,6 +135,15 @@ export const SECCIONES = [
         visiblePorDefecto: true,
         ruta: '/dashboard/mis-creditos',
     },
+    {
+        id: 'capacidad.coachScore',
+        titulo: 'Tarjeta "Cómo subir tu score"',
+        ubicacion: 'Capacidad de Crédito (BETA)',
+        detalle: 'Lista de recomendaciones con los puntos que el socio podría recuperar en cada componente de su puntaje.',
+        motivo: 'Dice a cada socio qué hacer para subir su puntaje, es decir, cómo optimizar frente a la fórmula que decide su cupo. El comité controla cuándo publicarlo.',
+        visiblePorDefecto: false,
+        ruta: '/dashboard/loan-capacity-beta',
+    },
 ];
 
 /** Mapa id → definición, para consultas puntuales. */

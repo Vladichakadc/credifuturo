@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../config/api';
 import CentroDeAlertas from '../../components/admin/CentroDeAlertas';
+import ProyeccionCupo from '../../components/user/ProyeccionCupo';
 import { calcVerdict } from '../../utils/loanCapacity';
 import { useUi } from '../../context/UiContext';
 import {
@@ -561,6 +562,13 @@ const MiPanelPage = () => {
                     )}
                 </div>
             </div>
+
+            {/* Proyección del cupo — trasladada desde Capacidad (BETA), una
+                pantalla en evaluación a la que había que entrar a propósito. Va
+                justo debajo de la capacidad porque responde a la pregunta que
+                deja abierta esa tarjeta: "¿y cuánto tendré si sigo ahorrando?".
+                Se pinta sola solo si hay historial de ahorro que proyectar. */}
+            <ProyeccionCupo analysis={capacity} veredicto={veredicto} />
 
             {/* Salud financiera + Préstamo en curso */}
             <div className="grid gap-4 md:grid-cols-2">
