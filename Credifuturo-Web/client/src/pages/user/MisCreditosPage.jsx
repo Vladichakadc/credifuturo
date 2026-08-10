@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useVisibilidad } from '../../context/VisibilidadContext';
 import api from '../../config/api';
 import {
     Search, RefreshCw, CreditCard, Inbox, Download, X, Hash, TrendingUp,
@@ -116,6 +117,7 @@ const TABS = [
 ];
 
 const MisCreditosPage = () => {
+    const { esVisible } = useVisibilidad();
     const user = (() => {
         try { return JSON.parse(localStorage.getItem('user') || '{}'); }
         catch { return {}; }
@@ -295,89 +297,59 @@ const MisCreditosPage = () => {
 
     return (
         <div className="space-y-6">
-            {/* ── HERO ── */}
-            <motion.div
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-                className="relative rounded-3xl overflow-hidden shadow-xl bg-gradient-to-br from-brand-dark via-brand-primary to-brand-dark text-white p-6 sm:p-8"
-            >
-                <div className="absolute -top-16 -right-16 w-56 h-56 bg-white/10 rounded-full blur-3xl pointer-events-none" />
-                <div className="absolute -bottom-10 -left-10 w-48 h-48 bg-brand-gold/10 rounded-full blur-3xl pointer-events-none" />
-
-                <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-                    <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 bg-white/15 backdrop-blur rounded-2xl flex items-center justify-center shadow-lg ring-1 ring-white/20 flex-shrink-0">
-                            <CreditCard className="h-7 w-7 text-white" />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl font-black tracking-tight leading-tight text-white">Mis Créditos{nombre ? ` - ${nombre}` : ''}</h1>
-                            <p className="text-white/80 text-sm mt-0.5">Tus préstamos y el estado de tus cuotas, en un solo lugar</p>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                        <motion.button
-                            whileHover={{ scale: 1.03 }}
-                            whileTap={{ scale: 0.96 }}
-                            onClick={handleExport}
-                            className="flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/15 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-colors"
+            {/* La presentación de esta pantalla (nombre, para qué sirve y qué
+                contiene) la pinta ahora PageHeroRuta desde el layout, igual que
+                en el resto del sistema — ver utils/paginasInfo.js. Aquí solo
+                quedan las cifras, y bajan al cuerpo: dentro de un encabezado de
+                presentación eran las únicas de todo el sistema. */}
+            {esVisible('misCreditos.kpis') && !loading && (loans.length > 0 || payments.length > 0) && (
+                <motion.div
+                    initial="hidden"
+                    animate="visible"
+                    variants={kpiContainerVariants}
+                    className="grid grid-cols-2 lg:grid-cols-4 gap-3"
+                >
+                    {[
+                        { label: 'Total Desembolsado', value: fmtCorto(loanStats.totalPrestado), sub: `${loanStats.count} préstamo${loanStats.count !== 1 ? 's' : ''}`, icon: '💰' },
+                        { label: 'Cartera Activa', value: fmtCorto(resumen.carteraActiva), sub: 'cuotas pendientes', icon: '📊' },
+                        { label: 'Recaudo Total', value: fmtCorto(resumen.totalRecaudo), sub: 'cuotas pagadas', icon: '✅' },
+                        { label: 'Cuotas', value: `${resumen.cuotasPagadas}/${resumen.cuotasTotal}`, sub: 'pagadas del total', icon: '🎯' },
+                    ].map(m => (
+                        <motion.div
+                            key={m.label}
+                            variants={kpiItemVariants}
+                            className="bg-white rounded-2xl border border-gray-200 shadow-sm px-3.5 py-3 flex items-center gap-3"
                         >
-                            <Download className="h-4 w-4" /> Exportar
-                        </motion.button>
-                        <motion.button
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.92, rotate: 180 }}
-                            onClick={fetchAll}
-                            className="p-2.5 bg-white/10 hover:bg-white/20 border border-white/15 rounded-xl transition-colors"
-                        >
-                            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                        </motion.button>
-                    </div>
-                </div>
+                            <span className="text-xl leading-none flex-shrink-0">{m.icon}</span>
+                            <div className="min-w-0">
+                                <div className="text-[9px] font-black uppercase tracking-widest text-gray-400 truncate">{m.label}</div>
+                                <div className="text-base font-black text-gray-900 tabular-nums truncate">{m.value}</div>
+                                <div className="text-[9px] text-gray-400 truncate">{m.sub}</div>
+                            </div>
+                        </motion.div>
+                    ))}
+                </motion.div>
+            )}
 
-                {/* Resumen combinado — visible sin importar la pestaña activa */}
-                {!loading && (loans.length > 0 || payments.length > 0) && (
-                    <motion.div
-                        initial="hidden"
-                        animate="visible"
-                        variants={kpiContainerVariants}
-                        className="relative grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-6"
-                    >
-                        {[
-                            { label: 'Total Desembolsado', value: fmtCorto(loanStats.totalPrestado), sub: `${loanStats.count} préstamo${loanStats.count !== 1 ? 's' : ''}`, icon: '💰' },
-                            { label: 'Cartera Activa', value: fmtCorto(resumen.carteraActiva), sub: 'cuotas pendientes', icon: '📊' },
-                            { label: 'Recaudo Total', value: fmtCorto(resumen.totalRecaudo), sub: 'cuotas pagadas', icon: '✅' },
-                            { label: 'Cuotas', value: `${resumen.cuotasPagadas}/${resumen.cuotasTotal}`, sub: 'pagadas del total', icon: '🎯' },
-                        ].map(m => (
-                            <motion.div
-                                key={m.label}
-                                variants={kpiItemVariants}
-                                whileHover={{ y: -3, backgroundColor: 'rgba(255,255,255,0.15)' }}
-                                className="bg-white/10 backdrop-blur-sm rounded-xl px-3 py-2.5 border border-white/10 flex items-center gap-2.5"
-                            >
-                                <span className="text-xl leading-none flex-shrink-0">{m.icon}</span>
-                                <div className="min-w-0">
-                                    <div className="text-[9px] font-bold uppercase tracking-widest text-white/50 truncate">{m.label}</div>
-                                    <div className="text-sm font-black text-white tabular-nums truncate">{m.value}</div>
-                                    <div className="text-[9px] text-white/40 truncate">{m.sub}</div>
-                                </div>
-                            </motion.div>
-                        ))}
-                    </motion.div>
-                )}
-
-                {/* Selector de pestañas — pill deslizante (layoutId compartido entre botones) */}
-                <div className="relative inline-flex bg-white/10 backdrop-blur rounded-2xl p-1 border border-white/15 mt-6">
+            {/* ── BARRA DE ACCIONES ──
+                Pestañas y acciones salieron del hero. Las pestañas van pegadas al
+                contenido que conmutan, que es donde se las busca; "Exportar" actúa
+                sobre lo que esa pestaña está mostrando, así que vive con ellas y no
+                arriba junto al título. El hero queda solo informativo.
+                En móvil las pestañas hacen scroll horizontal en vez de partirse. */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white rounded-2xl border border-gray-200 shadow-sm p-2 sm:p-2.5">
+                <div className="relative inline-flex bg-gray-100 rounded-xl p-1 overflow-x-auto no-scrollbar">
                     {TABS.map(tab => {
                         const Icon = tab.icon;
                         const isActive = activeTab === tab.key;
                         return (
                             <button key={tab.key} onClick={() => changeTab(tab.key)}
-                                className={`relative flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl text-sm font-bold transition-colors duration-200 ${isActive ? 'text-brand-dark' : 'text-white/70 hover:text-white'}`}>
+                                aria-current={isActive ? 'page' : undefined}
+                                className={`relative flex items-center gap-2 px-3.5 sm:px-5 py-2 rounded-lg text-[13px] sm:text-sm font-bold whitespace-nowrap transition-colors duration-200 min-h-[40px] ${isActive ? 'text-brand-dark' : 'text-gray-500 hover:text-gray-800'}`}>
                                 {isActive && (
                                     <motion.div
                                         layoutId="misCreditosActivePill"
-                                        className="absolute inset-0 bg-white rounded-xl shadow-lg"
+                                        className="absolute inset-0 bg-white rounded-lg shadow-sm ring-1 ring-gray-200"
                                         transition={{ type: 'spring', stiffness: 500, damping: 34 }}
                                     />
                                 )}
@@ -389,7 +361,28 @@ const MisCreditosPage = () => {
                         );
                     })}
                 </div>
-            </motion.div>
+
+                <div className="flex items-center gap-2 flex-shrink-0">
+                    <motion.button
+                        whileHover={{ scale: 1.03 }}
+                        whileTap={{ scale: 0.96 }}
+                        onClick={handleExport}
+                        className="flex-1 sm:flex-none justify-center flex items-center gap-2 bg-brand-primary hover:bg-brand-dark text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-colors min-h-[44px]"
+                    >
+                        <Download className="h-4 w-4" /> Exportar
+                    </motion.button>
+                    <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.92, rotate: 180 }}
+                        onClick={fetchAll}
+                        aria-label="Actualizar"
+                        title="Actualizar"
+                        className="p-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
+                    >
+                        <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                    </motion.button>
+                </div>
+            </div>
 
             {/* ── CONTENIDO POR PESTAÑA ── */}
             <AnimatePresence mode="wait">

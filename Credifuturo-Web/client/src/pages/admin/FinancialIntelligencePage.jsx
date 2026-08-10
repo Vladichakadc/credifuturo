@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import api from '../../config/api';
 import { Activity, Printer, RefreshCw } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card';
+import SectionHeader from '../../components/ui/SectionHeader';
 import FinancialChart from '../../components/admin/FinancialChart';
 import RiskReturnIndicators from '../../components/admin/RiskReturnIndicators';
 import { useVisibilidad } from '../../context/VisibilidadContext';
@@ -139,10 +139,13 @@ const FinancialIntelligencePage = () => {
                 }
             `}</style>
 
-            <div className="flex items-start justify-between gap-3 flex-wrap">
+            {/* Barra de acciones. El título y la descripción de la pantalla los
+                pinta ahora el encabezado del layout (utils/paginasInfo.js), así
+                que aquí solo quedan los controles: sello de última carga a la
+                izquierda, filtro de años e impresión a la derecha. */}
+            <div className="flex items-center justify-between gap-3 flex-wrap bg-white rounded-2xl border border-gray-200 shadow-sm px-3 py-2.5">
                 <div>
                     <div className="flex items-center gap-2">
-                        <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">Inteligencia Financiera</h1>
                         {ultimaCarga && (
                             <button
                                 onClick={() => fetchAll({ esRefresco: true })}
@@ -163,9 +166,6 @@ const FinancialIntelligencePage = () => {
                             </button>
                         )}
                     </div>
-                    <p className="text-sm text-gray-500 mt-0.5">
-                        Comparativo contra años anteriores, diagnóstico y riesgo del fondo — el mismo análisis del Panel Principal, sin el resto alrededor.
-                    </p>
                 </div>
                 <div className="flex items-center gap-3" data-html2canvas-ignore="true">
                     <div className="print:hidden">
@@ -180,14 +180,19 @@ const FinancialIntelligencePage = () => {
                 </div>
             </div>
 
-            <Card className="border-none shadow-md">
-                <CardHeader className="bg-gray-50 border-b border-gray-100 pb-3 rounded-t-xl">
-                    <CardTitle className="text-brand-primary flex items-center gap-2 font-black text-lg">
-                        <Activity className="h-5 w-5 text-brand-primary" />
-                        Panel de Inteligencia Financiera & Actividad
-                    </CardTitle>
-                </CardHeader>
-                <CardContent className="p-0 bg-white rounded-b-xl overflow-hidden">
+            {/* Mismo lenguaje que las secciones que contiene (comparador interanual,
+                resultados del año): contenedor blanco con borde y el encabezado
+                compartido. Antes abría con una barra gris y el título en verde,
+                un tercer formato dentro de la misma pantalla. */}
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-card overflow-hidden">
+                <div className="px-4 sm:px-6 pt-5 pb-4 border-b border-gray-100">
+                    <SectionHeader
+                        icono={Activity}
+                        titulo="Panel de Inteligencia Financiera & Actividad"
+                        subtitulo="Estado del fondo, comparativo interanual y diagnóstico"
+                    />
+                </div>
+                <div>
                     {/* Sin onEditMeta: editar la meta anual es una acción administrativa
                         que ya vive en el Panel Principal del admin — esta página es de
                         solo lectura para cualquier rol que la visite. */}
@@ -216,8 +221,8 @@ const FinancialIntelligencePage = () => {
                             </div>
                         ) : null}
                     />
-                </CardContent>
-            </Card>
+                </div>
+            </div>
 
             {/* Trasladado desde Evolución de Ahorros: aquí siempre a nivel de todo
                 el fondo (esta página no tiene selector de socio). */}

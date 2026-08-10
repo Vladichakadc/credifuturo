@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import { Activity } from 'lucide-react';
 import { fmt, fmtCorto } from '../../utils/savingsSeries';
+import SectionHeader from '../ui/SectionHeader';
 
 /**
  * "Movimiento mensual" — abonos y retiros/devoluciones por mes, apilados desde
@@ -14,11 +15,9 @@ import { fmt, fmtCorto } from '../../utils/savingsSeries';
  */
 const MovimientoMensualChart = ({ serie, subtitulo = 'Abonos en verde · retiros y devoluciones en rojo, hacia abajo ($ COP)' }) => (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
-        <h2 className="text-base font-extrabold text-gray-900 flex items-center gap-2 mb-1">
-            <Activity className="h-4 w-4 text-brand-primary" />
-            Movimiento mensual
-        </h2>
-        <p className="text-[11px] text-gray-400 mb-3">{subtitulo}</p>
+        {/* Encabezado compartido: antes usaba un icono suelto y un título más
+            pequeño que el resto de secciones del mismo menú. */}
+        <SectionHeader icono={Activity} titulo="Movimiento mensual" subtitulo={subtitulo} className="mb-4" />
         <div className="h-[230px]">
             <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={serie} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>

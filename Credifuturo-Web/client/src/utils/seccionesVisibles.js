@@ -115,6 +115,26 @@ export const SECCIONES = [
         visiblePorDefecto: true,
         ruta: '/dashboard/inteligencia-financiera',
     },
+    {
+        id: 'landing.encabezados',
+        titulo: 'Encabezado de presentación de cada menú',
+        ubicacion: 'Todas las pantallas',
+        detalle: 'La banda verde al inicio de cada menú con el nombre de la sección, qué es y una lista de lo que se encuentra dentro.',
+        motivo: 'Orienta a quien entra por primera vez, pero a un socio veterano puede resultarle repetitivo. Al ocultarlo, cada pantalla arranca directamente en su contenido; nada de lo que hay debajo cambia.',
+        visiblePorDefecto: true,
+        // Vive en todas las rutas a la vez (lo pintan los layouts), así que no
+        // hay UNA página a la que llevar la vista previa: se ve en cualquiera.
+        ruta: '/dashboard',
+    },
+    {
+        id: 'misCreditos.kpis',
+        titulo: 'Cifras del encabezado de Mis Créditos',
+        ubicacion: 'Mis Créditos (vista del socio)',
+        detalle: 'Total desembolsado · Cartera activa · Recaudo total · Cuotas pagadas, las cuatro cifras dentro de la banda verde.',
+        motivo: 'Son las únicas cifras que quedan dentro de un encabezado de presentación; el resto del sistema las lleva en el cuerpo de la página. Ocultarlas deja el encabezado puramente informativo, y las mismas cifras siguen más abajo en las tarjetas del detalle.',
+        visiblePorDefecto: true,
+        ruta: '/dashboard/mis-creditos',
+    },
 ];
 
 /** Mapa id → definición, para consultas puntuales. */

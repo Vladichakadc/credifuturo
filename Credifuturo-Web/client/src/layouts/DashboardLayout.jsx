@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import PageHeroRuta from '../components/ui/PageHeroRuta';
 import { Outlet, useLocation, useNavigate, Link } from 'react-router-dom';
 import {
     Users,
@@ -607,6 +608,10 @@ const DashboardLayout = ({ user, onLogout }) => {
 
                 {/* Page Content */}
                 <div className="flex-1 p-4 lg:p-8 overflow-x-hidden pb-20 lg:pb-8">
+                    {/* Presentación de la pantalla, resuelta por ruta desde
+                        utils/paginasInfo.js. Va aquí y no dentro de cada página
+                        para que una pantalla nueva la herede sin tocarla. */}
+                    <PageHeroRuta />
                     <Outlet />
                 </div>
             </main>

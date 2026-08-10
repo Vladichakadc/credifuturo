@@ -244,7 +244,18 @@ const YearProgressCard = ({
                             {tipo === 'saldo' ? `vs cierre ${anioPrev}` : `vs ritmo ${anioPrev}`}
                         </span>
                     </p>
-                    {m.esperadoAhora !== null && (
+                    {/* Segunda línea con la referencia contra la que se compara. Un
+                        saldo no tiene "ritmo" prorrateado, así que su referencia es
+                        directamente el cierre anterior — antes se quedaba sin esta
+                        línea y el recuadro medía la mitad que el de las otras cinco
+                        tarjetas. */}
+                    {tipo === 'saldo' ? (
+                        m.prev > 0 && (
+                            <p className="text-[11px] text-gray-600 font-semibold mt-1 leading-snug">
+                                Al cierre de {anioPrev} el fondo valía {fmtCOP(m.prev)}
+                            </p>
+                        )
+                    ) : m.esperadoAhora !== null && (
                         <p className="text-[11px] text-gray-600 font-semibold mt-1 leading-snug">
                             A esta altura de {anioPrev} se llevaba {fmtCOP(m.esperadoAhora)}
                         </p>
@@ -252,11 +263,18 @@ const YearProgressCard = ({
                 </div>
             </div>
 
-            {/* Avance sobre el año anterior — barra de progreso, no un porcentaje de caída */}
-            {tipo === 'flujo' && m.avancePct !== null && (
+            {/* Avance sobre el año anterior — barra de progreso, no un porcentaje de caída.
+                Se pinta también para los saldos: antes era exclusiva de 'flujo', y sin
+                ella la tarjeta de Patrimonio quedaba más baja que las otras cinco y
+                rompía la rejilla. El número es el mismo `avancePct` (act/prev), que para
+                un saldo se lee "el saldo de hoy es el X% del cierre anterior" — de ahí
+                que cambie el rótulo y no el cálculo. */}
+            {m.avancePct !== null && (
                 <div>
                     <div className="flex items-baseline justify-between mb-1.5">
-                        <span className="text-[11px] font-black text-gray-500 uppercase tracking-wider">Avance sobre {anioPrev}</span>
+                        <span className="text-[11px] font-black text-gray-500 uppercase tracking-wider">
+                            {tipo === 'saldo' ? `Respecto al cierre ${anioPrev}` : `Avance sobre ${anioPrev}`}
+                        </span>
                         <span className="text-sm font-black text-gray-800">{m.avancePct.toFixed(0)}%</span>
                     </div>
                     <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">

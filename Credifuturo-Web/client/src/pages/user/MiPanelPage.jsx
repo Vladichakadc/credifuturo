@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../config/api';
+import CentroDeAlertas from '../../components/admin/CentroDeAlertas';
 import { calcVerdict } from '../../utils/loanCapacity';
 import { useUi } from '../../context/UiContext';
 import {
@@ -60,6 +61,10 @@ const MiPanelPage = () => {
     const [payments, setPayments] = useState([]);
     const [capacity, setCapacity] = useState(null);
     const [fondo, setFondo] = useState(null);
+    // Alimenta el Centro de Alertas, trasladado aquí desde el Panel Ejecutivo.
+    // /admin/executive-stats está en READ_ONLY_FOR_ALL, así que un socio puede
+    // pedirlo; el backend le omite el desglose nominal por deudor.
+    const [exec, setExec] = useState(null);
 
     useEffect(() => {
         const fetchAll = async () => {
@@ -71,8 +76,9 @@ const MiPanelPage = () => {
                 api.get('/admin/my/payments'),
                 api.get('/admin/my/loan-capacity'),
                 api.get('/admin/dashboard-stats'),
+                api.get('/admin/executive-stats'),
             ]);
-            const [pRes, bRes, sRes, aRes, payRes, capRes, fRes] = results;
+            const [pRes, bRes, sRes, aRes, payRes, capRes, fRes, eRes] = results;
             if (pRes.status === 'fulfilled') setProfile(pRes.value.data);
             if (bRes.status === 'fulfilled') setBalance(bRes.value.data);
             if (sRes.status === 'fulfilled') setSavings(sRes.value.data?.data || []);
@@ -80,6 +86,9 @@ const MiPanelPage = () => {
             if (payRes.status === 'fulfilled') setPayments(payRes.value.data?.data || []);
             if (capRes.status === 'fulfilled') setCapacity(capRes.value.data);
             if (fRes.status === 'fulfilled') setFondo(fRes.value.data);
+            // Silencioso a propósito: si falla, el Centro de Alertas no se
+            // pinta, pero el panel personal del socio sigue completo.
+            if (eRes.status === 'fulfilled') setExec(eRes.value.data);
             if (results.every(r => r.status === 'rejected')) {
                 toast.error('No se pudo cargar tu información. Intenta de nuevo.');
             }
@@ -345,6 +354,11 @@ const MiPanelPage = () => {
                     </Link>
                 </div>
             )}
+
+            {/* Centro de Alertas — trasladado desde el Panel Ejecutivo. Va aquí
+                arriba, justo bajo el saludo: una alerta que hay que ir a buscar
+                no es una alerta. Debajo empieza ya lo personal del socio. */}
+            <CentroDeAlertas exec={exec} />
 
             {/* 1 · Mi Patrimonio */}
             <div className="rounded-2xl overflow-hidden shadow-card relative"
