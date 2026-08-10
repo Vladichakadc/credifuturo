@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useVisibilidad } from '../../context/VisibilidadContext';
 import api from '../../config/api';
 import {
     Search, RefreshCw, CreditCard, Inbox, Download, X, Hash, TrendingUp,
@@ -116,6 +117,7 @@ const TABS = [
 ];
 
 const MisCreditosPage = () => {
+    const { esVisible } = useVisibilidad();
     const user = (() => {
         try { return JSON.parse(localStorage.getItem('user') || '{}'); }
         catch { return {}; }
@@ -295,60 +297,39 @@ const MisCreditosPage = () => {
 
     return (
         <div className="space-y-6">
-            {/* ── HERO ── */}
-            <motion.div
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-                className="relative rounded-3xl overflow-hidden shadow-xl bg-gradient-to-br from-brand-dark via-brand-primary to-brand-dark text-white p-6 sm:p-8"
-            >
-                <div className="absolute -top-16 -right-16 w-56 h-56 bg-white/10 rounded-full blur-3xl pointer-events-none" />
-                <div className="absolute -bottom-10 -left-10 w-48 h-48 bg-brand-gold/10 rounded-full blur-3xl pointer-events-none" />
-
-                <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-                    <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 bg-white/15 backdrop-blur rounded-2xl flex items-center justify-center shadow-lg ring-1 ring-white/20 flex-shrink-0">
-                            <CreditCard className="h-7 w-7 text-white" />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl font-black tracking-tight leading-tight text-white">Mis Créditos{nombre ? ` - ${nombre}` : ''}</h1>
-                            <p className="text-white/80 text-sm mt-0.5">Tus préstamos y el estado de tus cuotas, en un solo lugar</p>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Resumen combinado — visible sin importar la pestaña activa */}
-                {!loading && (loans.length > 0 || payments.length > 0) && (
-                    <motion.div
-                        initial="hidden"
-                        animate="visible"
-                        variants={kpiContainerVariants}
-                        className="relative grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-6"
-                    >
-                        {[
-                            { label: 'Total Desembolsado', value: fmtCorto(loanStats.totalPrestado), sub: `${loanStats.count} préstamo${loanStats.count !== 1 ? 's' : ''}`, icon: '💰' },
-                            { label: 'Cartera Activa', value: fmtCorto(resumen.carteraActiva), sub: 'cuotas pendientes', icon: '📊' },
-                            { label: 'Recaudo Total', value: fmtCorto(resumen.totalRecaudo), sub: 'cuotas pagadas', icon: '✅' },
-                            { label: 'Cuotas', value: `${resumen.cuotasPagadas}/${resumen.cuotasTotal}`, sub: 'pagadas del total', icon: '🎯' },
-                        ].map(m => (
-                            <motion.div
-                                key={m.label}
-                                variants={kpiItemVariants}
-                                whileHover={{ y: -3, backgroundColor: 'rgba(255,255,255,0.15)' }}
-                                className="bg-white/10 backdrop-blur-sm rounded-xl px-3 py-2.5 border border-white/10 flex items-center gap-2.5"
-                            >
-                                <span className="text-xl leading-none flex-shrink-0">{m.icon}</span>
-                                <div className="min-w-0">
-                                    <div className="text-[9px] font-bold uppercase tracking-widest text-white/50 truncate">{m.label}</div>
-                                    <div className="text-sm font-black text-white tabular-nums truncate">{m.value}</div>
-                                    <div className="text-[9px] text-white/40 truncate">{m.sub}</div>
-                                </div>
-                            </motion.div>
-                        ))}
-                    </motion.div>
-                )}
-
-            </motion.div>
+            {/* La presentación de esta pantalla (nombre, para qué sirve y qué
+                contiene) la pinta ahora PageHeroRuta desde el layout, igual que
+                en el resto del sistema — ver utils/paginasInfo.js. Aquí solo
+                quedan las cifras, y bajan al cuerpo: dentro de un encabezado de
+                presentación eran las únicas de todo el sistema. */}
+            {esVisible('misCreditos.kpis') && !loading && (loans.length > 0 || payments.length > 0) && (
+                <motion.div
+                    initial="hidden"
+                    animate="visible"
+                    variants={kpiContainerVariants}
+                    className="grid grid-cols-2 lg:grid-cols-4 gap-3"
+                >
+                    {[
+                        { label: 'Total Desembolsado', value: fmtCorto(loanStats.totalPrestado), sub: `${loanStats.count} préstamo${loanStats.count !== 1 ? 's' : ''}`, icon: '💰' },
+                        { label: 'Cartera Activa', value: fmtCorto(resumen.carteraActiva), sub: 'cuotas pendientes', icon: '📊' },
+                        { label: 'Recaudo Total', value: fmtCorto(resumen.totalRecaudo), sub: 'cuotas pagadas', icon: '✅' },
+                        { label: 'Cuotas', value: `${resumen.cuotasPagadas}/${resumen.cuotasTotal}`, sub: 'pagadas del total', icon: '🎯' },
+                    ].map(m => (
+                        <motion.div
+                            key={m.label}
+                            variants={kpiItemVariants}
+                            className="bg-white rounded-2xl border border-gray-200 shadow-sm px-3.5 py-3 flex items-center gap-3"
+                        >
+                            <span className="text-xl leading-none flex-shrink-0">{m.icon}</span>
+                            <div className="min-w-0">
+                                <div className="text-[9px] font-black uppercase tracking-widest text-gray-400 truncate">{m.label}</div>
+                                <div className="text-base font-black text-gray-900 tabular-nums truncate">{m.value}</div>
+                                <div className="text-[9px] text-gray-400 truncate">{m.sub}</div>
+                            </div>
+                        </motion.div>
+                    ))}
+                </motion.div>
+            )}
 
             {/* ── BARRA DE ACCIONES ──
                 Pestañas y acciones salieron del hero. Las pestañas van pegadas al
