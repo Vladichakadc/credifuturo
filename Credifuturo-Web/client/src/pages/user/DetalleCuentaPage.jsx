@@ -249,6 +249,28 @@ const DetalleCuentaPage = () => {
             .filter(r => tipoFilter === 'Todos' || r.tipo === tipoFilter)
     ), [movimientos, yearFilter, tipoFilter]);
 
+    // ── Devolución anual: cuánto le ha devuelto el fondo, por año ──────
+    // En el extracto la devolución va en NEGATIVO porque sale del saldo de
+    // ahorros, y eso lee como una pérdida. Aquí se presenta en positivo, que es
+    // lo que de verdad ocurrió: el fondo le entregó ese dinero al socio.
+    // Se calcula sobre el historial completo y no sobre `visibles`, porque la
+    // pregunta que responde es "¿cuánto me han devuelto?", no "¿cuánto en el
+    // año que tengo filtrado?".
+    const devolucionesPorAnio = useMemo(() => {
+        const porAnio = {};
+        movimientos
+            .filter(r => r.tipo === 'devolucion')
+            .forEach(r => {
+                const a = r.fecha?.getFullYear();
+                if (!a) return;
+                if (!porAnio[a]) porAnio[a] = { anio: a, total: 0, veces: 0 };
+                porAnio[a].total += Math.abs(r.neto);
+                porAnio[a].veces += 1;
+            });
+        const lista = Object.values(porAnio).sort((x, y) => y.anio - x.anio);
+        return { lista, total: lista.reduce((s, x) => s + x.total, 0) };
+    }, [movimientos]);
+
     const FILAS_INICIALES = 30;
     const visiblesLimitados = verTodo ? visibles : visibles.slice(0, FILAS_INICIALES);
 
@@ -692,12 +714,12 @@ const DetalleCuentaPage = () => {
                     <div>
                         <h2 className="text-base font-bold text-gray-800">Extracto de movimientos</h2>
                         <p className="text-[11px] text-gray-400">
-                            Ahorros, aportes, devoluciones y descuentos en una sola línea de tiempo, con saldo corrido
+                            Ahorros, aportes, devolución anual y descuentos en una sola línea de tiempo, con saldo corrido
                             {yearFilter !== 'Todos' ? ` · mostrando ${yearFilter}` : ''} · {visibles.length} registro{visibles.length === 1 ? '' : 's'}
                         </p>
                     </div>
                     <div className="ml-auto flex items-center gap-1.5 flex-wrap print:hidden">
-                        {[['Todos', 'Todos'], ['ahorro', 'Ahorros'], ['aporte', 'Aportes'], ['devolucion', 'Devoluciones'], ['descuento', 'Descuentos']].map(([val, label]) => (
+                        {[['Todos', 'Todos'], ['ahorro', 'Ahorros'], ['aporte', 'Aportes'], ['devolucion', 'Devolución anual'], ['descuento', 'Descuentos']].map(([val, label]) => (
                             <button
                                 key={val}
                                 onClick={() => { setTipoFilter(val); setVerTodo(false); }}
@@ -712,6 +734,50 @@ const DetalleCuentaPage = () => {
                         ))}
                     </div>
                 </div>
+
+                {/* Resumen de la devolución anual. Solo aparece en su pestaña: en la
+                    vista general sería una cifra suelta sin contexto. */}
+                {tipoFilter === 'devolucion' && (
+                    devolucionesPorAnio.lista.length === 0 ? (
+                        <div className="px-5 py-6 border-b border-gray-100">
+                            <p className="text-sm text-gray-500">
+                                Todavía no has recibido ninguna devolución de ahorros.
+                            </p>
+                            <p className="text-[11px] text-gray-400 mt-1">
+                                El fondo devuelve una vez al año los intereses generados por tu ahorro mensual.
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="px-5 py-4 border-b border-gray-100 bg-emerald-50/40">
+                            <div className="flex items-baseline justify-between gap-3 flex-wrap">
+                                <div>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">
+                                        Total devuelto por el fondo
+                                    </p>
+                                    <p className="text-2xl font-black text-emerald-800 tabular-nums leading-none mt-1">
+                                        {fmt(devolucionesPorAnio.total)}
+                                    </p>
+                                </div>
+                                <p className="text-[11px] text-gray-500 max-w-md leading-snug">
+                                    Cada año el fondo te devuelve los intereses que generó tu ahorro mensual.
+                                    En el detalle de abajo van en negativo porque salen de tu saldo acumulado.
+                                </p>
+                            </div>
+
+                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mt-3">
+                                {devolucionesPorAnio.lista.map(d => (
+                                    <div key={d.anio} className="bg-white rounded-xl border border-emerald-100 px-3 py-2.5">
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">{d.anio}</p>
+                                        <p className="text-sm font-black text-gray-900 tabular-nums mt-0.5">{fmt(d.total)}</p>
+                                        <p className="text-[10px] text-gray-400">
+                                            {d.veces} devolución{d.veces === 1 ? '' : 'es'}
+                                        </p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )
+                )}
 
                 {visibles.length === 0 ? (
                     <div className="p-10 text-center text-sm text-gray-400">Sin movimientos para este período.</div>
