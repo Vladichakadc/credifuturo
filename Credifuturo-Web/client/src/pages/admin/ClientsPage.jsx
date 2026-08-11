@@ -8,6 +8,7 @@ import { Input, Label, FormField } from '../../components/ui/Input';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { useUi } from '../../context/UiContext';
+import { hoyISO } from '../../utils/fechas';
 
 const clientNormalizeEmailPart = (str) => {
     if (!str) return '';
@@ -58,7 +59,7 @@ const ClientsPage = () => {
         socioFundador: 'SI',
         referido: '',
         cargo: '',
-        fechaIngreso: new Date().toISOString().split('T')[0],
+        fechaIngreso: hoyISO(),
         fechaBaja: '',
         estatus: 'Activo',
         porcentajePrestamo: '' // Tasa mensual manual (decimal: 0.015 = 1.5%); auto-calculada desde préstamos si existen
