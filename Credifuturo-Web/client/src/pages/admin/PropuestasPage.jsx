@@ -539,17 +539,20 @@ const PropuestasPage = () => {
 
                 {/* Stats strip */}
                 <div className="relative grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6">
+                    {/* Tonos para fondo claro: al dejar de ser un hero verde, el
+                        texto blanco de estas cifras quedaba invisible — se veían
+                        los iconos y no los números. */}
                     {[
-                        { label: 'Total Propuestas', value: stats.total, icon: Lightbulb, color: 'text-white' },
-                        { label: 'Pendientes', value: stats.pendientes, icon: Clock, color: 'text-amber-300' },
-                        { label: 'Aprobadas', value: stats.aprobadas, icon: CheckCircle, color: 'text-emerald-300' },
-                        { label: 'Total Votos', value: stats.votos, icon: Heart, color: 'text-red-300' },
+                        { label: 'Total Propuestas', value: stats.total, icon: Lightbulb, color: 'text-brand-primary' },
+                        { label: 'Pendientes', value: stats.pendientes, icon: Clock, color: 'text-amber-500' },
+                        { label: 'Aprobadas', value: stats.aprobadas, icon: CheckCircle, color: 'text-emerald-600' },
+                        { label: 'Total Votos', value: stats.votos, icon: Heart, color: 'text-red-500' },
                     ].map(s => (
-                        <div key={s.label} className="bg-white/15 backdrop-blur rounded-2xl px-4 py-3 flex items-center gap-3">
+                        <div key={s.label} className="bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 flex items-center gap-3">
                             <s.icon className={`w-5 h-5 flex-shrink-0 ${s.color}`} />
                             <div>
-                                <div className="text-xl font-black text-white tabular-nums">{s.value}</div>
-                                <div className="text-[10px] font-bold text-white/60 leading-tight">{s.label}</div>
+                                <div className="text-xl font-black text-gray-900 tabular-nums">{s.value}</div>
+                                <div className="text-[10px] font-bold text-gray-500 leading-tight">{s.label}</div>
                             </div>
                         </div>
                     ))}
