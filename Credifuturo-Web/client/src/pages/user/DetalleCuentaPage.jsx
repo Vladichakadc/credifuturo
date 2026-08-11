@@ -70,6 +70,29 @@ const TIPO_META = {
     ahorro:     { label: 'Ahorro',     chip: 'bg-emerald-50 text-emerald-700', dot: 'bg-emerald-500' },
     aporte:     { label: 'Aporte',     chip: 'bg-amber-50 text-amber-700',     dot: 'bg-amber-400' },
     devolucion: { label: 'Devolución', chip: 'bg-red-50 text-red-600',         dot: 'bg-red-500' },
+    // Un descuento por mora y una devolución son cosas OPUESTAS: en el primero el
+    // socio pierde plata por pagar tarde, en el segundo el fondo se la entrega.
+    // Antes ambos caían en "Devolución" porque se clasificaba por el signo del
+    // importe, así que el extracto le decía a un socio que le habían devuelto un
+    // dinero que en realidad se le había descontado. Naranja, no rojo: es una
+    // salida, pero de distinta naturaleza que la devolución.
+    descuento:  { label: 'Descuento',  chip: 'bg-orange-50 text-orange-700',   dot: 'bg-orange-500' },
+};
+
+// Clasifica un movimiento negativo por su ESTADO, no por su signo.
+//   'Devolucion Total Intereses Ahorros Mensuales'  → devolución
+//   'Descuento Total Anual Penalizacion'            → descuento
+// Un negativo con cualquier otro estado se trata como descuento (es una salida
+// del saldo) pero conserva su estado como concepto, para no afirmar de más.
+const clasificarNegativo = (status) => {
+    const t = String(status || '').toLowerCase();
+    if (t.includes('devolucion') || t.includes('devolución')) {
+        return { tipo: 'devolucion', concepto: 'Devolución de intereses' };
+    }
+    if (t.includes('descuento') || t.includes('penaliz')) {
+        return { tipo: 'descuento', concepto: 'Descuento anual por penalización' };
+    }
+    return { tipo: 'descuento', concepto: status ? String(status) : 'Movimiento de salida' };
 };
 
 const PosicionCard = ({ icon: Icon, label, value, sub, to, accent = 'text-brand-primary' }) => {
@@ -148,18 +171,19 @@ const DetalleCuentaPage = () => {
         const rows = [];
         savings.forEach(s => {
             const bruto = Number(s.amount || 0);
-            const esDevolucion = String(s.status || '').toLowerCase().includes('devolucion') || bruto < 0;
-            const neto = esDevolucion ? bruto : Number(s.valorAhorrado ?? s.amount ?? 0);
+            const esSalida = String(s.status || '').toLowerCase().includes('devolucion') || bruto < 0;
+            const clasif = esSalida ? clasificarNegativo(s.status) : null;
+            const neto = esSalida ? bruto : Number(s.valorAhorrado ?? s.amount ?? 0);
             const mesNum = parseMes(s.mesAbonado);
             rows.push({
                 id: `s-${s.id}`,
                 fecha: parseFecha(s.date),
-                tipo: esDevolucion ? 'devolucion' : 'ahorro',
-                concepto: esDevolucion
-                    ? 'Devolución de intereses'
+                tipo: esSalida ? clasif.tipo : 'ahorro',
+                concepto: esSalida
+                    ? clasif.concepto
                     : `Ahorro mensual${mesNum ? ` · abona ${MESES_ABR[mesNum - 1]} ${s.anioAbonado || ''}`.trimEnd() : ''}`,
                 bruto,
-                recargo: esDevolucion ? 0 : Math.max(0, bruto - neto),
+                recargo: esSalida ? 0 : Math.max(0, bruto - neto),
                 dias: Number(s.diasPenalizacion || 0),
                 neto,
                 // Campos crudos para la exportación a Excel (no se muestran en pantalla)
@@ -233,7 +257,10 @@ const DetalleCuentaPage = () => {
     const heroTotals = useMemo(() => ({
         ahorros: movimientos.filter(r => r.tipo === 'ahorro').reduce((s, r) => s + r.neto, 0),
         aportes: movimientos.filter(r => r.tipo === 'aporte').reduce((s, r) => s + r.neto, 0),
+        // Solo devoluciones reales: antes esta cifra incluía los descuentos por
+        // mora, así que el socio veía como "devuelto" un dinero que había perdido.
         devoluciones: movimientos.filter(r => r.tipo === 'devolucion').reduce((s, r) => s + Math.abs(r.neto), 0),
+        descuentos: movimientos.filter(r => r.tipo === 'descuento').reduce((s, r) => s + Math.abs(r.neto), 0),
     }), [movimientos]);
 
     // Composición para el gráfico: sigue el filtro de año (capital neto incluye devoluciones)
@@ -317,7 +344,7 @@ const DetalleCuentaPage = () => {
             'Periodo abonado': r.periodo,
             'Id_VM': r.externalId,
             'Estado': r.estado,
-            'Valor Bruto': r.tipo === 'devolucion' ? '' : r.bruto,
+            'Valor Bruto': (r.tipo === 'devolucion' || r.tipo === 'descuento') ? '' : r.bruto,
             'Recargo': r.recargo > 0 ? -r.recargo : '',
             'Días de atraso': r.dias > 0 ? r.dias : '',
             'Valor Neto': r.neto,
@@ -670,12 +697,12 @@ const DetalleCuentaPage = () => {
                     <div>
                         <h2 className="text-base font-bold text-gray-800">Extracto de movimientos</h2>
                         <p className="text-[11px] text-gray-400">
-                            Ahorros, aportes y devoluciones en una sola línea de tiempo, con saldo corrido
+                            Ahorros, aportes, devoluciones y descuentos en una sola línea de tiempo, con saldo corrido
                             {yearFilter !== 'Todos' ? ` · mostrando ${yearFilter}` : ''} · {visibles.length} registro{visibles.length === 1 ? '' : 's'}
                         </p>
                     </div>
                     <div className="ml-auto flex items-center gap-1.5 flex-wrap print:hidden">
-                        {[['Todos', 'Todos'], ['ahorro', 'Ahorros'], ['aporte', 'Aportes'], ['devolucion', 'Devoluciones']].map(([val, label]) => (
+                        {[['Todos', 'Todos'], ['ahorro', 'Ahorros'], ['aporte', 'Aportes'], ['devolucion', 'Devoluciones'], ['descuento', 'Descuentos']].map(([val, label]) => (
                             <button
                                 key={val}
                                 onClick={() => { setTipoFilter(val); setVerTodo(false); }}
@@ -721,7 +748,7 @@ const DetalleCuentaPage = () => {
                                                     </span>
                                                     <span className="ml-2 text-xs text-gray-700">{r.concepto}</span>
                                                 </td>
-                                                <td className="px-3 py-2.5 text-right text-gray-600 tabular-nums">{r.tipo === 'devolucion' ? '—' : fmt(r.bruto)}</td>
+                                                <td className="px-3 py-2.5 text-right text-gray-600 tabular-nums">{(r.tipo === 'devolucion' || r.tipo === 'descuento') ? '—' : fmt(r.bruto)}</td>
                                                 <td className={`px-3 py-2.5 text-right tabular-nums ${r.recargo > 0 ? 'text-red-600 font-semibold' : 'text-gray-300'}`}>
                                                     {r.recargo > 0 ? `−${fmt(r.recargo)}` : '—'}
                                                     {r.recargo > 0 && r.dias > 0 && <span className="block text-[10px] font-normal text-red-400">{r.dias} día(s) tarde</span>}
@@ -783,6 +810,7 @@ const DetalleCuentaPage = () => {
                 <p className="text-[11px] text-gray-500 leading-relaxed">
                     <b className="text-gray-600">Definiciones:</b> <b>Pagado (bruto)</b> = valor que consignaste. <b>Acreditado (neto)</b> = lo que suma a tu patrimonio (bruto menos penalizaciones por mora).
                     Las <b>devoluciones de intereses</b> son giros del fondo hacia ti y se muestran en negativo porque salen de tu saldo acumulado.
+                    Un <b>descuento</b> es distinto: es dinero que se te resta por pagar tarde, no algo que el fondo te entregue — por eso van en categorías separadas.
                     El saldo corrido se calcula sobre tu historial completo; el filtro por año solo cambia qué movimientos y gráficos ves.
                     La tendencia mensual usa el <b>mes abonado</b> (el período que cubre cada pago), no la fecha de consignación.
                 </p>
