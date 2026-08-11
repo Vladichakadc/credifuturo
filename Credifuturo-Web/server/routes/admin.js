@@ -365,7 +365,8 @@ router.post('/clients', async (req, res) => {
         const {
             cedula, name, surname1, surname2, email, password,
             genero, pais, ciudad, tipoCliente, socioFundador,
-            referido, cargo, fechaIngreso, fechaBaja, estatus, customerId
+            referido, cargo, fechaIngreso, fechaBaja, estatus, customerId,
+            porcentajePrestamo
         } = req.body;
 
         if (estatus !== undefined && estatus !== null && estatus !== '' && !VALID_ESTATUS.includes(estatus)) {
@@ -426,8 +427,22 @@ router.post('/clients', async (req, res) => {
             fechaIngreso: fechaIngreso || new Date(),
             fechaBaja: (fechaBaja === '' || fechaBaja === 'Invalid date') ? null : fechaBaja,
             // Ensure strictly Activo or Inactivo
-            // Ensure strictly Activo or Inactivo
             estatus: estatus || 'Activo',
+            // La tasa de perfil del socio (la que usa el Simulador) faltaba en
+            // esta lista: el formulario de alta la enviaba y Client.create la
+            // descartaba en silencio, así que el socio quedaba creado siempre
+            // sin tasa y sin ningún aviso de que se había perdido. En el UPDATE
+            // sí estaba contemplada (ALLOWED_CLIENT_FIELDS), de ahí que editar
+            // funcionara y crear no.
+            //
+            // Se normaliza igual que en el update: número finito y no negativo,
+            // o null. Un texto vacío o basura no debe guardarse como 0, que
+            // significaría "0% de interés" en vez de "sin tasa asignada".
+            porcentajePrestamo: (() => {
+                if (porcentajePrestamo === undefined || porcentajePrestamo === null || porcentajePrestamo === '') return null;
+                const n = Number(porcentajePrestamo);
+                return Number.isFinite(n) && n >= 0 ? n : null;
+            })(),
             mustChangePassword: true
         });
         logSecurityEvent('CLIENT_CREATED', { actorId: req.user?.id, newClientId: newClient.id, ip: getClientIp(req) });

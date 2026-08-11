@@ -6,8 +6,14 @@ import { Button } from '../ui/Button';
 import { Input, FormField } from '../ui/Input';
 import { useUi } from '../../context/UiContext';
 
-// Campos editables del socio (espejo de ALLOWED_CLIENT_FIELDS en el backend,
-// menos porcentajePrestamo que se gestiona desde el flujo de préstamos).
+// Campos editables del socio, espejo de ALLOWED_CLIENT_FIELDS en el backend.
+//
+// `porcentajePrestamo` (la tasa de perfil que usa el Simulador) estaba excluido
+// con el argumento de que "se gestiona desde el flujo de préstamos". No es así:
+// la tasa del préstamo desembolsado es histórica y propia de ese préstamo,
+// mientras que esta es la del PERFIL del socio, la que el Simulador aplica a una
+// solicitud nueva. Al faltar aquí, la única forma de tocarla era el formulario
+// antiguo de /admin/clients — desde la ficha del socio no había manera.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const CEDULA_RE = /^\d{4,15}$/;
 const ESTATUS_OPTS = ['Activo', 'Desactivado'];
@@ -45,6 +51,12 @@ const ClientForm = ({ open, client, onClose, onSaved }) => {
                 fechaIngreso: (client.fechaIngreso || '').toString().split('T')[0],
                 fechaBaja: (client.fechaBaja || '').toString().split('T')[0],
                 estatus: client.estatus ?? 'Activo',
+                // Se guarda en decimal (0.015) y se edita en porcentaje (1.5),
+                // igual que en el formulario de alta. El toFixed(4) evita que
+                // 0.015 * 100 salga como 1.4999999999999998.
+                porcentajePrestamo: client.porcentajePrestamo != null
+                    ? String(parseFloat((client.porcentajePrestamo * 100).toFixed(4)))
+                    : '',
             });
             setErrors(emptyErrors);
         }
@@ -68,6 +80,12 @@ const ClientForm = ({ open, client, onClose, onSaved }) => {
         else if (!CEDULA_RE.test(form.cedula.trim())) e.cedula = 'La cédula debe tener solo dígitos (4 a 15).';
         if (form.email?.trim() && !EMAIL_RE.test(form.email.trim())) e.email = 'Correo con formato inválido.';
         if (form.estatus && !ESTATUS_OPTS.includes(form.estatus)) e.estatus = 'Estatus inválido.';
+        if (String(form.porcentajePrestamo ?? '').trim() !== '') {
+            const pct = Number(form.porcentajePrestamo);
+            if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+                e.porcentajePrestamo = 'La tasa debe ser un número entre 0 y 100.';
+            }
+        }
         setErrors(e);
         return Object.keys(e).length === 0;
     };
@@ -79,6 +97,10 @@ const ClientForm = ({ open, client, onClose, onSaved }) => {
             const payload = { ...form };
             if (!payload.email?.trim()) payload.email = null;
             if (!payload.fechaBaja?.trim()) payload.fechaBaja = null;
+            // De porcentaje a decimal (1.5 → 0.015). Vacío significa "sin tasa
+            // asignada" (null), no 0% — que sería una tasa real de cero.
+            const pctRaw = String(payload.porcentajePrestamo ?? '').trim();
+            payload.porcentajePrestamo = pctRaw === '' ? null : Number(pctRaw) / 100;
             const res = await api.put(`/admin/clients/${client.id}`, payload);
             toast.success('Socio actualizado.');
             onSaved?.(res.data);
@@ -161,6 +183,27 @@ const ClientForm = ({ open, client, onClose, onSaved }) => {
                         <select className={inputCls} value={form.estatus} onChange={(e) => set('estatus', e.target.value)}>
                             {ESTATUS_OPTS.map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
+                    </FormField>
+                    <FormField
+                        label="% Interés Mensual — Tasa de Perfil (Simulador)"
+                        error={errors.porcentajePrestamo}
+                    >
+                        <div className="relative">
+                            <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                max="100"
+                                value={form.porcentajePrestamo ?? ''}
+                                onChange={(e) => set('porcentajePrestamo', e.target.value)}
+                                placeholder="Ej: 1.5"
+                                className="pr-8"
+                            />
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">%</span>
+                        </div>
+                        <p className="text-[11px] text-gray-400 mt-1">
+                            Tasa del perfil del socio, la que ve en el Simulador al pedir un préstamo nuevo. Déjala vacía si aún no tiene una asignada.
+                        </p>
                     </FormField>
                 </div>
 
