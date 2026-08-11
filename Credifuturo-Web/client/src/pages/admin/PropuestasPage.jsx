@@ -507,27 +507,27 @@ const PropuestasPage = () => {
             `}</style>
 
             {/* ── HEADER ── */}
-            <div className="relative bg-gradient-to-br from-brand-dark via-brand-primary to-brand-dark rounded-3xl p-6 sm:p-8 mb-6 overflow-hidden shadow-2xl shadow-brand-primary/20">
-                <div className="absolute -top-16 -right-16 w-48 h-48 bg-white/10 rounded-full blur-3xl" />
-                <div className="absolute -bottom-12 -left-12 w-40 h-40 bg-brand-gold/10 rounded-full blur-3xl" />
+            {/* Era un segundo hero en degradado justo debajo del encabezado de
+                presentación del layout: dos bandas verdes con el mismo título.
+                Queda como barra de acciones clara — el interruptor de visibilidad
+                del módulo es lo único que aportaba de más. */}
+            <div className="relative bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-5 mb-6">
                 <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 bg-white/20 backdrop-blur rounded-2xl flex items-center justify-center text-3xl shadow-lg">💡</div>
                         <div>
                             <div className="flex items-center gap-3">
-                                <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">Buzón de Propuestas</h1>
                                 {isAdmin && (
                                     <button 
                                         onClick={toggleModule} 
                                         disabled={toggling}
-                                        className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded-lg border flex items-center gap-1.5 transition-all ${moduleEnabled ? 'bg-emerald-500/20 text-emerald-200 border-emerald-400/30 hover:bg-emerald-500/30' : 'bg-red-500/20 text-red-200 border-red-400/30 hover:bg-red-500/30'}`}
+                                        className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded-lg border flex items-center gap-1.5 transition-all ${moduleEnabled ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'}`}
                                     >
                                         <div className={`w-2 h-2 rounded-full ${moduleEnabled ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-red-400 shadow-[0_0_8px_rgba(248,113,113,0.8)]'}`} />
                                         {moduleEnabled ? 'Visible para socios' : 'Oculto para socios'}
                                     </button>
                                 )}
                             </div>
-                            <p className="text-white/70 text-sm mt-0.5">Comparte tus ideas para mejorar el fondo</p>
+                            <p className="text-gray-500 text-sm mt-0.5">Comparte tus ideas para mejorar el fondo</p>
                         </div>
                     </div>
                     <button
@@ -539,17 +539,20 @@ const PropuestasPage = () => {
 
                 {/* Stats strip */}
                 <div className="relative grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6">
+                    {/* Tonos para fondo claro: al dejar de ser un hero verde, el
+                        texto blanco de estas cifras quedaba invisible — se veían
+                        los iconos y no los números. */}
                     {[
-                        { label: 'Total Propuestas', value: stats.total, icon: Lightbulb, color: 'text-white' },
-                        { label: 'Pendientes', value: stats.pendientes, icon: Clock, color: 'text-amber-300' },
-                        { label: 'Aprobadas', value: stats.aprobadas, icon: CheckCircle, color: 'text-emerald-300' },
-                        { label: 'Total Votos', value: stats.votos, icon: Heart, color: 'text-red-300' },
+                        { label: 'Total Propuestas', value: stats.total, icon: Lightbulb, color: 'text-brand-primary' },
+                        { label: 'Pendientes', value: stats.pendientes, icon: Clock, color: 'text-amber-500' },
+                        { label: 'Aprobadas', value: stats.aprobadas, icon: CheckCircle, color: 'text-emerald-600' },
+                        { label: 'Total Votos', value: stats.votos, icon: Heart, color: 'text-red-500' },
                     ].map(s => (
-                        <div key={s.label} className="bg-white/15 backdrop-blur rounded-2xl px-4 py-3 flex items-center gap-3">
+                        <div key={s.label} className="bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 flex items-center gap-3">
                             <s.icon className={`w-5 h-5 flex-shrink-0 ${s.color}`} />
                             <div>
-                                <div className="text-xl font-black text-white tabular-nums">{s.value}</div>
-                                <div className="text-[10px] font-bold text-white/60 leading-tight">{s.label}</div>
+                                <div className="text-xl font-black text-gray-900 tabular-nums">{s.value}</div>
+                                <div className="text-[10px] font-bold text-gray-500 leading-tight">{s.label}</div>
                             </div>
                         </div>
                     ))}

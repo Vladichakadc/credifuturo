@@ -145,7 +145,6 @@ const CambiosPage = () => {
             {/* Encabezado */}
             <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div>
-                    <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">Cambios</h1>
                     <p className="text-sm text-gray-500 mt-0.5">
                         Qué tarjetas, gráficos y menús ven los socios. Lo que desactives aquí desaparece de su vista, y puedes volver a mostrarlo cuando quieras.
                     </p>

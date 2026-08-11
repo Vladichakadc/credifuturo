@@ -998,8 +998,6 @@ const UserAccountDetailsPage = () => {
                         vez de repararlo: el <h2> de al lado ya dice "Socio:
                         {nombre}", así que el nombre no se pierde y deja de estar
                         dos veces en la misma línea. */}
-                    <h1 className="text-2xl font-bold text-brand-primary">Detalle de la Cuenta</h1>
-                    <span className="hidden sm:block text-brand-primary/30 text-2xl">|</span>
                     {(fullUserData || authUser).name ? (
                         <h2 className="text-2xl font-bold text-brand-primary">
                             Socio: {fullUserData

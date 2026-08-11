@@ -717,7 +717,10 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
                         <div className="flex items-center gap-4">
                             <div className="w-14 h-14 bg-white/15 backdrop-blur rounded-2xl flex items-center justify-center text-3xl shadow-lg ring-1 ring-white/20 flex-shrink-0">🏆</div>
                             <div>
-                                <h2 className="text-2xl font-black tracking-tight text-white">Ranking de Ahorro</h2>
+                                {/* Como página (`embedded`) el título lo da el
+                                    encabezado del layout; como modal sí hace falta,
+                                    porque ahí no hay ninguno. */}
+                                {!embedded && <h2 className="text-2xl font-black tracking-tight text-white">Ranking de Ahorro</h2>}
                                 <p className="text-xs font-semibold text-white/70 mt-0.5 flex items-center gap-1.5">
                                     <CheckCircle className="w-3.5 h-3.5 text-brand-gold flex-shrink-0" />
                                     Saldo Promedio Ponderado · Método FIC/SFC Colombia

@@ -417,7 +417,6 @@ const ClientListPage = () => {
                         <Users className="h-5 w-5 text-brand-primary" />
                     </div>
                     <ListHeader
-                        title="Lista de Clientes"
                         source="Tabla_Clientes"
                         totalCount={clients.length}
                         filteredCount={filteredClients.length}

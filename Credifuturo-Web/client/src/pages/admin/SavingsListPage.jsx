@@ -729,7 +729,6 @@ const SavingsListPage = () => {
                         <PiggyBank className="h-5 w-5 text-brand-primary" />
                     </div>
                     <ListHeader
-                        title="Lista de Ahorro"
                         source="1-orders_table_ahorro_mensual"
                         totalCount={savings.length}
                         filteredCount={filteredSavings.length}

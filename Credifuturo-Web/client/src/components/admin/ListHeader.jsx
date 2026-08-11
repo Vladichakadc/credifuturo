@@ -14,7 +14,11 @@ const ListHeader = ({
 }) => {
     return (
         <div className={`mb-6 ${className}`}>
-            <h1 className="text-2xl font-bold text-brand-primary">{title}</h1>
+            {/* El título solo se pinta si se pide. La presentación de la pantalla
+                ya la da el encabezado del layout (utils/paginasInfo.js), así que
+                repetirlo aquí dejaba dos títulos casi idénticos uno encima del
+                otro. Las listas conservan sus contadores, que sí aportan. */}
+            {title && <h1 className="text-2xl font-bold text-brand-primary">{title}</h1>}
             <div className="flex items-center gap-2 mt-1">
                 <p className="text-sm text-gray-500">
                     Fuente: <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded font-mono text-brand-primary/80">{source}</code>
