@@ -397,6 +397,9 @@ const ReportsPage = () => {
                 <p className="text-gray-500">Descarga los datos de cada tabla en formato Excel.</p>
             </div>
 
+            {/* ── Diagnóstico de fechas adelantadas ─────────────────────── */}
+            <DiagnosticoFechasUtc />
+
             {/* ── Backup Masivo ─────────────────────────────────────────── */}
             <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-blue-700 p-6 text-white shadow-xl">
                 <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 80% 50%, white 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
@@ -700,6 +703,117 @@ const ReportsPage = () => {
                     </CardContent>
                 </Card>
             </div>
+        </div>
+    );
+};
+
+
+/**
+ * Informe de registros fechados un día por delante por el antiguo bug de UTC.
+ *
+ * Es de solo lectura y bajo demanda: no se pide al abrir la página porque
+ * recorre varias tablas enteras y solo interesa mientras se decide si hay que
+ * corregir algo. Corregir esas fechas NO se hace desde aquí — son movimientos
+ * ya contabilizados y es una decisión del comité.
+ */
+const DiagnosticoFechasUtc = () => {
+    const [datos, setDatos] = useState(null);
+    const [cargando, setCargando] = useState(false);
+    const [error, setError] = useState(null);
+
+    const ejecutar = async () => {
+        setCargando(true); setError(null);
+        try {
+            const res = await api.get('/admin/diagnostico/fechas-utc');
+            setDatos(res.data);
+        } catch {
+            setError('No se pudo ejecutar el diagnóstico.');
+        } finally {
+            setCargando(false);
+        }
+    };
+
+    return (
+        <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-5">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div className="min-w-0">
+                    <h2 className="text-base font-black text-gray-900">Registros con fecha adelantada</h2>
+                    <p className="text-xs text-gray-500 mt-1 leading-relaxed max-w-2xl">
+                        Hasta el 11 de agosto de 2026, lo que se registraba entre las 7:00 p.m. y la medianoche
+                        quedaba fechado al día siguiente: la app calculaba &quot;hoy&quot; en horario UTC, cinco horas
+                        por delante de Colombia. Este informe busca esos registros. No modifica nada.
+                    </p>
+                </div>
+                <button
+                    onClick={ejecutar}
+                    disabled={cargando}
+                    className="shrink-0 inline-flex items-center gap-2 bg-brand-primary hover:bg-brand-dark text-white text-xs font-bold px-4 py-2.5 rounded-lg transition-colors disabled:opacity-60 min-h-[40px]"
+                >
+                    {cargando ? 'Revisando…' : datos ? 'Volver a revisar' : 'Revisar ahora'}
+                </button>
+            </div>
+
+            {error && <p className="text-xs text-red-600 mt-3">{error}</p>}
+
+            {datos && (
+                <div className="mt-4">
+                    {datos.totalAfectados === 0 ? (
+                        <p className="text-sm font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+                            No hay registros con la fecha adelantada.
+                        </p>
+                    ) : (
+                        <>
+                            <div className="grid grid-cols-2 gap-3 mb-4">
+                                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Con fecha adelantada</p>
+                                    <p className="text-2xl font-black text-amber-900 tabular-nums">{datos.totalAfectados}</p>
+                                </div>
+                                {/* Separado a propósito: un día de más solo mueve cuentas cuando
+                                    además cambia el mes acreditado. El resto es cosmético. */}
+                                <div className={`rounded-xl border px-4 py-3 ${datos.totalCambianMes > 0 ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-gray-50'}`}>
+                                    <p className={`text-[10px] font-black uppercase tracking-widest ${datos.totalCambianMes > 0 ? 'text-red-700' : 'text-gray-500'}`}>
+                                        De esos, cambian de mes
+                                    </p>
+                                    <p className={`text-2xl font-black tabular-nums ${datos.totalCambianMes > 0 ? 'text-red-900' : 'text-gray-700'}`}>
+                                        {datos.totalCambianMes}
+                                    </p>
+                                    <p className="text-[10px] text-gray-500 mt-0.5">Son los que pueden mover cuentas de un período a otro</p>
+                                </div>
+                            </div>
+
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-xs">
+                                    <thead>
+                                        <tr className="text-left text-gray-500 border-b border-gray-200">
+                                            <th className="py-2 pr-3 font-black uppercase tracking-wider text-[10px]">Dónde</th>
+                                            <th className="py-2 pr-3 font-black uppercase tracking-wider text-[10px]">Campo</th>
+                                            <th className="py-2 pr-3 font-black uppercase tracking-wider text-[10px] text-right">Afectados</th>
+                                            <th className="py-2 pr-3 font-black uppercase tracking-wider text-[10px] text-right">De un total de</th>
+                                            <th className="py-2 font-black uppercase tracking-wider text-[10px] text-right">Cambian de mes</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {datos.detalle.map(d => (
+                                            <tr key={`${d.tabla}.${d.columna}`} className={d.afectados ? '' : 'text-gray-400'}>
+                                                <td className="py-2 pr-3 font-semibold text-gray-700">{d.etiqueta}</td>
+                                                <td className="py-2 pr-3 font-mono text-[11px]">{d.columna}</td>
+                                                <td className="py-2 pr-3 text-right font-black tabular-nums">{d.afectados}</td>
+                                                <td className="py-2 pr-3 text-right tabular-nums">{d.total}</td>
+                                                <td className="py-2 text-right font-bold tabular-nums">{d.cambianDeMes}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <p className="text-[11px] text-gray-500 mt-3 leading-relaxed">
+                                Cada uno se corrige restándole un día. La corrección no se hace desde aquí a propósito:
+                                son movimientos ya contabilizados y conviene que el comité decida.
+                            </p>
+                        </>
+                    )}
+                </div>
+            )}
         </div>
     );
 };
