@@ -123,8 +123,10 @@ export const PAGINAS_INFO = {
         ],
     },
     '/dashboard/loan-capacity-beta': {
-        icono: Scale,
-        titulo: 'Capacidad de Crédito',
+        icono: Calculator,
+        // El menú lo llama "Simulador de Préstamo"; el encabezado decía
+        // "Capacidad de Crédito" y no coincidía con el enlace que traía al socio.
+        titulo: 'Simulador de Préstamo',
         descripcion: 'Cuánto crédito puedes pedir hoy según tu ahorro y tu historial de pago.',
         encontraras: [
             'Tu puntaje de crédito y su evolución',
@@ -247,10 +249,17 @@ export const PAGINAS_INFO = {
         ],
     },
     '/admin/savings/summary': {
-        icono: BarChart3,
-        titulo: 'Resumen de Ahorros',
-        descripcion: 'La lectura agregada del ahorro del fondo por período.',
-        encontraras: ['Totales por mes y por año', 'La tendencia del ahorro en el tiempo'],
+        icono: Wallet,
+        // El menú lo llama "Resumen Total Socio" y la página es el estado de
+        // cuenta completo de UN socio, no el agregado del fondo: el encabezado
+        // anterior describía otra pantalla.
+        titulo: 'Resumen Total Socio',
+        descripcion: 'El estado de cuenta completo de un socio: su ahorro, sus aportes y, con la vista total, sus préstamos.',
+        encontraras: [
+            'El detalle de ahorros y aportes del socio',
+            'Su tendencia mensual y el ranking del fondo',
+            'La versión imprimible del estado de cuenta',
+        ],
     },
     '/admin/savings/ranking': {
         icono: Trophy,

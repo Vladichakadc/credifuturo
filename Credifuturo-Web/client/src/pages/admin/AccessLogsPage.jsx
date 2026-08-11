@@ -191,10 +191,6 @@ const AccessLogsPage = () => {
         <div className="space-y-6">
             <div className="flex items-center justify-between flex-wrap gap-2">
                 <div>
-                    <h1 className="text-2xl font-bold text-brand-primary flex items-center gap-2">
-                        <History className="h-6 w-6" />
-                        Logs del Sistema
-                    </h1>
                     <p className="text-gray-500 text-sm mt-1">
                         Auditoría de ingresos al portal y eventos de seguridad (intentos de vulnerar el sistema).
                         No incluye contraseñas: el logger ya las redacta antes de escribir al archivo.
