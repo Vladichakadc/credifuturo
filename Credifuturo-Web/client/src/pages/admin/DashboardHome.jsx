@@ -17,6 +17,7 @@ import logo from '../../assets/logo.jpg';
 import YearMultiSelect from '../../components/admin/YearMultiSelect';
 import FinancialChart from '../../components/admin/FinancialChart';
 import RiskReturnIndicators from '../../components/admin/RiskReturnIndicators';
+import { useVisibilidad } from '../../context/VisibilidadContext';
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
 const StatCard = ({ title, value, description, icon: Icon, color, onClick, customBg, isDark = false, textColor }) => {
@@ -396,6 +397,7 @@ const PenaltyModal = ({ details, onClose }) => {
 
 // ─── Dashboard Home ───────────────────────────────────────────────────────────
 const DashboardHome = () => {
+    const { esVisible } = useVisibilidad();
     const { toast, navigate } = useUi();
     const user = (() => {
         try { return JSON.parse(localStorage.getItem('user') || '{}'); }
@@ -1088,7 +1090,17 @@ const DashboardHome = () => {
                 <span className="text-[11px] font-black uppercase tracking-widest text-gray-400">Estado general del fondo</span>
                 <div className="flex-1 h-px bg-gray-200" />
             </div>
-            <div className="w-full">
+            {/* Este bloque es EXACTAMENTE el mismo componente que pinta la página
+                "Inteligencia Financiera" — alerta operativa, banda de KPIs,
+                comparador interanual, "Resultados del Año" y diagnóstico. Estaba
+                duplicado en las dos pantallas.
+                Se oculta AQUÍ y no allá: aquel menú existe solo para este análisis
+                (quitarlo lo dejaría vacío), mientras que esta página ya mezcla las
+                tarjetas operativas por área con las acciones de administración, y
+                sin el bloque gana coherencia y carga menos. Reversible desde
+                "Cambios" (fondo.analisisFinanciero). */}
+            {esVisible('fondo.analisisFinanciero') && (
+            <div id="fondo.analisisFinanciero" className="w-full">
                 <Card className="border-none shadow-md">
                     <CardHeader className="bg-gray-50 border-b border-gray-100 pb-3 rounded-t-xl">
                         <CardTitle className="text-brand-primary flex items-center gap-2 font-black text-lg">
@@ -1111,6 +1123,7 @@ const DashboardHome = () => {
                     </CardContent>
                 </Card>
             </div>
+            )}
 
             {/* ── Segunda macro-zona: indicadores rápidos por área. El panel de
                 análisis de arriba responde "¿cómo va el fondo en general?"; esta

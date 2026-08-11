@@ -81,6 +81,7 @@ import StatusMultiSelect from '../../components/admin/StatusMultiSelect';
 import PillSingleSelect from '../../components/admin/PillSingleSelect';
 import { notifyUpdate } from '../../utils/sync';
 import { COLOMBIAN_BANKS_WITH_OTHER } from '../../utils/banks';
+import { hoyISO } from '../../utils/fechas';
 
 // ── Input numérico con formato (migrado de PaymentsPage.jsx) — muestra el valor
 // formateado (miles/porcentaje) cuando no tiene foco, y el número crudo mientras se edita.
@@ -378,7 +379,7 @@ const PaymentsListPage = () => {
         cuotasPrestamo: '',
         interesMensual: '',
         valorInteresesAmortizados: '',
-        fechaPagoMax: new Date().toISOString().split('T')[0],
+        fechaPagoMax: hoyISO(),
         mesPago: MONTH_LABELS_ES[new Date().getMonth()],
         valorCuotaVariable: '',
         estado: 'Pendiente',
@@ -527,7 +528,7 @@ const PaymentsListPage = () => {
             externalId: '', clientId: '', nombre: '', apellido: '',
             mesDesembolso: '', saldoInicial: '', cuotasPrestamo: '',
             interesMensual: '', valorInteresesAmortizados: '',
-            fechaPagoMax: new Date().toISOString().split('T')[0],
+            fechaPagoMax: hoyISO(),
             mesPago: MONTH_LABELS_ES[new Date().getMonth()],
             valorCuotaVariable: '', estado: 'Pendiente',
             valorCuotaPago: '', saldoFinal: '',
@@ -548,7 +549,7 @@ const PaymentsListPage = () => {
         if (payment) {
             // Fecha de Pago Max: siempre muestra la fecha actual como punto de partida
             // para que el admin registre el pago en la fecha real de hoy.
-            const today = new Date().toISOString().split('T')[0];
+            const today = hoyISO();
             const loanRef = disbursedLoans.find(l => (l.idVm || l.orderId) === payment.idVm);
             // Nombre/apellido vía clientsById (ver comentario arriba) — payment.Client no
             // existe en las filas de /payments/list.

@@ -6,12 +6,13 @@ import { Button } from '../ui/Button';
 import { Input, Label, FormField } from '../ui/Input';
 import { COLOMBIAN_BANKS_WITH_OTHER } from '../../utils/banks';
 import { MONTH_NAMES, calcularAhorro, autoIncrementId } from '../../utils/savingsCalculations';
+import { hoyISO } from '../../utils/fechas';
 
 const emptyForm = () => ({
     id: '',
     clientId: '',
     amount: '',
-    date: new Date().toISOString().split('T')[0],
+    date: hoyISO(),
     type: 'Mensual',
     banco: '',
     numeroTransaccion: '',
@@ -56,7 +57,7 @@ const SavingFormModal = ({ isOpen, onClose, isEditing, initialSaving, clients, s
     useEffect(() => {
         if (!isOpen) return;
         if (isEditing && initialSaving) {
-            setForm({ ...initialSaving, date: new Date().toISOString().split('T')[0] });
+            setForm({ ...initialSaving, date: hoyISO() });
         } else {
             setForm({ ...emptyForm(), externalId: autoIncrementId(savings, { prefix: 'AM', start: 339 }) });
         }

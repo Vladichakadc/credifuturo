@@ -153,6 +153,15 @@ export const SECCIONES = [
         visiblePorDefecto: false,
         ruta: '/dashboard/inteligencia-financiera',
     },
+    {
+        id: 'fondo.analisisFinanciero',
+        titulo: 'Panel de análisis financiero en "Nuestro Fondo"',
+        ubicacion: 'Nuestro Fondo · Panel Principal',
+        detalle: 'Alerta operativa, banda de indicadores, comparador interanual, "Resultados del Año" y diagnóstico financiero — el bloque completo.',
+        motivo: 'Era exactamente el mismo bloque que pinta el menú "Inteligencia Financiera": las mismas cifras en dos pantallas, con el riesgo de que una quede desactualizada frente a la otra. Se ocultó aquí y no allá porque aquel menú existe solo para este análisis, mientras que esta página ya mezcla las tarjetas operativas por área con las acciones de administración. El contenido sigue completo a un clic, en Inteligencia Financiera.',
+        visiblePorDefecto: false,
+        ruta: '/dashboard/fondo',
+    },
 ];
 
 /** Mapa id → definición, para consultas puntuales. */

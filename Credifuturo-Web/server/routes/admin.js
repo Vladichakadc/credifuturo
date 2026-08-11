@@ -5,6 +5,7 @@ const { Client, Saving, Soporte, Loan, DisbursedLoan, LoanPayment } = require('.
 const bcrypt = require('bcryptjs');
 const { verifyToken, requireRole, requireFreshPassword } = require('../middleware/authMiddleware');
 const { validatePassword, generateTempPassword } = require('../services/passwordPolicy');
+const { hoyISOFondo } = require('../services/fechaFondo');
 const { logSecurityEvent, getClientIp, LOG_FILE } = require('../services/securityLogger');
 const { getLastActivity } = require('../services/sessionActivity');
 const { verifyFileMagicBytes, sanitizeFilename } = require('../services/fileValidator');
@@ -609,7 +610,9 @@ router.delete('/clients/:id', async (req, res) => {
             return res.status(400).json({ error: 'El socio ya está desactivado.' });
         }
         const before = { estatus: client.estatus, fechaBaja: client.fechaBaja };
-        await client.update({ estatus: 'Desactivado', fechaBaja: new Date().toISOString().slice(0, 10) });
+        // Fecha de NEGOCIO: en Colombia, no en el UTC del contenedor. Con
+        // toISOString() una baja registrada de noche quedaba fechada mañana.
+        await client.update({ estatus: 'Desactivado', fechaBaja: hoyISOFondo() });
         logSecurityEvent('CLIENT_DEACTIVATED', {
             actorId: req.user?.id, clientId: client.id, cedula: client.cedula,
             before, after: { estatus: 'Desactivado', fechaBaja: client.fechaBaja }, ip: getClientIp(req)
@@ -3814,7 +3817,10 @@ router.get('/dashboard-stats', async (req, res) => {
         });
 
         // ── 9. VENCIMIENTOS PRÓXIMOS 30 DÍAS ────────────────────────────────
-        const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        // `today0` se construye a partir del día de Colombia, no del de UTC: si no,
+        // de noche la ventana arrancaba mañana y se perdían los vencimientos de hoy.
+        const [hy, hm, hd] = hoyISOFondo().split('-').map(Number);
+        const today0 = new Date(hy, hm - 1, hd);
         const in30 = new Date(today0.getTime() + 30 * 24 * 60 * 60 * 1000);
         const proximasRaw = await LoanPayment.findAll({
             where: {
