@@ -297,11 +297,10 @@ const CapacidadBetaPage = () => {
         <div className="space-y-6 pb-10">
             {/* Encabezado */}
             <div>
-                <h1 className="text-2xl font-bold text-brand-primary flex items-center gap-2">
-                    <Scale className="h-6 w-6 text-emerald-600" />
-                    Simulador de Préstamo
-                    <span className="text-[10px] font-black uppercase tracking-widest bg-lime-100 text-lime-700 px-2 py-0.5 rounded-full">Beta</span>
-                </h1>
+                {/* Sin título propio: el encabezado del layout ya dice "Simulador
+                    de Préstamo". Se conserva el distintivo "Beta" —que avisa de
+                    que la pantalla está en evaluación— y la fecha de corte. */}
+                <span className="text-[10px] font-black uppercase tracking-widest bg-lime-100 text-lime-700 px-2 py-0.5 rounded-full">Beta</span>
                 <p className="text-gray-600 text-sm mt-1">
                     Simula tu próximo crédito y descubre cómo crecer tu cupo · regla 3× del fondo · datos al {fmtFecha(hoy)}
                 </p>

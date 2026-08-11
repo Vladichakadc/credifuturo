@@ -456,15 +456,10 @@ const DetalleCuentaPage = () => {
 
             {/* Encabezado + filtro de año */}
             <div className="flex flex-wrap items-center gap-3 print:hidden">
-                <div>
-                    <h1 className="text-2xl font-bold text-brand-primary flex items-center gap-2">
-                        <PiggyBank className="h-6 w-6 text-emerald-600" />
-                        Mis Ahorros
-                    </h1>
-                    <p className="text-gray-600 text-sm mt-1">
-                        Detalle completo de tu cuenta · datos al {fmtFecha(hoy)}
-                    </p>
-                </div>
+                {/* Sin título propio: lo da el encabezado del layout. Queda solo
+                    la fecha de corte, que es lo único que el encabezado no puede
+                    saber y que sí cambia lo que el socio está leyendo. */}
+                <p className="text-gray-500 text-sm">Datos al {fmtFecha(hoy)}</p>
                 <div className="ml-auto flex items-center gap-2 flex-wrap">
                     <div className="flex items-center gap-1.5 flex-wrap">
                         {['Todos', ...availableYears].map(y => (

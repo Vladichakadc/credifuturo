@@ -999,11 +999,10 @@ const DashboardHome = () => {
             {/* Header with Save Button and Filter */}
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-brand-primary">
-                        Panel Principal {!isAdmin && user.name ? `- ${user.name} ${user.surname1 || ''} ${user.surname2 || ''}`.trim() : ''}
-                    </h1>
-                    <div className="flex items-center gap-2 mt-1">
-                        <p className="text-gray-500">Resumen general de la actividad financiera.</p>
+                    {/* Sin título ni descripción propios: los da el encabezado del
+                        layout, distinto según se entre por "Panel de Administración"
+                        o por "Nuestro Fondo". Queda el indicador de última carga. */}
+                    <div className="flex items-center gap-2">
                         {/* Live indicator */}
                         <span className="inline-flex items-center gap-1.5">
                             <span className={`h-2 w-2 rounded-full ${loading ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400 animate-pulse'}`} />
