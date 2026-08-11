@@ -3264,6 +3264,100 @@ router.delete('/payments/:id/soporte', async (req, res) => {
 //       · Si el socio NO tiene ahorro registrado en ese mes/año
 //         se calcula: días desde el día 11 de ese mes hasta HOY * $1.000
 //         (solo si hoy ya pasó el día 11 de ese mes)
+// ── Diagnóstico: registros fechados un día por delante (bug de UTC) ──────────
+//
+// Hasta el arreglo de fechas, los formularios proponían "hoy" con
+// toISOString(), que devuelve la fecha en UTC. Colombia va cinco horas por
+// detrás, así que entre las 7:00 p.m. y la medianoche hora local el UTC ya era
+// el día siguiente y lo registrado en esa franja quedó fechado mañana.
+//
+// Un registro se marca como afectado cuando se cumplen DOS cosas:
+//   1. createdAt (que Sequelize guarda en UTC) cae entre las 00:00 y las 05:00
+//      UTC — o sea, entre las 7 p.m. y la medianoche en Colombia del día antes.
+//   2. Y su fecha de negocio coincide EXACTAMENTE con la fecha UTC de createdAt.
+//
+// La segunda condición es la que evita falsos positivos: si el admin escribió
+// la fecha a mano, no coincide con el valor por defecto y no se cuenta. Solo
+// salen los que aceptaron el default equivocado.
+//
+// Es de SOLO LECTURA. Corregir fechas de movimientos ya contabilizados es una
+// decisión del comité, no algo que deba pasar de rebote por abrir un informe.
+router.get('/diagnostico/fechas-utc', async (req, res) => {
+    try {
+        const sequelize = require('../config/database');
+
+        // Solo columnas que salían de un <input type="date"> del formulario.
+        // Se excluyen las calculadas por el sistema (vencimientos derivados del
+        // cronograma), que nunca tomaron ese valor por defecto.
+        const OBJETIVOS = [
+            { tabla: 'Savings', etiqueta: 'Ahorros', columnas: ['date'] },
+            { tabla: 'Loans', etiqueta: 'Solicitudes de préstamo', columnas: ['date'] },
+            { tabla: 'DisbursedLoans', etiqueta: 'Préstamos desembolsados', columnas: ['fecha_prestamo', 'fecha_desembolso'] },
+            { tabla: 'Clients', etiqueta: 'Socios', columnas: ['fechaIngreso', 'fechaBaja'] },
+        ];
+
+        const tablas = (await sequelize.query(
+            "SELECT name FROM sqlite_master WHERE type='table'", { type: sequelize.QueryTypes.SELECT }
+        )).map(r => r.name);
+
+        const resultado = [];
+        let totalAfectados = 0;
+        let totalCambianMes = 0;
+
+        for (const obj of OBJETIVOS) {
+            if (!tablas.includes(obj.tabla)) continue;
+            const cols = (await sequelize.query(`PRAGMA table_info("${obj.tabla}")`, { type: sequelize.QueryTypes.SELECT })).map(c => c.name);
+            if (!cols.includes('createdAt')) continue;
+
+            for (const col of obj.columnas) {
+                if (!cols.includes(col)) continue;
+
+                const filas = await sequelize.query(
+                    `SELECT id,
+                            "${col}" AS fechaGuardada,
+                            date(createdAt, '-1 day') AS fechaCorrecta,
+                            createdAt AS creadoUtc
+                       FROM "${obj.tabla}"
+                      WHERE createdAt IS NOT NULL AND "${col}" IS NOT NULL
+                        AND time(createdAt) >= '00:00:00' AND time(createdAt) < '05:00:00'
+                        AND date("${col}") = date(createdAt)
+                      ORDER BY createdAt DESC`,
+                    { type: sequelize.QueryTypes.SELECT }
+                );
+
+                const [{ n: total }] = await sequelize.query(
+                    `SELECT COUNT(*) AS n FROM "${obj.tabla}" WHERE "${col}" IS NOT NULL`,
+                    { type: sequelize.QueryTypes.SELECT }
+                );
+
+                // Los que además cambian de MES son los que pueden mover cuentas
+                // de un período a otro: un ahorro del 31 contabilizado en el mes
+                // siguiente deja de contar para el mes que le tocaba.
+                const cambianMes = filas.filter(f =>
+                    String(f.fechaGuardada).slice(0, 7) !== String(f.fechaCorrecta).slice(0, 7));
+
+                totalAfectados += filas.length;
+                totalCambianMes += cambianMes.length;
+
+                resultado.push({
+                    tabla: obj.tabla,
+                    etiqueta: obj.etiqueta,
+                    columna: col,
+                    total,
+                    afectados: filas.length,
+                    cambianDeMes: cambianMes.length,
+                    ejemplos: filas.slice(0, 20),
+                });
+            }
+        }
+
+        res.json({ totalAfectados, totalCambianMes, detalle: resultado, soloLectura: true });
+    } catch (err) {
+        console.error('Error en diagnóstico de fechas UTC:', err);
+        res.status(500).json({ error: 'No se pudo ejecutar el diagnóstico.' });
+    }
+});
+
 router.get('/dashboard-stats', async (req, res) => {
     try {
         const PENALIZACION_DIARIA = 1000;
