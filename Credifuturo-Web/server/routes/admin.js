@@ -481,6 +481,23 @@ function pickFields(body, allowed) {
     return out;
 }
 
+// Ahorros que NO son aporte inicial — a prueba de nulos.
+//
+// El filtro natural, `type: { [Op.ne]: 'Aporte Inicial' }`, tiene una trampa:
+// en SQL `NULL != 'Aporte Inicial'` no se evalúa como verdadero sino como NULL,
+// así que TODA fila con `type` nulo queda fuera sin que nadie lo note. Y esas
+// filas existen: las devoluciones anuales de intereses se guardaron sin `type`.
+//
+// El efecto era que un socio no veía sus propias devoluciones en el extracto
+// (el admin sí, porque su pantalla pide `type=Todos`, que quita el filtro
+// entero), su saldo no cuadraba con la suma de sus movimientos —el saldo se
+// calcula sin filtrar por tipo— y un ahorro con tipo nulo no contaba como
+// cubierto al evaluar la mora.
+const NO_ES_APORTE_INICIAL = () => {
+    const { Op } = require('sequelize');
+    return { [Op.or]: [{ [Op.ne]: 'Aporte Inicial' }, { [Op.is]: null }] };
+};
+
 const ALLOWED_CLIENT_FIELDS = [
     'cedula', 'name', 'surname1', 'surname2', 'email',
     'genero', 'pais', 'ciudad', 'tipoCliente', 'socioFundador',
@@ -1216,7 +1233,7 @@ router.get('/savings/list', async (req, res) => {
             whereClause.type = type.trim();
         } else {
             // Default filter for "Lista de Ahorro": EXCLUDE "Aporte Inicial"
-            whereClause.type = { [Op.ne]: 'Aporte Inicial' };
+            whereClause.type = NO_ES_APORTE_INICIAL();
         }
 
         // Text search on saving fields
@@ -1328,7 +1345,7 @@ router.get('/savings/ranking', async (req, res) => {
 
         const allSavings = await Saving.findAll({
             where: {
-                type: { [Sequelize.Op.ne]: 'Aporte Inicial' },
+                type: NO_ES_APORTE_INICIAL(),
                 clientId: { [Sequelize.Op.in]: clients.map(c => c.id) }
             },
             attributes: ['clientId', 'year', 'monthInt', 'mesAbonado', 'anioAbonado', 'valorAhorrado', 'amount', 'status'],
@@ -1563,7 +1580,7 @@ router.post('/savings', async (req, res) => {
                     clientId: clientIdForCheck,
                     year: anio,
                     month: { [Op.like]: mesTextoBody },
-                    type: { [Op.ne]: 'Aporte Inicial' }
+                    type: NO_ES_APORTE_INICIAL()
                 }
             });
             isPagoAdicionalMesActual = !!existePagoMesActual;
@@ -1772,7 +1789,7 @@ router.put('/savings/:id', async (req, res) => {
                     clientId: clientIdForCheck,
                     year: anio,
                     month: { [Op.like]: mesTextoForCheck },
-                    type: { [Op.ne]: 'Aporte Inicial' },
+                    type: NO_ES_APORTE_INICIAL(),
                     id: { [Op.ne]: saving.id } // Excluir el registro que se está editando
                 }
             });
@@ -3602,7 +3619,7 @@ router.get('/dashboard-stats', async (req, res) => {
             where: {
                 clientId: { [Op.in]: activeClientIds },
                 anioAbonado: currentYear,
-                type: { [Op.ne]: 'Aporte Inicial' } // Don't count "Aporte Inicial" as covering for "Mensual" mora
+                type: NO_ES_APORTE_INICIAL() // Don't count "Aporte Inicial" as covering for "Mensual" mora
             },
             attributes: ['clientId', 'mesAbonado', 'anioAbonado', 'type', 'date', 'valorAPenalizar']
         });
@@ -3610,7 +3627,7 @@ router.get('/dashboard-stats', async (req, res) => {
         // ── 3. TOTAL SAVINGS: suma de amount (bruto, incluye penalizaciones cobradas)
         const totalSavingsResult = await Saving.sum('amount', {
             where: {
-                type: { [Op.ne]: 'Aporte Inicial' }
+                type: NO_ES_APORTE_INICIAL()
             },
             include: [{
                 model: Client,
@@ -4750,7 +4767,7 @@ router.get('/my/utilidades-estimadas', verifyToken, requireFreshPassword, requir
         const activos = await Client.findAll({ where: { estatus: 'Activo' }, attributes: ['id'] });
         const rows = await Saving.findAll({
             where: {
-                type: { [Op.ne]: 'Aporte Inicial' },
+                type: NO_ES_APORTE_INICIAL(),
                 clientId: { [Op.in]: activos.map(c => c.id) }
             },
             attributes: ['clientId', 'amount', 'valorAhorrado', 'anioAbonado', 'year']
@@ -4995,7 +5012,7 @@ router.get('/my/savings', verifyToken, requireFreshPassword, requireRole('user',
     try {
         const { Op } = require('sequelize');
         const savings = await Saving.findAll({
-            where: { clientId: req.user.id, type: { [Op.ne]: 'Aporte Inicial' } },
+            where: { clientId: req.user.id, type: NO_ES_APORTE_INICIAL() },
             include: [{ model: Client, attributes: ['customerId', 'name', 'surname1', 'surname2', 'cedula'] }],
             order: [['date', 'DESC']],
             limit: 1000 // tope defensivo: acota el costo de la consulta ante un dato anómalo, sin afectar el uso real
