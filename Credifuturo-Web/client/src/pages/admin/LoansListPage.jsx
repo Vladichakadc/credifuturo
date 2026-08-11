@@ -1092,7 +1092,6 @@ const LoansListPage = () => {
                         <CreditCard className="h-5 w-5 text-brand-primary" />
                     </div>
                     <ListHeader
-                        title="Lista de Préstamos"
                         source="T1-orders_table_prestamos_desembolsados"
                         totalCount={loans.length}
                         filteredCount={filteredLoans.length}

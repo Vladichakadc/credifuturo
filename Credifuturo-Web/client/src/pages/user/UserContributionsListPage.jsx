@@ -180,11 +180,6 @@ const UserContributionsListPage = () => {
         <div className="space-y-6">
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
                 <div>
-                    <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                        <Wallet className="h-6 w-6 text-brand-primary" />
-                        Mis Aportes Iniciales
-                     {!user?.name ? '' : `- ${user.name} ${user.surname1 || ''} ${user.surname2 || ''}`.trim()}</h2>
-                    <p className="text-gray-500 text-sm">Historial de aportes de capital</p>
                 </div>
                 <div className="flex items-center gap-3 w-full lg:w-auto">
                     <div className="relative flex-1 lg:w-64">

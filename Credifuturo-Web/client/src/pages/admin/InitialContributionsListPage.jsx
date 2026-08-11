@@ -309,29 +309,20 @@ const InitialContributionsListPage = () => {
         <div className="space-y-6">
 
             {/* ══════════════════════════════════════════════════════
-                HERO BANNER
+                BARRA DE CIFRAS Y ACCIONES
             ══════════════════════════════════════════════════════ */}
+            {/* Era un segundo hero en degradado, apilado justo debajo del
+                encabezado de presentación del layout: dos bandas verdes con el
+                mismo título. Pasa a barra clara con las cifras y las acciones,
+                que es lo único que aportaba de más. */}
             <motion.div variants={fadeUp(0)} initial="hidden" animate="visible"
-                className="relative overflow-hidden rounded-2xl p-7 text-white"
-                style={{ background: `linear-gradient(135deg, ${BRAND.dark} 0%, ${BRAND.primary} 60%, #1a7a3f 100%)` }}>
-
-                {/* Decorative blobs */}
-                <div className="absolute top-0 right-0 w-64 h-64 rounded-full opacity-10 blur-3xl"
-                    style={{ background: BRAND.light, transform: 'translate(40%, -40%)' }} />
-                <div className="absolute bottom-0 left-0 w-48 h-48 rounded-full opacity-10 blur-2xl"
-                    style={{ background: BRAND.gold, transform: 'translate(-30%, 40%)' }} />
+                className="relative overflow-hidden rounded-2xl bg-white border border-gray-200 shadow-sm p-4 sm:p-5 text-gray-800">
 
                 <div className="relative flex items-start justify-between">
                     <div>
-                        <div className="flex items-center gap-2 mb-2">
-                            <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-green-300/80">
-                                Credifuturo · Finanzas
-                            </span>
-                        </div>
-                        <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">Aportes Iniciales</h1>
-                        <p className="text-white/80 text-sm mt-1">
-                            {stats.count} registros activos ·{' '}
-                            <span className="text-green-300 font-semibold">{fmtCOP(stats.totalAmount)} en total</span>
+                        <p className="text-sm text-gray-600">
+                            <b className="text-gray-900">{stats.count}</b> registros activos ·{' '}
+                            <span className="text-brand-primary font-bold">{fmtCOP(stats.totalAmount)} en total</span>
                         </p>
                     </div>
 
@@ -339,12 +330,12 @@ const InitialContributionsListPage = () => {
                     <div className="flex items-center gap-2 flex-shrink-0">
                         <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                             onClick={handleExport}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-white/10 hover:bg-white/20 border border-white/20 backdrop-blur-sm transition-colors">
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-brand-primary hover:bg-brand-dark text-white transition-colors min-h-[40px]">
                             <Download className="h-4 w-4" /> Exportar
                         </motion.button>
                         <motion.button whileHover={{ rotate: 180 }} transition={{ duration: 0.4 }}
                             onClick={fetchData}
-                            className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 backdrop-blur-sm transition-colors">
+                            className="p-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors">
                             <RefreshCw className="h-4 w-4" />
                         </motion.button>
                     </div>
@@ -358,9 +349,9 @@ const InitialContributionsListPage = () => {
                         { label: 'Años con actividad', val: years.length },
                     ].map((s, i) => (
                         <div key={i} className="flex items-center gap-2">
-                            <span className="text-lg font-black tabular-nums">{s.val}</span>
-                            <span className="text-white/50 text-xs">{s.label}</span>
-                            {i < 2 && <span className="text-white/20 text-xs">·</span>}
+                            <span className="text-lg font-black tabular-nums text-gray-900">{s.val}</span>
+                            <span className="text-gray-500 text-xs">{s.label}</span>
+                            {i < 2 && <span className="text-gray-300 text-xs">·</span>}
                         </div>
                     ))}
                 </div>

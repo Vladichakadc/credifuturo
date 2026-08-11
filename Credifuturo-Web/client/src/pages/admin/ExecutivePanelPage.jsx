@@ -535,7 +535,6 @@ const ExecutivePanelPage = () => {
             <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div>
                     <div className="flex items-center gap-2">
-                        <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">Panel Ejecutivo</h1>
                         {isAdmin && (
                             <span className="text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Beta</span>
                         )}
