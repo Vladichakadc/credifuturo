@@ -224,9 +224,15 @@ const DetalleCuentaPage = () => {
         });
         aportes.forEach(a => {
             const v = Number(a.amount || 0);
+            // Un aporte inicial casi siempre es positivo, pero si algún día existe
+            // una corrección o reversa (mismo defecto que tenían los ahorros: un
+            // importe negativo sin más), debe tratarse como salida y no como si
+            // fuera un aporte más — la misma prueba que en el bucle de ahorros.
+            const esSalida = normaliza(a.status).includes('devolucion') || v < 0;
+            const clasif = esSalida ? clasificarSalida(a.status) : null;
             rows.push({
-                id: `a-${a.id}`, fecha: parseFecha(a.date), tipo: 'aporte',
-                concepto: 'Aporte inicial', bruto: v, recargo: 0, dias: 0, neto: v,
+                id: `a-${a.id}`, fecha: parseFecha(a.date), tipo: esSalida ? clasif.tipo : 'aporte',
+                concepto: esSalida ? clasif.concepto : 'Aporte inicial', bruto: v, recargo: 0, dias: 0, neto: v,
                 externalId: a.externalId || '', estado: a.status || '',
                 banco: a.banco || '', observaciones: a.observaciones || '', periodo: '',
             });
