@@ -452,7 +452,11 @@ const DetalleCuentaPage = () => {
         // habrían mostrado cifras distintas.
         distribuciones: distribucionesPorAnio.total,
         devoluciones: devolucionesPorAnio.total,
-        descuentos: descuentosResumen.totalAnual,
+        // El total completo, no solo el descuento anual: es la misma cifra que
+        // encabeza la pestaña de Descuentos. Mostrar aquí una parte y allá el
+        // total dejaría al socio con dos números distintos para lo mismo en la
+        // misma pantalla.
+        descuentos: descuentosResumen.total,
     }), [movimientos, distribucionesPorAnio, devolucionesPorAnio, descuentosResumen]);
 
     // Composición para el gráfico: sigue el filtro de año (capital neto incluye devoluciones)
