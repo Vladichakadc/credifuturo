@@ -364,19 +364,28 @@ const DetalleCuentaPage = () => {
     }, [savings, aportes]);
 
     // ── Tendencia mensual por mes ABONADO (comportamiento real de ahorro) ──
-    // Incluye devoluciones (negativos visibles): son eventos financieros reales.
+    //
+    // SOLO los abonos del socio. Los movimientos que mueve el fondo —devolución,
+    // distribución, descuento anual y salidas sin nombre— se excluyen a
+    // propósito: mezclarlos aquí hacía que la gráfica y el chip de constancia
+    // afirmaran algo falso sobre la disciplina del socio. Un mes en el que sí
+    // consignó podía quedar en negativo por una devolución, y `constancia`, que
+    // cuenta los meses con saldo positivo, lo leía como un mes sin ahorrar: a un
+    // socio que abonó los ocho meses el chip le decía "ahorró 7 de 8". Con una
+    // distribución abonada pasaba lo contrario, inflando un mes sin depósito.
+    //
+    // Esos movimientos no se pierden de vista: cada uno tiene su propia pestaña
+    // en el Extracto, y el saldo corrido sí los suma todos.
     const trendInfo = useMemo(() => {
         const src = [];
         savings.forEach(s => {
             if (s.type && s.type !== 'Mensual') return;
             const bruto = Number(s.amount || 0);
             const acreditado = Number(s.valorAhorrado ?? s.amount ?? 0);
-            // Se usa el MISMO clasificador que el extracto. Antes esta serie
-            // decidía por el signo del importe mientras la tabla decidía por el
-            // estado, así que la gráfica y el extracto podían atribuirle valores
-            // distintos al mismo registro.
-            const clasif = clasificarMovimiento(s.status, bruto < 0 || acreditado < 0);
-            const neto = clasif ? (bruto !== 0 ? bruto : acreditado) : acreditado;
+            // Se usa el MISMO clasificador que el extracto, para que las dos
+            // pantallas no puedan discrepar sobre qué es un abono del socio.
+            if (clasificarMovimiento(s.status, bruto < 0 || acreditado < 0)) return;
+            const neto = acreditado;
             const fecha = parseFecha(s.date);
             const mi = parseMes(s.mesAbonado) || Number(s.monthInt) || (fecha ? fecha.getMonth() + 1 : null);
             const yr = String(s.anioAbonado || s.year || (fecha ? fecha.getFullYear() : '') || '');
@@ -893,7 +902,7 @@ const DetalleCuentaPage = () => {
                                     </BarChart>
                                 </ResponsiveContainer>
                             </div>
-                            <p className="text-[10px] text-gray-400 mt-1">Ahorro neto acreditado por año (incluye devoluciones en negativo). Unidad: $ COP.</p>
+                            <p className="text-[10px] text-gray-400 mt-1">Movimiento neto por año: tus abonos más lo que el fondo distribuye, menos devoluciones y descuentos. Unidad: $ COP.</p>
                         </div>
                     )}
                 </div>
