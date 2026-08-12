@@ -136,10 +136,17 @@ const clasificarMovimiento = (status, esNegativo) => {
 
 // Agrupa por año los movimientos de un tipo y devuelve el total de cada año.
 //
-// Se acumula el importe CON SIGNO y solo al final se toma el valor absoluto:
-// así un movimiento reversado resta en vez de sumar, y el resultado se lee en
-// positivo —que es como el socio piensa "cuánto me entregaron"— sin importar
-// con qué signo esté guardado el registro.
+// El importe se acumula CON SIGNO, y la orientación se decide UNA sola vez a
+// partir del agregado, no año por año. Tomar el valor absoluto de cada año por
+// separado parecía lo natural para leer las cifras en positivo, pero convertía
+// una reversa en una entrega más: 120.000 entregados un año y anulados al
+// siguiente se leían como 240.000 entregados, cuando el socio no recibió nada.
+// Con una orientación única la reversa aparece en negativo y el total se anula,
+// que es lo que de verdad pasó.
+//
+// Orientar por el agregado —en vez de fijar un signo— es lo que permite que la
+// pantalla se lea igual tanto si el fondo guarda estos movimientos en positivo
+// como en negativo, que es algo que el dato no garantiza.
 //
 // Las filas sin fecha utilizable no se descartan: se agrupan aparte. Si se
 // omitieran, el total quedaría por debajo de las filas que la propia pestaña
@@ -153,8 +160,11 @@ const agruparPorAnio = (filas) => {
         acum.veces += 1;
         porAnio.set(anio, acum);
     });
-    const lista = [...porAnio.values()]
-        .map(x => ({ ...x, total: Math.abs(x.total) }))
+    const porAnioLista = [...porAnio.values()];
+    const agregado = porAnioLista.reduce((s, x) => s + x.total, 0);
+    const orientacion = agregado < 0 ? -1 : 1;
+    const lista = porAnioLista
+        .map(x => ({ ...x, total: x.total * orientacion }))
         .sort((x, y) => (y.anio ?? -Infinity) - (x.anio ?? -Infinity));
     return { lista, total: lista.reduce((s, x) => s + x.total, 0) };
 };
@@ -223,6 +233,10 @@ const coincideTipo = (r, filtro) => {
     if (filtro === 'descuento') return r.tipo === 'descuento' || r.recargo > 0;
     return r.tipo === filtro;
 };
+
+// Pestañas que abren con su propio encabezado y explican por sí solas cuando no
+// hay nada que mostrar, así que no necesitan además el aviso genérico de tabla.
+const PESTANAS_CON_RESUMEN = new Set(['distribucion', 'devolucion', 'descuento']);
 
 const PosicionCard = ({ icon: Icon, label, value, sub, to, accent = 'text-brand-primary' }) => {
     const body = (
@@ -890,8 +904,10 @@ const DetalleCuentaPage = () => {
                 <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center gap-3">
                     <div>
                         <h2 className="text-base font-bold text-gray-800">Extracto de movimientos</h2>
+                        {/* No promete "todos": con una pestaña activa la tabla muestra
+                            un subconjunto, y el recuento de al lado ya dice cuántos. */}
                         <p className="text-[11px] text-gray-400">
-                            Todos tus movimientos con el fondo en una sola línea de tiempo, con saldo corrido
+                            Tus movimientos con el fondo en una sola línea de tiempo, con saldo corrido
                             {yearFilter !== 'Todos' ? ` · mostrando ${yearFilter}` : ''} · {visibles.length} registro{visibles.length === 1 ? '' : 's'}
                         </p>
                     </div>
@@ -1000,8 +1016,15 @@ const DetalleCuentaPage = () => {
                     return null;
                 })()}
 
+                {/* El aviso genérico solo aparece cuando la pestaña no explicó ya su
+                    propio vacío. Si no, el socio leía dos mensajes seguidos, y el
+                    segundo hablaba de "este período" aunque no hubiera año elegido. */}
                 {visibles.length === 0 ? (
-                    <div className="p-10 text-center text-sm text-gray-400">Sin movimientos para este período.</div>
+                    PESTANAS_CON_RESUMEN.has(tipoFilter) ? null : (
+                        <div className="p-10 text-center text-sm text-gray-400">
+                            {yearFilter === 'Todos' ? 'Sin movimientos todavía.' : `Sin movimientos en ${yearFilter}.`}
+                        </div>
+                    )
                 ) : (
                     <>
                         {/* Desktop: tabla */}
