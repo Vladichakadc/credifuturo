@@ -19,7 +19,16 @@ const Saving = sequelize.define('Saving', {
     amount: {
         type: DataTypes.DECIMAL(10, 2),
         allowNull: false,
-        validate: { min: 0 }
+        // Sin `min: 0`: un importe negativo es un valor legítimo del dominio.
+        // La tabla no guarda solo abonos — también las devoluciones de ahorros,
+        // los descuentos anuales por mora y las distribuciones de intereses,
+        // que salen del saldo y por eso van en negativo. De hecho ya existen
+        // filas así, cargadas por importación, que esta validación impedía
+        // volver a crear o corregir desde la aplicación.
+        //
+        // La regla que sí importa —que un ABONO del socio no sea negativo— vive
+        // en las rutas POST/PUT /savings, que son las que conocen el estado del
+        // movimiento y pueden distinguir un abono de un movimiento del fondo.
     },
     date: {
         type: DataTypes.DATEONLY,
