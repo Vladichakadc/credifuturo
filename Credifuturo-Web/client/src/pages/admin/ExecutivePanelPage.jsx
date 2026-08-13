@@ -21,6 +21,7 @@ import { useVisibilidad } from '../../context/VisibilidadContext';
 import { JUNTA_CEDULAS_NO_ADMIN } from '../../utils/juntaAccess';
 import GlosarioFondo, { TerminoAyuda } from '../../components/admin/GlosarioFondo';
 import MiPosicionFondo from '../../components/admin/MiPosicionFondo';
+import CentroDeAlertas from '../../components/admin/CentroDeAlertas';
 
 const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
 const fmtCorto = (n) => {
@@ -716,10 +717,6 @@ const ExecutivePanelPage = () => {
                 </div>
             )}
 
-            {/* El Centro de Alertas se trasladó a "Mi Panel" (components/admin/
-                CentroDeAlertas.jsx), que es la primera pantalla que ve el socio
-                al entrar: allí se lee, aquí había que bajar hasta encontrarlo. */}
-
             {/* ── Detalle operativo/completo del fondo (siempre desplegado) ── */}
             {stats && (
                 <div className="space-y-3">
@@ -1336,6 +1333,13 @@ const ExecutivePanelPage = () => {
                     ? ' · Los indicadores siguen el plan de mejora del Panel Principal (jul 2026). Baselines por año calculados dinámicamente — sin cifras fijas en el código.'
                     : ' · Cifras calculadas directamente desde los registros del fondo, sin valores fijos ni estimaciones manuales.'}
             </p>
+
+            {/* Centro de Alertas — al final, no al principio: esta página ya
+                empieza con el veredicto del fondo y el hero ejecutivo, que son
+                su propia forma de alerta. Vivió aquí arriba antes de moverse a
+                "Mi Panel"; ahora vuelve, pero como cierre operativo en vez de
+                como lo primero que se ve. */}
+            <CentroDeAlertas exec={exec} />
 
             {/* ── Modal: Apalancamiento del Fondo — solo se abre desde la banda
                  de 5 indicadores, así que se monta con ella y bajo la misma
