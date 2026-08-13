@@ -498,6 +498,67 @@ const NO_ES_APORTE_INICIAL = () => {
     return { [Op.or]: [{ [Op.ne]: 'Aporte Inicial' }, { [Op.is]: null }] };
 };
 
+// ── Movimientos de concepto vs. abonos del socio ──────────────────────
+//
+// En la tabla de ahorros conviven dos cosas distintas. Un ABONO es plata que
+// el socio consigna, y solo sobre él tiene sentido la penalización por pagar
+// tarde. Un MOVIMIENTO DE CONCEPTO —devolución de ahorros, descuento anual por
+// mora, distribución de intereses— lo mueve el fondo, no el socio: no se
+// "paga tarde" una devolución.
+//
+// El estado se normaliza (minúsculas, sin tildes) porque viene del histórico en
+// Excel y no tiene una redacción única; es el mismo criterio con el que la
+// pantalla del socio clasifica sus movimientos, para que las dos no discrepen.
+const normalizarEstado = (s) => String(s ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+const esMovimientoDeConcepto = (status, monto) => {
+    const t = normalizarEstado(status);
+    if (t.includes('devolucion') || t.includes('distribucion')
+        || t.includes('descuento') || t.includes('penaliz')) return true;
+    // Un importe negativo nunca es un abono, aunque su estado no lo diga.
+    return Number(monto) < 0;
+};
+
+// Importe de dinero recibido por API. Descarta NaN e Infinity, que `parseFloat`
+// sí acepta ("Infinity" es una cadena válida para él) y que en una columna
+// DECIMAL quedarían guardados como un valor sin sentido.
+const importeValido = (valor, porDefecto) => {
+    const n = parseFloat(valor);
+    return Number.isFinite(n) ? n : porDefecto;
+};
+
+// La versión SQL de lo anterior: "esta fila es un abono del socio".
+//
+// Hace falta para detectar si el socio YA pagó un mes —lo que exime de mora al
+// siguiente pago de ese mes—. Sin esta condición, una devolución o un descuento
+// registrados en el mismo mes contarían como si el socio hubiera abonado, y le
+// perdonarían la mora a un pago que sí llegó tarde.
+//
+// Se comparan fragmentos sin la primera letra ('evoluc' en vez de 'devoluc')
+// para que un estado con tilde —"Devolución"— también coincida.
+const ES_ABONO_DEL_SOCIO = () => {
+    const { Op } = require('sequelize');
+    return {
+        amount: { [Op.gt]: 0 },
+        status: {
+            [Op.or]: [
+                { [Op.is]: null },
+                {
+                    [Op.and]: [
+                        { [Op.notLike]: '%evoluc%' },
+                        { [Op.notLike]: '%istribuc%' },
+                        { [Op.notLike]: '%escuent%' },
+                        { [Op.notLike]: '%enaliz%' },
+                    ],
+                },
+            ],
+        },
+    };
+};
+
 const ALLOWED_CLIENT_FIELDS = [
     'cedula', 'name', 'surname1', 'surname2', 'email',
     'genero', 'pais', 'ciudad', 'tipoCliente', 'socioFundador',
@@ -1560,6 +1621,13 @@ router.post('/savings', async (req, res) => {
         const monto = parseFloat(req.body.amount) || 0;
         const PENALIZACION_DIARIA = 1000; // Valor configurable si existiera, fallback 1000
 
+        // Una devolución, un descuento o una distribución no se "pagan tarde":
+        // los mueve el fondo. Sin esta salida temprana se les calculaba una mora
+        // inventada (a una devolución del día 13 se le estampaban 3 días y
+        // $3.000 de recargo) y después el guardián de más abajo rechazaba la
+        // operación, porque un importe negativo nunca supera su penalización.
+        const esConcepto = esMovimientoDeConcepto(req.body.status, monto);
+
         // Regla: A partir del día 11 se cobra. Día 10 NO paga.
         // PAGO ADELANTADO NO PAGA PENALIDAD.
         // PAGO ATRASADO (mes anterior) SIEMPRE PAGA PENALIDAD.
@@ -1580,7 +1648,9 @@ router.post('/savings', async (req, res) => {
                     clientId: clientIdForCheck,
                     year: anio,
                     month: { [Op.like]: mesTextoBody },
-                    type: NO_ES_APORTE_INICIAL()
+                    type: NO_ES_APORTE_INICIAL(),
+                    // Solo un abono cuenta como "ya pagó este mes".
+                    ...ES_ABONO_DEL_SOCIO()
                 }
             });
             isPagoAdicionalMesActual = !!existePagoMesActual;
@@ -1601,7 +1671,12 @@ router.post('/savings', async (req, res) => {
             }
         }
 
-        if (isPagoAdicionalMesActual) {
+        if (esConcepto) {
+            // Movimiento del fondo, no un abono del socio: sin penalización.
+            penalizacion = "NO";
+            diasPenalizacion = 0;
+            valorAPenalizar = 0;
+        } else if (isPagoAdicionalMesActual) {
             // Pago adicional: el socio ya pagó este mes, NO genera penalización
             penalizacion = "NO";
             diasPenalizacion = 0;
@@ -1629,10 +1704,18 @@ router.post('/savings', async (req, res) => {
             valorAPenalizar = diasPenalizacion * PENALIZACION_DIARIA;
         }
 
-        const valorAhorrado = monto - valorAPenalizar;
+        // En un movimiento de concepto el valor acreditado es el propio importe:
+        // no hay recargo que restarle. Se permite enviarlo explícito porque el
+        // histórico no es uniforme — los descuentos anuales se guardaron con
+        // valorAhorrado en cero y las devoluciones con el importe completo.
+        const valorAhorrado = esConcepto
+            ? (req.body.valorAhorrado !== undefined ? importeValido(req.body.valorAhorrado, monto) : monto)
+            : monto - valorAPenalizar;
 
-        // Validar monto suficiente
-        if (valorAhorrado < 0) {
+        // Validar monto suficiente. Solo aplica a un abono del socio: un
+        // movimiento negativo nunca "cubre" su penalización, y exigírselo
+        // bloqueaba por completo registrarlo o editarlo.
+        if (!esConcepto && valorAhorrado < 0) {
             return res.status(400).json({
                 error: `El Valor Mensual ($${monto}) no cubre la penalización ($${valorAPenalizar}).`,
                 detalles: { diasPenalizacion, valoraPenalizar: valorAPenalizar }
@@ -1773,6 +1856,14 @@ router.put('/savings/:id', async (req, res) => {
         let valorAPenalizar = 0;
         const PENALIZACION_DIARIA = 1000;
 
+        // Igual que en POST: una devolución, un descuento o una distribución no
+        // llevan mora. Se mira el estado que quedará tras la edición, no solo el
+        // enviado, para que cambiar un campo suelto no reclasifique la fila.
+        const esConcepto = esMovimientoDeConcepto(
+            req.body.status !== undefined ? req.body.status : saving.status,
+            monto
+        );
+
         // Lógica de penalización tomada de la ruta POST /savings para asegurar consistencia
         const isPagoAdelantado = (anioAbonadoReq > anio) || (anioAbonadoReq === anio && mesAbonadoNum > mes);
         const isPagoAtrasado = (anioAbonadoReq < anio) || (anioAbonadoReq === anio && mesAbonadoNum < mes);
@@ -1790,6 +1881,8 @@ router.put('/savings/:id', async (req, res) => {
                     year: anio,
                     month: { [Op.like]: mesTextoForCheck },
                     type: NO_ES_APORTE_INICIAL(),
+                    // Solo un abono cuenta como "ya pagó este mes".
+                    ...ES_ABONO_DEL_SOCIO(),
                     id: { [Op.ne]: saving.id } // Excluir el registro que se está editando
                 }
             });
@@ -1811,7 +1904,11 @@ router.put('/savings/:id', async (req, res) => {
             }
         }
 
-        if (isPagoAdicionalMesActual) {
+        if (esConcepto) {
+            penalizacion = "NO";
+            diasPenalizacion = 0;
+            valorAPenalizar = 0;
+        } else if (isPagoAdicionalMesActual) {
             penalizacion = "NO";
             diasPenalizacion = 0;
             valorAPenalizar = 0;
@@ -1834,9 +1931,20 @@ router.put('/savings/:id', async (req, res) => {
             valorAPenalizar = diasPenalizacion * PENALIZACION_DIARIA;
         }
 
-        const valorAhorrado = monto - valorAPenalizar;
+        // En un movimiento de concepto se CONSERVA el valor acreditado que ya
+        // tenía, salvo que la edición lo cambie explícitamente. Recalcularlo
+        // reescribiría una cifra que el administrador no tocó: los descuentos
+        // anuales están guardados con valorAhorrado en cero, y volverlos a
+        // calcular como `monto` los pondría en negativo, alterando el ranking
+        // de ahorro por editar, por ejemplo, una observación.
+        const valorAhorrado = esConcepto
+            ? (req.body.valorAhorrado !== undefined
+                ? importeValido(req.body.valorAhorrado, parseFloat(saving.valorAhorrado) || 0)
+                : parseFloat(saving.valorAhorrado) || 0)
+            : monto - valorAPenalizar;
 
-        if (valorAhorrado < 0) {
+        // Solo un abono del socio tiene que cubrir su penalización.
+        if (!esConcepto && valorAhorrado < 0) {
             return res.status(400).json({
                 error: `El Valor Mensual ($${monto}) no cubre la penalización ($${valorAPenalizar}).`
             });
@@ -1877,9 +1985,17 @@ router.put('/savings/:id', async (req, res) => {
             // externalId NO cambia en edición
         };
 
-        // Regla especial: Si el estado es "Descuento Total Anual Penalizacion", 
-        // calcular los días basado en el monto (1000 por día)
-        if (updateData.status === 'Descuento Total Anual Penalizacion') {
+        // Regla especial: Si el estado es "Descuento Total Anual Penalizacion",
+        // calcular los días basado en el monto (1000 por día).
+        //
+        // Solo cuando la edición cambia el importe. Antes esta línea era
+        // inalcanzable —el guardián de más arriba rechazaba toda edición de un
+        // movimiento negativo—, y al volverse alcanzable recalculaba los días en
+        // CUALQUIER edición: corregir una observación le ponía 42 días a un
+        // descuento que estaba guardado con cero. Esos días se suman en el KPI
+        // "Días en retraso", y como cada abono tardío ya aporta los suyos, el
+        // descuento anual —que es su resumen— los contaría dos veces.
+        if (updateData.status === 'Descuento Total Anual Penalizacion' && req.body.amount !== undefined) {
             updateData.diasPenalizacion = Math.abs(Math.round(updateData.amount / 1000));
         }
 
