@@ -333,11 +333,22 @@ const CellRenderer = ({ column, value, row, onDownload }) => {
         const exceso = pagado - cuota;
         if (pagado <= 0) return <span className="text-gray-300">—</span>;
         if (exceso > 1) {
+            // El backend deja constancia en las observaciones de qué hizo con el
+            // excedente. Se lee de ahí para no afirmar un tratamiento que quizá
+            // no ocurrió: en un préstamo con cronograma heredado el abono se
+            // registra pero no se recalcula nada.
+            const obs = String(row.observaciones || '');
+            const trato = /reducci[oó]n de cuota/i.test(obs) ? 'reduce la cuota'
+                : /reducci[oó]n de plazo/i.test(obs) ? 'reduce el plazo'
+                    : null;
             return (
                 <span className="inline-flex flex-col items-end leading-tight">
                     <span className="font-bold text-amber-700 tabular-nums">{formatCurrency(pagado)}</span>
                     <span className="text-[10px] font-semibold text-amber-600 tabular-nums">
                         +{formatCurrency(exceso)} a capital
+                    </span>
+                    <span className="text-[10px] font-medium text-amber-500">
+                        {trato || 'sin recalcular'}
                     </span>
                 </span>
             );
@@ -1840,14 +1851,18 @@ const PaymentsListPage = () => {
                                             </span>
                                         </div>
                                         <p className="mt-1 text-xs text-amber-800">
-                                            Al guardar se recalcularán las cuotas pendientes posteriores a esta. No se tocan las ya
-                                            pagadas, las anteriores que sigan debiéndose, ni las que estén en mora.
+                                            Al guardar se recalculará el saldo y los intereses de las cuotas pendientes
+                                            posteriores a esta. No se tocan las ya pagadas, las anteriores que sigan
+                                            debiéndose, ni las que estén en mora.
                                         </p>
-                                        <div className="mt-3 flex flex-wrap gap-2">
+                                        <p className="mt-3 text-xs font-bold text-amber-900">
+                                            ¿Qué se hace con ese abono?
+                                        </p>
+                                        <div className="mt-1.5 flex flex-wrap gap-2">
                                             {[
-                                                ['reducir-cuota', 'Reducir la cuota', 'mismo plazo, cuotas más bajas'],
-                                                ['reducir-plazo', 'Reducir el plazo', 'misma cuota, termina antes'],
-                                            ].map(([val, titulo, nota]) => (
+                                                ['reducir-cuota', 'Reducir la cuota', 'mismo plazo, cuotas más bajas', true],
+                                                ['reducir-plazo', 'Reducir el plazo', 'misma cuota, termina antes', false],
+                                            ].map(([val, titulo, nota, esDefecto]) => (
                                                 <button
                                                     key={val}
                                                     type="button"
@@ -1856,7 +1871,14 @@ const PaymentsListPage = () => {
                                                         ? 'border-amber-600 bg-white ring-1 ring-amber-600'
                                                         : 'border-amber-200 bg-white/60 hover:bg-white'}`}
                                                 >
-                                                    <span className="block text-sm font-bold text-amber-900">{titulo}</span>
+                                                    <span className="flex items-center gap-1.5">
+                                                        <span className="text-sm font-bold text-amber-900">{titulo}</span>
+                                                        {esDefecto && (
+                                                            <span className="rounded-full bg-amber-600 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
+                                                                por defecto
+                                                            </span>
+                                                        )}
+                                                    </span>
                                                     <span className="block text-xs text-amber-700">{nota}</span>
                                                 </button>
                                             ))}
