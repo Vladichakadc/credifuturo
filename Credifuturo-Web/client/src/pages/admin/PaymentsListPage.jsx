@@ -558,7 +558,11 @@ const PaymentsListPage = () => {
             setPaymentForm({
                 ...payment,
                 fechaPagoMax: today,
-                cuotasPrestamo: payment.itemQuantity ?? payment.cuotasPrestamo,
+                // El total de cuotas del PLAN, no el número de esta cuota. Estaban
+                // invertidos: al editar se cargaba itemQuantity aquí y al guardar se
+                // persistía, así que cada edición reescribía el plan del préstamo
+                // con el número de la cuota que se estaba tocando.
+                cuotasPrestamo: payment.cuotasPrestamo ?? payment.itemQuantity,
                 nombre: clientRec?.name || '',
                 apellido: `${clientRec?.surname1 || ''} ${clientRec?.surname2 || ''}`.trim(),
                 estadoPrestamo: loanRef ? loanRef.estado : payment.estadoPrestamo
@@ -665,7 +669,7 @@ const PaymentsListPage = () => {
                 externalId: paymentForm.externalId,
                 clientId: paymentForm.clientId,
                 mesDesembolso: paymentForm.mesDesembolso,
-                cuotasPrestamo: paymentForm.itemQuantity,
+                cuotasPrestamo: paymentForm.cuotasPrestamo,
                 interesMensual: paymentForm.interesMensual,
                 valorInteresesAmortizados: paymentForm.valorInteresesAmortizados,
                 fechaPagoMax: paymentForm.fechaPagoMax,
