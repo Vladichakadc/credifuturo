@@ -3216,6 +3216,110 @@ router.post('/payments', async (req, res) => {
     }
 });
 
+/**
+ * Aplica a capital lo que el socio pagó por encima de su cuota y rehace las
+ * cuotas que aún no han vencido.
+ *
+ * El pago cubre primero el interés causado del período y el resto amortiza
+ * capital — por eso el saldo nuevo se deriva del propio pago y no del
+ * `saldoFinal` que traiga el formulario, que ya viene calculado de otra forma:
+ *
+ *     capitalPagado = valorCuotaPago − valorInteresesAmortizados
+ *     saldoNuevo    = saldoInicial − capitalPagado
+ *
+ * Devuelve siempre un resumen de lo ocurrido —incluso cuando decide no tocar
+ * nada— para que la pantalla pueda explicárselo al administrador.
+ */
+async function aplicarAbonoExtraordinario(payment, politicaPedida) {
+    const { analizarCronograma, recalcularTrasAbono, REDUCIR_PLAZO, REDUCIR_CUOTA } = require('../services/amortizacion');
+
+    const pagado = parseFloat(payment.valorCuotaPago) || 0;
+    const cuota = parseFloat(payment.valorCuotaVariable) || 0;
+    const excedente = parseFloat((pagado - cuota).toFixed(2));
+    if (excedente <= 0) return null;
+
+    const cuotas = await LoanPayment.findAll({ where: { idVm: payment.idVm } });
+    const diagnostico = analizarCronograma(cuotas);
+
+    // Un cronograma que no encadena o cuyo interés no corresponde a la tasa no
+    // se puede rehacer sin inventar cifras sobre deuda real de un socio. Se deja
+    // constancia del abono y se avisa, en vez de reescribir a ciegas.
+    if (!diagnostico.recalculable) {
+        return { aplicado: false, excedente, motivo: diagnostico.motivo, diagnostico };
+    }
+
+    const interesCausado = parseFloat(payment.valorInteresesAmortizados) || 0;
+    const capitalPagado = pagado - interesCausado;
+    const saldoNuevo = parseFloat(((parseFloat(payment.saldoInicial) || 0) - capitalPagado).toFixed(2));
+
+    // Solo se rehace lo que viene DESPUÉS de la cuota que se está pagando y
+    // sigue sin pagarse. Dos condiciones, y las dos importan:
+    //   · lo ya cobrado es un hecho consumado y su interés se causó de verdad;
+    //   · una cuota anterior que aún se debe tampoco se toca — el socio la sigue
+    //     debiendo con las condiciones que tenía, y reescribirla con el saldo
+    //     posterior al abono le cambiaría una deuda ya vencida.
+    const posicion = (c) => `${String(c.fechaPagoMax || '')}|${String(c.itemQuantity || 0).padStart(6, '0')}`;
+    const posPagada = posicion(payment);
+    const pendientes = cuotas.filter((c) =>
+        (c.estado === 'Pendiente' || c.estado === 'Mora') && posicion(c) > posPagada
+    );
+    if (pendientes.length === 0) {
+        return { aplicado: false, excedente, motivo: 'No quedan cuotas posteriores que recalcular.', diagnostico };
+    }
+
+    // Por defecto se REDUCE LA CUOTA, no el plazo. En un fondo de socios el
+    // interés no es utilidad de un banco: es el rendimiento de los propios
+    // ahorradores. Reducir el plazo le ahorra más al deudor ($18.480 frente a
+    // $10.560 en un abono de $176.000 sobre un crédito de $2.000.000 a 10
+    // cuotas), pero esos $7.920 de diferencia salen del retorno colectivo.
+    // El plazo se acorta cuando el socio lo pide — la elección es suya, como en
+    // cualquier prepago de crédito de consumo—, y por eso viaja como parámetro.
+    const politica = politicaPedida === REDUCIR_PLAZO ? REDUCIR_PLAZO : REDUCIR_CUOTA;
+    const capitalPorCuota = (parseFloat(payment.valorCuotaVariable) || 0) - interesCausado;
+
+    const resultado = recalcularTrasAbono({
+        cuotasPendientes: pendientes,
+        saldoNuevo,
+        capitalPorCuota,
+        politica,
+    });
+
+    const sequelize = require('../config/database');
+    const t = await sequelize.transaction();
+    try {
+        // El saldo de la cuota pagada también refleja el abono.
+        await payment.update({ saldoFinal: Math.max(0, saldoNuevo) }, { transaction: t });
+
+        for (const fila of resultado.filas) {
+            const destino = pendientes.find((c) => c.id === fila.id);
+            if (!destino) continue;
+            const cambios = {
+                saldoInicial: fila.saldoInicial,
+                valorInteresesAmortizados: fila.valorInteresesAmortizados,
+                valorCuotaVariable: fila.valorCuotaVariable,
+                saldoFinal: fila.saldoFinal,
+            };
+            // Las cuotas que sobran tras un abono grande se marcan canceladas por
+            // prepago: es el mismo tratamiento que ya usa la refinanciación, y las
+            // deja fuera de los cálculos de rentabilidad del fondo.
+            if (fila.sobra || resultado.cancelaElCredito) {
+                cambios.estado = 'Pago';
+                cambios.valorCuotaPago = 0;
+                cambios.esPrepago = true;
+                cambios.observaciones = `Cancelada por abono extraordinario a capital de $${Math.round(excedente).toLocaleString('es-CO')}.`;
+            }
+            await destino.update(cambios, { transaction: t });
+        }
+
+        await t.commit();
+    } catch (err) {
+        await t.rollback();
+        throw err;
+    }
+
+    return { aplicado: true, excedente, politica, ...resultado.resumen, cancelaElCredito: resultado.cancelaElCredito };
+}
+
 router.put('/payments/:id', async (req, res) => {
     try {
         const payment = await LoanPayment.findByPk(req.params.id);
@@ -3237,6 +3341,17 @@ router.put('/payments/:id', async (req, res) => {
         await payment.update(updateData);
         validateAndFixLoanStatuses().catch(() => { });
 
+        // ── Abono extraordinario a capital ────────────────────────────
+        // Si el socio pagó por encima de su cuota, el excedente no es un dinero
+        // suelto: es capital que amortiza por adelantado y que debe rebajar los
+        // intereses que aún no se han causado. Antes se guardaba en
+        // `valorCuotaPago` y ahí moría — el saldo no bajaba, las cuotas
+        // siguientes no cambiaban y el socio seguía pagando el mismo interés.
+        let abono = null;
+        if (payment.estado === 'Pago' && payment.idVm) {
+            abono = await aplicarAbonoExtraordinario(payment, req.body.politicaAbono);
+        }
+
         // Notifica al socio solo cuando la cuota PASA a 'Pago' (no en cualquier otra
         // edición del registro, como corregir una fecha o un monto).
         if (estadoAnterior !== 'Pago' && payment.estado === 'Pago' && payment.clientId) {
@@ -3245,12 +3360,16 @@ router.put('/payments/:id', async (req, res) => {
                 clientId: payment.clientId,
                 type: 'payment_registered',
                 title: 'Se registró el pago de tu cuota',
-                message: `Tu cuota ${payment.externalId || ''} de $${Math.round(Number(payment.valorCuotaPago || payment.valorCuotaVariable || 0)).toLocaleString('es-CO')} quedó registrada como pagada.`.trim(),
+                message: abono && abono.aplicado
+                    ? `Tu cuota ${payment.externalId || ''} quedó pagada. Los $${Math.round(abono.excedente).toLocaleString('es-CO')} que pagaste de más abonaron a capital y te ahorran $${Math.round(abono.ahorroInteres).toLocaleString('es-CO')} en intereses.`.trim()
+                    : `Tu cuota ${payment.externalId || ''} de $${Math.round(Number(payment.valorCuotaPago || payment.valorCuotaVariable || 0)).toLocaleString('es-CO')} quedó registrada como pagada.`.trim(),
                 link: '/dashboard/mis-creditos?tab=cuotas'
             });
         }
 
-        res.json(payment);
+        // El resumen del abono viaja aparte del registro para que la pantalla
+        // pueda explicar qué se recalculó — o por qué no se recalculó nada.
+        res.json(abono ? { ...payment.toJSON(), abonoExtraordinario: abono } : payment);
     } catch (err) {
         res.status(400).json({ error: err.message });
     }
@@ -3640,7 +3759,14 @@ router.get('/dashboard-stats', async (req, res) => {
             const key = `${p.clientId}|${(p.idVm || '').trim().toLowerCase()}|${(p.mesPago || '').trim().toLowerCase()}`;
             if (seenKeys.has(key)) continue;
             seenKeys.add(key);
-            const valor = p.esPrepago ? parseFloat(p.valorCuotaPago || 0) : parseFloat(p.valorCuotaVariable || 0);
+            // Se cuenta lo REALMENTE recibido, no lo que la cuota decía. Antes,
+            // en una cuota normal se sumaba `valorCuotaVariable`, así que si un
+            // socio pagaba de más ese excedente no aparecía en el recaudo: el
+            // fondo recibía un dinero que no figuraba en ninguna cifra. Se
+            // conserva `valorCuotaVariable` como respaldo para las filas
+            // históricas que no registraron el valor pagado.
+            const pagadoReal = parseFloat(p.valorCuotaPago || 0);
+            const valor = pagadoReal > 0 ? pagadoReal : parseFloat(p.valorCuotaVariable || 0);
             totalCuotasPagadas += valor;
             recaudoCuotasCount++;
         }
