@@ -3307,8 +3307,18 @@ async function aplicarAbonoExtraordinario(payment, politicaPedida) {
     const sequelize = require('../config/database');
     const t = await sequelize.transaction();
     try {
-        // El saldo de la cuota pagada también refleja el abono.
-        await payment.update({ saldoFinal: Math.max(0, saldoNuevo) }, { transaction: t });
+        // El saldo de la cuota pagada refleja el abono, y queda constancia de
+        // qué se hizo con él. Sin esta nota, la lista muestra un excedente pero
+        // nadie puede saber después si se redujo la cuota, se redujo el plazo o
+        // no se aplicó nada. Se ANTEPONE a lo que hubiera escrito el
+        // administrador en vez de reemplazarlo.
+        const nota = `Abono extraordinario de $${Math.round(excedente).toLocaleString('es-CO')} a capital · `
+            + `${politica === REDUCIR_CUOTA ? 'reducción de cuota' : 'reducción de plazo'}.`;
+        const previas = String(payment.observaciones || '').trim();
+        await payment.update({
+            saldoFinal: Math.max(0, saldoNuevo),
+            observaciones: previas ? `${nota} ${previas}` : nota,
+        }, { transaction: t });
 
         for (const fila of resultado.filas) {
             const destino = pendientes.find((c) => c.id === fila.id);
