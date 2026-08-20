@@ -3238,6 +3238,23 @@ async function aplicarAbonoExtraordinario(payment, politicaPedida) {
     const excedente = parseFloat((pagado - cuota).toFixed(2));
     if (excedente <= 0) return null;
 
+    // Solo se ajustan las cuotas del año en curso en adelante. Los años
+    // anteriores ya se cerraron: sus intereses se causaron, se repartieron
+    // entre los socios y se informaron a la Junta. Reescribir un cronograma
+    // hacia atrás cambiaría cifras que ya se rindieron, y el beneficio de un
+    // abono viejo tampoco se le puede devolver hoy al socio.
+    const anioCuota = parseInt(String(payment.fechaPagoMax || '').slice(0, 4), 10);
+    const anioActual = new Date().getFullYear();
+    if (Number.isFinite(anioCuota) && anioCuota < anioActual) {
+        return {
+            aplicado: false,
+            excedente,
+            fueraDePeriodo: true,
+            motivo: `Esta cuota corresponde a ${anioCuota} y el ajuste solo opera sobre el año en curso en adelante. `
+                + 'Los ejercicios cerrados ya repartieron sus intereses entre los socios; el abono queda registrado sin reescribir el cronograma.',
+        };
+    }
+
     const cuotas = await LoanPayment.findAll({ where: { idVm: payment.idVm } });
     const diagnostico = analizarCronograma(cuotas);
 
@@ -3258,11 +3275,14 @@ async function aplicarAbonoExtraordinario(payment, politicaPedida) {
     //   · una cuota anterior que aún se debe tampoco se toca — el socio la sigue
     //     debiendo con las condiciones que tenía, y reescribirla con el saldo
     //     posterior al abono le cambiaría una deuda ya vencida.
+    //
+    // Se excluyen además las cuotas en MORA: su interés ya se causó por el
+    // tiempo que llevan vencidas, y recalcularlas sobre el saldo nuevo se lo
+    // condonaría. Una mora se cobra o se negocia aparte, no se borra porque el
+    // socio haya abonado a otra cuota.
     const posicion = (c) => `${String(c.fechaPagoMax || '')}|${String(c.itemQuantity || 0).padStart(6, '0')}`;
     const posPagada = posicion(payment);
-    const pendientes = cuotas.filter((c) =>
-        (c.estado === 'Pendiente' || c.estado === 'Mora') && posicion(c) > posPagada
-    );
+    const pendientes = cuotas.filter((c) => c.estado === 'Pendiente' && posicion(c) > posPagada);
     if (pendientes.length === 0) {
         return { aplicado: false, excedente, motivo: 'No quedan cuotas posteriores que recalcular.', diagnostico };
     }

@@ -104,16 +104,43 @@ function analizarCronograma(cuotas) {
         }
     }
 
+    // Que el saldo encadene no basta: un cronograma en el que el saldo nunca
+    // baja también encadena consigo mismo y pasaría por sano. Hay que exigir
+    // que el crédito de verdad se extinga.
+    const ultima = filas[filas.length - 1];
+    const extingue = Math.abs(num(ultima.saldoFinal)) <= TOLERANCIA;
+
+    // Y hay que comprobar la ley de amortización, no solo la aritmética. Este
+    // fondo amortiza por sistema alemán: el capital de cada cuota es constante
+    // y lo que decrece es el interés. En el sistema francés —cuota fija— el
+    // capital crece período a período. Los dos encadenan y los dos son
+    // coherentes, así que sin esta prueba un préstamo francés pasaría el filtro
+    // y se recalcularía como alemán, cambiándole al socio la ley del crédito
+    // que firmó. Se excluye la última cuota, que suele amortizar un residuo.
+    const capitales = filas.map((c) => num(c.saldoInicial) - num(c.saldoFinal));
+    const cuerpo = capitales.length > 1 ? capitales.slice(0, -1) : capitales;
+    const capitalRef = cuerpo[0];
+    const capitalConstante = cuerpo.every((k) => Math.abs(k - capitalRef) <= TOLERANCIA) && capitalRef > TOLERANCIA;
+
     let motivo = null;
     if (!encadenado) {
         motivo = 'El saldo de este préstamo no encadena entre cuotas: viene de una carga histórica y no de un cronograma calculado. '
             + 'El abono queda registrado, pero reescribir las cuotas siguientes produciría cifras que no corresponden a lo pactado.';
+    } else if (!extingue) {
+        motivo = 'El cronograma no cancela la deuda: la última cuota deja saldo vivo. '
+            + 'El abono queda registrado, pero no hay un plan de pagos completo sobre el cual recalcular.';
+    } else if (!capitalConstante) {
+        motivo = 'Este préstamo no amortiza con capital constante, que es la regla con la que el fondo calcula sus cronogramas. '
+            + 'El abono queda registrado; recalcularlo con otra ley de amortización le cambiaría las condiciones al socio.';
     } else if (!coherente) {
         motivo = 'El interés registrado en las cuotas no corresponde al saldo por la tasa guardada. '
             + 'El abono queda registrado, pero recalcular con esa tasa cambiaría las condiciones del crédito.';
     }
 
-    return { recalculable: encadenado && coherente, encadenado, coherente, motivo };
+    return {
+        recalculable: encadenado && extingue && capitalConstante && coherente,
+        encadenado, coherente, extingue, capitalConstante, motivo,
+    };
 }
 
 /**
