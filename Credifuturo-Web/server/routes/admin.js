@@ -197,7 +197,6 @@ router.use((req, res, next) => {
 router.get('/clients', async (req, res) => {
     try {
         const clients = await Client.findAll({
-            limit: 500,
             attributes: { exclude: ['password'] } // A02: no exponer hashes bcrypt
         });
         res.json(clients);
@@ -1171,8 +1170,7 @@ router.get('/savings', async (req, res) => {
         const savings = await Saving.findAll({
             where: whereClause,
             include: includeOpts,
-            order: [['date', 'DESC']], // Parte D: ordenar por fecha más reciente
-            limit: 500
+            order: [['date', 'DESC']] // Parte D: ordenar por fecha más reciente
         });
         res.json(savings);
     } catch (err) {
@@ -1975,8 +1973,7 @@ router.get('/disbursed-loans', async (req, res) => {
         // A02: excluir password del Client embebido para no filtrar hashes bcrypt.
         const disbursedLoans = await DisbursedLoan.findAll({
             include: [{ model: Client, attributes: { exclude: ['password'] } }],
-            order: [['fechaPrestamo', 'DESC']],
-            limit: 500
+            order: [['fechaPrestamo', 'DESC']]
         });
         res.json(disbursedLoans);
     } catch (err) {
@@ -2976,12 +2973,24 @@ router.get('/payments', async (req, res) => {
         const payments = await LoanPayment.findAll({
             include: [
                 { model: Client, attributes: { exclude: ['password'] } }, // A02: no exponer hashes bcrypt
-                { model: Soporte, attributes: ['id', 'originalName', 'mimeType', 'uploadedAt'] }
+                { model: Soporte, attributes: ['id', 'originalName', 'mimeType', 'uploadedAt'] },
+                { model: DisbursedLoan, as: 'disbursedLoan', attributes: ['estado'] }
             ],
-            order: [['fechaPagoMax', 'DESC']],
-            limit: 500
+            order: [['fechaPagoMax', 'DESC']]
         });
-        res.json(payments);
+
+        // Estado Préstamo mostrado = el estado ACTUAL del DisbursedLoan, no la copia
+        // guardada en la cuota (misma corrección que /payments/list — ver el comentario
+        // ahí sobre cuotas que quedaban desincronizadas del estado real del préstamo).
+        const normalized = payments.map(p => {
+            const raw = p.toJSON();
+            if (raw.disbursedLoan?.estado) {
+                raw.estadoPrestamo = raw.disbursedLoan.estado.trim();
+            }
+            delete raw.disbursedLoan;
+            return raw;
+        });
+        res.json(normalized);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
