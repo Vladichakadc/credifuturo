@@ -4751,7 +4751,10 @@ const SHARED_INFORMES_DIR = path.join(__dirname, '..', 'shared-informes');
 // que se comparte explícitamente con ellos — hoy, solo este informe. Agregar aquí cada
 // nuevo documento que se quiera compartir con Junta, y copiar el archivo también a
 // SHARED_INFORMES_DIR para que esté disponible en producción.
-const JUNTA_INFORMES_VISIBLES = new Set(['Interes_Proporcional_Retanqueos.pdf']);
+const JUNTA_INFORMES_VISIBLES = new Set([
+    'Interes_Proporcional_Retanqueos.pdf',
+    'Abonos_Extraordinarios_a_Capital.md',
+]);
 
 function findInformePath(name) {
     const sharedPath = path.join(SHARED_INFORMES_DIR, name);
