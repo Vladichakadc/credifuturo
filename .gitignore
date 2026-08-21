@@ -49,3 +49,5 @@ sincronizar_desde_railway.bat
 
 # Skills de Claude Code (herramientas locales, no parte del app)
 .claude/skills/
+__pycache__/
+*.pyc
