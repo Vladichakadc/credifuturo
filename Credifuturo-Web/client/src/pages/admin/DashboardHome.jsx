@@ -554,7 +554,13 @@ const DashboardHome = () => {
     // el año en curso como si fuera peor.
     const [yearCmp, setYearCmp] = useState(null);
     const [yearCmpError, setYearCmpError] = useState(false);
-    useEffect(() => {
+    // useCallback (no un efecto suelto) a propósito: así este fetch puede
+    // engancharse a los MISMOS disparadores de refresco que fetchStats más abajo
+    // (evento de mutación, sync entre pestañas, poll de 30s). Antes se pedía una
+    // sola vez al montar y quedaba congelado el resto de la sesión — el resto
+    // del panel se actualizaba solo pero este gráfico no, así que un pago o
+    // desembolso nuevo no se reflejaba en la comparación sin recargar la página.
+    const fetchYearCmp = useCallback(() => {
         api.get('/admin/year-comparison')
             .then(res => { setYearCmp(res.data); setYearCmpError(false); })
             .catch(() => {
@@ -564,14 +570,15 @@ const DashboardHome = () => {
                 setYearCmpError(true);
             });
     }, []);
+    useEffect(() => { fetchYearCmp(); }, [fetchYearCmp]);
 
     // Actualizar stats ante cualquier mutación de datos en la app
     useEffect(() => {
-        const handler = () => fetchStats();
+        const handler = () => { fetchStats(); fetchYearCmp(); };
         const events = ['dataUpdated', 'paymentsUpdated', 'savingsUpdated', 'loansUpdated', 'clientsUpdated'];
         events.forEach(e => window.addEventListener(e, handler));
         return () => events.forEach(e => window.removeEventListener(e, handler));
-    }, [fetchStats]);
+    }, [fetchStats, fetchYearCmp]);
 
     // Detectar actualizaciones desde otras pestañas/rutas via localStorage
     useEffect(() => {
@@ -579,6 +586,7 @@ const DashboardHome = () => {
             if (e.key === 'lastDataUpdate' || e.key === 'paymentsLastUpdate' ||
                 e.key === 'savingsLastUpdate' || e.key === 'loansLastUpdate' || e.key === 'clientsLastUpdate') {
                 fetchStats();
+                fetchYearCmp();
                 localStorage.setItem('dashboardLastFetched', e.newValue);
             }
         };
@@ -587,17 +595,18 @@ const DashboardHome = () => {
         const lastFetched = localStorage.getItem('dashboardLastFetched');
         if (lastUpdate && lastUpdate !== lastFetched) {
             fetchStats();
+            fetchYearCmp();
             localStorage.setItem('dashboardLastFetched', lastUpdate);
         }
         window.addEventListener('storage', handler);
         return () => window.removeEventListener('storage', handler);
-    }, [fetchStats]);
+    }, [fetchStats, fetchYearCmp]);
 
     // Auto-refresh cada 30 segundos como fallback
     useEffect(() => {
-        const interval = setInterval(() => fetchStats(), 30000);
+        const interval = setInterval(() => { fetchStats(); fetchYearCmp(); }, 30000);
         return () => clearInterval(interval);
-    }, [fetchStats]);
+    }, [fetchStats, fetchYearCmp]);
 
     const handleCardClick = (path, params = {}) => {
         const queryParams = new URLSearchParams(params);
