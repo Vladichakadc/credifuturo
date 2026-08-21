@@ -4762,7 +4762,7 @@ const SHARED_INFORMES_DIR = path.join(__dirname, '..', 'shared-informes');
 // SHARED_INFORMES_DIR para que esté disponible en producción.
 const JUNTA_INFORMES_VISIBLES = new Set([
     'Interes_Proporcional_Retanqueos.pdf',
-    'Abonos_Extraordinarios_a_Capital.md',
+    'Abonos_Extraordinarios_a_Capital.pdf',
 ]);
 
 function findInformePath(name) {
