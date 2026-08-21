@@ -9,6 +9,7 @@ import { Card, CardContent } from '../../components/ui/Card';
 import { useUi } from '../../context/UiContext';
 import { COLOMBIAN_BANKS_WITH_OTHER } from '../../utils/banks';
 import { MONTH_NAMES as monthNames, autoIncrementId } from '../../utils/savingsCalculations';
+import { hoyISO } from '../../utils/fechas';
 
 const InitialContributionsPage = () => {
     const { toast } = useUi();
@@ -28,7 +29,7 @@ const InitialContributionsPage = () => {
         name: '',       // Populated automatically
         surname: '',    // Populated automatically
         status: 'Activo',
-        date: new Date().toISOString().split('T')[0], // Fecha Pago
+        date: hoyISO(), // Fecha Pago
         year: new Date().getFullYear(),              // Año
         month: monthNames[new Date().getMonth()],    // Mes
         amount: '',     // Valor
@@ -62,7 +63,7 @@ const InitialContributionsPage = () => {
                         name: '', // Will be populated by useEffect
                         surname: '', // Will be populated by useEffect
                         status: savingToEdit.status || 'Activo',
-                        date: new Date().toISOString().split('T')[0],
+                        date: hoyISO(),
                         year: savingToEdit.year || new Date().getFullYear(),
                         month: savingToEdit.month || monthNames[new Date().getMonth()],
                         amount: savingToEdit.amount || '',

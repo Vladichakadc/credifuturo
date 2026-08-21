@@ -5,6 +5,7 @@ const { Client, Saving, Soporte, Loan, DisbursedLoan, LoanPayment } = require('.
 const bcrypt = require('bcryptjs');
 const { verifyToken, requireRole, requireFreshPassword } = require('../middleware/authMiddleware');
 const { validatePassword, generateTempPassword } = require('../services/passwordPolicy');
+const { hoyISOFondo } = require('../services/fechaFondo');
 const { logSecurityEvent, getClientIp, LOG_FILE } = require('../services/securityLogger');
 const { getLastActivity } = require('../services/sessionActivity');
 const { verifyFileMagicBytes, sanitizeFilename } = require('../services/fileValidator');
@@ -111,7 +112,10 @@ async function validateAndFixLoanStatuses() {
 // ahora se monta también en /dashboard/panel-ejecutivo como vista de solo lectura para
 // socios — igual que /dashboard-stats con DashboardHome. El resto exige rol admin.
 // A07: ademas exigimos que el usuario no tenga mustChangePassword pendiente.
-const READ_ONLY_FOR_ALL = new Set(['/dashboard-stats', '/executive-stats', '/savings-evolution']);
+// /year-comparison acompaña a /dashboard-stats: alimenta el mismo Panel de
+// Inteligencia Financiera, que se monta también en /dashboard/fondo para socios.
+// Son agregados por año/mes del fondo, sin nombres ni cédulas de nadie.
+const READ_ONLY_FOR_ALL = new Set(['/dashboard-stats', '/executive-stats', '/savings-evolution', '/year-comparison']);
 const READ_ONLY_PREFIXES = ['/settings/'];
 
 // Funciones "(BETA)" (Ranking de Ahorro, Buzón de Propuestas): el menú del socio ya
@@ -361,7 +365,8 @@ router.post('/clients', async (req, res) => {
         const {
             cedula, name, surname1, surname2, email, password,
             genero, pais, ciudad, tipoCliente, socioFundador,
-            referido, cargo, fechaIngreso, fechaBaja, estatus, customerId
+            referido, cargo, fechaIngreso, fechaBaja, estatus, customerId,
+            porcentajePrestamo
         } = req.body;
 
         if (estatus !== undefined && estatus !== null && estatus !== '' && !VALID_ESTATUS.includes(estatus)) {
@@ -422,8 +427,22 @@ router.post('/clients', async (req, res) => {
             fechaIngreso: fechaIngreso || new Date(),
             fechaBaja: (fechaBaja === '' || fechaBaja === 'Invalid date') ? null : fechaBaja,
             // Ensure strictly Activo or Inactivo
-            // Ensure strictly Activo or Inactivo
             estatus: estatus || 'Activo',
+            // La tasa de perfil del socio (la que usa el Simulador) faltaba en
+            // esta lista: el formulario de alta la enviaba y Client.create la
+            // descartaba en silencio, así que el socio quedaba creado siempre
+            // sin tasa y sin ningún aviso de que se había perdido. En el UPDATE
+            // sí estaba contemplada (ALLOWED_CLIENT_FIELDS), de ahí que editar
+            // funcionara y crear no.
+            //
+            // Se normaliza igual que en el update: número finito y no negativo,
+            // o null. Un texto vacío o basura no debe guardarse como 0, que
+            // significaría "0% de interés" en vez de "sin tasa asignada".
+            porcentajePrestamo: (() => {
+                if (porcentajePrestamo === undefined || porcentajePrestamo === null || porcentajePrestamo === '') return null;
+                const n = Number(porcentajePrestamo);
+                return Number.isFinite(n) && n >= 0 ? n : null;
+            })(),
             mustChangePassword: true
         });
         logSecurityEvent('CLIENT_CREATED', { actorId: req.user?.id, newClientId: newClient.id, ip: getClientIp(req) });
@@ -460,6 +479,84 @@ function pickFields(body, allowed) {
     }
     return out;
 }
+
+// Ahorros que NO son aporte inicial — a prueba de nulos.
+//
+// El filtro natural, `type: { [Op.ne]: 'Aporte Inicial' }`, tiene una trampa:
+// en SQL `NULL != 'Aporte Inicial'` no se evalúa como verdadero sino como NULL,
+// así que TODA fila con `type` nulo queda fuera sin que nadie lo note. Y esas
+// filas existen: las devoluciones anuales de intereses se guardaron sin `type`.
+//
+// El efecto era que un socio no veía sus propias devoluciones en el extracto
+// (el admin sí, porque su pantalla pide `type=Todos`, que quita el filtro
+// entero), su saldo no cuadraba con la suma de sus movimientos —el saldo se
+// calcula sin filtrar por tipo— y un ahorro con tipo nulo no contaba como
+// cubierto al evaluar la mora.
+const NO_ES_APORTE_INICIAL = () => {
+    const { Op } = require('sequelize');
+    return { [Op.or]: [{ [Op.ne]: 'Aporte Inicial' }, { [Op.is]: null }] };
+};
+
+// ── Movimientos de concepto vs. abonos del socio ──────────────────────
+//
+// En la tabla de ahorros conviven dos cosas distintas. Un ABONO es plata que
+// el socio consigna, y solo sobre él tiene sentido la penalización por pagar
+// tarde. Un MOVIMIENTO DE CONCEPTO —devolución de ahorros, descuento anual por
+// mora, distribución de intereses— lo mueve el fondo, no el socio: no se
+// "paga tarde" una devolución.
+//
+// El estado se normaliza (minúsculas, sin tildes) porque viene del histórico en
+// Excel y no tiene una redacción única; es el mismo criterio con el que la
+// pantalla del socio clasifica sus movimientos, para que las dos no discrepen.
+const normalizarEstado = (s) => String(s ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+const esMovimientoDeConcepto = (status, monto) => {
+    const t = normalizarEstado(status);
+    if (t.includes('devolucion') || t.includes('distribucion')
+        || t.includes('descuento') || t.includes('penaliz')) return true;
+    // Un importe negativo nunca es un abono, aunque su estado no lo diga.
+    return Number(monto) < 0;
+};
+
+// Importe de dinero recibido por API. Descarta NaN e Infinity, que `parseFloat`
+// sí acepta ("Infinity" es una cadena válida para él) y que en una columna
+// DECIMAL quedarían guardados como un valor sin sentido.
+const importeValido = (valor, porDefecto) => {
+    const n = parseFloat(valor);
+    return Number.isFinite(n) ? n : porDefecto;
+};
+
+// La versión SQL de lo anterior: "esta fila es un abono del socio".
+//
+// Hace falta para detectar si el socio YA pagó un mes —lo que exime de mora al
+// siguiente pago de ese mes—. Sin esta condición, una devolución o un descuento
+// registrados en el mismo mes contarían como si el socio hubiera abonado, y le
+// perdonarían la mora a un pago que sí llegó tarde.
+//
+// Se comparan fragmentos sin la primera letra ('evoluc' en vez de 'devoluc')
+// para que un estado con tilde —"Devolución"— también coincida.
+const ES_ABONO_DEL_SOCIO = () => {
+    const { Op } = require('sequelize');
+    return {
+        amount: { [Op.gt]: 0 },
+        status: {
+            [Op.or]: [
+                { [Op.is]: null },
+                {
+                    [Op.and]: [
+                        { [Op.notLike]: '%evoluc%' },
+                        { [Op.notLike]: '%istribuc%' },
+                        { [Op.notLike]: '%escuent%' },
+                        { [Op.notLike]: '%enaliz%' },
+                    ],
+                },
+            ],
+        },
+    };
+};
 
 const ALLOWED_CLIENT_FIELDS = [
     'cedula', 'name', 'surname1', 'surname2', 'email',
@@ -590,7 +687,9 @@ router.delete('/clients/:id', async (req, res) => {
             return res.status(400).json({ error: 'El socio ya está desactivado.' });
         }
         const before = { estatus: client.estatus, fechaBaja: client.fechaBaja };
-        await client.update({ estatus: 'Desactivado', fechaBaja: new Date().toISOString().slice(0, 10) });
+        // Fecha de NEGOCIO: en Colombia, no en el UTC del contenedor. Con
+        // toISOString() una baja registrada de noche quedaba fechada mañana.
+        await client.update({ estatus: 'Desactivado', fechaBaja: hoyISOFondo() });
         logSecurityEvent('CLIENT_DEACTIVATED', {
             actorId: req.user?.id, clientId: client.id, cedula: client.cedula,
             before, after: { estatus: 'Desactivado', fechaBaja: client.fechaBaja }, ip: getClientIp(req)
@@ -1193,7 +1292,7 @@ router.get('/savings/list', async (req, res) => {
             whereClause.type = type.trim();
         } else {
             // Default filter for "Lista de Ahorro": EXCLUDE "Aporte Inicial"
-            whereClause.type = { [Op.ne]: 'Aporte Inicial' };
+            whereClause.type = NO_ES_APORTE_INICIAL();
         }
 
         // Text search on saving fields
@@ -1305,7 +1404,7 @@ router.get('/savings/ranking', async (req, res) => {
 
         const allSavings = await Saving.findAll({
             where: {
-                type: { [Sequelize.Op.ne]: 'Aporte Inicial' },
+                type: NO_ES_APORTE_INICIAL(),
                 clientId: { [Sequelize.Op.in]: clients.map(c => c.id) }
             },
             attributes: ['clientId', 'year', 'monthInt', 'mesAbonado', 'anioAbonado', 'valorAhorrado', 'amount', 'status'],
@@ -1520,6 +1619,13 @@ router.post('/savings', async (req, res) => {
         const monto = parseFloat(req.body.amount) || 0;
         const PENALIZACION_DIARIA = 1000; // Valor configurable si existiera, fallback 1000
 
+        // Una devolución, un descuento o una distribución no se "pagan tarde":
+        // los mueve el fondo. Sin esta salida temprana se les calculaba una mora
+        // inventada (a una devolución del día 13 se le estampaban 3 días y
+        // $3.000 de recargo) y después el guardián de más abajo rechazaba la
+        // operación, porque un importe negativo nunca supera su penalización.
+        const esConcepto = esMovimientoDeConcepto(req.body.status, monto);
+
         // Regla: A partir del día 11 se cobra. Día 10 NO paga.
         // PAGO ADELANTADO NO PAGA PENALIDAD.
         // PAGO ATRASADO (mes anterior) SIEMPRE PAGA PENALIDAD.
@@ -1540,7 +1646,9 @@ router.post('/savings', async (req, res) => {
                     clientId: clientIdForCheck,
                     year: anio,
                     month: { [Op.like]: mesTextoBody },
-                    type: { [Op.ne]: 'Aporte Inicial' }
+                    type: NO_ES_APORTE_INICIAL(),
+                    // Solo un abono cuenta como "ya pagó este mes".
+                    ...ES_ABONO_DEL_SOCIO()
                 }
             });
             isPagoAdicionalMesActual = !!existePagoMesActual;
@@ -1561,7 +1669,12 @@ router.post('/savings', async (req, res) => {
             }
         }
 
-        if (isPagoAdicionalMesActual) {
+        if (esConcepto) {
+            // Movimiento del fondo, no un abono del socio: sin penalización.
+            penalizacion = "NO";
+            diasPenalizacion = 0;
+            valorAPenalizar = 0;
+        } else if (isPagoAdicionalMesActual) {
             // Pago adicional: el socio ya pagó este mes, NO genera penalización
             penalizacion = "NO";
             diasPenalizacion = 0;
@@ -1589,10 +1702,18 @@ router.post('/savings', async (req, res) => {
             valorAPenalizar = diasPenalizacion * PENALIZACION_DIARIA;
         }
 
-        const valorAhorrado = monto - valorAPenalizar;
+        // En un movimiento de concepto el valor acreditado es el propio importe:
+        // no hay recargo que restarle. Se permite enviarlo explícito porque el
+        // histórico no es uniforme — los descuentos anuales se guardaron con
+        // valorAhorrado en cero y las devoluciones con el importe completo.
+        const valorAhorrado = esConcepto
+            ? (req.body.valorAhorrado !== undefined ? importeValido(req.body.valorAhorrado, monto) : monto)
+            : monto - valorAPenalizar;
 
-        // Validar monto suficiente
-        if (valorAhorrado < 0) {
+        // Validar monto suficiente. Solo aplica a un abono del socio: un
+        // movimiento negativo nunca "cubre" su penalización, y exigírselo
+        // bloqueaba por completo registrarlo o editarlo.
+        if (!esConcepto && valorAhorrado < 0) {
             return res.status(400).json({
                 error: `El Valor Mensual ($${monto}) no cubre la penalización ($${valorAPenalizar}).`,
                 detalles: { diasPenalizacion, valoraPenalizar: valorAPenalizar }
@@ -1733,6 +1854,14 @@ router.put('/savings/:id', async (req, res) => {
         let valorAPenalizar = 0;
         const PENALIZACION_DIARIA = 1000;
 
+        // Igual que en POST: una devolución, un descuento o una distribución no
+        // llevan mora. Se mira el estado que quedará tras la edición, no solo el
+        // enviado, para que cambiar un campo suelto no reclasifique la fila.
+        const esConcepto = esMovimientoDeConcepto(
+            req.body.status !== undefined ? req.body.status : saving.status,
+            monto
+        );
+
         // Lógica de penalización tomada de la ruta POST /savings para asegurar consistencia
         const isPagoAdelantado = (anioAbonadoReq > anio) || (anioAbonadoReq === anio && mesAbonadoNum > mes);
         const isPagoAtrasado = (anioAbonadoReq < anio) || (anioAbonadoReq === anio && mesAbonadoNum < mes);
@@ -1749,7 +1878,9 @@ router.put('/savings/:id', async (req, res) => {
                     clientId: clientIdForCheck,
                     year: anio,
                     month: { [Op.like]: mesTextoForCheck },
-                    type: { [Op.ne]: 'Aporte Inicial' },
+                    type: NO_ES_APORTE_INICIAL(),
+                    // Solo un abono cuenta como "ya pagó este mes".
+                    ...ES_ABONO_DEL_SOCIO(),
                     id: { [Op.ne]: saving.id } // Excluir el registro que se está editando
                 }
             });
@@ -1771,7 +1902,11 @@ router.put('/savings/:id', async (req, res) => {
             }
         }
 
-        if (isPagoAdicionalMesActual) {
+        if (esConcepto) {
+            penalizacion = "NO";
+            diasPenalizacion = 0;
+            valorAPenalizar = 0;
+        } else if (isPagoAdicionalMesActual) {
             penalizacion = "NO";
             diasPenalizacion = 0;
             valorAPenalizar = 0;
@@ -1794,9 +1929,20 @@ router.put('/savings/:id', async (req, res) => {
             valorAPenalizar = diasPenalizacion * PENALIZACION_DIARIA;
         }
 
-        const valorAhorrado = monto - valorAPenalizar;
+        // En un movimiento de concepto se CONSERVA el valor acreditado que ya
+        // tenía, salvo que la edición lo cambie explícitamente. Recalcularlo
+        // reescribiría una cifra que el administrador no tocó: los descuentos
+        // anuales están guardados con valorAhorrado en cero, y volverlos a
+        // calcular como `monto` los pondría en negativo, alterando el ranking
+        // de ahorro por editar, por ejemplo, una observación.
+        const valorAhorrado = esConcepto
+            ? (req.body.valorAhorrado !== undefined
+                ? importeValido(req.body.valorAhorrado, parseFloat(saving.valorAhorrado) || 0)
+                : parseFloat(saving.valorAhorrado) || 0)
+            : monto - valorAPenalizar;
 
-        if (valorAhorrado < 0) {
+        // Solo un abono del socio tiene que cubrir su penalización.
+        if (!esConcepto && valorAhorrado < 0) {
             return res.status(400).json({
                 error: `El Valor Mensual ($${monto}) no cubre la penalización ($${valorAPenalizar}).`
             });
@@ -1837,9 +1983,17 @@ router.put('/savings/:id', async (req, res) => {
             // externalId NO cambia en edición
         };
 
-        // Regla especial: Si el estado es "Descuento Total Anual Penalizacion", 
-        // calcular los días basado en el monto (1000 por día)
-        if (updateData.status === 'Descuento Total Anual Penalizacion') {
+        // Regla especial: Si el estado es "Descuento Total Anual Penalizacion",
+        // calcular los días basado en el monto (1000 por día).
+        //
+        // Solo cuando la edición cambia el importe. Antes esta línea era
+        // inalcanzable —el guardián de más arriba rechazaba toda edición de un
+        // movimiento negativo—, y al volverse alcanzable recalculaba los días en
+        // CUALQUIER edición: corregir una observación le ponía 42 días a un
+        // descuento que estaba guardado con cero. Esos días se suman en el KPI
+        // "Días en retraso", y como cada abono tardío ya aporta los suyos, el
+        // descuento anual —que es su resumen— los contaría dos veces.
+        if (updateData.status === 'Descuento Total Anual Penalizacion' && req.body.amount !== undefined) {
             updateData.diasPenalizacion = Math.abs(Math.round(updateData.amount / 1000));
         }
 
@@ -3071,6 +3225,140 @@ router.post('/payments', async (req, res) => {
     }
 });
 
+/**
+ * Aplica a capital lo que el socio pagó por encima de su cuota y rehace las
+ * cuotas que aún no han vencido.
+ *
+ * El pago cubre primero el interés causado del período y el resto amortiza
+ * capital — por eso el saldo nuevo se deriva del propio pago y no del
+ * `saldoFinal` que traiga el formulario, que ya viene calculado de otra forma:
+ *
+ *     capitalPagado = valorCuotaPago − valorInteresesAmortizados
+ *     saldoNuevo    = saldoInicial − capitalPagado
+ *
+ * Devuelve siempre un resumen de lo ocurrido —incluso cuando decide no tocar
+ * nada— para que la pantalla pueda explicárselo al administrador.
+ */
+async function aplicarAbonoExtraordinario(payment, politicaPedida) {
+    const { analizarCronograma, recalcularTrasAbono, REDUCIR_PLAZO, REDUCIR_CUOTA } = require('../services/amortizacion');
+
+    const pagado = parseFloat(payment.valorCuotaPago) || 0;
+    const cuota = parseFloat(payment.valorCuotaVariable) || 0;
+    const excedente = parseFloat((pagado - cuota).toFixed(2));
+    if (excedente <= 0) return null;
+
+    // Solo se ajustan las cuotas del año en curso en adelante. Los años
+    // anteriores ya se cerraron: sus intereses se causaron, se repartieron
+    // entre los socios y se informaron a la Junta. Reescribir un cronograma
+    // hacia atrás cambiaría cifras que ya se rindieron, y el beneficio de un
+    // abono viejo tampoco se le puede devolver hoy al socio.
+    const anioCuota = parseInt(String(payment.fechaPagoMax || '').slice(0, 4), 10);
+    const anioActual = new Date().getFullYear();
+    if (Number.isFinite(anioCuota) && anioCuota < anioActual) {
+        return {
+            aplicado: false,
+            excedente,
+            fueraDePeriodo: true,
+            motivo: `Esta cuota corresponde a ${anioCuota} y el ajuste solo opera sobre el año en curso en adelante. `
+                + 'Los ejercicios cerrados ya repartieron sus intereses entre los socios; el abono queda registrado sin reescribir el cronograma.',
+        };
+    }
+
+    const cuotas = await LoanPayment.findAll({ where: { idVm: payment.idVm } });
+    const diagnostico = analizarCronograma(cuotas);
+
+    // Un cronograma que no encadena o cuyo interés no corresponde a la tasa no
+    // se puede rehacer sin inventar cifras sobre deuda real de un socio. Se deja
+    // constancia del abono y se avisa, en vez de reescribir a ciegas.
+    if (!diagnostico.recalculable) {
+        return { aplicado: false, excedente, motivo: diagnostico.motivo, diagnostico };
+    }
+
+    const interesCausado = parseFloat(payment.valorInteresesAmortizados) || 0;
+    const capitalPagado = pagado - interesCausado;
+    const saldoNuevo = parseFloat(((parseFloat(payment.saldoInicial) || 0) - capitalPagado).toFixed(2));
+
+    // Solo se rehace lo que viene DESPUÉS de la cuota que se está pagando y
+    // sigue sin pagarse. Dos condiciones, y las dos importan:
+    //   · lo ya cobrado es un hecho consumado y su interés se causó de verdad;
+    //   · una cuota anterior que aún se debe tampoco se toca — el socio la sigue
+    //     debiendo con las condiciones que tenía, y reescribirla con el saldo
+    //     posterior al abono le cambiaría una deuda ya vencida.
+    //
+    // Se excluyen además las cuotas en MORA: su interés ya se causó por el
+    // tiempo que llevan vencidas, y recalcularlas sobre el saldo nuevo se lo
+    // condonaría. Una mora se cobra o se negocia aparte, no se borra porque el
+    // socio haya abonado a otra cuota.
+    const posicion = (c) => `${String(c.fechaPagoMax || '')}|${String(c.itemQuantity || 0).padStart(6, '0')}`;
+    const posPagada = posicion(payment);
+    const pendientes = cuotas.filter((c) => c.estado === 'Pendiente' && posicion(c) > posPagada);
+    if (pendientes.length === 0) {
+        return { aplicado: false, excedente, motivo: 'No quedan cuotas posteriores que recalcular.', diagnostico };
+    }
+
+    // Por defecto se REDUCE LA CUOTA, no el plazo. En un fondo de socios el
+    // interés no es utilidad de un banco: es el rendimiento de los propios
+    // ahorradores. Reducir el plazo le ahorra más al deudor ($18.480 frente a
+    // $10.560 en un abono de $176.000 sobre un crédito de $2.000.000 a 10
+    // cuotas), pero esos $7.920 de diferencia salen del retorno colectivo.
+    // El plazo se acorta cuando el socio lo pide — la elección es suya, como en
+    // cualquier prepago de crédito de consumo—, y por eso viaja como parámetro.
+    const politica = politicaPedida === REDUCIR_PLAZO ? REDUCIR_PLAZO : REDUCIR_CUOTA;
+    const capitalPorCuota = (parseFloat(payment.valorCuotaVariable) || 0) - interesCausado;
+
+    const resultado = recalcularTrasAbono({
+        cuotasPendientes: pendientes,
+        saldoNuevo,
+        capitalPorCuota,
+        politica,
+    });
+
+    const sequelize = require('../config/database');
+    const t = await sequelize.transaction();
+    try {
+        // El saldo de la cuota pagada refleja el abono, y queda constancia de
+        // qué se hizo con él. Sin esta nota, la lista muestra un excedente pero
+        // nadie puede saber después si se redujo la cuota, se redujo el plazo o
+        // no se aplicó nada. Se ANTEPONE a lo que hubiera escrito el
+        // administrador en vez de reemplazarlo.
+        const nota = `Abono extraordinario de $${Math.round(excedente).toLocaleString('es-CO')} a capital · `
+            + `${politica === REDUCIR_CUOTA ? 'reducción de cuota' : 'reducción de plazo'}.`;
+        const previas = String(payment.observaciones || '').trim();
+        await payment.update({
+            saldoFinal: Math.max(0, saldoNuevo),
+            observaciones: previas ? `${nota} ${previas}` : nota,
+        }, { transaction: t });
+
+        for (const fila of resultado.filas) {
+            const destino = pendientes.find((c) => c.id === fila.id);
+            if (!destino) continue;
+            const cambios = {
+                saldoInicial: fila.saldoInicial,
+                valorInteresesAmortizados: fila.valorInteresesAmortizados,
+                valorCuotaVariable: fila.valorCuotaVariable,
+                saldoFinal: fila.saldoFinal,
+            };
+            // Las cuotas que sobran tras un abono grande se marcan canceladas por
+            // prepago: es el mismo tratamiento que ya usa la refinanciación, y las
+            // deja fuera de los cálculos de rentabilidad del fondo.
+            if (fila.sobra || resultado.cancelaElCredito) {
+                cambios.estado = 'Pago';
+                cambios.valorCuotaPago = 0;
+                cambios.esPrepago = true;
+                cambios.observaciones = `Cancelada por abono extraordinario a capital de $${Math.round(excedente).toLocaleString('es-CO')}.`;
+            }
+            await destino.update(cambios, { transaction: t });
+        }
+
+        await t.commit();
+    } catch (err) {
+        await t.rollback();
+        throw err;
+    }
+
+    return { aplicado: true, excedente, politica, ...resultado.resumen, cancelaElCredito: resultado.cancelaElCredito };
+}
+
 router.put('/payments/:id', async (req, res) => {
     try {
         const payment = await LoanPayment.findByPk(req.params.id);
@@ -3092,6 +3380,17 @@ router.put('/payments/:id', async (req, res) => {
         await payment.update(updateData);
         validateAndFixLoanStatuses().catch(() => { });
 
+        // ── Abono extraordinario a capital ────────────────────────────
+        // Si el socio pagó por encima de su cuota, el excedente no es un dinero
+        // suelto: es capital que amortiza por adelantado y que debe rebajar los
+        // intereses que aún no se han causado. Antes se guardaba en
+        // `valorCuotaPago` y ahí moría — el saldo no bajaba, las cuotas
+        // siguientes no cambiaban y el socio seguía pagando el mismo interés.
+        let abono = null;
+        if (payment.estado === 'Pago' && payment.idVm) {
+            abono = await aplicarAbonoExtraordinario(payment, req.body.politicaAbono);
+        }
+
         // Notifica al socio solo cuando la cuota PASA a 'Pago' (no en cualquier otra
         // edición del registro, como corregir una fecha o un monto).
         if (estadoAnterior !== 'Pago' && payment.estado === 'Pago' && payment.clientId) {
@@ -3100,12 +3399,16 @@ router.put('/payments/:id', async (req, res) => {
                 clientId: payment.clientId,
                 type: 'payment_registered',
                 title: 'Se registró el pago de tu cuota',
-                message: `Tu cuota ${payment.externalId || ''} de $${Math.round(Number(payment.valorCuotaPago || payment.valorCuotaVariable || 0)).toLocaleString('es-CO')} quedó registrada como pagada.`.trim(),
+                message: abono && abono.aplicado
+                    ? `Tu cuota ${payment.externalId || ''} quedó pagada. Los $${Math.round(abono.excedente).toLocaleString('es-CO')} que pagaste de más abonaron a capital y te ahorran $${Math.round(abono.ahorroInteres).toLocaleString('es-CO')} en intereses.`.trim()
+                    : `Tu cuota ${payment.externalId || ''} de $${Math.round(Number(payment.valorCuotaPago || payment.valorCuotaVariable || 0)).toLocaleString('es-CO')} quedó registrada como pagada.`.trim(),
                 link: '/dashboard/mis-creditos?tab=cuotas'
             });
         }
 
-        res.json(payment);
+        // El resumen del abono viaja aparte del registro para que la pantalla
+        // pueda explicar qué se recalculó — o por qué no se recalculó nada.
+        res.json(abono ? { ...payment.toJSON(), abonoExtraordinario: abono } : payment);
     } catch (err) {
         res.status(400).json({ error: err.message });
     }
@@ -3252,6 +3555,100 @@ router.delete('/payments/:id/soporte', async (req, res) => {
 //       · Si el socio NO tiene ahorro registrado en ese mes/año
 //         se calcula: días desde el día 11 de ese mes hasta HOY * $1.000
 //         (solo si hoy ya pasó el día 11 de ese mes)
+// ── Diagnóstico: registros fechados un día por delante (bug de UTC) ──────────
+//
+// Hasta el arreglo de fechas, los formularios proponían "hoy" con
+// toISOString(), que devuelve la fecha en UTC. Colombia va cinco horas por
+// detrás, así que entre las 7:00 p.m. y la medianoche hora local el UTC ya era
+// el día siguiente y lo registrado en esa franja quedó fechado mañana.
+//
+// Un registro se marca como afectado cuando se cumplen DOS cosas:
+//   1. createdAt (que Sequelize guarda en UTC) cae entre las 00:00 y las 05:00
+//      UTC — o sea, entre las 7 p.m. y la medianoche en Colombia del día antes.
+//   2. Y su fecha de negocio coincide EXACTAMENTE con la fecha UTC de createdAt.
+//
+// La segunda condición es la que evita falsos positivos: si el admin escribió
+// la fecha a mano, no coincide con el valor por defecto y no se cuenta. Solo
+// salen los que aceptaron el default equivocado.
+//
+// Es de SOLO LECTURA. Corregir fechas de movimientos ya contabilizados es una
+// decisión del comité, no algo que deba pasar de rebote por abrir un informe.
+router.get('/diagnostico/fechas-utc', async (req, res) => {
+    try {
+        const sequelize = require('../config/database');
+
+        // Solo columnas que salían de un <input type="date"> del formulario.
+        // Se excluyen las calculadas por el sistema (vencimientos derivados del
+        // cronograma), que nunca tomaron ese valor por defecto.
+        const OBJETIVOS = [
+            { tabla: 'Savings', etiqueta: 'Ahorros', columnas: ['date'] },
+            { tabla: 'Loans', etiqueta: 'Solicitudes de préstamo', columnas: ['date'] },
+            { tabla: 'DisbursedLoans', etiqueta: 'Préstamos desembolsados', columnas: ['fecha_prestamo', 'fecha_desembolso'] },
+            { tabla: 'Clients', etiqueta: 'Socios', columnas: ['fechaIngreso', 'fechaBaja'] },
+        ];
+
+        const tablas = (await sequelize.query(
+            "SELECT name FROM sqlite_master WHERE type='table'", { type: sequelize.QueryTypes.SELECT }
+        )).map(r => r.name);
+
+        const resultado = [];
+        let totalAfectados = 0;
+        let totalCambianMes = 0;
+
+        for (const obj of OBJETIVOS) {
+            if (!tablas.includes(obj.tabla)) continue;
+            const cols = (await sequelize.query(`PRAGMA table_info("${obj.tabla}")`, { type: sequelize.QueryTypes.SELECT })).map(c => c.name);
+            if (!cols.includes('createdAt')) continue;
+
+            for (const col of obj.columnas) {
+                if (!cols.includes(col)) continue;
+
+                const filas = await sequelize.query(
+                    `SELECT id,
+                            "${col}" AS fechaGuardada,
+                            date(createdAt, '-1 day') AS fechaCorrecta,
+                            createdAt AS creadoUtc
+                       FROM "${obj.tabla}"
+                      WHERE createdAt IS NOT NULL AND "${col}" IS NOT NULL
+                        AND time(createdAt) >= '00:00:00' AND time(createdAt) < '05:00:00'
+                        AND date("${col}") = date(createdAt)
+                      ORDER BY createdAt DESC`,
+                    { type: sequelize.QueryTypes.SELECT }
+                );
+
+                const [{ n: total }] = await sequelize.query(
+                    `SELECT COUNT(*) AS n FROM "${obj.tabla}" WHERE "${col}" IS NOT NULL`,
+                    { type: sequelize.QueryTypes.SELECT }
+                );
+
+                // Los que además cambian de MES son los que pueden mover cuentas
+                // de un período a otro: un ahorro del 31 contabilizado en el mes
+                // siguiente deja de contar para el mes que le tocaba.
+                const cambianMes = filas.filter(f =>
+                    String(f.fechaGuardada).slice(0, 7) !== String(f.fechaCorrecta).slice(0, 7));
+
+                totalAfectados += filas.length;
+                totalCambianMes += cambianMes.length;
+
+                resultado.push({
+                    tabla: obj.tabla,
+                    etiqueta: obj.etiqueta,
+                    columna: col,
+                    total,
+                    afectados: filas.length,
+                    cambianDeMes: cambianMes.length,
+                    ejemplos: filas.slice(0, 20),
+                });
+            }
+        }
+
+        res.json({ totalAfectados, totalCambianMes, detalle: resultado, soloLectura: true });
+    } catch (err) {
+        console.error('Error en diagnóstico de fechas UTC:', err);
+        res.status(500).json({ error: 'No se pudo ejecutar el diagnóstico.' });
+    }
+});
+
 router.get('/dashboard-stats', async (req, res) => {
     try {
         const PENALIZACION_DIARIA = 1000;
@@ -3401,7 +3798,14 @@ router.get('/dashboard-stats', async (req, res) => {
             const key = `${p.clientId}|${(p.idVm || '').trim().toLowerCase()}|${(p.mesPago || '').trim().toLowerCase()}`;
             if (seenKeys.has(key)) continue;
             seenKeys.add(key);
-            const valor = p.esPrepago ? parseFloat(p.valorCuotaPago || 0) : parseFloat(p.valorCuotaVariable || 0);
+            // Se cuenta lo REALMENTE recibido, no lo que la cuota decía. Antes,
+            // en una cuota normal se sumaba `valorCuotaVariable`, así que si un
+            // socio pagaba de más ese excedente no aparecía en el recaudo: el
+            // fondo recibía un dinero que no figuraba en ninguna cifra. Se
+            // conserva `valorCuotaVariable` como respaldo para las filas
+            // históricas que no registraron el valor pagado.
+            const pagadoReal = parseFloat(p.valorCuotaPago || 0);
+            const valor = pagadoReal > 0 ? pagadoReal : parseFloat(p.valorCuotaVariable || 0);
             totalCuotasPagadas += valor;
             recaudoCuotasCount++;
         }
@@ -3496,7 +3900,7 @@ router.get('/dashboard-stats', async (req, res) => {
             where: {
                 clientId: { [Op.in]: activeClientIds },
                 anioAbonado: currentYear,
-                type: { [Op.ne]: 'Aporte Inicial' } // Don't count "Aporte Inicial" as covering for "Mensual" mora
+                type: NO_ES_APORTE_INICIAL() // Don't count "Aporte Inicial" as covering for "Mensual" mora
             },
             attributes: ['clientId', 'mesAbonado', 'anioAbonado', 'type', 'date', 'valorAPenalizar']
         });
@@ -3504,7 +3908,7 @@ router.get('/dashboard-stats', async (req, res) => {
         // ── 3. TOTAL SAVINGS: suma de amount (bruto, incluye penalizaciones cobradas)
         const totalSavingsResult = await Saving.sum('amount', {
             where: {
-                type: { [Op.ne]: 'Aporte Inicial' }
+                type: NO_ES_APORTE_INICIAL()
             },
             include: [{
                 model: Client,
@@ -3805,7 +4209,10 @@ router.get('/dashboard-stats', async (req, res) => {
         });
 
         // ── 9. VENCIMIENTOS PRÓXIMOS 30 DÍAS ────────────────────────────────
-        const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        // `today0` se construye a partir del día de Colombia, no del de UTC: si no,
+        // de noche la ventana arrancaba mañana y se perdían los vencimientos de hoy.
+        const [hy, hm, hd] = hoyISOFondo().split('-').map(Number);
+        const today0 = new Date(hy, hm - 1, hd);
         const in30 = new Date(today0.getTime() + 30 * 24 * 60 * 60 * 1000);
         const proximasRaw = await LoanPayment.findAll({
             where: {
@@ -3881,7 +4288,7 @@ router.get('/dashboard-stats', async (req, res) => {
         const { QueryTypes: _QT } = require('sequelize');
         const [prestamosPrevRow, interesesPrevRow, metaSetting, patrimonioSetting, moraPrevRow, nuCierreSetting] = await Promise.all([
             _sequelize.query(
-                `SELECT ROUND(SUM(COALESCE(valor_prestado, monto))) total
+                `SELECT ROUND(SUM(COALESCE(valor_prestado, monto))) total, COUNT(*) cantidad
                  FROM DisbursedLoans WHERE anio_desembolso = :anio`,
                 { type: _QT.SELECT, replacements: { anio: _anioPrev } }),
             _sequelize.query(
@@ -3918,6 +4325,9 @@ router.get('/dashboard-stats', async (req, res) => {
         const baselines = {
             anio: _anioPrev,
             prestamos: Number(prestamosPrevRow[0]?.total) || 0,
+            // Cantidad de créditos del año anterior. El frontend la tenía escrita a
+            // mano ("13"), así que habría quedado congelada al cambiar de año.
+            prestamosCount: Number(prestamosPrevRow[0]?.cantidad) || 0,
             intereses: Number(interesesPrevRow[0]?.total) || 0,
             ahorro: (ahorroPorAnio.find(a => Number(a.anio) === _anioPrev)?.total) || 0,
             patrimonio: patrimonioSetting ? Number(patrimonioSetting.value) : (_anioPrev === 2025 ? 36126201 : 0),
@@ -3925,6 +4335,10 @@ router.get('/dashboard-stats', async (req, res) => {
             mora: Number(moraPrevRow[0]?.total) || 0,
             nu: nuCierreSetting ? Number(nuCierreSetting.value) : (_anioPrev === 2025 ? 1029139 : 0),
         };
+
+        // Los agregados del fondo (patrimonio, cartera, mora total) son información
+        // que todo socio tiene derecho a ver. Los desgloses persona por persona, no.
+        const isAdminStatsReq = req.user?.role === 'admin';
 
         res.json({
             baselines,
@@ -3977,11 +4391,20 @@ router.get('/dashboard-stats', async (req, res) => {
             carteraMora,
             moraCarteraEP: Math.round(moraCarteraEP),
             sociosMoraCount: sociosMora,
-            detalleMora,
-            detalleMoraEP,
-            detallePenalidad,
-            recentSavings,
-            recentPayments,
+            // A01 (Broken Access Control): estos cinco campos contienen datos
+            // INDIVIDUALES de otros socios — nombre, cédula, días de mora, montos
+            // ahorrados y pagados. `/dashboard-stats` está en READ_ONLY_FOR_ALL
+            // (cualquier socio autenticado puede llamarlo, porque el Panel Principal
+            // se monta también en /dashboard/fondo), así que hasta ahora un socio
+            // cualquiera podía leer con curl quién está en mora y con qué cédula.
+            // En una cooperativa pequeña, donde todos se conocen, eso es una fuga
+            // real. Ocultarlo en el frontend no bastaba: el dato igual viajaba.
+            // Mismo criterio ya aplicado a `concentracion` en /executive-stats.
+            detalleMora: isAdminStatsReq ? detalleMora : undefined,
+            detalleMoraEP: isAdminStatsReq ? detalleMoraEP : undefined,
+            detallePenalidad: isAdminStatsReq ? detallePenalidad : undefined,
+            recentSavings: isAdminStatsReq ? recentSavings : undefined,
+            recentPayments: isAdminStatsReq ? recentPayments : undefined,
             proximosVencimientos30d,
             sociosAlDiaMes,
             timestamp: now.toISOString()
@@ -4337,7 +4760,10 @@ const SHARED_INFORMES_DIR = path.join(__dirname, '..', 'shared-informes');
 // que se comparte explícitamente con ellos — hoy, solo este informe. Agregar aquí cada
 // nuevo documento que se quiera compartir con Junta, y copiar el archivo también a
 // SHARED_INFORMES_DIR para que esté disponible en producción.
-const JUNTA_INFORMES_VISIBLES = new Set(['Interes_Proporcional_Retanqueos.pdf']);
+const JUNTA_INFORMES_VISIBLES = new Set([
+    'Interes_Proporcional_Retanqueos.pdf',
+    'Abonos_Extraordinarios_a_Capital.md',
+]);
 
 function findInformePath(name) {
     const sharedPath = path.join(SHARED_INFORMES_DIR, name);
@@ -4517,6 +4943,80 @@ router.get('/logs/access', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
+// EVENTOS DE ATAQUE AL SISTEMA — A07/A09
+// Subconjunto de logs/security.log correspondiente a intentos de vulnerar
+// el sistema (no auditoría de uso legítimo): logins fallidos, cambios de
+// contraseña fallidos, alertas de fuerza bruta y bloqueos por rate-limit.
+// Endpoint separado de /logs/access a propósito, para no mezclar
+// "auditoría de acceso" con "eventos de ataque" en la misma lista.
+// ─────────────────────────────────────────────
+const ATTACK_LOG_EVENTS = new Set([
+    'LOGIN_FAIL_USER_NOT_FOUND',
+    'LOGIN_FAIL_BAD_PASSWORD',
+    'LOGIN_FAIL_DEACTIVATED',
+    'PASSWORD_CHANGE_FAIL_BAD_CURRENT',
+    'ALERT_BRUTE_FORCE_SUSPECTED',
+    'ALERT_RATE_LIMIT_LOGIN',
+    'ALERT_RATE_LIMIT_RESET',
+]);
+
+const ATTACK_SEVERITY = {
+    LOGIN_FAIL_USER_NOT_FOUND: 'media',
+    LOGIN_FAIL_BAD_PASSWORD: 'media',
+    LOGIN_FAIL_DEACTIVATED: 'baja',
+    PASSWORD_CHANGE_FAIL_BAD_CURRENT: 'baja',
+    ALERT_BRUTE_FORCE_SUSPECTED: 'alta',
+    ALERT_RATE_LIMIT_LOGIN: 'alta',
+    ALERT_RATE_LIMIT_RESET: 'media',
+};
+
+router.get('/logs/security-events', async (req, res) => {
+    try {
+        if (!fs.existsSync(LOG_FILE)) return res.json({ data: [] });
+
+        const lines = fs.readFileSync(LOG_FILE, 'utf-8').split('\n').filter(Boolean);
+        const limit = Math.min(parseInt(req.query.limit, 10) || 500, 2000);
+
+        const entries = [];
+        for (let i = lines.length - 1; i >= 0 && entries.length < limit; i--) {
+            const jsonStr = lines[i].replace(/^\[SECURITY\]\s*/, '');
+            let obj;
+            try { obj = JSON.parse(jsonStr); } catch { continue; }
+            if (ATTACK_LOG_EVENTS.has(obj.event)) entries.push(obj);
+        }
+
+        const ids = [...new Set(entries.map(e => e.userId).filter(Boolean))];
+        const clients = ids.length
+            ? await Client.findAll({
+                where: { id: ids },
+                attributes: ['id', 'name', 'apellido1', 'apellido2', 'customerId', 'cedula', 'role']
+            })
+            : [];
+        const clientMap = new Map(clients.map(c => [c.id, c]));
+
+        const data = entries.map(({ ts, event, userId, cedula, ip, ...extra }) => {
+            const c = userId ? clientMap.get(userId) : null;
+            return {
+                ts,
+                event,
+                severity: ATTACK_SEVERITY[event] || 'media',
+                userId: userId || null,
+                cedula: c?.cedula || cedula || null,
+                nombre: c ? `${c.name} ${c.apellido1 || ''} ${c.apellido2 || ''}`.trim() : null,
+                customerId: c?.customerId || null,
+                ip: ip || null,
+                extra
+            };
+        });
+
+        res.json({ data });
+    } catch (err) {
+        console.error('logs/security-events error:', err);
+        res.status(500).json({ error: 'Error al leer eventos de seguridad.' });
+    }
+});
+
+// ─────────────────────────────────────────────
 // ENDPOINTS PARA SOCIOS (SOLO LECTURA)
 // ─────────────────────────────────────────────
 
@@ -4551,7 +5051,7 @@ router.get('/my/utilidades-estimadas', verifyToken, requireFreshPassword, requir
         const activos = await Client.findAll({ where: { estatus: 'Activo' }, attributes: ['id'] });
         const rows = await Saving.findAll({
             where: {
-                type: { [Op.ne]: 'Aporte Inicial' },
+                type: NO_ES_APORTE_INICIAL(),
                 clientId: { [Op.in]: activos.map(c => c.id) }
             },
             attributes: ['clientId', 'amount', 'valorAhorrado', 'anioAbonado', 'year']
@@ -4796,7 +5296,7 @@ router.get('/my/savings', verifyToken, requireFreshPassword, requireRole('user',
     try {
         const { Op } = require('sequelize');
         const savings = await Saving.findAll({
-            where: { clientId: req.user.id, type: { [Op.ne]: 'Aporte Inicial' } },
+            where: { clientId: req.user.id, type: NO_ES_APORTE_INICIAL() },
             include: [{ model: Client, attributes: ['customerId', 'name', 'surname1', 'surname2', 'cedula'] }],
             order: [['date', 'DESC']],
             limit: 1000 // tope defensivo: acota el costo de la consulta ante un dato anómalo, sin afectar el uso real
@@ -5056,6 +5556,176 @@ router.get('/executive-stats', async (req, res) => {
     }
 });
 
+// ── Comparación entre años: serie MENSUAL por año ─────────────────────────
+// Existe para corregir una comparación estructuralmente engañosa del Panel
+// Principal: contrastaba el acumulado PARCIAL del año en curso contra el total
+// COMPLETO (12 meses) del año anterior, así que el fondo aparecía "por debajo"
+// aunque fuera mejor — un artefacto del calendario, no un resultado real.
+//
+// Con la serie mensual el frontend puede comparar al MISMO corte del calendario
+// (ene–<mes actual> de cada año), que es la única comparación honesta, y además
+// permite elegir interactivamente qué años contrastar.
+//
+// Nota sobre el rendimiento de la cuenta NU: no tiene serie mensual posible —
+// el admin edita un único saldo acumulado, sin histórico. Se expone solo el
+// cierre por año (AppSetting rentabilidadCajaNUCierre{año}) y se marca como
+// `sinSerieMensual` para que la UI no finja una precisión que no existe.
+router.get('/year-comparison', async (req, res) => {
+    try {
+        const sequelize = require('../config/database');
+        const { QueryTypes, Op } = require('sequelize');
+        const AppSetting = require('../models/AppSetting');
+        const q = (sql) => sequelize.query(sql, { type: QueryTypes.SELECT });
+
+        const hoy = new Date();
+        const anioActual = hoy.getFullYear();
+        const mesCorte = hoy.getMonth() + 1;
+        const diaCorte = hoy.getDate();
+        const inicioAnio = new Date(anioActual, 0, 1);
+        const diaDelAnio = Math.max(1, Math.round((hoy - inicioAnio) / 86400000) + 1);
+        const diasDelAnio = ((anioActual % 4 === 0 && anioActual % 100 !== 0) || anioActual % 400 === 0) ? 366 : 365;
+
+        // Corte con precisión de DÍA para los intereses (LoanPayments.fecha_pago_max es
+        // una fecha real). Mora y ahorro se acreditan por período mes/año (mesAbonado /
+        // anioAbonado), sin día, así que su corte es por mes completo — simétrico en
+        // ambos años, que es lo que importa para que la comparación sea justa.
+        const corteMD = `${String(mesCorte).padStart(2, '0')}-${String(diaCorte).padStart(2, '0')}`;
+
+        const [interesesMes, moraMes, ahorroMes, colocacionMes, interesesYtdRows, nuSettings] = await Promise.all([
+            // Intereses efectivamente cobrados, por año y mes de vencimiento.
+            q(`SELECT CAST(strftime('%Y', fecha_pago_max) AS INTEGER) anio,
+                      CAST(strftime('%m', fecha_pago_max) AS INTEGER) mes,
+                      ROUND(SUM(valor_intereses_amortizados)) total
+               FROM LoanPayments
+               WHERE estado IN ('Pago','Abono') AND fecha_pago_max IS NOT NULL
+               GROUP BY 1, 2 ORDER BY 1, 2`),
+            // Mora: mismo criterio que baselines.mora en /dashboard-stats — el recargo
+            // anual vive en registros 'Descuento Total Anual Penalizacion' (valorAPenalizar
+            // en 0 y el monto real en `amount`, negativo); el resto son recargos mensuales.
+            // Se agrupa por período ACREDITADO (anioAbonado/mesAbonado), no por fecha de
+            // transacción, porque un descuento de 2025 puede registrarse en dic-2024.
+            q(`SELECT CAST(anioAbonado AS INTEGER) anio,
+                      CAST(mesAbonado AS INTEGER) mes,
+                      ROUND(SUM(CASE WHEN status = 'Descuento Total Anual Penalizacion'
+                                     THEN ABS(amount) ELSE valorAPenalizar END)) total
+               FROM Savings
+               WHERE anioAbonado IS NOT NULL AND anioAbonado != ''
+                 AND (valorAPenalizar > 0 OR status = 'Descuento Total Anual Penalizacion')
+               GROUP BY 1, 2 ORDER BY 1, 2`),
+            // Ahorro NETO acreditado por período (valorAhorrado = neto de penalización).
+            q(`SELECT CAST(anioAbonado AS INTEGER) anio,
+                      CAST(mesAbonado AS INTEGER) mes,
+                      ROUND(SUM(valorAhorrado)) total
+               FROM Savings
+               WHERE anioAbonado IS NOT NULL AND anioAbonado != ''
+                 AND status != 'Descuento Total Anual Penalizacion'
+               GROUP BY 1, 2 ORDER BY 1, 2`),
+            // Colocación de créditos por año y mes de desembolso.
+            q(`SELECT CAST(anio_desembolso AS INTEGER) anio,
+                      CAST(strftime('%m', fecha_prestamo) AS INTEGER) mes,
+                      ROUND(SUM(COALESCE(valor_prestado, monto))) total
+               FROM DisbursedLoans
+               WHERE anio_desembolso IS NOT NULL AND fecha_prestamo IS NOT NULL
+               GROUP BY 1, 2 ORDER BY 1, 2`),
+            // Intereses ene → corte exacto (mismo día del calendario) por año.
+            q(`SELECT CAST(strftime('%Y', fecha_pago_max) AS INTEGER) anio,
+                      ROUND(SUM(valor_intereses_amortizados)) total
+               FROM LoanPayments
+               WHERE estado IN ('Pago','Abono') AND fecha_pago_max IS NOT NULL
+                 AND strftime('%m-%d', fecha_pago_max) <= '${corteMD}'
+               GROUP BY 1 ORDER BY 1`),
+            AppSetting.findAll({ where: { key: { [Op.like]: 'rentabilidadCajaNU%' } } }),
+        ]);
+
+        const FUENTES = { intereses: interesesMes, mora: moraMes, ahorro: ahorroMes, colocacion: colocacionMes };
+
+        // Universo de años con algún dato real (se descartan años absurdos por si
+        // hay fechas corruptas en la importación legacy).
+        const aniosSet = new Set();
+        Object.values(FUENTES).forEach(rows => rows.forEach(r => {
+            const a = Number(r.anio);
+            if (Number.isFinite(a) && a >= 2000 && a <= anioActual + 1) aniosSet.add(a);
+        }));
+        aniosSet.add(anioActual);
+        const anios = [...aniosSet].sort((a, b) => a - b);
+
+        // NU por año: solo cierre anual (sin serie mensual). El año en curso usa el
+        // saldo vivo `rentabilidadCajaNU`; los años cerrados, su AppSetting de cierre.
+        const nuMap = new Map(nuSettings.map(s => [s.key, Number(s.value) || 0]));
+        const nuDeAnio = (anio) => anio === anioActual
+            ? (nuMap.get('rentabilidadCajaNU') || 0)
+            : (nuMap.get(`rentabilidadCajaNUCierre${anio}`) || 0);
+
+        const series = anios.map(anio => {
+            const meses = Array.from({ length: 12 }, (_, i) => {
+                const mes = i + 1;
+                const val = (rows) => {
+                    const row = rows.find(r => Number(r.anio) === anio && Number(r.mes) === mes);
+                    return Number(row?.total) || 0;
+                };
+                return {
+                    mes,
+                    intereses: val(interesesMes),
+                    mora: val(moraMes),
+                    ahorro: val(ahorroMes),
+                    colocacion: val(colocacionMes),
+                };
+            });
+
+            const sumar = (campo, hastaMes) => meses
+                .filter(m => m.mes <= hastaMes)
+                .reduce((s, m) => s + m[campo], 0);
+
+            // ytdAlCorte: enero → mes de corte de HOY, para cada año. Es la comparación
+            // manzana-con-manzana. totalAnio: los 12 meses (solo tiene sentido pleno
+            // en años ya cerrados).
+            const totalAnio = {
+                intereses: sumar('intereses', 12),
+                mora: sumar('mora', 12),
+                ahorro: sumar('ahorro', 12),
+                colocacion: sumar('colocacion', 12),
+                nu: nuDeAnio(anio),
+            };
+            const ytdAlCorte = {
+                // Intereses: corte al día exacto (la fecha de la cuota lo permite).
+                intereses: Number(interesesYtdRows.find(r => Number(r.anio) === anio)?.total) || 0,
+                // Mora / ahorro / colocación: corte por mes completo — es la única
+                // granularidad que tiene el período acreditado, e igual en ambos años.
+                mora: sumar('mora', mesCorte),
+                ahorro: sumar('ahorro', mesCorte),
+                colocacion: sumar('colocacion', mesCorte),
+            };
+
+            return {
+                anio,
+                esAnioEnCurso: anio === anioActual,
+                meses,
+                totalAnio: { ...totalAnio, ganancia: totalAnio.intereses + totalAnio.mora + totalAnio.nu },
+                ytdAlCorte,
+            };
+        });
+
+        res.json({
+            corte: {
+                anioActual,
+                mes: mesCorte,
+                dia: diaCorte,
+                diaDelAnio,
+                diasDelAnio,
+                // Fracción del año transcurrida: el divisor honesto para saber si el
+                // fondo va adelante o atrás del ritmo del año anterior.
+                fraccionAnio: +(diaDelAnio / diasDelAnio).toFixed(4),
+            },
+            anios,
+            series,
+            nu: { sinSerieMensual: true, porAnio: Object.fromEntries(anios.map(a => [a, nuDeAnio(a)])) },
+        });
+    } catch (err) {
+        console.error('year-comparison error:', err);
+        res.status(500).json({ error: 'Error generando la comparación entre años' });
+    }
+});
+
 // ── Evolución de Ahorros (beta): serie mensual con negativos visibles ─────
 // Regla de gobernanza de gráficas: las devoluciones (meses negativos) se
 // muestran, no se filtran. Serie por mes acreditado (mesAbonado/anioAbonado),
@@ -5065,6 +5735,21 @@ router.get('/savings-evolution', async (req, res) => {
         const sequelize = require('../config/database');
         const { QueryTypes } = require('sequelize');
         const clientId = req.query.clientId ? parseInt(req.query.clientId, 10) : null;
+
+        // A01 — Control de acceso roto (IDOR). Esta ruta está en READ_ONLY_FOR_ALL
+        // porque su forma AGREGADA (sin ?clientId) alimenta el Panel Ejecutivo, que
+        // cualquier socio puede ver. Pero con ?clientId devolvía el historial de
+        // ahorro mes a mes de CUALQUIER socio a CUALQUIER socio autenticado: el
+        // desplegable de SavingsEvolutionPage se limita al propio usuario en el
+        // cliente, y ese filtro se saltaba con un curl o desde las devtools.
+        // Iterando clientId=1..N se reconstruía el fondo entero, persona por persona.
+        // Verificado: el socio id=15 leía la serie completa de los socios 17 y 18.
+        //   - sin clientId  -> agregado del fondo, sin datos de nadie en particular
+        //   - con clientId  -> solo el admin, o el propio socio sobre sí mismo
+        if (clientId !== null && req.user?.role !== 'admin' && clientId !== req.user?.id) {
+            return res.status(403).json({ error: 'Solo puedes consultar tu propia evolución de ahorros.' });
+        }
+
         const filtro = clientId ? 'AND clientId = :clientId' : '';
         const replacements = clientId ? { clientId } : {};
 

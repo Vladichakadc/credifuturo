@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+// useMemo faltaba en este import y `SavingsDetail` lo usa sin prefijo: abrir la
+// tarjeta "Capital Ahorrado" tiraba la página con ReferenceError.
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../../config/api';
 import {
     Users, DollarSign, PiggyBank, BarChart3, CheckCircle,
@@ -989,8 +991,13 @@ const UserAccountDetailsPage = () => {
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-                    <h1 className="text-2xl font-bold text-brand-primary">Detalle de la Cuenta {!user?.name ? '' : `- ${user.name} ${user.surname1 || ''} ${user.surname2 || ''}`.trim()}</h1>
-                    <span className="hidden sm:block text-brand-primary/30 text-2xl">|</span>
+                    {/* El sufijo con el nombre del socio salía de una variable
+                        `user` que no existe en este componente (solo hay
+                        `fullUserData` y `authUser`), así que la página entera
+                        reventaba con ReferenceError en cada render. Se elimina en
+                        vez de repararlo: el <h2> de al lado ya dice "Socio:
+                        {nombre}", así que el nombre no se pierde y deja de estar
+                        dos veces en la misma línea. */}
                     {(fullUserData || authUser).name ? (
                         <h2 className="text-2xl font-bold text-brand-primary">
                             Socio: {fullUserData

@@ -1,4 +1,7 @@
 import React, { useState } from 'react';
+import PageHeroRuta from '../components/ui/PageHeroRuta';
+import useDrawerMovil from '../utils/useDrawerMovil';
+import { motion } from 'framer-motion';
 import { Outlet, useLocation, useNavigate, Link } from 'react-router-dom';
 import {
     Users,
@@ -27,7 +30,8 @@ import {
     Wallet,
     Inbox,
     Lightbulb,
-    MessageSquareMore
+    MessageSquareMore,
+    Eye
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import api, { apiWithRetry } from '../config/api';
@@ -66,8 +70,11 @@ const SidebarItem = ({ icon: Icon, label, path, isActive, collapsed }) => {
 };
 
 // ——— Expandable sidebar group with dynamic children ———
-const SidebarSubmenu = ({ icon: Icon, label, children, isOpen, onToggle, location, collapsed, searchValue, onSearch }) => {
-    const hasActiveChild = children.some(child => location.pathname === child.path.split('?')[0]);
+// `items` (antes `children`): son los enlaces del submenú como DATOS, no
+// hijos de React. Pasarlos por la prop `children` hacía que React los tratara
+// como contenido anidado y confundía a quien leyera el componente.
+const SidebarSubmenu = ({ icon: Icon, label, items, isOpen, onToggle, location, collapsed, searchValue, onSearch }) => {
+    const hasActiveChild = items.some(child => location.pathname === child.path.split('?')[0]);
 
     return (
         <div className="mr-2">
@@ -118,7 +125,7 @@ const SidebarSubmenu = ({ icon: Icon, label, children, isOpen, onToggle, locatio
                         </div>
                     )}
                     <div className="ml-4 pl-3 border-l-2 border-white/15 space-y-0.5 py-1">
-                        {children.map(child => {
+                        {items.map(child => {
                             const childBasePath = child.path.split('?')[0];
                             const childQuery = child.path.includes('?') ? '?' + child.path.split('?')[1] : null;
                             const isChildActive = childQuery
@@ -157,6 +164,9 @@ const SidebarSubmenu = ({ icon: Icon, label, children, isOpen, onToggle, locatio
 
 const DashboardLayout = ({ user, onLogout }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    // Mismo comportamiento que el layout del socio: cierre al navegar, bloqueo
+    // del scroll de fondo, Escape y arrastre — ver utils/useDrawerMovil.js.
+    const { cerrar: cerrarDrawer, propsArrastre } = useDrawerMovil(sidebarOpen, setSidebarOpen);
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncProgress, setSyncProgress] = useState(0);
     const [syncStats, setSyncStats] = useState(null);
@@ -377,6 +387,8 @@ const DashboardLayout = ({ user, onLogout }) => {
         },
         { type: 'link', icon: FileText, label: 'Copias de Seguridad', path: '/admin/reports' },
         { type: 'link', icon: History, label: 'Logs del Sistema', path: '/admin/logs' },
+        // Control de qué secciones ven los socios (tarjetas, gráficos, menús).
+        { type: 'link', icon: Eye, label: 'Cambios', path: '/admin/cambios' },
         {
             type: 'submenu',
             key: 'estatutos',
@@ -482,18 +494,27 @@ const DashboardLayout = ({ user, onLogout }) => {
             )}
 
             {/* Mobile Sidebar Overlay */}
-            {sidebarOpen && (
-                <div
-                    className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-sm"
-                    onClick={() => setSidebarOpen(false)}
-                />
-            )}
+            {/* Velo conmutado por opacidad, no por montaje — ver el comentario
+                equivalente en UserDashboardLayout. */}
+            <div
+                onClick={cerrarDrawer}
+                aria-hidden="true"
+                className={cn(
+                    "fixed inset-0 bg-black/50 z-40 lg:hidden backdrop-blur-[2px] transition-opacity duration-300 ease-out",
+                    sidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+                )}
+            />
 
             {/* Sidebar — dark brand */}
-            <aside className={cn(
-                "fixed lg:sticky top-0 left-0 z-50 h-screen w-64 flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0",
-                "bg-brand-dark shadow-sidebar",
-                sidebarOpen ? "translate-x-0" : "-translate-x-full"
+            <aside
+                {...propsArrastre}
+                id="menu-lateral"
+                aria-label="Menú principal"
+                className={cn(
+                "fixed lg:sticky top-0 left-0 z-50 h-[100dvh] w-64 flex flex-col lg:translate-x-0 lg:visible",
+                "bg-brand-dark shadow-sidebar will-change-transform",
+                "transition-[transform,visibility] duration-[380ms] [transition-timing-function:cubic-bezier(0.32,0.72,0,1)]",
+                sidebarOpen ? "translate-x-0 visible" : "-translate-x-full invisible"
             )}>
                 {/* Logo header */}
                 <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
@@ -528,7 +549,7 @@ const DashboardLayout = ({ user, onLogout }) => {
                                     key={item.key}
                                     icon={item.icon}
                                     label={item.label}
-                                    children={item.children}
+                                    items={item.children}
                                     isOpen={!!openSubmenus[item.key]}
                                     onToggle={() => toggleSubmenu(item.key)}
                                     location={location}
@@ -601,6 +622,10 @@ const DashboardLayout = ({ user, onLogout }) => {
 
                 {/* Page Content */}
                 <div className="flex-1 p-4 lg:p-8 overflow-x-hidden pb-20 lg:pb-8">
+                    {/* Presentación de la pantalla, resuelta por ruta desde
+                        utils/paginasInfo.js. Va aquí y no dentro de cada página
+                        para que una pantalla nueva la herede sin tocarla. */}
+                    <PageHeroRuta />
                     <Outlet />
                 </div>
             </main>
@@ -615,11 +640,20 @@ const DashboardLayout = ({ user, onLogout }) => {
                             : item.path && location.pathname.startsWith(item.path.split('?')[0]) && item.path !== '/admin';
 
                         if (item.action === 'menu') {
+                            // Sin aria-label: el botón ya tiene el texto visible
+                            // "Menú"; ponerle uno lo pisaría y dejaría dos
+                            // controles con el mismo nombre accesible que el del
+                            // encabezado.
                             return (
                                 <button
                                     key="menu"
                                     onClick={() => setSidebarOpen(true)}
-                                    className="flex-1 flex flex-col items-center justify-center gap-0.5 text-gray-400 hover:text-brand-primary active:scale-95 transition-all"
+                                    aria-expanded={sidebarOpen}
+                                    aria-controls="menu-lateral"
+                                    className={cn(
+                                        "flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors duration-200 active:scale-90 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)]",
+                                        sidebarOpen ? "text-brand-primary" : "text-gray-400"
+                                    )}
                                 >
                                     <Icon className="h-5 w-5" />
                                     <span className="text-[10px] font-medium">{item.label}</span>
@@ -631,15 +665,24 @@ const DashboardLayout = ({ user, onLogout }) => {
                             <Link
                                 key={item.path}
                                 to={item.path}
+                                aria-current={isActive ? 'page' : undefined}
                                 className={cn(
-                                    "flex-1 flex flex-col items-center justify-center gap-0.5 relative transition-all active:scale-95",
-                                    isActive ? "text-brand-primary" : "text-gray-400 hover:text-gray-600"
+                                    "flex-1 flex flex-col items-center justify-center gap-0.5 relative active:scale-90",
+                                    "transition-[color,transform] duration-200 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)]",
+                                    isActive ? "text-brand-primary" : "text-gray-400"
                                 )}
                             >
+                                {/* Marca deslizante — ver el comentario equivalente
+                                    en UserDashboardLayout. `layoutId` distinto para
+                                    que las dos barras no compartan el elemento. */}
                                 {isActive && (
-                                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-primary rounded-full" />
+                                    <motion.div
+                                        layoutId="navMovilActivoAdmin"
+                                        className="absolute top-0 left-1/2 -translate-x-1/2 w-9 h-[3px] bg-brand-primary rounded-b-full"
+                                        transition={{ type: 'spring', stiffness: 480, damping: 38 }}
+                                    />
                                 )}
-                                <Icon className="h-5 w-5" />
+                                <Icon className={cn("h-5 w-5 transition-transform duration-200", isActive && "-translate-y-px scale-110")} />
                                 <span className="text-[10px] font-medium">{item.label}</span>
                             </Link>
                         );

@@ -81,6 +81,7 @@ import StatusMultiSelect from '../../components/admin/StatusMultiSelect';
 import PillSingleSelect from '../../components/admin/PillSingleSelect';
 import { notifyUpdate } from '../../utils/sync';
 import { COLOMBIAN_BANKS_WITH_OTHER } from '../../utils/banks';
+import { hoyISO } from '../../utils/fechas';
 
 // ── Input numérico con formato (migrado de PaymentsPage.jsx) — muestra el valor
 // formateado (miles/porcentaje) cuando no tiene foco, y el número crudo mientras se edita.
@@ -243,6 +244,9 @@ const TABLE_COLUMNS = [
     { key: 'fechaPagoMax', label: 'Fecha Pago Max', align: 'center', minWidth: '130px', isDate: true },
     { key: 'mesPago', label: 'Mes Pago', align: 'center', minWidth: '110px' },
     { key: 'valorCuotaVariable', label: 'Cuota Variable', align: 'right', minWidth: '130px', isCurrency: true },
+    // Lo que el socio pagó de verdad. Faltaba: la lista solo mostraba lo que se
+    // DEBÍA, así que un pago por encima de la cuota era invisible aquí.
+    { key: 'valorCuotaPago', label: 'Valor Pagado', align: 'right', minWidth: '130px', isPagado: true },
     { key: 'estado', label: 'Estado Pago', align: 'center', minWidth: '110px', isEstadoBadge: true },
     { key: 'saldoFinal', label: 'Saldo Final', align: 'right', minWidth: '120px', isCurrency: true },
     { key: 'estadoPrestamo', label: 'Estado Préstamo', align: 'center', minWidth: '140px', isLoanBadge: true },
@@ -320,6 +324,37 @@ const CellRenderer = ({ column, value, row, onDownload }) => {
     if (column.isTechId) return <span className="font-mono text-xs text-gray-400 tabular-nums">{value}</span>;
     if (column.isDate) return <span className="tabular-nums text-gray-700">{displayFecha(value, row.mesPago)}</span>;
     if (column.isCurrency) return <span className="font-medium text-gray-900 tabular-nums">{formatCurrency(value)}</span>;
+    // Lo pagado se compara con la cuota: si excede, es un abono a capital y se
+    // señala con el excedente al lado. Un número suelto no dice nada; lo que
+    // importa es la diferencia contra lo que se debía.
+    if (column.isPagado) {
+        const pagado = parseFloat(value) || 0;
+        const cuota = parseFloat(row.valorCuotaVariable) || 0;
+        const exceso = pagado - cuota;
+        if (pagado <= 0) return <span className="text-gray-300">—</span>;
+        if (exceso > 1) {
+            // El backend deja constancia en las observaciones de qué hizo con el
+            // excedente. Se lee de ahí para no afirmar un tratamiento que quizá
+            // no ocurrió: en un préstamo con cronograma heredado el abono se
+            // registra pero no se recalcula nada.
+            const obs = String(row.observaciones || '');
+            const trato = /reducci[oó]n de cuota/i.test(obs) ? 'reduce la cuota'
+                : /reducci[oó]n de plazo/i.test(obs) ? 'reduce el plazo'
+                    : null;
+            return (
+                <span className="inline-flex flex-col items-end leading-tight">
+                    <span className="font-bold text-amber-700 tabular-nums">{formatCurrency(pagado)}</span>
+                    <span className="text-[10px] font-semibold text-amber-600 tabular-nums">
+                        +{formatCurrency(exceso)} a capital
+                    </span>
+                    <span className="text-[10px] font-medium text-amber-500">
+                        {trato || 'sin recalcular'}
+                    </span>
+                </span>
+            );
+        }
+        return <span className="font-medium text-gray-900 tabular-nums">{formatCurrency(pagado)}</span>;
+    }
     if (column.isPercent) return <span className="tabular-nums text-gray-700">{formatPercent(value)}</span>;
     if (column.isNumber) return <span className="tabular-nums text-gray-700">{value}</span>;
     if (column.highlight) return <span className="font-semibold text-gray-900">{value}</span>;
@@ -359,6 +394,9 @@ const PaymentsListPage = () => {
     const [isSaving, setIsSaving] = useState(false); // guardado del modal — independiente de `loading` (que gobierna el skeleton de página completa)
     const [deletingId, setDeletingId] = useState(null);
     const [togglingId, setTogglingId] = useState(null);
+    // Qué hacer con lo que el socio pague por encima de su cuota. Por defecto se
+    // baja la cuota y se conserva el plazo; el socio puede pedir lo contrario.
+    const [politicaAbono, setPoliticaAbono] = useState('reducir-cuota');
     const [selectingRecord, setSelectingRecord] = useState(false);
     const [selectorSearch, setSelectorSearch] = useState('');
     const [selectorClientId, setSelectorClientId] = useState('');
@@ -378,7 +416,7 @@ const PaymentsListPage = () => {
         cuotasPrestamo: '',
         interesMensual: '',
         valorInteresesAmortizados: '',
-        fechaPagoMax: new Date().toISOString().split('T')[0],
+        fechaPagoMax: hoyISO(),
         mesPago: MONTH_LABELS_ES[new Date().getMonth()],
         valorCuotaVariable: '',
         estado: 'Pendiente',
@@ -527,7 +565,7 @@ const PaymentsListPage = () => {
             externalId: '', clientId: '', nombre: '', apellido: '',
             mesDesembolso: '', saldoInicial: '', cuotasPrestamo: '',
             interesMensual: '', valorInteresesAmortizados: '',
-            fechaPagoMax: new Date().toISOString().split('T')[0],
+            fechaPagoMax: hoyISO(),
             mesPago: MONTH_LABELS_ES[new Date().getMonth()],
             valorCuotaVariable: '', estado: 'Pendiente',
             valorCuotaPago: '', saldoFinal: '',
@@ -548,7 +586,7 @@ const PaymentsListPage = () => {
         if (payment) {
             // Fecha de Pago Max: siempre muestra la fecha actual como punto de partida
             // para que el admin registre el pago en la fecha real de hoy.
-            const today = new Date().toISOString().split('T')[0];
+            const today = hoyISO();
             const loanRef = disbursedLoans.find(l => (l.idVm || l.orderId) === payment.idVm);
             // Nombre/apellido vía clientsById (ver comentario arriba) — payment.Client no
             // existe en las filas de /payments/list.
@@ -557,7 +595,11 @@ const PaymentsListPage = () => {
             setPaymentForm({
                 ...payment,
                 fechaPagoMax: today,
-                cuotasPrestamo: payment.itemQuantity ?? payment.cuotasPrestamo,
+                // El total de cuotas del PLAN, no el número de esta cuota. Estaban
+                // invertidos: al editar se cargaba itemQuantity aquí y al guardar se
+                // persistía, así que cada edición reescribía el plan del préstamo
+                // con el número de la cuota que se estaba tocando.
+                cuotasPrestamo: payment.cuotasPrestamo ?? payment.itemQuantity,
                 nombre: clientRec?.name || '',
                 apellido: `${clientRec?.surname1 || ''} ${clientRec?.surname2 || ''}`.trim(),
                 estadoPrestamo: loanRef ? loanRef.estado : payment.estadoPrestamo
@@ -637,6 +679,14 @@ const PaymentsListPage = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [paymentForm.saldoInicial, paymentForm.valorInteresesAmortizados, paymentForm.valorCuotaPago]);
 
+    // ── Abono extraordinario: cuánto se paga por encima de la cuota ──────────
+    // Se calcula en vivo mientras el administrador escribe, porque de ese valor
+    // depende que al guardar se reescriba o no el cronograma del préstamo.
+    const excedenteAbono = Math.max(
+        0,
+        (parseFloat(paymentForm.valorCuotaPago) || 0) - (parseFloat(paymentForm.valorCuotaVariable) || 0)
+    );
+
     // ── Toggle Activar/Desactivar (estado Pago <-> Pendiente) ─────────────────
     const handleToggle = async (payment) => {
         const newEstado = payment.estado === 'Pago' ? 'Pendiente' : 'Pago';
@@ -664,7 +714,7 @@ const PaymentsListPage = () => {
                 externalId: paymentForm.externalId,
                 clientId: paymentForm.clientId,
                 mesDesembolso: paymentForm.mesDesembolso,
-                cuotasPrestamo: paymentForm.itemQuantity,
+                cuotasPrestamo: paymentForm.cuotasPrestamo,
                 interesMensual: paymentForm.interesMensual,
                 valorInteresesAmortizados: paymentForm.valorInteresesAmortizados,
                 fechaPagoMax: paymentForm.fechaPagoMax,
@@ -679,12 +729,30 @@ const PaymentsListPage = () => {
                 cuentaAhorros: paymentForm.cuentaAhorros,
                 observaciones: paymentForm.observaciones,
                 idVm: paymentForm.idVm,
-                estadoPrestamo: paymentForm.estadoPrestamo
+                estadoPrestamo: paymentForm.estadoPrestamo,
+                // Solo viaja cuando hay excedente; el backend la ignora si no lo hay.
+                ...(excedenteAbono > 0 ? { politicaAbono } : {})
             };
 
             if (isEditing) {
-                await api.put(`/admin/payments/${editingId}`, payload);
-                toast.success('Registro actualizado correctamente');
+                const res = await api.put(`/admin/payments/${editingId}`, payload);
+                // El backend devuelve qué hizo con el excedente — o por qué no
+                // pudo hacer nada. Decirlo importa: el administrador acaba de
+                // provocar (o no) una reescritura del cronograma del préstamo.
+                const abono = res.data?.abonoExtraordinario;
+                if (abono?.aplicado) {
+                    toast.success(
+                        `Abono aplicado: ${formatCurrency(abono.excedente)} a capital. ` +
+                        `El socio ahorra ${formatCurrency(abono.ahorroInteres)} en intereses` +
+                        (abono.cuotasDespues < abono.cuotasAntes
+                            ? ` y le quedan ${abono.cuotasDespues} cuotas en vez de ${abono.cuotasAntes}.`
+                            : '.')
+                    );
+                } else if (abono) {
+                    toast.error(`No se pudo aplicar el abono a capital. ${abono.motivo || ''}`);
+                } else {
+                    toast.success('Registro actualizado correctamente');
+                }
             } else {
                 const response = await api.post('/admin/payments', payload);
                 paymentIdToUse = response.data.id;
@@ -1766,6 +1834,61 @@ const PaymentsListPage = () => {
                                         <FormattedNumberInput step="0.01" className="pl-7 border-green-500 font-bold text-lg" value={paymentForm.valorCuotaPago} onChange={e => setPaymentForm({ ...paymentForm, valorCuotaPago: e.target.value })} required />
                                     </div>
                                 </div>
+
+                                {/* Aviso de abono extraordinario.
+                                    Guardar un pago mayor que la cuota reescribe el cronograma del
+                                    préstamo, y hasta ahora eso ocurría sin que la pantalla lo
+                                    dijera. Aquí se anuncia antes de guardar, con el excedente a la
+                                    vista y la política a elegir — que es una decisión del socio,
+                                    no del sistema. */}
+                                {excedenteAbono > 0 && (
+                                    <div className="md:col-span-2 lg:col-span-3 rounded-xl border border-amber-300 bg-amber-50 p-4">
+                                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                                            <span className="text-sm font-bold text-amber-900">Abono extraordinario a capital</span>
+                                            <span className="text-sm text-amber-800">
+                                                paga {formatCurrency(paymentForm.valorCuotaPago)} sobre una cuota de {formatCurrency(paymentForm.valorCuotaVariable)}.
+                                                <strong className="ml-1">Los {formatCurrency(excedenteAbono)} de diferencia irán a capital.</strong>
+                                            </span>
+                                        </div>
+                                        <p className="mt-1 text-xs text-amber-800">
+                                            Al guardar se recalculará el saldo y los intereses de las cuotas pendientes
+                                            posteriores a esta. No se tocan las ya pagadas, las anteriores que sigan
+                                            debiéndose, ni las que estén en mora.
+                                        </p>
+                                        <p className="mt-3 text-xs font-bold text-amber-900">
+                                            ¿Qué se hace con ese abono?
+                                        </p>
+                                        <div className="mt-1.5 flex flex-wrap gap-2">
+                                            {[
+                                                ['reducir-cuota', 'Reducir la cuota', 'mismo plazo, cuotas más bajas', true],
+                                                ['reducir-plazo', 'Reducir el plazo', 'misma cuota, termina antes', false],
+                                            ].map(([val, titulo, nota, esDefecto]) => (
+                                                <button
+                                                    key={val}
+                                                    type="button"
+                                                    onClick={() => setPoliticaAbono(val)}
+                                                    className={`flex-1 min-w-[190px] rounded-lg border px-3 py-2 text-left transition-colors ${politicaAbono === val
+                                                        ? 'border-amber-600 bg-white ring-1 ring-amber-600'
+                                                        : 'border-amber-200 bg-white/60 hover:bg-white'}`}
+                                                >
+                                                    <span className="flex items-center gap-1.5">
+                                                        <span className="text-sm font-bold text-amber-900">{titulo}</span>
+                                                        {esDefecto && (
+                                                            <span className="rounded-full bg-amber-600 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
+                                                                por defecto
+                                                            </span>
+                                                        )}
+                                                    </span>
+                                                    <span className="block text-xs text-amber-700">{nota}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <p className="mt-2 text-[11px] text-amber-700">
+                                            Reducir el plazo le ahorra más intereses al socio; reducir la cuota conserva más
+                                            rendimiento para el fondo. La elección es del socio.
+                                        </p>
+                                    </div>
+                                )}
                                 <div>
                                     <Label className="text-red-800 font-bold">15. Saldo Final</Label>
                                     <div className="relative">

@@ -68,10 +68,6 @@ const LoanApprovalsPage = () => {
     return (
         <div className="space-y-6">
             <div>
-                <h1 className="text-2xl font-bold text-brand-primary flex items-center gap-2">
-                    <ClipboardCheck className="h-6 w-6 text-emerald-600" />
-                    Aprobaciones de Préstamos
-                </h1>
                 <p className="text-gray-500 text-sm mt-1">
                     {viewMode === 'pending'
                         ? 'Solicitudes enviadas por los socios desde el Simulador de Préstamo, pendientes de tu decisión.'

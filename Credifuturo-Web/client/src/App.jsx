@@ -24,6 +24,10 @@ import LoanApprovalsPage from './pages/admin/LoanApprovalsPage';
 import OrphanLoansPage from './pages/admin/OrphanLoansPage';
 import AccessLogsPage from './pages/admin/AccessLogsPage';
 import ExecutivePanelPage from './pages/admin/ExecutivePanelPage';
+import FinancialIntelligencePage from './pages/admin/FinancialIntelligencePage';
+import CambiosPage from './pages/admin/CambiosPage';
+import { VisibilidadProvider } from './context/VisibilidadContext';
+import VistaPreviaBanner from './components/admin/VistaPreviaBanner';
 import SavingsEvolutionPage from './pages/admin/SavingsEvolutionPage';
 import PropuestasPage from './pages/admin/PropuestasPage';
 
@@ -88,7 +92,9 @@ function App() {
     };
 
     return (
+        <VisibilidadProvider user={user}>
         <Router>
+            <VistaPreviaBanner />
             <Routes>
                 <Route path="/login" element={<Login setUser={setUser} />} />
                 <Route path="/change-password" element={<ChangePasswordPage user={user} setUser={setUser} />} />
@@ -130,6 +136,9 @@ function App() {
                     <Route path="statutes" element={<UserStatutesPage />} />
                     <Route path="resolutions" element={<UserResolutionsPage />} />
                     <Route path="logs" element={<AccessLogsPage />} />
+                    {/* Cambios: control de qué secciones ven los socios. Solo admin
+                        (vive bajo /admin, que ya exige role="admin"). */}
+                    <Route path="cambios" element={<CambiosPage />} />
                     <Route path="propuestas" element={<PropuestasPage />} />
 
                     {/* Ruta Legacy para acceder al dashboard antiguo si es necesario durante la migración */}
@@ -150,6 +159,11 @@ function App() {
                     {/* Panel Ejecutivo: misma página que /admin/executive, reutilizada como
                         vista de solo lectura para socios (igual patrón que "fondo" arriba) */}
                     <Route path="panel-ejecutivo" element={<ExecutivePanelPage />} />
+                    {/* Inteligencia Financiera: el comparador interanual + diagnóstico que antes
+                        solo vivía dentro de "Nuestro Fondo", ahora también en su propio menú para
+                        no obligar al socio a cargar el resto del Panel Principal alrededor, y sin
+                        sumarlo al Panel Ejecutivo (que ya tiene su propio comparador). */}
+                    <Route path="inteligencia-financiera" element={<FinancialIntelligencePage />} />
                     {/* UserDashboardHome queda accesible en /dashboard/mi-resumen */}
                     <Route path="mi-resumen" element={<UserDashboardHome />} />
                     <Route path="mis-creditos" element={<MisCreditosPage />} />
@@ -181,6 +195,7 @@ function App() {
                 <Route path="/" element={<Navigate to={user ? (user.role === 'admin' ? '/admin' : '/dashboard') : '/login'} />} />
             </Routes>
         </Router>
+        </VisibilidadProvider>
     );
 }
 

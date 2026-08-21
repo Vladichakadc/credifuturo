@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../../config/api';
 import {
     ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -10,10 +10,18 @@ import {
     Gauge, ShieldCheck, AlertTriangle, TrendingUp, Wallet, PiggyBank,
     CalendarClock, Users, Printer, CheckCircle2, Info, Landmark, Percent,
     ChevronDown, DollarSign, Database, Clock, Activity, BarChart3, Coins,
-    ChevronRight, Bell, KeyRound, ClipboardList, Sparkles, UserX
+    ChevronRight, Bell, KeyRound, ClipboardList, Sparkles, UserX, RefreshCw
 } from 'lucide-react';
 import ChartExpandModal, { analyzeIncomeDistribution } from '../../components/ChartExpandModal';
 import { computeFundProjection } from '../../utils/fundProjection';
+import YearComparisonChart from '../../components/admin/YearComparisonChart';
+import YearProgressCard from '../../components/admin/YearProgressCard';
+import { computeFondoIndicadores, fmtVariacion } from '../../utils/fondoIndicadores';
+import { useVisibilidad } from '../../context/VisibilidadContext';
+import { JUNTA_CEDULAS_NO_ADMIN } from '../../utils/juntaAccess';
+import GlosarioFondo, { TerminoAyuda } from '../../components/admin/GlosarioFondo';
+import MiPosicionFondo from '../../components/admin/MiPosicionFondo';
+import CentroDeAlertas from '../../components/admin/CentroDeAlertas';
 
 const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
 const fmtCorto = (n) => {
@@ -174,6 +182,8 @@ const Collapsible = ({ icon: Icon, title, sub, children, defaultOpen = true, id 
 
 const ExecutivePanelPage = () => {
     const navigate = useNavigate();
+    const location = useLocation();
+    const { esVisible } = useVisibilidad();
     // Misma página montada en dos rutas: /admin/executive (admin) y
     // /dashboard/panel-ejecutivo (socio, solo lectura) — idéntico patrón a
     // DashboardHome.jsx en /admin y /dashboard/fondo. isAdmin gatea acciones y
@@ -184,10 +194,26 @@ const ExecutivePanelPage = () => {
         catch { return {}; }
     })();
     const isAdmin = user.role === 'admin';
+    // La Junta Administrativa NO se define por rol: la componen el gerente
+    // (role='admin') MÁS dos socios sin rol admin (JUNTA_CEDULAS_NO_ADMIN, espejo
+    // de JUNTA_CEDULAS en server/routes/admin.js). Antes esta página gateaba todo
+    // con `isAdmin`, así que esos dos miembros —que votan las solicitudes de
+    // préstamo y ejercen control sobre el fondo— recibían la vista de socio raso y
+    // no veían la cola que les toca decidir. El backend sí los reconoce
+    // (JUNTA_ROUTES permite GET /loan-requests), era solo el frontend el que no
+    // se los mostraba.
+    const esJunta = isAdmin || JUNTA_CEDULAS_NO_ADMIN.includes(user.cedula);
     const [exec, setExec] = useState(null);
     const [stats, setStats] = useState(null);
     const [evolution, setEvolution] = useState(null);
     const [pending, setPending] = useState({ loanRequests: 0, passwordResets: 0, orphanLoans: 0 });
+    // yearCmp alimenta el comparador interanual y "Resultados del año" (ambos
+    // ocultables desde admin → Cambios) y, siempre, a `ind`
+    // (computeFondoIndicadores), del que dependen el veredicto del fondo y los
+    // badges de crecimiento — por eso se pide aunque esas dos secciones estén
+    // ocultas.
+    const [yearCmp, setYearCmp] = useState(null);
+    const [yearCmpError, setYearCmpError] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [showLdrInfo, setShowLdrInfo] = useState(false);
@@ -203,7 +229,7 @@ const ExecutivePanelPage = () => {
     };
 
     // Devuelve el handler solo si es admin; si no, undefined — el mismo `undefined`
-    // que ya usan HeroKpi/DetailCard para desactivar el cursor-pointer y el hover,
+    // que ya usa DetailCard para desactivar el cursor-pointer y el hover,
     // así un socio ve la tarjeta puramente informativa, sin una promesa de clic rota.
     const goToAdmin = (path, params = {}) => isAdmin ? () => goTo(path, params) : undefined;
 
@@ -211,37 +237,107 @@ const ExecutivePanelPage = () => {
         document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
 
+
+
+    // El badge "En vivo" prometía tiempo real sobre un fetch único al montar. Ahora
+    // hay refresco real: automático cada 2 minutos y manual con el botón. `ultimaCarga`
+    // es lo que sostiene la promesa — se muestra la hora del dato, no un pulso decorativo.
+    const [ultimaCarga, setUltimaCarga] = useState(null);
+    const [refrescando, setRefrescando] = useState(false);
+    // Un refresco puede fallar sin que eso invalide lo que ya está en pantalla.
+    // Se avisa con un badge discreto, no vaciando el panel (ver más abajo).
+    const [falloRefresco, setFalloRefresco] = useState(false);
+    // Ref, no estado: fetchAll necesita saber si YA hay datos buenos pintados, y
+    // meter `exec` en las deps del useCallback reiniciaría el intervalo en cada
+    // carga.
+    const execRef = useRef(null);
+
+    const fetchAll = useCallback(async ({ esRefresco = false } = {}) => {
+        if (esRefresco) setRefrescando(true);
+        const results = await Promise.allSettled([
+            api.get('/admin/executive-stats'),
+            api.get('/admin/dashboard-stats'),
+            api.get('/admin/savings-evolution'),
+            // Las colas administrativas (solicitudes de préstamo / reset de contraseña)
+            // son exclusivas del admin y de la Junta — un socio normal recibiría 403,
+            // así que ni se piden si quien mira esta página no es admin.
+            // Solicitudes de préstamo: las vota la JUNTA completa, no solo el
+            // gerente — por eso va con `esJunta` y no con `isAdmin`. El backend
+            // ya lo permite (JUNTA_ROUTES). Reset de contraseñas sí es
+            // exclusivo del admin: es una acción operativa, no de control.
+            esJunta ? api.get('/admin/loan-requests') : Promise.resolve({ status: 'skipped' }),
+            isAdmin ? api.get('/admin/password-reset-requests') : Promise.resolve({ status: 'skipped' }),
+            // Préstamos desembolsados sin clientId — solo pasa por scripts de migración
+            // manuales (la importación Excel está deshabilitada y "Nuevo Desembolso"
+            // siempre exige socio). Es un caso raro, así que en vez de ser una página
+            // aparte que nadie recuerda revisar, se vuelve visible aquí solo cuando
+            // realmente hay algo que resolver.
+            isAdmin ? api.get('/admin/disbursed-loans/orphans') : Promise.resolve({ status: 'skipped' }),
+            // Serie mensual por año: alimenta el comparador interanual, el mismo
+            // que usa el Panel Principal, para que ambos paneles cuenten lo mismo.
+            api.get('/admin/year-comparison'),
+        ]);
+        // Un fallo del refresco NO puede borrar un panel ya pintado.
+        //
+        // Antes, cualquier tropiezo de /executive-stats hacía setError(...), y la
+        // guarda de render `if (error || !exec || !derived)` sustituía TODA la
+        // página por "Sin datos disponibles" — incluido el encabezado, donde vive
+        // el botón de reintentar, así que el usuario quedaba sin salida hasta el
+        // siguiente tick (2 min) o una recarga manual. En Railway (servicio único)
+        // esto se disparaba en CADA redespliegue para todo el que tuviera el panel
+        // abierto. El fetch al montar sí debe poder mostrar el error: ahí no hay
+        // nada que preservar.
+        const okExec = results[0].status === 'fulfilled';
+        if (okExec) {
+            execRef.current = results[0].value.data;
+            setExec(results[0].value.data);
+            setError(null);
+            setFalloRefresco(false);
+        } else if (!execRef.current) {
+            setError('No se pudieron cargar los indicadores ejecutivos.');
+        } else {
+            setFalloRefresco(true);
+        }
+        if (results[1].status === 'fulfilled') setStats(results[1].value.data);
+        if (results[2].status === 'fulfilled') setEvolution(results[2].value.data);
+        // Igual que arriba: si las colas fallan, se conserva el conteo anterior en
+        // vez de anunciar "0 pendientes", que sería una afirmación falsa.
+        setPending(prev => ({
+            loanRequests: results[3].status === 'fulfilled' ? (results[3].value.data?.total || 0) : prev.loanRequests,
+            passwordResets: results[4].status === 'fulfilled' ? (results[4].value.data?.total || 0) : prev.passwordResets,
+            orphanLoans: results[5].status === 'fulfilled' ? (results[5].value.data?.total || 0) : prev.orphanLoans,
+        }));
+        if (results[6]?.status === 'fulfilled') { setYearCmp(results[6].value.data); setYearCmpError(false); }
+        else setYearCmpError(true);
+        // La hora solo avanza si el dato de verdad se renovó: si no, el badge
+        // estaría fechando datos viejos como si fueran recién traídos.
+        if (okExec) setUltimaCarga(new Date());
+        setLoading(false);
+        setRefrescando(false);
+    }, [esJunta, isAdmin]);
+
+    useEffect(() => { fetchAll(); }, [fetchAll]);
+
+    // Refresco automático. 2 minutos: suficiente para que el dato no envejezca sin
+    // convertir un panel de consulta en un poller agresivo contra la BD.
     useEffect(() => {
-        const fetchAll = async () => {
-            const results = await Promise.allSettled([
-                api.get('/admin/executive-stats'),
-                api.get('/admin/dashboard-stats'),
-                api.get('/admin/savings-evolution'),
-                // Las colas administrativas (solicitudes de préstamo / reset de contraseña)
-                // son exclusivas del admin y de la Junta — un socio normal recibiría 403,
-                // así que ni se piden si quien mira esta página no es admin.
-                isAdmin ? api.get('/admin/loan-requests') : Promise.resolve({ status: 'skipped' }),
-                isAdmin ? api.get('/admin/password-reset-requests') : Promise.resolve({ status: 'skipped' }),
-                // Préstamos desembolsados sin clientId — solo pasa por scripts de migración
-                // manuales (la importación Excel está deshabilitada y "Nuevo Desembolso"
-                // siempre exige socio). Es un caso raro, así que en vez de ser una página
-                // aparte que nadie recuerda revisar, se vuelve visible aquí solo cuando
-                // realmente hay algo que resolver.
-                isAdmin ? api.get('/admin/disbursed-loans/orphans') : Promise.resolve({ status: 'skipped' }),
-            ]);
-            if (results[0].status === 'fulfilled') setExec(results[0].value.data);
-            else setError('No se pudieron cargar los indicadores ejecutivos.');
-            if (results[1].status === 'fulfilled') setStats(results[1].value.data);
-            if (results[2].status === 'fulfilled') setEvolution(results[2].value.data);
-            setPending({
-                loanRequests: results[3].status === 'fulfilled' ? (results[3].value.data?.total || 0) : 0,
-                passwordResets: results[4].status === 'fulfilled' ? (results[4].value.data?.total || 0) : 0,
-                orphanLoans: results[5].status === 'fulfilled' ? (results[5].value.data?.total || 0) : 0,
-            });
-            setLoading(false);
-        };
-        fetchAll();
-    }, []);
+        const id = setInterval(() => fetchAll({ esRefresco: true }), 120000);
+        return () => clearInterval(id);
+    }, [fetchAll]);
+
+    // Llega aquí con un hash cuando "Cambios" activa la vista previa de una
+    // sección oculta (ver CambiosPage). El navegador no hace scroll automático
+    // en una navegación de React Router, así que se hace a mano una vez que la
+    // sección ya tiene datos para pintarse — antes de eso el id todavía no
+    // existe en el DOM.
+    useEffect(() => {
+        if (!location.hash || loading) return;
+        const id = decodeURIComponent(location.hash.slice(1));
+        const timer = setTimeout(() => {
+            document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [location.hash, loading]);
 
     const anioActual = new Date().getFullYear();
 
@@ -288,35 +384,8 @@ const ExecutivePanelPage = () => {
         const pen = exec.penetracion || { conCredito: 0, activos: 0 };
         const penPct = pen.activos > 0 ? (pen.conCredito / pen.activos) * 100 : 0;
 
-        // Apalancamiento del fondo (Loan-to-Deposit Ratio): cuánta cartera pendiente
-        // hay por cada peso de patrimonio de socios. Espejo, a nivel de fondo, de la
-        // regla 3× que ya se usa por socio individual en el Simulador de Préstamo.
-        const patrimonioSocios = stats?.totalAhorradoGeneral || 0;
-        const ldrPct = patrimonioSocios > 0 ? (cartera.total / patrimonioSocios) * 100 : 0;
-        const ldrTone = ldrPct > 85 ? 'risk' : ldrPct < 40 ? 'warn' : 'ok';
-
-        // ── Centro de alertas: reglas sobre los datos reales ──────────
-        const alertas = [];
-        if ((cartera.vencida || 0) > 0) {
-            alertas.push({ tone: 'risk', icon: AlertTriangle, texto: `Cartera vencida por ${fmt(cartera.vencida)} — revisar cuotas en mora EP y gestionar cobro.` });
-        }
-        if (top3Pct > 60) {
-            alertas.push({ tone: 'risk', icon: AlertTriangle, texto: `Concentración crítica: el top 3 de deudores acumula el ${top3Pct.toFixed(0)}% de la cartera.` });
-        } else if (top3Pct > 40) {
-            alertas.push({ tone: 'warn', icon: Info, texto: `Concentración a vigilar: el top 3 de deudores acumula el ${top3Pct.toFixed(0)}% de la cartera (${fmt(top3)}). Diversificar los próximos préstamos.` });
-        }
-        const efic = exec.recaudoYtd?.eficienciaPct;
-        if (efic != null && efic < 90) {
-            alertas.push({ tone: 'risk', icon: AlertTriangle, texto: `Eficiencia de recaudo en ${efic}% — por debajo del umbral del 90%.` });
-        } else if (efic != null && efic < 95) {
-            alertas.push({ tone: 'warn', icon: Info, texto: `Eficiencia de recaudo en ${efic}% — vigilar cuotas próximas.` });
-        }
-        if (penPct < 50 && pen.activos > 0) {
-            alertas.push({ tone: 'info', icon: Info, texto: `Oportunidad: ${pen.activos - pen.conCredito} socios activos sin crédito vigente (penetración ${penPct.toFixed(0)}%). Los intereses son el motor de ingresos del fondo.` });
-        }
-        if (alertas.filter(a => a.tone === 'risk').length === 0) {
-            alertas.unshift({ tone: 'ok', icon: CheckCircle2, texto: 'Sin alertas críticas: cartera al día y recaudo dentro de los umbrales.' });
-        }
+        // Las reglas del Centro de Alertas se fueron con él a
+        // components/admin/CentroDeAlertas.jsx (ver construirAlertas).
 
         // Series por año para "Resultados del Año" (baselines dinámicos desde la BD)
         const interesesCobradosPorAnio = {};
@@ -337,13 +406,29 @@ const ExecutivePanelPage = () => {
         // "cuánto ganará el fondo" rompería la confianza de los socios).
         const proyeccion = computeFundProjection({ exec, stats, anioActual });
 
+        // Apalancamiento del fondo (Loan-to-Deposit Ratio): cuánta cartera pendiente
+        // hay por cada peso de patrimonio de socios. Espejo, a nivel de fondo, de la
+        // regla 3× que ya se usa por socio individual en el Simulador de Préstamo.
+        const patrimonioSocios = stats?.totalAhorradoGeneral || 0;
+        const ldrPct = patrimonioSocios > 0 ? (cartera.total / patrimonioSocios) * 100 : 0;
+        const ldrTone = ldrPct > 85 ? 'risk' : ldrPct < 40 ? 'warn' : 'ok';
+
         return {
             top3, top3Pct, donutData, ldrPct, ldrTone, proyeccion,
             ahorroActual, ahorroPrevio, colocActual, colocPrevio,
             intCobradosAnio, intAgendadosAnio, intAnioPrevio,
-            penPct, alertas, seriesCharts,
+            penPct, seriesCharts,
         };
     }, [exec, stats, anioActual]);
+
+    // ── Indicadores comparativos del fondo ────────────────────────────────────
+    // Misma fuente que el Panel Principal (utils/fondoIndicadores.js). Se calcula
+    // aquí, no se replica: dos paneles con cifras distintas del mismo año destruyen
+    // la confianza más rápido de lo que la construye cualquier gráfico.
+    const ind = useMemo(
+        () => computeFondoIndicadores({ stats, execStats: exec, yearCmp }),
+        [stats, exec, yearCmp]
+    );
 
     // ── Evolución patrimonial: acumulado mensual real de ahorro (mesAbonado/anioAbonado),
     // fondo completo (sin clientId). Deliberadamente excluye Aporte Inicial — igual que el
@@ -383,10 +468,51 @@ const ExecutivePanelPage = () => {
 
     const { cartera, recaudoYtd, flujo30dias, penetracion, vencimientos } = exec;
     const disponible = (stats?.saldoEnBanco || 0) + (stats?.rentabilidadCajaNU || 0);
+    // Sigue en uso pese a retirarse la tarjeta hero: es el denominador del
+    // retorno sobre capital en "Rentabilidad del Fondo".
     const patrimonio = stats?.totalAhorradoGeneral || 0;
-    const crecimientoAhorro = derived.ahorroPrevio > 0
-        ? ((derived.ahorroActual - derived.ahorroPrevio) / derived.ahorroPrevio) * 100
-        : null;
+    // Delta interanual con signo, flecha y color DERIVADOS del dato. Antes cada
+    // sitio hardcodeaba '+' y text-emerald-600, así que una caída se anunciaba en
+    // verde con signo positivo ('+-20% vs 2025'). En un panel cuya promesa es
+    // "transparencia total", ese era el defecto más grave.
+    // `base` declara CONTRA QUÉ se compara, porque no todas las tarjetas comparan
+    // lo mismo: las de acumulado parcial (ahorro, colocación) van contra el ritmo
+    // del año anterior, mientras que Intereses ya suma cobrados + agendados —un
+    // año completo— y sí se puede medir contra el año anterior completo. Rotularlas
+    // igual sería mentir en una de las dos.
+    const Delta = ({ pct, anio, base = 'ritmo' }) => {
+        if (pct === null || pct === undefined || !Number.isFinite(pct)) return null;
+        const sube = pct >= 0;
+        return (
+            <span className={`font-bold ${sube ? 'text-emerald-600' : 'text-red-600'}`}>
+                {' · '}{sube ? '▲' : '▼'} {fmtVariacion(pct)} vs {base === 'ritmo' ? 'ritmo ' : ''}{anio}
+            </span>
+        );
+    };
+
+    // Comparación interanual del hero y de las tarjetas de Actividad.
+    //
+    // Aquí vivía el MISMO error de medición que ya costó tres correcciones en
+    // producción: dividir el acumulado PARCIAL del año en curso entre el total
+    // COMPLETO de 12 meses del año anterior. Con el fondo ahorrando igual que el
+    // año pasado, en agosto marcaba -25,6%. Mientras estuvo hardcodeado en '▲ +'
+    // se veía roto ('+-25,6%') y nadie lo creía; al derivar flecha y color del
+    // signo pasó a ser una alarma ROJA creíble... 30 cm por encima de la tarjeta
+    // "Ahorro de los Socios", que compara contra el RITMO y decía +21,7% en verde.
+    // El mismo indicador, dos veredictos opuestos, en una pantalla cuyo encabezado
+    // promete "transparencia total".
+    //
+    // Se comparan ahora contra el ritmo del año anterior y desde `ind`, que es la
+    // fuente única compartida con las YearProgressCard: así las dos cifras no
+    // pueden divergir aunque alguien toque una sola de las dos.
+    const vsRitmo = (actual, totalPrev) => {
+        if (!ind || ind.comparacionPrematura) return null;
+        const base = ind.ritmoPrev(totalPrev);
+        if (!(base > 0)) return null;
+        return ((Number(actual) || 0) / base - 1) * 100;
+    };
+    const crecimientoAhorro = vsRitmo(ind?.ahorroActualTotal, ind?.ahorroPrevTotal);
+    const crecimientoColocacion = vsRitmo(ind?.colocacionActualYtd, ind?.baselinePrestamos);
 
     // Compartido entre la tarjeta "¿Cuánto está ganando el fondo?" y su modal de
     // análisis experto (ChartExpandModal), para no duplicar la lógica de filtrado.
@@ -395,16 +521,6 @@ const ExecutivePanelPage = () => {
         { name: 'Rendimientos NU', value: Number(stats?.rentabilidadCajaNU || 0), color: '#84cc16' },
         { name: 'Recargos por mora', value: Number(stats?.totalPenaltyValue || 0), color: '#f59e0b' },
     ].filter(d => d.value > 0);
-
-    const toneStyles = {
-        ok:   'bg-emerald-50 border-emerald-200 text-emerald-800',
-        warn: 'bg-amber-50 border-amber-200 text-amber-800',
-        risk: 'bg-red-50 border-red-200 text-red-800',
-        info: 'bg-blue-50 border-blue-200 text-blue-800',
-    };
-    const toneIcon = {
-        ok: 'text-emerald-500', warn: 'text-amber-500', risk: 'text-red-500', info: 'text-blue-500',
-    };
 
     return (
         <div className="space-y-5 max-w-6xl mx-auto animate-fade-in">
@@ -420,23 +536,41 @@ const ExecutivePanelPage = () => {
             <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div>
                     <div className="flex items-center gap-2">
-                        <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">Panel Ejecutivo</h1>
                         {isAdmin && (
                             <span className="text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Beta</span>
                         )}
-                        <span className="print:hidden text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full flex items-center gap-1.5">
-                            <span className="relative flex h-1.5 w-1.5">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
-                            </span>
-                            En vivo
-                        </span>
+                        {/* Antes decía "En vivo" con un pulso animado sobre un fetch
+                            único al montar: prometía tiempo real y mostraba datos de
+                            hace horas. Ahora el dato se refresca de verdad y el badge
+                            dice a qué hora, que es lo que hace verificable la promesa. */}
+                        {ultimaCarga && (
+                            <button
+                                onClick={() => fetchAll({ esRefresco: true })}
+                                disabled={refrescando}
+                                title={falloRefresco
+                                    ? 'El último intento de actualizar falló. Los datos que ves son los de la hora indicada.'
+                                    : 'Actualizar ahora'}
+                                className={`print:hidden text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full flex items-center gap-1.5 transition-colors disabled:opacity-60 ${
+                                    falloRefresco
+                                        ? 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                                        : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                }`}
+                            >
+                                <RefreshCw className={`h-3 w-3 ${refrescando ? 'animate-spin' : ''}`} />
+                                {refrescando
+                                    ? 'Actualizando…'
+                                    : `${falloRefresco ? 'Sin conexión · datos' : 'Datos'} de las ${ultimaCarga.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}`}
+                            </button>
+                        )}
                     </div>
                     <p className="text-sm text-gray-500 mt-0.5">
                         {isAdmin
                             ? 'Indicadores de riesgo, flujo y rendimiento del fondo · misma información que ven los socios'
                             : 'Transparencia total: así está la salud financiera de nuestro fondo, con datos reales y actualizados'}
                     </p>
+                    {/* Varios indicadores usan vocabulario financiero. El glosario evita
+                        que el socio tenga que adivinar si un 3% es bueno o malo. */}
+                    <div className="mt-1"><GlosarioFondo /></div>
                 </div>
                 <button
                     onClick={() => window.print()}
@@ -446,81 +580,142 @@ const ExecutivePanelPage = () => {
                 </button>
             </div>
 
-            {/* ── Nivel 1: Hero ejecutivo ── */}
-            <div className="grid gap-3 grid-cols-2 lg:grid-cols-5">
-                <HeroKpi
-                    label="Patrimonio de socios"
-                    value={fmt(patrimonio)}
-                    icon={PiggyBank}
-                    badge={crecimientoAhorro != null ? `▲ +${crecimientoAhorro.toFixed(0)}% ahorro vs ${anioActual - 1}` : null}
-                    badgeTone="ok"
-                    onClick={goToAdmin('/admin/savings/list')}
-                />
-                <HeroKpi
-                    label="Cartera pendiente"
-                    value={fmt(cartera.total)}
-                    icon={Wallet}
-                    badge={`PAR ${cartera.parPct}%`}
-                    badgeTone={cartera.parPct <= 3 ? 'ok' : cartera.parPct <= 5 ? 'warn' : 'risk'}
-                    sub={`${cartera.cuotasPendientes} cuotas`}
-                    onClick={goToAdmin('/admin/payments/list', { estado: 'Pendiente' })}
-                >
-                    {cartera.total > 0 && (
-                        <div className="mt-2">
-                            <div className="flex h-1.5 rounded-full overflow-hidden bg-white/10">
-                                <div className="bg-emerald-300" style={{ width: `${(cartera.vigente / cartera.total) * 100}%` }} />
-                                <div className="bg-red-400" style={{ width: `${(cartera.vencida / cartera.total) * 100}%` }} />
+            {/* ── Veredicto del fondo ──────────────────────────────────────────
+                 Traído del Panel Principal. Es la única pieza que responde en UNA
+                 frase la pregunta con la que llega el socio: "¿está bien mi fondo?".
+                 Convierte cinco indicadores técnicos (ahorro, mora, liquidez,
+                 patrimonio, cumplimiento de meta) en un semáforo con explicación en
+                 lenguaje llano, antes de pedirle que interprete un solo número. ── */}
+            {ind && (() => {
+                const v = ind.veredicto;
+                const estilo = v.nivel === 'sano'
+                    ? { fondo: 'from-emerald-600 to-emerald-800', icono: '✓' }
+                    : v.nivel === 'revisar'
+                        ? { fondo: 'from-amber-500 to-amber-700', icono: '▲' }
+                        : { fondo: 'from-red-600 to-red-800', icono: '⚠' };
+                return (
+                    <div className={`bg-gradient-to-r ${estilo.fondo} rounded-2xl px-5 py-4 flex items-center justify-between gap-4 shadow-card`}>
+                        <div className="flex items-center gap-4 min-w-0">
+                            <div className="bg-white/15 rounded-full w-11 h-11 flex items-center justify-center flex-shrink-0">
+                                <span className="text-xl font-black text-white">{estilo.icono}</span>
                             </div>
-                            <p className="text-[9px] text-white/50 mt-1">
-                                {fmtCorto(cartera.vigente)} vigente · {fmtCorto(cartera.vencida)} vencida
-                            </p>
+                            <div className="min-w-0">
+                                <h2 className="text-lg font-black text-white leading-tight">{v.titulo}</h2>
+                                <p className="text-sm text-white/80 font-medium mt-0.5">{v.detalle}</p>
+                            </div>
                         </div>
-                    )}
-                </HeroKpi>
-                <HeroKpi
-                    label="Recaudo del año"
-                    value={recaudoYtd.eficienciaPct != null ? `${recaudoYtd.eficienciaPct}%` : '—'}
-                    icon={Percent}
-                    badge={`${recaudoYtd.pagadas}/${recaudoYtd.exigidas} cuotas`}
-                    badgeTone={recaudoYtd.eficienciaPct >= 95 ? 'ok' : recaudoYtd.eficienciaPct >= 90 ? 'warn' : 'risk'}
-                    sub={fmt(recaudoYtd.valorRecaudado)}
-                    onClick={goToAdmin('/admin/payments/list', { estado: 'Pago' })}
-                />
-                <HeroKpi
-                    label="Disponible total"
-                    value={fmt(disponible)}
-                    icon={Landmark}
-                    sub="Caja + rendimientos NU"
-                    badge={null}
-                    onClick={() => scrollToId('saldos-rendimientos')}
-                />
-                <HeroKpi
-                    label="Apalancamiento del fondo"
-                    value={`${derived.ldrPct.toFixed(0)}%`}
-                    icon={Gauge}
-                    badge={derived.ldrTone === 'risk' ? 'Cerca del límite' : derived.ldrTone === 'warn' ? 'Capacidad ociosa' : 'Sano'}
-                    badgeTone={derived.ldrTone}
-                    sub="Cartera vs. patrimonio de socios"
-                    onClick={() => setShowLdrInfo(true)}
-                />
-            </div>
+                        <div className="flex items-center gap-3 flex-shrink-0">
+                            <span className="hidden sm:inline text-[10px] font-black px-3 py-1 rounded-full bg-white/20 text-white">{v.etiqueta}</span>
+                            <div className="text-right">
+                                <p className="text-[10px] text-white/60 font-bold uppercase tracking-wide">Señales en verde</p>
+                                <p className="text-sm font-black text-white">{ind.puntaje} de 5</p>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
 
-            {/* ── Centro de alertas ── */}
-            <div className="space-y-2">
-                <h2 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4 text-brand-primary" />
-                    Centro de Alertas
-                </h2>
-                {derived.alertas.map((a, i) => {
-                    const AIcon = a.icon;
-                    return (
-                        <div key={i} className={`flex items-start gap-2.5 border rounded-xl px-4 py-3 text-sm ${toneStyles[a.tone]}`}>
-                            <AIcon className={`h-4 w-4 mt-0.5 flex-shrink-0 ${toneIcon[a.tone]}`} />
-                            <p className="leading-snug">{a.texto}</p>
-                        </div>
-                    );
-                })}
-            </div>
+            {/* ── Mi posición en el fondo ──────────────────────────────────────
+                 Todo lo demás en esta página es agregado: responde "¿cómo está el
+                 fondo?" pero no "¿y yo qué?". El socio llega con tres preguntas
+                 concretas —cuánto tengo, cuánto me tocaría, cuánto puedo pedir— y
+                 sin ellas las cifras del fondo se leen como un informe ajeno. Va
+                 arriba, justo después del veredicto, porque es lo que engancha al
+                 socio con el resto del panel. Al gerente no se le muestra: consulta
+                 su posición personal desde su propia cuenta, no desde aquí. ── */}
+            {!isAdmin && (
+                <div>
+                    <SectionTitle icon={Sparkles}>Mi posición en el fondo</SectionTitle>
+                    <MiPosicionFondo nombre={user.name} />
+                </div>
+            )}
+
+            {/* La fila de cinco KPI verdes que iba aquí se retiró por decisión del
+                comité: repetía cifras que el "Detalle completo del fondo" ya muestra
+                más abajo —Patrimonio de Socios, Disponible Total y la cartera— y
+                empujaba hacia abajo lo que de verdad importa (el veredicto y la
+                posición personal del socio). Recaudo del año y Apalancamiento se
+                retiran con ella; no estaban repetidos, pero se consideraron
+                indicadores operativos, no información de lectura para el socio. */}
+
+            {/* ── Nivel 1: Hero ejecutivo ─────────────────────────────────────
+                 Visible solo si el comité lo habilita en admin → Cambios: tres de
+                 sus cinco cifras (patrimonio, disponible y cartera) también
+                 aparecen en "Detalle completo del fondo" más abajo.
+                 La guarda `stats &&` es obligatoria, igual que en el resto de la
+                 página: /admin/dashboard-stats puede fallar mientras
+                 /admin/executive-stats responde (fetchAll ignora ese fallo en
+                 silencio y `derived` solo comprueba `exec`). Sin ella, con stats
+                 en null estas tarjetas afirmarían "Patrimonio $0" y
+                 "Apalancamiento 0% · Capacidad ociosa" como si fueran cifras
+                 reales — un diagnóstico falso sobre un dato que no cargó. ── */}
+            {stats && esVisible('ejecutivo.heroKpis') && (
+                <div id="ejecutivo.heroKpis" className="grid gap-3 grid-cols-2 lg:grid-cols-5">
+                    {/* La flecha y el signo del badge se derivan del dato: antes estaban
+                        fijos en '▲ +' con tono verde, así que una caída del ahorro se
+                        anunciaba como si fuera un crecimiento. Y la base es el RITMO del
+                        año anterior, la misma que usa la tarjeta "Ahorro de los Socios"
+                        más abajo — antes eran dos bases distintas y la pantalla mostraba
+                        -25,6% en rojo arriba y +21,7% en verde abajo del mismo indicador. */}
+                    <HeroKpi
+                        label="Patrimonio de socios"
+                        value={fmt(patrimonio)}
+                        icon={PiggyBank}
+                        badge={crecimientoAhorro != null
+                            ? `${crecimientoAhorro >= 0 ? '▲' : '▼'} ${fmtVariacion(crecimientoAhorro)} ahorro vs ritmo ${anioActual - 1}`
+                            : null}
+                        badgeTone={crecimientoAhorro == null ? 'ok' : (crecimientoAhorro >= 0 ? 'ok' : 'risk')}
+                        onClick={goToAdmin('/admin/savings/list')}
+                    />
+                    <HeroKpi
+                        label={<>Cartera pendiente <TerminoAyuda termino="par" /></>}
+                        value={fmt(cartera.total)}
+                        icon={Wallet}
+                        badge={`PAR ${cartera.parPct}%`}
+                        badgeTone={cartera.parPct <= 3 ? 'ok' : cartera.parPct <= 5 ? 'warn' : 'risk'}
+                        sub={`${cartera.cuotasPendientes} cuotas`}
+                        onClick={goToAdmin('/admin/payments/list', { estado: 'Pendiente' })}
+                    >
+                        {cartera.total > 0 && (
+                            <div className="mt-2">
+                                <div className="flex h-1.5 rounded-full overflow-hidden bg-white/10">
+                                    <div className="bg-emerald-300" style={{ width: `${(cartera.vigente / cartera.total) * 100}%` }} />
+                                    <div className="bg-red-400" style={{ width: `${(cartera.vencida / cartera.total) * 100}%` }} />
+                                </div>
+                                <p className="text-[9px] text-white/50 mt-1">
+                                    {fmtCorto(cartera.vigente)} vigente · {fmtCorto(cartera.vencida)} vencida
+                                </p>
+                            </div>
+                        )}
+                    </HeroKpi>
+                    <HeroKpi
+                        label={<>Recaudo del año <TerminoAyuda termino="recaudo" /></>}
+                        value={recaudoYtd.eficienciaPct != null ? `${recaudoYtd.eficienciaPct}%` : '—'}
+                        icon={Percent}
+                        badge={`${recaudoYtd.pagadas}/${recaudoYtd.exigidas} cuotas`}
+                        badgeTone={recaudoYtd.eficienciaPct >= 95 ? 'ok' : recaudoYtd.eficienciaPct >= 90 ? 'warn' : 'risk'}
+                        sub={fmt(recaudoYtd.valorRecaudado)}
+                        onClick={goToAdmin('/admin/payments/list', { estado: 'Pago' })}
+                    />
+                    <HeroKpi
+                        label="Disponible total"
+                        value={fmt(disponible)}
+                        icon={Landmark}
+                        sub="Caja + rendimientos NU"
+                        badge={null}
+                        onClick={() => scrollToId('saldos-rendimientos')}
+                    />
+                    <HeroKpi
+                        label={<>Apalancamiento del fondo <TerminoAyuda termino="apalancamiento" /></>}
+                        value={`${derived.ldrPct.toFixed(0)}%`}
+                        icon={Gauge}
+                        badge={derived.ldrTone === 'risk' ? 'Cerca del límite' : derived.ldrTone === 'warn' ? 'Capacidad ociosa' : 'Sano'}
+                        badgeTone={derived.ldrTone}
+                        sub="Cartera vs. patrimonio de socios"
+                        onClick={() => setShowLdrInfo(true)}
+                    />
+                </div>
+            )}
 
             {/* ── Detalle operativo/completo del fondo (siempre desplegado) ── */}
             {stats && (
@@ -587,7 +782,7 @@ const ExecutivePanelPage = () => {
                                 className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 relative cursor-pointer transition-all duration-200 hover:shadow-md hover:border-brand-primary/20 hover:-translate-y-0.5 active:scale-[0.98] group"
                             >
                                 <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
-                                    <Users className="h-3.5 w-3.5" /> Penetración de crédito
+                                    <Users className="h-3.5 w-3.5" /> Penetración de crédito <TerminoAyuda termino="penetracion" />
                                 </p>
                                 <p className="text-xl font-extrabold text-gray-900 mt-1.5 tabular-nums">{derived.penPct.toFixed(0)}%</p>
                                 <p className="text-[11px] text-gray-500 mt-0.5">
@@ -608,7 +803,7 @@ const ExecutivePanelPage = () => {
                                 <p className="text-[11px] text-gray-500 mt-0.5">
                                     {fmt(derived.intCobradosAnio)} cobrados + {fmt(derived.intAgendadosAnio)} agendados
                                     {derived.intAnioPrevio > 0 && (
-                                        <span className="text-emerald-600 font-bold"> · +{(((derived.intCobradosAnio + derived.intAgendadosAnio) / derived.intAnioPrevio - 1) * 100).toFixed(0)}% vs {anioActual - 1}</span>
+                                        <Delta pct={((derived.intCobradosAnio + derived.intAgendadosAnio) / derived.intAnioPrevio - 1) * 100} anio={anioActual - 1} base="total" />
                                     )}
                                 </p>
                                 <ChevronRight className="h-3.5 w-3.5 text-gray-200 group-hover:text-brand-primary/50 absolute bottom-3 right-3 transition-colors" />
@@ -625,8 +820,8 @@ const ExecutivePanelPage = () => {
                                 </p>
                                 <p className="text-[11px] text-gray-500 mt-0.5">
                                     {derived.colocActual?.creditos || 0} créditos
-                                    {derived.colocPrevio?.total > 0 && (
-                                        <span className="text-emerald-600 font-bold"> · +{(((derived.colocActual?.total || 0) / derived.colocPrevio.total - 1) * 100).toFixed(0)}% vs {anioActual - 1}</span>
+                                    {crecimientoColocacion != null && (
+                                        <Delta pct={crecimientoColocacion} anio={anioActual - 1} />
                                     )}
                                 </p>
                                 <ChevronRight className="h-3.5 w-3.5 text-gray-200 group-hover:text-brand-primary/50 absolute bottom-3 right-3 transition-colors" />
@@ -642,7 +837,7 @@ const ExecutivePanelPage = () => {
                                 <p className="text-[11px] text-gray-500 mt-0.5">
                                     Mes acreditado
                                     {crecimientoAhorro != null && (
-                                        <span className="text-emerald-600 font-bold"> · +{crecimientoAhorro.toFixed(0)}% vs {anioActual - 1}</span>
+                                        <Delta pct={crecimientoAhorro} anio={anioActual - 1} />
                                     )}
                                 </p>
                                 <ChevronRight className="h-3.5 w-3.5 text-gray-200 group-hover:text-brand-primary/50 absolute bottom-3 right-3 transition-colors" />
@@ -652,7 +847,10 @@ const ExecutivePanelPage = () => {
 
                     <Collapsible defaultOpen icon={Landmark} title="Saldos y Rendimientos" id="saldos-rendimientos">
                         <div className="grid gap-2.5 grid-cols-1 sm:grid-cols-3">
-                            <DetailCard title="Caja Disponible" value={fmt(stats.saldoEnBanco)} sub="Patrimonio − capital prestado + recaudos" icon={Landmark}
+                            {/* NO es un saldo bancario conciliado sino una cifra
+                                contable derivada. El rótulo lo dice para que nadie
+                                la lea como "esto es lo que hay en el banco". */}
+                            <DetailCard title="Disponible estimado (calculado)" value={fmt(stats.saldoEnBanco)} sub="Cifra contable: patrimonio − capital prestado + recaudos · no es un saldo bancario conciliado" icon={Landmark}
                                 customBg="linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)" />
                             <DetailCard title="Rendimiento Cuenta NU" value={fmt(stats.rentabilidadCajaNU)}
                                 sub={
@@ -673,19 +871,24 @@ const ExecutivePanelPage = () => {
                 </div>
             )}
 
-            {/* ── Acciones Pendientes: exclusivo del admin/Junta — cosas que resolver
-                 hoy, con conteo real y enlace directo a la pantalla de gestión. Un
-                 socio no tiene nada que "gestionar" aquí, así que la sección entera
-                 no aplica para su vista de solo lectura. ── */}
-            {isAdmin && (
+            {/* ── Acciones Pendientes: para quien ejerce control sobre el fondo.
+                 Se abre a la JUNTA completa (`esJunta`), no solo al gerente: los dos
+                 miembros sin rol admin votan las solicitudes de préstamo, así que
+                 ocultarles la cola los dejaba sin ver aquello sobre lo que deben
+                 decidir. Cada tarjeta decide aparte si es de Junta o solo de admin.
+                 Un socio raso no gestiona nada aquí, así que no ve la sección. ── */}
+            {esJunta && (
             <div className="space-y-2">
                 <h2 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
                     <Bell className="h-4 w-4 text-brand-primary" />
                     Acciones Pendientes
                 </h2>
                 <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+                    {/* Cada rol va a SU pantalla de votación: el gerente a la vista
+                        admin, los miembros de Junta sin rol admin a
+                        /dashboard/junta-prestamos, que es la que sí pueden abrir. */}
                     <button
-                        onClick={goToAdmin('/admin/loans/approvals')}
+                        onClick={() => goTo(isAdmin ? '/admin/loans/approvals' : '/dashboard/junta-prestamos')}
                         className={`text-left rounded-xl border p-4 flex items-center gap-3 transition-all duration-200 hover:shadow-md active:scale-[0.98] ${
                             pending.loanRequests > 0 ? 'bg-amber-50 border-amber-200 hover:border-amber-300' : 'bg-white border-gray-200 hover:border-brand-primary/20'
                         }`}
@@ -703,6 +906,9 @@ const ExecutivePanelPage = () => {
                         </div>
                         <ChevronRight className="h-4 w-4 text-gray-300 flex-shrink-0" />
                     </button>
+                    {/* Restablecer contraseñas y reasignar préstamos huérfanos son
+                        tareas operativas del gerente, no decisiones de la Junta. */}
+                    {isAdmin && (
                     <button
                         onClick={goToAdmin('/admin/clients')}
                         className={`text-left rounded-xl border p-4 flex items-center gap-3 transition-all duration-200 hover:shadow-md active:scale-[0.98] ${
@@ -722,10 +928,11 @@ const ExecutivePanelPage = () => {
                         </div>
                         <ChevronRight className="h-4 w-4 text-gray-300 flex-shrink-0" />
                     </button>
+                    )}
                     {/* Solo aparece si hay algo que resolver — es un caso raro (solo puede
                         pasar por un script de migración manual, la importación Excel está
                         deshabilitada), no una cola de trabajo diaria como las otras dos. */}
-                    {pending.orphanLoans > 0 && (
+                    {isAdmin && pending.orphanLoans > 0 && (
                         <button
                             onClick={goToAdmin('/admin/loans/orphans')}
                             className="text-left rounded-xl border p-4 flex items-center gap-3 transition-all duration-200 hover:shadow-md active:scale-[0.98] bg-amber-50 border-amber-200 hover:border-amber-300"
@@ -784,6 +991,22 @@ const ExecutivePanelPage = () => {
                     <p className="text-[10px] text-gray-400 mt-1">
                         Acumulado de ahorro mensual neto por mes acreditado (mesAbonado/anioAbonado) · no incluye aportes iniciales · $ COP
                     </p>
+                </div>
+            )}
+
+            {/* ── Comparador interanual ────────────────────────────────────────
+                 Mismo componente que el Panel Principal, alimentado por el mismo
+                 endpoint: el comité y la gerencia deben ver exactamente la misma
+                 comparación, no dos lecturas distintas del mismo año.
+                 Visible solo si el comité lo habilita en admin → Cambios. ── */}
+            {esVisible('ejecutivo.comparadorAnios') && (
+                <div id="ejecutivo.comparadorAnios" className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
+                    <SectionTitle icon={BarChart3}>Comparar con años anteriores</SectionTitle>
+                    <p className="text-[11px] text-gray-500 font-semibold -mt-2 mb-4 leading-snug">
+                        Cada año se dibuja sobre los mismos meses, de modo que la comparación siempre
+                        es entre períodos equivalentes. La marca vertical señala el mes en curso.
+                    </p>
+                    <YearComparisonChart data={yearCmp} error={yearCmpError} />
                 </div>
             )}
 
@@ -892,22 +1115,81 @@ const ExecutivePanelPage = () => {
                                 </div>
                             </div>
 
-                            {/* Resultados por año — baselines dinámicos */}
-                            <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
-                                <SectionTitle icon={BarChart3}>Resultados por año</SectionTitle>
-                                <div className="grid grid-cols-3 gap-2">
-                                    <MiniYearBars title="Ahorro" data={derived.seriesCharts.ahorro} currentYear={anioActual} />
-                                    <MiniYearBars title="Préstamos" data={derived.seriesCharts.colocacion} currentYear={anioActual} />
-                                    <MiniYearBars title="Intereses" data={derived.seriesCharts.intereses} currentYear={anioActual} />
-                                </div>
-                                <p className="text-[10px] text-gray-400 mt-2">
-                                    $ COP · año en curso en verde · calculado por año desde la base de datos (sin cifras fijas)
-                                </p>
-                            </div>
                         </div>
                     </div>
                 );
             })()}
+
+            {/* ── Resultados del año, indicador por indicador ───────────────────
+                 Reemplaza a MiniYearBars (tres barras sin contexto) por las mismas
+                 tarjetas del Panel Principal: cada una trae la cifra acumulada, el
+                 veredicto contra el RITMO del año anterior con la base declarada en
+                 pantalla, la barra de avance y la tabla de valores en texto. Es la
+                 pieza mejor preparada para un lector no financiero.
+                 Visible solo si el comité lo habilita en admin → Cambios. ── */}
+            {ind && esVisible('ejecutivo.resultadosAnio') && (
+                <div id="ejecutivo.resultadosAnio" className="space-y-3">
+                    <h2 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
+                        <BarChart3 className="h-4 w-4 text-brand-primary" />
+                        Resultados del año
+                        <span className="text-[11px] font-semibold text-gray-400">
+                            {ind.nombreMesCorte
+                                ? `cada indicador frente al ritmo de ${ind.baselineAnio}, al ${ind.nombreMesCorte}`
+                                : `cada indicador frente a ${ind.baselineAnio}`}
+                        </span>
+                    </h2>
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        <YearProgressCard
+                            title="Ahorro de los Socios"
+                            subtitle="Ahorro mensual + aportes iniciales, por año"
+                            anioPrev={ind.baselineAnio} anioActual={ind.baselineAnio + 1}
+                            totalPrev={ind.ahorroPrevTotal} actual={ind.ahorroActualTotal}
+                            fraccionAnio={ind.fraccionAnio} nota={ind.ahorroComposicionNota}
+                        />
+                        <YearProgressCard
+                            title="Préstamos Entregados"
+                            subtitle="Dinero colocado en créditos a los socios"
+                            anioPrev={ind.baselineAnio} anioActual={ind.baselineAnio + 1}
+                            totalPrev={ind.baselinePrestamos} actual={ind.colocacionActualYtd}
+                            fraccionAnio={ind.fraccionAnio}
+                        />
+                        {/* El patrimonio es un SALDO a una fecha, no un acumulado del
+                            período: se compara contra el cierre anterior, sin "ritmo". */}
+                        <YearProgressCard
+                            title="Patrimonio del Fondo"
+                            subtitle="Cuánto vale el fondo hoy"
+                            tipo="saldo"
+                            anioPrev={ind.baselineAnio} anioActual={ind.baselineAnio + 1}
+                            totalPrev={ind.baselinePatrimonio} actual={ind.total}
+                            fraccionAnio={ind.fraccionAnio}
+                        />
+                        <YearProgressCard
+                            title="Ganancias por Intereses"
+                            subtitle="Lo que pagan los socios por sus préstamos"
+                            anioPrev={ind.baselineAnio} anioActual={ind.baselineAnio + 1}
+                            totalPrev={ind.baselineIntereses} actual={ind.interesesActualYtd}
+                            proyeccion={ind.proyeccionIntereses} fraccionAnio={ind.fraccionAnio}
+                        />
+                        <YearProgressCard
+                            title="Rendimiento Cuenta NU"
+                            subtitle="Interés que genera el dinero guardado en NU"
+                            anioPrev={ind.baselineAnio} anioActual={ind.baselineAnio + 1}
+                            totalPrev={ind.baselineNU} actual={stats?.rentabilidadCajaNU || 0}
+                            proyeccion={ind.proyeccionNU} fraccionAnio={ind.fraccionAnio}
+                        />
+                        {/* Mora: tono rojo y masEsMejor=false — aquí crecer es mala señal. */}
+                        <YearProgressCard
+                            title="Cobros por Pagos Tardíos"
+                            subtitle="Recargo aplicado a socios con cuotas vencidas"
+                            tono="rojo" masEsMejor={false}
+                            anioPrev={ind.baselineAnio} anioActual={ind.baselineAnio + 1}
+                            totalPrev={ind.baselineMora} actual={ind.moraActualYtd}
+                            proyeccion={ind.proyeccionMora} fraccionAnio={ind.fraccionAnio}
+                        />
+                    </div>
+                </div>
+            )}
+
 
             {/* ── Riesgo de Cartera y Flujo de Caja ── */}
             <div className="space-y-3">
@@ -955,7 +1237,12 @@ const ExecutivePanelPage = () => {
                     nombre ni el monto pendiente de otro socio, por privacidad. */}
                 <div className="bg-white rounded-2xl border border-gray-200 shadow-card p-4 lg:p-5">
                     <SectionTitle icon={ShieldCheck}>{isAdmin ? 'Concentración de cartera por deudor' : 'Diversificación de la cartera'}</SectionTitle>
-                    {derived.donutData.length === 0 ? (
+                    {/* El estado vacío se decide por la CARTERA, no por donutData:
+                        donutData se arma desde `concentracion`, que el backend solo
+                        envía al admin. Al evaluarlo primero, el socio caía siempre en
+                        "Sin cartera pendiente" y nunca veía el indicador anónimo de
+                        diversificación que existe justo abajo, escrito para él. */}
+                    {cartera.total <= 0 ? (
                         <div className="h-[220px] flex items-center justify-center text-sm text-gray-400">
                             Sin cartera pendiente
                         </div>
@@ -1047,30 +1334,43 @@ const ExecutivePanelPage = () => {
                     : ' · Cifras calculadas directamente desde los registros del fondo, sin valores fijos ni estimaciones manuales.'}
             </p>
 
-            {/* ── Modal: Apalancamiento del Fondo ── */}
-            <ChartExpandModal
-                isOpen={showLdrInfo}
-                onClose={() => setShowLdrInfo(false)}
-                title="Apalancamiento del Fondo (Loan-to-Deposit Ratio)"
-                analysisResult={analyzeLeverage({ ldrPct: derived.ldrPct, carteraTotal: cartera.total, patrimonio })}
-            >
-                <div className="h-full flex flex-col items-center justify-center gap-3 px-6">
-                    <div className="w-full max-w-md">
-                        <div className="flex justify-between text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
-                            <span>0%</span><span>Umbral sano 40–85%</span><span>100%+</span>
+            {/* Centro de Alertas — al final, no al principio: esta página ya
+                empieza con el veredicto del fondo y el hero ejecutivo, que son
+                su propia forma de alerta. Vivió aquí arriba antes de moverse a
+                "Mi Panel"; ahora vuelve, pero como cierre operativo en vez de
+                como lo primero que se ve. */}
+            <CentroDeAlertas exec={exec} />
+
+            {/* ── Modal: Apalancamiento del Fondo — solo se abre desde la banda
+                 de 5 indicadores, así que se monta con ella y bajo la misma
+                 guarda de datos: su narrativa afirma un diagnóstico ("hay
+                 capacidad ociosa", "revisar solicitudes represadas") que sería
+                 falso si el patrimonio no cargó. ── */}
+            {stats && esVisible('ejecutivo.heroKpis') && (
+                <ChartExpandModal
+                    isOpen={showLdrInfo}
+                    onClose={() => setShowLdrInfo(false)}
+                    title="Apalancamiento del Fondo (Loan-to-Deposit Ratio)"
+                    analysisResult={analyzeLeverage({ ldrPct: derived.ldrPct, carteraTotal: cartera.total, patrimonio })}
+                >
+                    <div className="h-full flex flex-col items-center justify-center gap-3 px-6">
+                        <div className="w-full max-w-md">
+                            <div className="flex justify-between text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                                <span>0%</span><span>Umbral sano 40–85%</span><span>100%+</span>
+                            </div>
+                            <div className="relative h-4 rounded-full bg-gray-100 overflow-hidden">
+                                <div className="absolute inset-y-0 left-[40%] w-[45%] bg-emerald-100" />
+                                <div
+                                    className={`absolute inset-y-0 left-0 rounded-full ${derived.ldrTone === 'risk' ? 'bg-red-500' : derived.ldrTone === 'warn' ? 'bg-amber-400' : 'bg-emerald-500'}`}
+                                    style={{ width: `${Math.min(100, derived.ldrPct)}%` }}
+                                />
+                            </div>
+                            <p className="text-center text-3xl font-black text-gray-900 mt-4 tabular-nums">{derived.ldrPct.toFixed(0)}%</p>
+                            <p className="text-center text-xs text-gray-400 mt-1">{fmt(cartera.total)} colocados de {fmt(patrimonio)} en patrimonio de socios</p>
                         </div>
-                        <div className="relative h-4 rounded-full bg-gray-100 overflow-hidden">
-                            <div className="absolute inset-y-0 left-[40%] w-[45%] bg-emerald-100" />
-                            <div
-                                className={`absolute inset-y-0 left-0 rounded-full ${derived.ldrTone === 'risk' ? 'bg-red-500' : derived.ldrTone === 'warn' ? 'bg-amber-400' : 'bg-emerald-500'}`}
-                                style={{ width: `${Math.min(100, derived.ldrPct)}%` }}
-                            />
-                        </div>
-                        <p className="text-center text-3xl font-black text-gray-900 mt-4 tabular-nums">{derived.ldrPct.toFixed(0)}%</p>
-                        <p className="text-center text-xs text-gray-400 mt-1">{fmt(cartera.total)} colocados de {fmt(patrimonio)} en patrimonio de socios</p>
                     </div>
-                </div>
-            </ChartExpandModal>
+                </ChartExpandModal>
+            )}
 
             {/* ── Modal: análisis experto de ingresos del fondo (mismo motor que el Panel Principal) ── */}
             <ChartExpandModal

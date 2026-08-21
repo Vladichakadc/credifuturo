@@ -717,7 +717,10 @@ export const RankingBox = ({ onClose = null, embedded = false }) => {
                         <div className="flex items-center gap-4">
                             <div className="w-14 h-14 bg-white/15 backdrop-blur rounded-2xl flex items-center justify-center text-3xl shadow-lg ring-1 ring-white/20 flex-shrink-0">🏆</div>
                             <div>
-                                <h2 className="text-2xl font-black tracking-tight text-white">Ranking de Ahorro</h2>
+                                {/* Como página (`embedded`) el título lo da el
+                                    encabezado del layout; como modal sí hace falta,
+                                    porque ahí no hay ninguno. */}
+                                {!embedded && <h2 className="text-2xl font-black tracking-tight text-white">Ranking de Ahorro</h2>}
                                 <p className="text-xs font-semibold text-white/70 mt-0.5 flex items-center gap-1.5">
                                     <CheckCircle className="w-3.5 h-3.5 text-brand-gold flex-shrink-0" />
                                     Saldo Promedio Ponderado · Método FIC/SFC Colombia
@@ -1239,8 +1242,10 @@ export const AccountSummaryChart = ({ stats }) => {
 };
 
 export const MonthlySavingsTrendChart = ({ data, availableYears, selectedYear }) => {
-    if (!data || data.length === 0) return null;
-
+    // El "no hay datos → null" vivía aquí arriba, por delante de los dos useMemo
+    // de más abajo, así que en los renders sin datos esos hooks no llegaban a
+    // llamarse y el orden cambiaba en cuanto llegaban. Ahora la salida temprana
+    // está después de los hooks y estos toleran `data` vacío.
     const showMultiple = selectedYear === 'Todos' && availableYears && availableYears.length > 0;
     const sortedYears = showMultiple ? [...availableYears].sort((a, b) => Number(a) - Number(b)) : [];
     const mainYear   = sortedYears[sortedYears.length - 1];
@@ -1268,12 +1273,12 @@ export const MonthlySavingsTrendChart = ({ data, availableYears, selectedYear })
     // Solo los meses SIN movimiento (0) pasan a null para no dibujar línea plana falsa.
     // Los negativos (retiros/devoluciones) se conservan: son eventos financieros reales.
     const processedData = useMemo(() => showMultiple
-        ? data.map(d => {
+        ? (data || []).map(d => {
             const row = { name: d.name };
             sortedYears.forEach(yr => { row[yr] = d[yr] !== 0 ? d[yr] : null; });
             return row;
           })
-        : data,
+        : (data || []),
     [data, showMultiple, sortedYears]);
 
     const avgOf = (key) => {
@@ -1293,6 +1298,10 @@ export const MonthlySavingsTrendChart = ({ data, availableYears, selectedYear })
         });
         return { maxIdx, lastIdx };
     }, [processedData, dataKey]);
+
+    // Salida temprana, ya con todos los hooks llamados (ver el comentario de la
+    // cabecera del componente).
+    if (!data || data.length === 0) return null;
 
     const customDot = (props, isMain) => {
         const { cx, cy, index, value } = props;
@@ -1795,8 +1804,11 @@ const SavingsSummaryPage = ({ lockedSocio = null, hideControls = false, preloade
                     <PiggyBank className="h-5 w-5 text-white" />
                 </div>
                 <div>
-                    <h1 className="text-xl font-black text-gray-900 leading-none">Detalle de la Cuenta {!lockedSocio && user?.name ? `- ${user.name} ${user.surname1 || ''} ${user.surname2 || ''}`.trim() : (lockedSocio && lockedSocio.name ? `- ${lockedSocio.name}` : '')}</h1>
-                    <p className="text-[11px] text-gray-400 font-semibold mt-0.5 uppercase tracking-wide">Estado de cuenta individual por socio</p>
+                    {/* Sin título propio: lo da el encabezado del layout. Queda el
+                        nombre del socio consultado, que es justo lo que cambia de
+                        una consulta a otra y el encabezado no puede saber. */}
+                    <h1 className="text-xl font-black text-gray-900 leading-none">{!lockedSocio && user?.name ? `${user.name} ${user.surname1 || ''} ${user.surname2 || ''}`.trim() : (lockedSocio && lockedSocio.name ? lockedSocio.name : 'Socio')}</h1>
+                    <p className="text-[11px] text-gray-400 font-semibold mt-0.5 uppercase tracking-wide">Estado de cuenta individual</p>
                 </div>
             </div>
             <style>{`

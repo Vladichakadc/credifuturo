@@ -8,6 +8,7 @@ import { Input, Label, FormField } from '../../components/ui/Input';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { useUi } from '../../context/UiContext';
+import { hoyISO } from '../../utils/fechas';
 
 const clientNormalizeEmailPart = (str) => {
     if (!str) return '';
@@ -40,7 +41,17 @@ const ClientsPage = () => {
         surname1: '',
         surname2: '',
         email: '',
-        password: '123', // Default
+        // Vacía a propósito: este formulario no tiene campo de contraseña, así
+        // que el backend genera una temporal que cumple la política y la
+        // devuelve UNA sola vez para que el admin se la entregue al socio.
+        //
+        // Llevaba '123' fijo, el default heredado de la importación inicial.
+        // Como el valor viajaba en cada alta sin que nadie pudiera editarlo, y
+        // el endurecimiento de contraseñas (A07) exige 8 caracteres con
+        // mayúscula, minúscula y dígito, el backend lo rechazaba SIEMPRE:
+        // registrar un socio fallaba con "La contraseña debe tener al menos 8
+        // caracteres" y no había forma de sortearlo desde la interfaz.
+        password: '',
         genero: 'M',
         pais: 'Colombia',
         ciudad: '',
@@ -48,7 +59,7 @@ const ClientsPage = () => {
         socioFundador: 'SI',
         referido: '',
         cargo: '',
-        fechaIngreso: new Date().toISOString().split('T')[0],
+        fechaIngreso: hoyISO(),
         fechaBaja: '',
         estatus: 'Activo',
         porcentajePrestamo: '' // Tasa mensual manual (decimal: 0.015 = 1.5%); auto-calculada desde préstamos si existen
@@ -165,7 +176,14 @@ const ClientsPage = () => {
                 toast.success('Socio actualizado exitosamente.');
             } else {
                 // CREATE (POST)
-                const res = await api.post('/admin/clients', { ...formData, porcentajePrestamo: porcentajeDecimal });
+                const payload = { ...formData, porcentajePrestamo: porcentajeDecimal };
+                // Cinturón: el backend solo valida la contraseña si se la mandan,
+                // así que una cadena vacía no debe viajar. Si algún día se añade
+                // un campo de contraseña opcional al formulario, esto sigue
+                // haciendo lo correcto: se envía solo cuando el admin escribió algo.
+                if (!payload.password) delete payload.password;
+
+                const res = await api.post('/admin/clients', payload);
                 toast.success('Socio registrado exitosamente.');
                 // A07: si el backend generó una contraseña temporal, mostrarla
                 // UNA SOLA VEZ al admin para que se la comunique al socio.

@@ -17,6 +17,7 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis
 import { notifyUpdate } from '../../utils/sync';
 import { COLOMBIAN_BANKS_WITH_OTHER } from '../../utils/banks';
 import { calcVerdict } from '../../utils/loanCapacity';
+import { hoyISO } from '../../utils/fechas';
 
 const monthNames = [
     'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -540,7 +541,7 @@ const LoansListPage = () => {
         nombre: '',
         apellido: '',
         estado: 'Pendiente',
-        fechaPrestamo: new Date().toISOString().split('T')[0],
+        fechaPrestamo: hoyISO(),
         mesDesembolso: monthNames[new Date().getMonth()],
         anioDesembolso: new Date().getFullYear(),
         valorPrestado: '',
@@ -689,7 +690,7 @@ const LoansListPage = () => {
     }, [disbursedForm.clientId, clients, isEditing]);
 
     const handleOpenDisbursedModal = (loan = null, overrides = null) => {
-        const today = new Date().toISOString().split('T')[0];
+        const today = hoyISO();
         if (loan) {
             setIsEditing(true);
             setDisbursedForm({
@@ -704,7 +705,7 @@ const LoansListPage = () => {
             setDisbursedForm({
                 id: '', idVm: '', clientId: '', nombre: '', apellido: '',
                 estado: 'Vigente',
-                fechaPrestamo: new Date().toISOString().split('T')[0],
+                fechaPrestamo: hoyISO(),
                 mesDesembolso: monthNames[new Date().getMonth()],
                 anioDesembolso: new Date().getFullYear(),
                 valorPrestado: '', cuotas: '1', interesMensual: '', diasPagoMax: '',
@@ -1091,7 +1092,6 @@ const LoansListPage = () => {
                         <CreditCard className="h-5 w-5 text-brand-primary" />
                     </div>
                     <ListHeader
-                        title="Lista de Préstamos"
                         source="T1-orders_table_prestamos_desembolsados"
                         totalCount={loans.length}
                         filteredCount={filteredLoans.length}
