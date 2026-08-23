@@ -14,7 +14,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from plantilla import Informe  # noqa: E402
 
-FECHA = '21 de agosto de 2026'
+FECHA = '23 de agosto de 2026'
 SALIDA = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                       '..', 'shared-informes', 'Abonos_Extraordinarios_a_Capital.pdf')
 
@@ -37,9 +37,13 @@ d.parrafo(
     'se debía, no lo que el socio realmente pagó. De modo que el fondo recibía un ingreso que no '
     'reducía la cartera ni aparecía en ningún indicador.')
 d.parrafo(
-    'Eso ya está corregido: el excedente se aplica a capital y las cuotas siguientes se '
-    'recalculan sobre el saldo nuevo. Con una salvedad importante —los créditos cargados por '
-    'importación— que se explica en el punto 4.')
+    'Eso ya está corregido, y desde este mes **el sistema lo hace solo**: revisa la cartera al '
+    'arrancar y cada noche, encuentra los pagos por encima de la cuota que siguen sin abonarse '
+    'a capital y rehace el cronograma. Ya no hace falta que nadie vuelva a guardar la cuota.')
+d.parrafo(
+    'El caso que motivó la revisión: una socia con una cuota de **$778.666,67** pagó '
+    '**$1.000.000**. Los **$221.333,33** de diferencia llevaban meses sin abonar a capital. '
+    'Aplicados, le bajan la cuota a $746.113 y le ahorran **$18.592** en intereses.')
 
 # ── 2 ──────────────────────────────────────────────────────────────────
 d.seccion('Cuánto vale el excedente')
@@ -128,14 +132,69 @@ d.parrafo(
     'copia de la base antes de aplicar nada. Se está corrigiendo deuda registrada de socios '
     'reales.')
 
+
 # ── 5 ──────────────────────────────────────────────────────────────────
+d.seccion('Lo que se encontró al revisar el motor')
+d.parrafo(
+    'Al reproducir el caso aparecieron defectos en el cálculo que ya estaba en funcionamiento. '
+    'Se corrigieron antes de dejar que el sistema actuara solo. Ninguno se había manifestado '
+    'todavía porque el recálculo casi nunca llegaba a dispararse.')
+d.rotulo('El más grave')
+d.parrafo(
+    'Si el socio había pagado cuotas **después** de aquella en la que abonó de más, el recálculo '
+    'devolvía al saldo el capital de esas cuotas intermedias. Sobre el crédito de $8.000.000, la '
+    'cuota 4 arrancaba en $7.112.000 en vez de $5.778.667 —**$1.333.333 de deuda inventada**— y '
+    'cada cuota restante subía de unos $760.000 a unos $889.790.')
+d.parrafo(
+    'Ahora el cronograma se rehace completo aplicando los pagos que de verdad ocurrieron. Como '
+    'el interés de esas cuotas intermedias se liquida sobre un saldo menor, lo que el socio pagó '
+    'de más en intereses **se le devuelve en forma de capital**.')
+d.rotulo('Los demás')
+d.vinetas([
+    'Un préstamo que ya había recibido un abono quedaba marcado como no recalculable para '
+    'siempre, de modo que un **segundo abono** del mismo socio se rechazaba.',
+    'La última cuota no cerraba el saldo en cero: dejaba un residuo de céntimos.',
+    'Un pago registrado directamente como pagado y por encima de su cuota no disparaba nada.',
+    'Cuando las cuotas de un mismo préstamo declaraban **tasas distintas** —una corrección hecha '
+    'a mano—, el recálculo imponía a todas la de la primera: $367.200 que el fondo dejaba de '
+    'cobrar, o $331.552 de más al socio según en qué dirección estuviera la diferencia.',
+    'Una cuota marcada como pagada **por debajo de su valor** hacía subir las siguientes y le '
+    'anunciaba al socio un ahorro negativo. Ahora se rechaza y pasa a revisión manual.',
+    'Cuando el registro del préstamo declaraba menos cuotas de las que realmente tiene el '
+    'cronograma, el capital salía al doble y **se anulaban cuotas que el socio sí debía**.',
+])
+
+# ── 6 ──────────────────────────────────────────────────────────────────
+d.seccion('Por qué es seguro que actúe solo')
+d.parrafo(
+    'El sistema está reescribiendo la deuda registrada de personas reales, y los respaldos '
+    'diarios son hojas de cálculo: sirven para consultar, no para restaurar. Por eso cada '
+    'reajuste es **reversible**.')
+d.vinetas([
+    'Antes de la primera escritura se copia el archivo completo de la base de datos.',
+    'De cada cuota que se toca se guarda el valor anterior de todas sus columnas, de modo que un '
+    'administrador puede deshacer el reajuste desde la pantalla y las cifras vuelven exactamente '
+    'a como estaban.',
+    'Si un administrador revierte un reajuste, el sistema **no vuelve a aplicarlo solo**: '
+    'entiende que hubo una decisión y espera a que se la pidan.',
+    'Dos ejecuciones simultáneas no pueden pisarse, y volver a pasar el barrido sobre un '
+    'préstamo ya ajustado no cambia nada: la marca de que un abono está aplicado son las propias '
+    'cifras, no una nota que alguien pueda borrar.',
+])
+d.parrafo(
+    'Y lo que no es inequívoco no se toca. Los cronogramas heredados, los préstamos con cuotas '
+    'en mora, los abonos de ejercicios ya cerrados, los pagos incompletos y las tasas mixtas '
+    'quedan **listados en la pantalla de pagos** con el motivo, para que una persona decida.')
+
+# ── 7 ──────────────────────────────────────────────────────────────────
 d.seccion('Qué quedó funcionando')
 d.vinetas([
-    'El excedente sobre la cuota **abona a capital**, y las cuotas posteriores se recalculan '
-    'sobre el saldo nuevo con sus intereses correspondientes.',
-    'Solo se rehace lo que viene **después** de la cuota pagada y sigue pendiente. Ni lo ya '
-    'cobrado, ni una cuota anterior vencida, ni las que estén en mora se modifican — el interés '
-    'de una mora ya se causó y no se condona.',
+    'El excedente sobre la cuota **abona a capital**, y el cronograma se rehace sobre el saldo '
+    'nuevo con sus intereses correspondientes, sin que nadie tenga que pedirlo.',
+    'Nada anterior al abono se toca, y una cuota en mora tampoco: su interés ya se causó por el '
+    'tiempo que lleva vencida y no se condona. De las cuotas pagadas **después** del abono sí se '
+    'rehace el reparto entre interés y capital, siempre a favor del socio: pagó lo mismo, pero '
+    'parte de lo que se contó como interés pasa a amortizar deuda.',
     'El ajuste opera sobre el **año en curso en adelante**. Los ejercicios cerrados ya '
     'repartieron sus intereses entre los socios y no se reescriben hacia atrás.',
     'Si el abono cancela el crédito, las cuotas sobrantes se marcan como prepagadas y quedan '
@@ -146,6 +205,8 @@ d.vinetas([
     'La lista muestra una columna **"Valor Pagado"** que señala el excedente y qué se hizo con él; '
     'el formulario **avisa antes de guardar** y permite elegir la política.',
     'El socio recibe una notificación con cuánto abonó a capital y cuánto se ahorra en intereses.',
+    'Si el abono supera la deuda entera, el sobrante queda **señalado como dinero a favor del '
+    'socio**, para devolvérselo.',
 ])
 d.rotulo('Defectos corregidos en el camino')
 d.vinetas([
@@ -156,7 +217,7 @@ d.vinetas([
     'cuotas del préstamo** con el número de la cuota que se estaba tocando.',
 ])
 
-# ── 6 ──────────────────────────────────────────────────────────────────
+# ── 8 ──────────────────────────────────────────────────────────────────
 d.seccion('Decisiones para la Junta')
 d.vinetas([
     '**Ratificar la política por defecto.** Quedó "reducir cuota". Si la Junta prefiere '
@@ -170,11 +231,12 @@ d.vinetas([
     'entre menor cuota o menor plazo.',
 ])
 
-# ── 7 ──────────────────────────────────────────────────────────────────
+# ── 9 ──────────────────────────────────────────────────────────────────
 d.seccion('Alcance y vigencia')
 d.parrafo(
-    'El ajuste aplica a partir de la próxima cuota que se registre. No se recalculan pagos ya '
-    'cerrados de ejercicios anteriores.')
+    'El ajuste alcanza **todo el ejercicio en curso**: no espera a la próxima cuota, sino que '
+    'revisa hacia atrás los pagos de este año que se hicieron por encima de la cuota y nunca se '
+    'abonaron. Los ejercicios anteriores no se tocan.')
 d.parrafo(
     'Los valores de este informe se calcularon con la misma fórmula que usa el generador de '
     'cronogramas del sistema y se verificaron contra el servidor en varios escenarios: préstamo '
@@ -183,8 +245,10 @@ d.parrafo(
     'cuotas del 1,5% mensual; los créditos reales del fondo tienen condiciones distintas, pero '
     'las proporciones se mantienen.')
 d.parrafo(
-    '**Aún no se ha corrido el diagnóstico contra la base de producción.** Hasta hacerlo no se '
-    'sabe cuántos créditos son reparables, cuántos requieren decisión manual, ni cuánto dinero '
-    'hay hoy sin aplicar a capital. Ese es el primer paso recomendado.')
+    '**El diagnóstico sobre la cartera real lo hará el propio sistema** en el primer arranque '
+    'tras este cambio, y dejará el resultado en la pantalla de pagos y en un aviso a los '
+    'administradores: cuántos créditos se ajustaron, cuánto capital se aplicó y qué préstamos '
+    'quedaron esperando una decisión. Hasta ese momento no se sabe cuánto dinero hay sin aplicar '
+    'a capital en el conjunto del fondo.')
 
 print(d.guardar(os.path.normpath(SALIDA)))
