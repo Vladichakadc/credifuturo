@@ -493,10 +493,24 @@ const PaymentsListPage = () => {
         }
     }, []);
 
-    const handleAplicarAbonos = useCallback(async () => {
+    // Qué se hace con el excedente de ESTE préstamo. Queda guardado, así que el
+    // barrido nocturno lo respeta en vez de volver al defecto del fondo.
+    const handlePoliticaAbono = useCallback(async (idVm, politica) => {
+        try {
+            await api.put('/admin/payments/abonos/politica', { idVm, politica });
+            await fetchAbonos();
+            toast.success(politica === 'reducir-plazo'
+                ? `${idVm}: el abono acortará el plazo.`
+                : `${idVm}: el abono bajará la cuota.`);
+        } catch (err) {
+            toast.error('No se pudo guardar la política: ' + (err.response?.data?.error || err.message || ''));
+        }
+    }, [fetchAbonos, toast]);
+
+    const handleAplicarAbonos = useCallback(async (idVm = null) => {
         setAplicandoAbonos(true);
         try {
-            const res = await api.post('/admin/payments/abonos/aplicar', {});
+            const res = await api.post('/admin/payments/abonos/aplicar', idVm ? { idVm } : {});
             const n = (res.data?.aplicados || []).length;
             toast.success(n === 1
                 ? 'Se recalculó 1 préstamo con abono a capital.'
@@ -791,7 +805,25 @@ const PaymentsListPage = () => {
             } else {
                 const response = await api.post('/admin/payments', payload);
                 paymentIdToUse = response.data.id;
-                toast.success('Pago registrado correctamente');
+                // Un pago registrado por encima de su cuota reescribe el
+                // cronograma igual que al editarlo: hay que decirlo, no dejarlo
+                // en un "registrado correctamente" que oculta la reescritura.
+                const abonoNuevo = response.data?.abonoExtraordinario;
+                if (abonoNuevo?.aplicado) {
+                    toast.success(
+                        `Pago registrado. Abono aplicado: ${formatCurrency(abonoNuevo.excedente)} a capital. ` +
+                        (abonoNuevo.ahorroInteres > 0
+                            ? `El socio ahorra ${formatCurrency(abonoNuevo.ahorroInteres)} en intereses`
+                            : 'Las cuotas siguientes ya se recalcularon') +
+                        (abonoNuevo.cuotasDespues < abonoNuevo.cuotasAntes
+                            ? ` y le quedan ${abonoNuevo.cuotasDespues} cuotas en vez de ${abonoNuevo.cuotasAntes}.`
+                            : '.')
+                    );
+                } else if (abonoNuevo) {
+                    toast.error(`Pago registrado, pero no se pudo aplicar el abono a capital. ${abonoNuevo.motivo || ''}`);
+                } else {
+                    toast.success('Pago registrado correctamente');
+                }
             }
 
             if (soporteFile && paymentIdToUse) {
@@ -810,6 +842,8 @@ const PaymentsListPage = () => {
 
             handleCloseModal();
             refreshAll();
+            // Guardar una cuota puede resolver —o crear— un abono pendiente.
+            fetchAbonos();
             notifyUpdate('payments');
         } catch (error) {
             console.error('Error saving payment:', error);
@@ -1275,30 +1309,72 @@ const PaymentsListPage = () => {
                             </div>
                         </div>
                         {abonos.pendientes.length > 0 && (
-                            <Button size="sm" onClick={handleAplicarAbonos} disabled={aplicandoAbonos} className="gap-1.5">
+                            <Button size="sm" onClick={() => handleAplicarAbonos()} disabled={aplicandoAbonos} className="gap-1.5">
                                 {aplicandoAbonos ? 'Aplicando…' : 'Aplicar ahora'}
                             </Button>
                         )}
                     </div>
 
                     {abonos.pendientes.length > 0 && (
-                        <ul className="mt-3 space-y-1 text-sm text-amber-900">
+                        <ul className="mt-3 space-y-2 text-sm text-amber-900">
                             {abonos.pendientes.slice(0, 6).map((p) => (
-                                <li key={p.idVm} className="flex flex-wrap gap-x-2">
-                                    <span className="font-medium">{p.idVm}</span>
-                                    <span>cuota {p.cuotaAbonada}:</span>
-                                    <span className="font-medium">${Math.round(p.resumen.excedente).toLocaleString('es-CO')}</span>
-                                    <span>a capital · {p.politica === 'reducir-plazo' ? 'reducción de plazo' : 'reducción de cuota'}</span>
-                                    {p.resumen.ahorroInteres > 0 && (
-                                        <span className="text-amber-700">
-                                            (ahorra ${Math.round(p.resumen.ahorroInteres).toLocaleString('es-CO')} en intereses)
-                                        </span>
-                                    )}
-                                    {p.resumen.sobrante > 0 && (
-                                        <span className="font-medium text-amber-900">
-                                            · quedan ${Math.round(p.resumen.sobrante).toLocaleString('es-CO')} a favor del socio, por devolver
-                                        </span>
-                                    )}
+                                <li key={p.idVm} className="rounded-md border border-amber-200 bg-white/60 px-3 py-2">
+                                    <div className="flex flex-wrap items-baseline gap-x-2">
+                                        <span className="font-medium">{p.idVm}</span>
+                                        <span>cuota {p.cuotaAbonada}:</span>
+                                        <span className="font-medium">${Math.round(p.resumen.excedente).toLocaleString('es-CO')} a capital</span>
+                                        {p.resumen.ahorroInteres > 0 && (
+                                            <span className="text-amber-700">
+                                                · ahorra ${Math.round(p.resumen.ahorroInteres).toLocaleString('es-CO')} en intereses
+                                            </span>
+                                        )}
+                                        {p.resumen.cuotasDespues < p.resumen.cuotasAntes && (
+                                            <span className="text-amber-700">
+                                                · le quedan {p.resumen.cuotasDespues} cuotas en vez de {p.resumen.cuotasAntes}
+                                            </span>
+                                        )}
+                                        {p.resumen.sobrante > 0 && (
+                                            <span className="font-medium">
+                                                · ${Math.round(p.resumen.sobrante).toLocaleString('es-CO')} a favor del socio, por devolver
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {/* La elección entre bajar la cuota o acortar el plazo es del socio.
+                                        Se puede cambiar aquí y el efecto se recalcula al momento, antes
+                                        de confirmar nada; queda guardada para los abonos siguientes. */}
+                                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                                        {[
+                                            ['reducir-cuota', 'Bajar la cuota'],
+                                            ['reducir-plazo', 'Acortar el plazo'],
+                                        ].map(([val, etiqueta]) => (
+                                            <button
+                                                key={val}
+                                                type="button"
+                                                onClick={() => handlePoliticaAbono(p.idVm, val)}
+                                                className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${p.politica === val
+                                                    ? 'border-emerald-600 bg-emerald-600 text-white'
+                                                    : 'border-amber-300 bg-white text-amber-900 hover:border-emerald-500'}`}
+                                            >
+                                                {etiqueta}
+                                            </button>
+                                        ))}
+                                        {p.origenPolitica === 'defecto' && (
+                                            <span className="text-xs text-amber-700">por defecto del fondo</span>
+                                        )}
+                                        {p.origenPolitica === 'abono-anterior' && (
+                                            <span className="text-xs text-amber-700">heredada del abono anterior</span>
+                                        )}
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => handleAplicarAbonos(p.idVm)}
+                                            disabled={aplicandoAbonos}
+                                            className="ml-auto"
+                                        >
+                                            Aplicar a este préstamo
+                                        </Button>
+                                    </div>
                                 </li>
                             ))}
                             {abonos.pendientes.length > 6 && (

@@ -44,6 +44,11 @@ const ScoreSnapshot = require('./models/ScoreSnapshot'); // Foto mensual de insu
 const LoanRequest = require('./models/LoanRequest'); // Solicitudes de préstamo pendientes de aprobación del gerente
 const LoanBoardVote = require('./models/LoanBoardVote'); // Voto individual de cada miembro de la Junta Administrativa
 const Notification = require('./models/Notification'); // Notificaciones en la app (campana)
+// Registro y punto de retorno de cada reajuste por abono a capital. Va aquí, y
+// no donde se usa, porque sequelize.sync() solo crea las tablas de los modelos
+// que ya estén definidos cuando corre: cargarlo dentro de una ruta lo deja
+// fuera del sync y el primer barrido falla con "no such table".
+const AbonoAplicado = require('./models/AbonoAplicado');
 
 const app = express();
 const PORT = process.env.PORT || 3000;

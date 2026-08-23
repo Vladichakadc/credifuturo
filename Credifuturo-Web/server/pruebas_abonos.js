@@ -381,6 +381,36 @@ async function invariantes(idVm, principal, etiqueta) {
             !segunda.pendientes.some((x) => x.idVm === p.idVm) && !segunda.bloqueados.some((x) => x.idVm === p.idVm));
     }
 
+
+    console.log('\n13. La política se decide por préstamo, no por defecto ciego');
+    {
+        // Sin nada elegido, manda el defecto del fondo.
+        const a = await sembrar({ principal: 8000000, cuotas: 12, tasa: 0.014, pagos: { 1: 1000000 } });
+        const p1 = await abonos.planificarPrestamo({ idVm: a.idVm });
+        comprobar('sin preferencia se aplica reducir cuota', p1.politica === 'reducir-cuota' && p1.origenPolitica === 'defecto',
+            `${p1.politica} · ${p1.origenPolitica}`);
+
+        // Si el socio la fija, el barrido automático la respeta.
+        const b = await sembrar({ principal: 8000000, cuotas: 12, tasa: 0.014, pagos: { 1: 1000000 } });
+        await abonos.guardarPolitica(b.idVm, 'reducir-plazo');
+        const p2 = await abonos.planificarPrestamo({ idVm: b.idVm });
+        comprobar('la preferencia guardada manda sobre el defecto',
+            p2.politica === 'reducir-plazo' && p2.origenPolitica === 'preferencia', `${p2.politica} · ${p2.origenPolitica}`);
+        const barrido = await abonos.barrer({ aplicar: true, origen: 'prueba' });
+        const aplicadoB = barrido.aplicados.find((x) => x.idVm === b.idVm);
+        comprobar('el barrido automático aplica la política del socio',
+            aplicadoB && aplicadoB.politica === 'reducir-plazo', aplicadoB && aplicadoB.politica);
+
+        // Elegirla al aplicar la deja registrada para los abonos siguientes.
+        const c = await sembrar({ principal: 8000000, cuotas: 12, tasa: 0.014, pagos: { 1: 1000000 } });
+        await abonos.aplicarPlan(await abonos.planificarPrestamo({ idVm: c.idVm, politica: 'reducir-plazo' }), { origen: 'prueba' });
+        const f = await leer(c.idVm);
+        await f[1].update({ estado: 'Pago', valorCuotaPago: num(f[1].valorCuotaVariable) + 250000 });
+        const p3 = await abonos.planificarPrestamo({ idVm: c.idVm });
+        comprobar('un segundo abono hereda la política ya elegida',
+            p3.politica === 'reducir-plazo' && p3.origenPolitica === 'preferencia', `${p3.politica} · ${p3.origenPolitica}`);
+    }
+
     console.log(`\n──────────────────────────────────────────────\n${ok} comprobaciones correctas · ${fallos} fallidas\n`);
     await sequelize.close();
     try { fs.unlinkSync(RUTA); } catch { /* la base temporal ya no importa */ }

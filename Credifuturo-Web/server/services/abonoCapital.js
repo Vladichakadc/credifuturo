@@ -29,6 +29,9 @@ const { Op } = require('sequelize');
 const sequelize = require('../config/database');
 const LoanPayment = require('../models/LoanPayment');
 const AbonoAplicado = require('../models/AbonoAplicado');
+// Se registra arriba, no dentro de las funciones: el modelo tiene que estar
+// definido antes de que corra sequelize.sync(), o su tabla no se crea.
+const AppSetting = require('../models/AppSetting');
 const {
     REDUCIR_PLAZO, REDUCIR_CUOTA, TOLERANCIA,
     analizarCronograma, planificarReajuste, abonosSinAplicar, ordenarCuotas,
@@ -54,6 +57,55 @@ function anioBogota(fecha = new Date()) {
 }
 
 const anioDe = (cuota) => parseInt(String(cuota.fechaPagoMax || '').slice(0, 4), 10);
+
+const CLAVE_POLITICA = (idVm) => `abono.politica.${idVm}`;
+
+const politicaValida = (v) => (v === REDUCIR_PLAZO || v === REDUCIR_CUOTA ? v : null);
+
+/**
+ * Qué se hace con el excedente de ESTE préstamo: bajar la cuota o acortar el plazo.
+ *
+ * La elección es del socio —así lo reconoce la Ley 1555 de 2012 para el crédito
+ * de consumo—, pero un pago que ya está registrado no la lleva escrita. Sin
+ * consultarla en algún sitio, el barrido automático le impondría a todo el
+ * mundo la opción por defecto, que es justamente la que menos le ahorra.
+ *
+ * Se resuelve por orden de cuánto sabemos de la voluntad del socio:
+ *   1. Lo que se pide en esta operación (el administrador acaba de elegirlo).
+ *   2. La preferencia guardada para el préstamo, si alguien la fijó.
+ *   3. La política del último reajuste que sí se aplicó a este préstamo: si el
+ *      socio ya eligió una vez, no se le cambia a mitad del crédito.
+ *   4. Reducir cuota, que es el defecto del fondo.
+ */
+async function resolverPolitica(idVm, pedida) {
+    const explicita = politicaValida(pedida);
+    if (explicita) return { politica: explicita, origen: 'pedida' };
+
+    const guardada = await AppSetting.findOne({ where: { key: CLAVE_POLITICA(idVm) } });
+    const preferida = politicaValida(guardada && guardada.value);
+    if (preferida) return { politica: preferida, origen: 'preferencia' };
+
+    const previo = await AbonoAplicado.findOne({
+        where: { idVm, revertidoEn: null },
+        order: [['createdAt', 'DESC']],
+    });
+    const heredada = politicaValida(previo && previo.politica);
+    if (heredada) return { politica: heredada, origen: 'abono-anterior' };
+
+    return { politica: REDUCIR_CUOTA, origen: 'defecto' };
+}
+
+/** Deja registrada la elección del socio para los abonos siguientes del préstamo. */
+async function guardarPolitica(idVm, politica) {
+    const elegida = politicaValida(politica);
+    if (!elegida || !idVm) return null;
+    const [fila] = await AppSetting.findOrCreate({
+        where: { key: CLAVE_POLITICA(idVm) },
+        defaults: { value: elegida },
+    });
+    if (fila.value !== elegida) await fila.update({ value: elegida });
+    return elegida;
+}
 
 /**
  * Analiza un préstamo y devuelve qué haría el reajuste, SIN escribir nada.
@@ -111,13 +163,12 @@ async function planificarPrestamo({ idVm, politica, anio = anioBogota(), cuotas 
         };
     }
 
+    const elegida = await resolverPolitica(idVm, politica);
+
     // El capital por cuota lo dicta el cronograma vigente, no DisbursedLoan:
     // ese registro puede declarar un número de cuotas distinto del de filas
     // reales, y dividir por él anula cuotas que el socio sí debe.
-    const plan = planificarReajuste({
-        cuotas: filas,
-        politica: politica === REDUCIR_PLAZO ? REDUCIR_PLAZO : REDUCIR_CUOTA,
-    });
+    const plan = planificarReajuste({ cuotas: filas, politica: elegida.politica });
     if (!plan.ok) return { idVm, aplicable: false, motivo: plan.motivo };
 
     // Salvaguarda: nada anterior al primer abono puede moverse. Si el plan
@@ -170,6 +221,9 @@ async function planificarPrestamo({ idVm, politica, anio = anioBogota(), cuotas 
         aplicable: true,
         clientId: filas[0].clientId,
         politica: plan.resumen.politica,
+        // De dónde salió la política, para que la pantalla pueda decir si es la
+        // que eligió el socio o simplemente la que el fondo aplica por defecto.
+        origenPolitica: elegida.origen,
         cuotaAbonada: primerAbono.cuota.externalId || primerAbono.cuota.itemQuantity,
         loanPaymentId: primerAbono.cuota.id,
         abonos: sinAplicar.map((x) => ({ cuota: x.cuota.externalId || x.cuota.itemQuantity, excedente: x.excedente })),
@@ -189,6 +243,11 @@ async function planificarPrestamo({ idVm, politica, anio = anioBogota(), cuotas 
  */
 async function aplicarPlan(plan, { origen = 'barrido', aplicadoPor = 'sistema' } = {}) {
     if (!plan.aplicable) return { ...plan, aplicado: false };
+
+    // Si la política vino pedida en esta operación, es una elección deliberada:
+    // se guarda para que el barrido nocturno la respete en los abonos que
+    // vengan después, en vez de volver al defecto del fondo.
+    if (plan.origenPolitica === 'pedida') await guardarPolitica(plan.idVm, plan.politica);
 
     const t = await sequelize.transaction({ type: 'IMMEDIATE' });
     try {
@@ -328,7 +387,6 @@ const LOCK_TTL_MS = 15 * 60 * 1000;
  * escritura del cerrojo sean atómicas también entre procesos.
  */
 async function tomarCerrojo(instancia) {
-    const AppSetting = require('../models/AppSetting');
     const t = await sequelize.transaction({ type: 'IMMEDIATE' });
     try {
         const fila = await AppSetting.findOne({ where: { key: CLAVE_LOCK }, transaction: t });
@@ -351,7 +409,6 @@ async function tomarCerrojo(instancia) {
 }
 
 async function soltarCerrojo() {
-    const AppSetting = require('../models/AppSetting');
     await AppSetting.update({ value: JSON.stringify({ hasta: 0 }) }, { where: { key: CLAVE_LOCK } }).catch(() => { });
 }
 
@@ -458,6 +515,8 @@ async function barridoProgramado({ anio = anioBogota() } = {}) {
 module.exports = {
     anioBogota,
     mensajeParaElSocio,
+    resolverPolitica,
+    guardarPolitica,
     planificarPrestamo,
     aplicarPlan,
     revertir,
