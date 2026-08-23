@@ -3219,144 +3219,193 @@ router.post('/payments', async (req, res) => {
 
         const newPayment = await LoanPayment.create(data);
         validateAndFixLoanStatuses().catch(() => { });
-        res.status(201).json(newPayment);
+
+        // Un pago registrado directamente como 'Pago' y por encima de su cuota
+        // lleva un abono a capital igual que si se hubiera editado después. Sin
+        // esto, el excedente solo se aplicaba entrando por PUT.
+        let abonoNuevo = null;
+        if (newPayment.estado === 'Pago' && newPayment.idVm) {
+            abonoNuevo = await aplicarAbonoExtraordinario(newPayment, req.body.politicaAbono, {
+                origen: 'edicion', aplicadoPor: req.user && req.user.cedula,
+            });
+        }
+        res.status(201).json(abonoNuevo ? { ...newPayment.toJSON(), abonoExtraordinario: abonoNuevo } : newPayment);
     } catch (err) {
         res.status(400).json({ error: err.message });
     }
 });
 
 /**
- * Aplica a capital lo que el socio pagó por encima de su cuota y rehace las
- * cuotas que aún no han vencido.
+ * Aplica a capital lo que el socio pagó por encima de su cuota y rehace el
+ * cronograma.
  *
- * El pago cubre primero el interés causado del período y el resto amortiza
- * capital — por eso el saldo nuevo se deriva del propio pago y no del
- * `saldoFinal` que traiga el formulario, que ya viene calculado de otra forma:
- *
- *     capitalPagado = valorCuotaPago − valorInteresesAmortizados
- *     saldoNuevo    = saldoInicial − capitalPagado
+ * El cálculo vive en `services/abonoCapital.js`, que es el mismo motor que usa
+ * el barrido automático: así una cuota da el mismo resultado se guarde desde la
+ * pantalla o la encuentre el barrido, y hay un solo sitio donde arreglar la
+ * aritmética.
  *
  * Devuelve siempre un resumen de lo ocurrido —incluso cuando decide no tocar
  * nada— para que la pantalla pueda explicárselo al administrador.
  */
-async function aplicarAbonoExtraordinario(payment, politicaPedida) {
-    const { analizarCronograma, recalcularTrasAbono, REDUCIR_PLAZO, REDUCIR_CUOTA } = require('../services/amortizacion');
+async function aplicarAbonoExtraordinario(payment, politicaPedida, contexto = {}) {
+    if (!payment || !payment.idVm) return null;
+    const abonoCapital = require('../services/abonoCapital');
 
-    const pagado = parseFloat(payment.valorCuotaPago) || 0;
-    const cuota = parseFloat(payment.valorCuotaVariable) || 0;
-    const excedente = parseFloat((pagado - cuota).toFixed(2));
-    if (excedente <= 0) return null;
+    const plan = await abonoCapital.planificarPrestamo({
+        idVm: payment.idVm,
+        politica: politicaPedida,
+    });
 
-    // Solo se ajustan las cuotas del año en curso en adelante. Los años
-    // anteriores ya se cerraron: sus intereses se causaron, se repartieron
-    // entre los socios y se informaron a la Junta. Reescribir un cronograma
-    // hacia atrás cambiaría cifras que ya se rindieron, y el beneficio de un
-    // abono viejo tampoco se le puede devolver hoy al socio.
-    const anioCuota = parseInt(String(payment.fechaPagoMax || '').slice(0, 4), 10);
-    const anioActual = new Date().getFullYear();
-    if (Number.isFinite(anioCuota) && anioCuota < anioActual) {
+    if (!plan.aplicable) {
+        // Sin abono pendiente no hay nada que contar: la pantalla no debe
+        // mostrar un aviso cuando el socio pagó justo.
+        if (plan.yaAlDia && !plan.excedente) return null;
         return {
             aplicado: false,
-            excedente,
-            fueraDePeriodo: true,
-            motivo: `Esta cuota corresponde a ${anioCuota} y el ajuste solo opera sobre el año en curso en adelante. `
-                + 'Los ejercicios cerrados ya repartieron sus intereses entre los socios; el abono queda registrado sin reescribir el cronograma.',
+            excedente: plan.excedente || 0,
+            fueraDePeriodo: Boolean(plan.fueraDePeriodo),
+            motivo: plan.motivo,
+            diagnostico: plan.diagnostico,
         };
     }
 
-    const cuotas = await LoanPayment.findAll({ where: { idVm: payment.idVm } });
-    const diagnostico = analizarCronograma(cuotas);
-
-    // Un cronograma que no encadena o cuyo interés no corresponde a la tasa no
-    // se puede rehacer sin inventar cifras sobre deuda real de un socio. Se deja
-    // constancia del abono y se avisa, en vez de reescribir a ciegas.
-    if (!diagnostico.recalculable) {
-        return { aplicado: false, excedente, motivo: diagnostico.motivo, diagnostico };
-    }
-
-    const interesCausado = parseFloat(payment.valorInteresesAmortizados) || 0;
-    const capitalPagado = pagado - interesCausado;
-    const saldoNuevo = parseFloat(((parseFloat(payment.saldoInicial) || 0) - capitalPagado).toFixed(2));
-
-    // Solo se rehace lo que viene DESPUÉS de la cuota que se está pagando y
-    // sigue sin pagarse. Dos condiciones, y las dos importan:
-    //   · lo ya cobrado es un hecho consumado y su interés se causó de verdad;
-    //   · una cuota anterior que aún se debe tampoco se toca — el socio la sigue
-    //     debiendo con las condiciones que tenía, y reescribirla con el saldo
-    //     posterior al abono le cambiaría una deuda ya vencida.
-    //
-    // Se excluyen además las cuotas en MORA: su interés ya se causó por el
-    // tiempo que llevan vencidas, y recalcularlas sobre el saldo nuevo se lo
-    // condonaría. Una mora se cobra o se negocia aparte, no se borra porque el
-    // socio haya abonado a otra cuota.
-    const posicion = (c) => `${String(c.fechaPagoMax || '')}|${String(c.itemQuantity || 0).padStart(6, '0')}`;
-    const posPagada = posicion(payment);
-    const pendientes = cuotas.filter((c) => c.estado === 'Pendiente' && posicion(c) > posPagada);
-    if (pendientes.length === 0) {
-        return { aplicado: false, excedente, motivo: 'No quedan cuotas posteriores que recalcular.', diagnostico };
-    }
-
-    // Por defecto se REDUCE LA CUOTA, no el plazo. En un fondo de socios el
-    // interés no es utilidad de un banco: es el rendimiento de los propios
-    // ahorradores. Reducir el plazo le ahorra más al deudor ($18.480 frente a
-    // $10.560 en un abono de $176.000 sobre un crédito de $2.000.000 a 10
-    // cuotas), pero esos $7.920 de diferencia salen del retorno colectivo.
-    // El plazo se acorta cuando el socio lo pide — la elección es suya, como en
-    // cualquier prepago de crédito de consumo—, y por eso viaja como parámetro.
-    const politica = politicaPedida === REDUCIR_PLAZO ? REDUCIR_PLAZO : REDUCIR_CUOTA;
-    const capitalPorCuota = (parseFloat(payment.valorCuotaVariable) || 0) - interesCausado;
-
-    const resultado = recalcularTrasAbono({
-        cuotasPendientes: pendientes,
-        saldoNuevo,
-        capitalPorCuota,
-        politica,
+    const aplicado = await abonoCapital.aplicarPlan(plan, {
+        origen: contexto.origen || 'edicion',
+        aplicadoPor: contexto.aplicadoPor || 'sistema',
     });
 
-    const sequelize = require('../config/database');
-    const t = await sequelize.transaction();
-    try {
-        // El saldo de la cuota pagada refleja el abono, y queda constancia de
-        // qué se hizo con él. Sin esta nota, la lista muestra un excedente pero
-        // nadie puede saber después si se redujo la cuota, se redujo el plazo o
-        // no se aplicó nada. Se ANTEPONE a lo que hubiera escrito el
-        // administrador en vez de reemplazarlo.
-        const nota = `Abono extraordinario de $${Math.round(excedente).toLocaleString('es-CO')} a capital · `
-            + `${politica === REDUCIR_CUOTA ? 'reducción de cuota' : 'reducción de plazo'}.`;
-        const previas = String(payment.observaciones || '').trim();
-        await payment.update({
-            saldoFinal: Math.max(0, saldoNuevo),
-            observaciones: previas ? `${nota} ${previas}` : nota,
-        }, { transaction: t });
+    return {
+        aplicado: true,
+        excedente: plan.resumen.excedente,
+        politica: plan.politica,
+        cuotasAntes: plan.resumen.cuotasAntes,
+        cuotasDespues: plan.resumen.cuotasDespues,
+        interesAntes: plan.resumen.interesAntes,
+        interesDespues: plan.resumen.interesDespues,
+        ahorroInteres: plan.resumen.ahorroInteres,
+        interesReintegrado: plan.resumen.interesReintegrado,
+        cancelaElCredito: plan.cancelaElCredito,
+        registroId: aplicado.registroId,
+    };
+}
 
-        for (const fila of resultado.filas) {
-            const destino = pendientes.find((c) => c.id === fila.id);
-            if (!destino) continue;
-            const cambios = {
-                saldoInicial: fila.saldoInicial,
-                valorInteresesAmortizados: fila.valorInteresesAmortizados,
-                valorCuotaVariable: fila.valorCuotaVariable,
-                saldoFinal: fila.saldoFinal,
-            };
-            // Las cuotas que sobran tras un abono grande se marcan canceladas por
-            // prepago: es el mismo tratamiento que ya usa la refinanciación, y las
-            // deja fuera de los cálculos de rentabilidad del fondo.
-            if (fila.sobra || resultado.cancelaElCredito) {
-                cambios.estado = 'Pago';
-                cambios.valorCuotaPago = 0;
-                cambios.esPrepago = true;
-                cambios.observaciones = `Cancelada por abono extraordinario a capital de $${Math.round(excedente).toLocaleString('es-CO')}.`;
-            }
-            await destino.update(cambios, { transaction: t });
+// ─────────────────────────────────────────────
+// ABONOS EXTRAORDINARIOS A CAPITAL — revisión, aplicación y reversión
+// ─────────────────────────────────────────────
+//
+// Que un socio pague por encima de su cuota queda registrado el día del pago,
+// pero durante un tiempo el recálculo solo se disparaba si alguien volvía a
+// guardar esa cuota desde la pantalla. Los pagos anteriores quedaron con su
+// excedente sin aplicar: el socio había entregado capital y seguía pagando
+// intereses sobre él. Estas rutas cierran ese hueco sobre la cartera existente.
+
+/** Qué abonos siguen sin aplicar. No escribe nada: es el previo de la aplicación. */
+router.get('/payments/abonos', async (req, res) => {
+    try {
+        const abonoCapital = require('../services/abonoCapital');
+        const anio = parseInt(req.query.anio, 10) || abonoCapital.anioBogota();
+        const informe = await abonoCapital.barrer({ anio, aplicar: false });
+        res.json({
+            ok: true,
+            anio,
+            resumen: {
+                prestamosConAbono: informe.pendientes.length,
+                capitalPorAplicar: informe.pendientes.reduce((s, p) => s + (p.resumen.excedente || 0), 0),
+                ahorroEnIntereses: informe.pendientes.reduce((s, p) => s + (p.resumen.ahorroInteres || 0), 0),
+                interesPorReintegrar: informe.pendientes.reduce((s, p) => s + (p.resumen.interesReintegrado || 0), 0),
+                alDia: informe.alDia,
+                bloqueados: informe.bloqueados.length,
+            },
+            pendientes: informe.pendientes,
+            bloqueados: informe.bloqueados,
+            errores: informe.errores,
+        });
+    } catch (err) {
+        console.error('Error al revisar abonos:', err);
+        res.status(500).json({ error: 'No se pudo revisar los abonos pendientes.' });
+    }
+});
+
+/** Aplica los abonos: todos los pendientes, o los de un préstamo concreto. */
+router.post('/payments/abonos/aplicar', async (req, res) => {
+    try {
+        const abonoCapital = require('../services/abonoCapital');
+        const { notifyAdmins, createNotification } = require('../services/NotificationService');
+        const anio = parseInt(req.body.anio, 10) || abonoCapital.anioBogota();
+        const quien = (req.user && req.user.cedula) || 'admin';
+
+        if (req.body.idVm) {
+            // Pedirlo para un préstamo concreto es una decisión explícita: puede
+            // volver a aplicar un reajuste que antes se revirtió.
+            const plan = await abonoCapital.planificarPrestamo({
+                idVm: req.body.idVm, politica: req.body.politica, anio, respetarReversion: false,
+            });
+            if (!plan.aplicable) return res.status(400).json({ error: plan.motivo });
+            const hecho = await abonoCapital.aplicarPlan(plan, { origen: 'manual', aplicadoPor: quien });
+            await avisarAlSocio(createNotification, plan);
+            return res.json({ ok: true, aplicados: [hecho] });
         }
 
-        await t.commit();
+        const informe = await abonoCapital.barrer({ anio, aplicar: true, origen: 'manual', aplicadoPor: quien });
+        for (const plan of informe.aplicados) await avisarAlSocio(createNotification, plan);
+        if (informe.aplicados.length > 0) {
+            await notifyAdmins({
+                type: 'abono_capital',
+                title: 'Se aplicaron abonos a capital',
+                message: `Se recalcularon ${informe.aplicados.length} préstamo(s) con pagos por encima de la cuota.`,
+                link: '/admin/payments',
+            });
+        }
+        res.json({ ok: true, ...informe });
     } catch (err) {
-        await t.rollback();
-        throw err;
+        console.error('Error al aplicar abonos:', err);
+        res.status(500).json({ error: 'No se pudo aplicar los abonos.' });
     }
+});
 
-    return { aplicado: true, excedente, politica, ...resultado.resumen, cancelaElCredito: resultado.cancelaElCredito };
+/** Deshace un reajuste devolviendo cada cuota a como estaba antes. */
+router.post('/payments/abonos/:id/revertir', async (req, res) => {
+    try {
+        const abonoCapital = require('../services/abonoCapital');
+        const r = await abonoCapital.revertir(req.params.id, { revertidoPor: (req.user && req.user.cedula) || 'admin' });
+        if (!r.ok) return res.status(400).json({ error: r.motivo });
+        res.json({ ok: true, ...r });
+    } catch (err) {
+        console.error('Error al revertir un abono:', err);
+        res.status(500).json({ error: 'No se pudo revertir el reajuste.' });
+    }
+});
+
+/** Historial de reajustes aplicados, para auditoría. */
+router.get('/payments/abonos/historial', async (req, res) => {
+    try {
+        const AbonoAplicado = require('../models/AbonoAplicado');
+        const filas = await AbonoAplicado.findAll({ order: [['createdAt', 'DESC']], limit: 200 });
+        res.json({ ok: true, data: filas.map((f) => ({ ...f.toJSON(), resumen: JSON.parse(f.resumen || 'null'), estadoAnterior: undefined })) });
+    } catch (err) {
+        console.error('Error al listar el historial de abonos:', err);
+        res.status(500).json({ error: 'No se pudo leer el historial.' });
+    }
+});
+
+/** Le cuenta al socio qué pasó con el dinero que pagó de más. */
+async function avisarAlSocio(createNotification, plan) {
+    if (!plan || !plan.clientId) return;
+    try {
+        const { mensajeParaElSocio } = require('../services/abonoCapital');
+        await createNotification({
+            clientId: plan.clientId,
+            type: 'abono_capital',
+            title: 'Se aplicó a capital lo que pagaste de más',
+            // El mismo texto que usa el barrido automático: el socio no debe
+            // recibir un mensaje distinto según por dónde entró el reajuste.
+            message: mensajeParaElSocio(plan),
+            link: '/dashboard/mis-creditos?tab=cuotas',
+        });
+    } catch (err) {
+        // Que falle un aviso no debe deshacer un reajuste ya confirmado.
+        console.warn('No se pudo notificar el abono al socio:', err.message);
+    }
 }
 
 router.put('/payments/:id', async (req, res) => {
@@ -3388,7 +3437,9 @@ router.put('/payments/:id', async (req, res) => {
         // siguientes no cambiaban y el socio seguía pagando el mismo interés.
         let abono = null;
         if (payment.estado === 'Pago' && payment.idVm) {
-            abono = await aplicarAbonoExtraordinario(payment, req.body.politicaAbono);
+            abono = await aplicarAbonoExtraordinario(payment, req.body.politicaAbono, {
+                origen: 'edicion', aplicadoPor: req.user && req.user.cedula,
+            });
         }
 
         // Notifica al socio solo cuando la cuota PASA a 'Pago' (no en cualquier otra

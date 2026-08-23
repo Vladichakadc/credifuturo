@@ -397,6 +397,11 @@ const PaymentsListPage = () => {
     // Qué hacer con lo que el socio pague por encima de su cuota. Por defecto se
     // baja la cuota y se conserva el plazo; el socio puede pedir lo contrario.
     const [politicaAbono, setPoliticaAbono] = useState('reducir-cuota');
+    // Abonos a capital que el sistema encontró sin aplicar. El barrido
+    // automático se ocupa de los casos claros; aquí se ven sobre todo los que
+    // se negó a tocar y necesitan una decisión de una persona.
+    const [abonos, setAbonos] = useState(null);
+    const [aplicandoAbonos, setAplicandoAbonos] = useState(false);
     const [selectingRecord, setSelectingRecord] = useState(false);
     const [selectorSearch, setSelectorSearch] = useState('');
     const [selectorClientId, setSelectorClientId] = useState('');
@@ -447,6 +452,18 @@ const PaymentsListPage = () => {
     const [showMoraDetail, setShowMoraDetail] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
 
+    // Revisa qué pagos por encima de la cuota siguen sin abonarse a capital.
+    // Es solo lectura: el servidor calcula lo que haría, sin escribir nada.
+    const fetchAbonos = useCallback(async () => {
+        try {
+            const res = await api.get('/admin/payments/abonos');
+            setAbonos(res.data && res.data.ok ? res.data : null);
+        } catch {
+            // Que falle esta revisión no debe estropear la lista de pagos.
+            setAbonos(null);
+        }
+    }, []);
+
     const fetchPayments = useCallback(async () => {
         setLoading(true);
         setError(null);
@@ -476,7 +493,25 @@ const PaymentsListPage = () => {
         }
     }, []);
 
+    const handleAplicarAbonos = useCallback(async () => {
+        setAplicandoAbonos(true);
+        try {
+            const res = await api.post('/admin/payments/abonos/aplicar', {});
+            const n = (res.data?.aplicados || []).length;
+            toast.success(n === 1
+                ? 'Se recalculó 1 préstamo con abono a capital.'
+                : `Se recalcularon ${n} préstamos con abono a capital.`);
+            await fetchPayments();
+            await fetchAbonos();
+        } catch (err) {
+            toast.error('No se pudieron aplicar los abonos: ' + (err.response?.data?.error || err.message || ''));
+        } finally {
+            setAplicandoAbonos(false);
+        }
+    }, [fetchPayments, fetchAbonos, toast]);
+
     useEffect(() => { fetchPayments(); }, [fetchPayments]);
+    useEffect(() => { fetchAbonos(); }, [fetchAbonos]);
 
     // Clientes y pr\u00e9stamos desembolsados \u2014 necesarios para los selectores del modal
     // "Registrar Pago" (socio, Id_VM, autocompletado de banco/cuenta/tasa). No los trae
@@ -1209,6 +1244,90 @@ const PaymentsListPage = () => {
                     </Button>
                 </div>
             </div>
+
+            {/* Abonos a capital que siguen sin aplicarse.
+                El barrido automático resuelve los casos claros por su cuenta, así
+                que lo que normalmente aparece aquí son los que el sistema se negó
+                a tocar: cronogramas heredados, préstamos en mora o abonos de un
+                ejercicio ya cerrado. Esos necesitan una decisión de una persona. */}
+            {abonos && (abonos.pendientes?.length > 0 || abonos.bloqueados?.length > 0) && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-4">
+                    <div className="flex items-start justify-between gap-4 flex-wrap">
+                        <div className="flex items-start gap-3">
+                            <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+                            <div>
+                                <p className="font-semibold text-amber-900">
+                                    {abonos.pendientes.length > 0
+                                        ? `${abonos.pendientes.length} préstamo(s) con pagos por encima de la cuota sin abonar a capital`
+                                        : `${abonos.bloqueados.length} préstamo(s) con sobrepago requieren revisión manual`}
+                                </p>
+                                {abonos.pendientes.length > 0 && (
+                                    <p className="text-sm text-amber-800 mt-0.5">
+                                        ${Math.round(abonos.resumen?.capitalPorAplicar || 0).toLocaleString('es-CO')} por abonar a capital
+                                        {abonos.resumen?.ahorroEnIntereses > 0 && (
+                                            <> · ${Math.round(abonos.resumen.ahorroEnIntereses).toLocaleString('es-CO')} de ahorro en intereses para los socios</>
+                                        )}
+                                    </p>
+                                )}
+                                <p className="text-xs text-amber-700 mt-1">
+                                    El sistema aplica estos abonos solo, al arrancar y cada noche. Este botón adelanta esa revisión.
+                                </p>
+                            </div>
+                        </div>
+                        {abonos.pendientes.length > 0 && (
+                            <Button size="sm" onClick={handleAplicarAbonos} disabled={aplicandoAbonos} className="gap-1.5">
+                                {aplicandoAbonos ? 'Aplicando…' : 'Aplicar ahora'}
+                            </Button>
+                        )}
+                    </div>
+
+                    {abonos.pendientes.length > 0 && (
+                        <ul className="mt-3 space-y-1 text-sm text-amber-900">
+                            {abonos.pendientes.slice(0, 6).map((p) => (
+                                <li key={p.idVm} className="flex flex-wrap gap-x-2">
+                                    <span className="font-medium">{p.idVm}</span>
+                                    <span>cuota {p.cuotaAbonada}:</span>
+                                    <span className="font-medium">${Math.round(p.resumen.excedente).toLocaleString('es-CO')}</span>
+                                    <span>a capital · {p.politica === 'reducir-plazo' ? 'reducción de plazo' : 'reducción de cuota'}</span>
+                                    {p.resumen.ahorroInteres > 0 && (
+                                        <span className="text-amber-700">
+                                            (ahorra ${Math.round(p.resumen.ahorroInteres).toLocaleString('es-CO')} en intereses)
+                                        </span>
+                                    )}
+                                    {p.resumen.sobrante > 0 && (
+                                        <span className="font-medium text-amber-900">
+                                            · quedan ${Math.round(p.resumen.sobrante).toLocaleString('es-CO')} a favor del socio, por devolver
+                                        </span>
+                                    )}
+                                </li>
+                            ))}
+                            {abonos.pendientes.length > 6 && (
+                                <li className="text-amber-700">… y {abonos.pendientes.length - 6} más.</li>
+                            )}
+                        </ul>
+                    )}
+
+                    {abonos.bloqueados.length > 0 && (
+                        <div className="mt-3 border-t border-amber-200 pt-3">
+                            <p className="text-sm font-medium text-amber-900">
+                                Sin recalcular ({abonos.bloqueados.length}) — el cronograma no permite rehacerlo sin inventar cifras:
+                            </p>
+                            <ul className="mt-1 space-y-1 text-sm text-amber-800">
+                                {abonos.bloqueados.slice(0, 5).map((b) => (
+                                    <li key={b.idVm}>
+                                        <span className="font-medium">{b.idVm}</span>
+                                        {b.excedente > 0 && <> · ${Math.round(b.excedente).toLocaleString('es-CO')}</>}
+                                        {' — '}{b.motivo}
+                                    </li>
+                                ))}
+                                {abonos.bloqueados.length > 5 && (
+                                    <li className="text-amber-700">… y {abonos.bloqueados.length - 5} más.</li>
+                                )}
+                            </ul>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Smart Summary Cards - Row 1: Financiero */}
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">

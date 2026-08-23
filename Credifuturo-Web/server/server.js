@@ -400,6 +400,14 @@ sequelize.sync().then(async () => {
         'CREATE INDEX IF NOT EXISTS idx_loanpayment_fecha    ON LoanPayments(fecha_pago_max)',
         'CREATE INDEX IF NOT EXISTS idx_disbursed_clientId   ON DisbursedLoans(client_id)',
         'CREATE INDEX IF NOT EXISTS idx_disbursed_fecha      ON DisbursedLoans(fecha_prestamo)',
+        // La asociación LoanPayment→DisbursedLoan genera una clave foránea hacia
+        // DisbursedLoans(id_vm), y SQLite exige que la columna destino tenga
+        // índice único. Sin él la considera malformada y rechaza con "foreign key
+        // mismatch" cualquier INSERT en LoanPayments y cualquier DELETE sobre la
+        // tabla — es decir, una instalación nueva no podría registrar un solo
+        // pago. Las bases antiguas no traen esa FK y por eso nunca se notó.
+        // Si hubiera id_vm repetidos el índice no se crea y el warning lo dice.
+        'CREATE UNIQUE INDEX IF NOT EXISTS ux_disbursed_id_vm ON DisbursedLoans(id_vm)',
     ];
     for (const sql of indexStatements) {
         await sequelize.query(sql).catch(e => console.warn('[INDEX] Skipped:', e.message));
@@ -479,6 +487,29 @@ sequelize.sync().then(async () => {
             scheduled: true,
             timezone: 'America/Bogota'
         });
+
+        // ── Abonos extraordinarios a capital ───────────────────────────────
+        // Cuando un socio paga por encima de su cuota, ese excedente amortiza
+        // capital y rebaja los intereses que aún no se han causado. El recálculo
+        // se dispara al guardar la cuota, pero los pagos ya registrados —los
+        // anteriores a que la función existiera— se quedaron sin aplicar: el
+        // socio entregó capital y siguió pagando intereses sobre él. Este
+        // barrido los encuentra y los aplica.
+        //
+        // Va DESPUÉS de listen() y con su propio try/catch a propósito: el
+        // bloque de arranque termina en un .catch que reporta "Database
+        // connection failed", así que una excepción aquí, colocada antes,
+        // dejaría el servidor sin abrir el puerto y con un diagnóstico falso.
+        const runBarridoAbonos = () => {
+            require('./services/abonoCapital')
+                .barridoProgramado()
+                .catch(e => console.error('[ABONOS] Error en el barrido:', e.message));
+        };
+        cron.schedule('0 30 20 * * *', runBarridoAbonos, { scheduled: true, timezone: 'America/Bogota' });
+        // Y una pasada al arrancar, algo después de la semilla de snapshots para
+        // no competir por la única conexión de escritura de SQLite.
+        setTimeout(runBarridoAbonos, 45000);
+        console.log('[CRON] 💵 Barrido de abonos a capital programado para las 8:30 PM (hora Colombia) + pasada al arranque.');
         // Semilla al arrancar (20s después, para no competir con el arranque):
         // garantiza que el mes en curso siempre tenga snapshot aunque el server
         // no esté encendido a las 8:10 PM.
