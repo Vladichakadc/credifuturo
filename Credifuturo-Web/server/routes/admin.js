@@ -3363,6 +3363,28 @@ router.post('/payments/abonos/aplicar', async (req, res) => {
     }
 });
 
+/**
+ * Fija qué se hace con el excedente de un préstamo: bajar la cuota o acortar el
+ * plazo. Queda guardado, así que el barrido automático lo respeta en los abonos
+ * que vengan después en vez de volver al defecto del fondo.
+ */
+router.put('/payments/abonos/politica', async (req, res) => {
+    try {
+        const { idVm, politica } = req.body || {};
+        if (!idVm) return res.status(400).json({ error: 'Falta el préstamo (idVm).' });
+        const abonoCapital = require('../services/abonoCapital');
+        const guardada = await abonoCapital.guardarPolitica(idVm, politica);
+        if (!guardada) return res.status(400).json({ error: 'La política debe ser "reducir-cuota" o "reducir-plazo".' });
+        // Se devuelve el plan recalculado para que la pantalla muestre en el acto
+        // qué cambiaría con la política nueva, antes de confirmar nada.
+        const plan = await abonoCapital.planificarPrestamo({ idVm, respetarReversion: false });
+        res.json({ ok: true, idVm, politica: guardada, plan });
+    } catch (err) {
+        console.error('Error al fijar la política de abono:', err);
+        res.status(500).json({ error: 'No se pudo guardar la política.' });
+    }
+});
+
 /** Deshace un reajuste devolviendo cada cuota a como estaba antes. */
 router.post('/payments/abonos/:id/revertir', async (req, res) => {
     try {
