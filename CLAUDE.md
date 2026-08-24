@@ -225,6 +225,8 @@ The savings matrix translated to credit. It shares the layout, the mono tabular 
 - **An empty cell is not a default.** In savings, a past month with no movement means the member did not pay. In loans it may just mean that credit had no quota that month — it started in July, or already ended. `estadoCelda` therefore asks `n === 0` *first*; asking "is it paid?" first would paint those cells red and accuse the member of missing a payment they never owed.
 - **Coverage before payment.** A month can hold two quotas of the same loan (retanqueos, migrated schedules). Checking "is any quota paid?" painted the cell green and hid the unpaid one — the summary counted five quotas in arrears while the grid showed none. The cell compares `pagadas + prepago` against `n` and shows a partial state (`parcial`, amber, rendered as `2/3`) when they differ.
 
+- **A pending cell shows what is owed, not what was collected.** An unpaid quota has no "amount paid"; rendering its zero says nothing and reads as if nothing were due. `contenidoCelda` shows `programado` for every uncovered state and only switches to `pagado` once the quota is covered — the Pagado/Programado toggle governs totals and settled quotas, never this. The nearest still-unpaid future quota carries a ring, since that is the one to collect now.
+
 Reconciliation runs on "todos los años" + "Programado": the quotas must sum the capital lent plus the interest scheduled. A gap means schedules that do not match their loan's terms — the same condition the abono engine refuses to recalculate.
 
 ### Savings field semantics (Saving model)
