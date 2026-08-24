@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
     Grid3x3, RefreshCw, Download, Search, X, Landmark, CalendarCheck,
-    AlertTriangle, Wallet, TrendingUp, CheckCircle2, Info, ChevronDown,
+    AlertTriangle, Wallet, TrendingUp, CheckCircle2, Info, ChevronDown, Clock,
 } from 'lucide-react';
 import api from '../../config/api';
 import { useUi } from '../../context/UiContext';
@@ -72,6 +72,27 @@ function estadoCelda(celda, mes, mesLimite) {
     return cubiertas > 0 ? 'parcial' : 'vencida';
 }
 
+/**
+ * Qué cifra enseña la casilla.
+ *
+ * Una cuota que todavía no se ha pagado no tiene "valor pagado": tiene valor a
+ * pagar. Mostrar el cero de lo cobrado en una cuota pendiente no informa de
+ * nada, y encima invita a leerla como si no debiera nada. Así que mientras la
+ * cuota siga sin cubrirse, la casilla muestra lo que hay que pagar; cuando se
+ * paga, pasa a mostrar lo que se pagó — y de gris a verde, que es la señal que
+ * de verdad se busca al recorrer la rejilla.
+ *
+ * El interruptor Pagado/Programado gobierna los totales y las cuotas ya
+ * cobradas, no esta regla: lo pendiente siempre se enseña como deuda.
+ */
+function contenidoCelda(estado, celda, modo) {
+    if (estado === 'sin-cuota') return '';
+    if (estado === 'prepagada') return '—';
+    if (estado === 'parcial') return `${celda.pagadas + celda.prepago}/${celda.n}`;
+    if (estado === 'pendiente' || estado === 'vencida' || estado === 'mora') return compacto(celda.programado);
+    return compacto(modo === 'programado' ? celda.programado : celda.pagado);
+}
+
 const ESTILOS = {
     'abono': 'bg-emerald-700 text-white border-emerald-800',
     'pagada': 'bg-emerald-500 text-white border-emerald-600',
@@ -79,9 +100,18 @@ const ESTILOS = {
     'mora': 'bg-rose-600 text-white border-rose-700',
     'vencida': 'bg-rose-500 text-white border-rose-600',
     'parcial': 'bg-amber-100 text-amber-900 border-amber-400',
-    'pendiente': 'bg-gray-50 text-gray-400 border-gray-200',
+    'pendiente': 'bg-slate-50 text-slate-600 border-slate-300',
     'sin-cuota': 'bg-transparent text-gray-200 border-transparent',
 };
+
+/** El primer mes con cuota aún sin cubrir que todavía no ha vencido. */
+function proximaDe(prestamo, mesLimite) {
+    for (let i = mesLimite; i < 12; i++) {
+        const c = prestamo.meses[i];
+        if (c.n > 0 && c.pagadas + c.prepago < c.n) return i + 1;
+    }
+    return null;
+}
 
 function Tarjeta({ icon: Icon, titulo, valor, nota, acento = 'emerald', alerta = false }) {
     const tonos = {
@@ -193,12 +223,24 @@ export default function LoansMatrixPage() {
                 if (c.excedente > 0) conAbono += 1;
             });
         }
+        // Lo que queda por cobrar: toda cuota sin cubrir, haya vencido o no.
+        // Es la contrapartida de "recaudo" y lo que se mira para saber qué
+        // entra en lo que queda de año.
+        let porCobrar = 0; let proxima = null;
+        for (const p of filas) {
+            p.meses.forEach((c, i) => {
+                if (c.n === 0 || c.pagadas + c.prepago >= c.n) return;
+                porCobrar += c.programado * ((c.n - c.pagadas - c.prepago) / c.n);
+                if (i + 1 > lim && (proxima === null || i + 1 < proxima)) proxima = i + 1;
+            });
+        }
+
         const mesRef = mesFoco || lim;
         const delMes = mesRef >= 1 ? filas.reduce((s, p) => s + p.meses[mesRef - 1][modo], 0) : 0;
         const previo = mesRef >= 2 ? filas.reduce((s, p) => s + p.meses[mesRef - 2][modo], 0) : 0;
 
         return {
-            total, programado, cartera, prestado, intereses, programadoTotal,
+            total, programado, cartera, prestado, intereses, programadoTotal, porCobrar, proxima,
             exigibles, cubiertas, descubiertas, conAbono, mesRef, delMes,
             variacion: previo > 0 ? ((delMes - previo) / previo) * 100 : null,
             cumplimiento: exigibles > 0 ? (cubiertas / exigibles) * 100 : 100,
@@ -279,7 +321,7 @@ export default function LoansMatrixPage() {
             </div>
 
             {resumen && (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                     <Tarjeta
                         icon={Wallet}
                         titulo={anio === 'todos' ? 'Recaudo histórico' : `Recaudo ${anio}`}
@@ -300,6 +342,15 @@ export default function LoansMatrixPage() {
                         nota={resumen.descubiertas > 0 ? 'Vencidas y sin pagar' : 'Ninguna cuota vencida sin pagar'}
                         acento={resumen.descubiertas > 0 ? 'rose' : 'emerald'}
                         alerta={resumen.descubiertas > 0}
+                    />
+                    <Tarjeta
+                        icon={Clock}
+                        titulo="Por cobrar en el período"
+                        valor={pesos(resumen.porCobrar)}
+                        nota={resumen.proxima
+                            ? `La próxima vence en ${MESES_LARGOS[resumen.proxima - 1]}`
+                            : 'No quedan cuotas por vencer este año'}
+                        acento="sky"
                     />
                     <Tarjeta
                         icon={Landmark}
@@ -409,7 +460,8 @@ export default function LoansMatrixPage() {
                     <span className="flex items-center gap-1.5"><i className="h-3.5 w-5 rounded-sm bg-rose-600" /> en mora</span>
                     <span className="flex items-center gap-1.5"><i className="h-3.5 w-5 rounded-sm bg-rose-500" /> vencida sin pagar</span>
                     <span className="flex items-center gap-1.5"><i className="h-3.5 w-5 rounded-sm bg-amber-100 ring-1 ring-inset ring-amber-400" /> mes con cuotas sin cubrir</span>
-                    <span className="flex items-center gap-1.5"><i className="h-3.5 w-5 rounded-sm bg-gray-50 ring-1 ring-inset ring-gray-200" /> aún no vence</span>
+                    <span className="flex items-center gap-1.5"><i className="h-3.5 w-5 rounded-sm bg-gray-50 ring-1 ring-inset ring-gray-200" /> aún no vence (muestra lo que se debe)</span>
+                    <span className="flex items-center gap-1.5"><i className="h-3.5 w-5 rounded-sm bg-gray-50 ring-2 ring-brand-primary" /> próxima cuota a cobrar</span>
                     <span className="flex items-center gap-1.5"><i className="h-3.5 w-5 rounded-sm bg-sky-100 ring-1 ring-inset ring-sky-300" /> cancelada por prepago</span>
                     <span className="flex items-center gap-1.5"><i className="h-3.5 w-5 rounded-sm ring-1 ring-inset ring-gray-200" /> sin cuota ese mes</span>
                 </div>
@@ -488,14 +540,17 @@ export default function LoansMatrixPage() {
 
                                             {p.meses.map((c, i) => {
                                                 const est = estadoCelda(c, i + 1, lim);
+                                                // La primera cuota que queda por vencer de este crédito. Se
+                                                // señala porque es la que hay que cobrar ahora; sin marcarla,
+                                                // todas las pendientes pesan igual en la mirada.
+                                                const esProxima = i + 1 === proximaDe(p, lim);
                                                 const enCruz = cruz.col === i || activa;
-                                                const valor = c[modo];
                                                 const titulo = `${p.socio} · ${p.idVm} · ${MESES_LARGOS[i]}\n` + ({
                                                     'sin-cuota': 'Este crédito no tiene cuota en este mes',
                                                     'prepagada': 'Cancelada por prepago o refinanciación',
                                                     'mora': `En mora · cuota de ${pesos(c.programado)}`,
                                                     'vencida': `Vencida sin pagar · cuota de ${pesos(c.programado)}`,
-                                                    'pendiente': `Pendiente · cuota de ${pesos(c.programado)}`,
+                                                    'pendiente': `Aún no vence · hay que pagar ${pesos(c.programado)}`,
                                                     'parcial': `${c.pagadas + c.prepago} de ${c.n} cuotas cubiertas este mes · programado ${pesos(c.programado)}`,
                                                     'pagada': `Pagada ${pesos(c.pagado)}`,
                                                     'abono': `Pagada ${pesos(c.pagado)} · ${pesos(c.excedente)} de más a capital`,
@@ -508,11 +563,8 @@ export default function LoansMatrixPage() {
                                                         title={titulo}
                                                         className={`border-b border-r p-0 text-center transition-[filter] ${enCruz ? 'brightness-105' : ''}`}
                                                     >
-                                                        <span className={`m-[3px] flex h-8 items-center justify-center rounded-md border font-mono text-[12px] font-semibold tabular-nums ${ESTILOS[est]}`}>
-                                                            {est === 'sin-cuota' ? ''
-                                                                : est === 'vencida' || est === 'mora' ? compacto(c.programado)
-                                                                    : est === 'parcial' ? `${c.pagadas + c.prepago}/${c.n}`
-                                                                        : compacto(valor)}
+                                                        <span className={`m-[3px] flex h-8 items-center justify-center rounded-md border font-mono text-[12px] font-semibold tabular-nums transition-colors duration-500 ${ESTILOS[est]} ${esProxima ? 'ring-2 ring-brand-primary ring-offset-1' : ''}`}>
+                                                            {contenidoCelda(est, c, modo)}
                                                         </span>
                                                     </td>
                                                 );
