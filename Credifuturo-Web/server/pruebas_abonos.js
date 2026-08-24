@@ -411,6 +411,73 @@ async function invariantes(idVm, principal, etiqueta) {
             p3.politica === 'reducir-plazo' && p3.origenPolitica === 'preferencia', `${p3.politica} · ${p3.origenPolitica}`);
     }
 
+
+    console.log('\n14. El caso real de producción: abono anotado en la cuota, no propagado');
+    {
+        // Cifras copiadas de la exportación de producción del préstamo SOL30.
+        // El formulario de pagos calcula saldoFinal = saldoInicial + intereses −
+        // pagado mientras el administrador escribe, así que la cuota 1 quedó en
+        // $7.112.000 mientras la cuota 2 seguía arrancando en $7.333.333.
+        const socio = await Client.create({ name: 'Prod', apellido1: 'Real', cedula: '65772720',
+            customerId: '9999', email: 'prod@t.local', password: 'x', role: 'user', estatus: 'Activo' });
+        await DisbursedLoan.create({ idVm: 'SOL30', clientId: socio.id, valorPrestado: 8000000, cuotas: 12,
+            interesMensual: 0.014, estado: 'Vigente', fechaPrestamo: `${ANIO}-07-23`, mesDesembolso: 'Julio', anioDesembolso: ANIO });
+        const crudas = [
+            [8000000, 112000, 778666.67, 1000000, 7112000, 'Pago'],
+            [7333333, 102667, 769333, 0, 6666667, 'Pendiente'],
+            [6666667, 93333, 760000, 0, 6000000, 'Pendiente'],
+            [6000000, 84000, 750667, 0, 5333333, 'Pendiente'],
+            [5333333, 74667, 741333, 0, 4666667, 'Pendiente'],
+            [4666667, 65333, 732000, 0, 4000000, 'Pendiente'],
+            [4000000, 56000, 722667, 0, 3333333, 'Pendiente'],
+            [3333333, 46667, 713333, 0, 2666667, 'Pendiente'],
+            [2666667, 37333, 704000, 0, 2000000, 'Pendiente'],
+            [2000000, 28000, 694667, 0, 1333333, 'Pendiente'],
+            [1333333, 18667, 685333, 0, 666667, 'Pendiente'],
+            [666667, 9333, 676000, 0, 0, 'Pendiente'],
+        ];
+        await LoanPayment.bulkCreate(crudas.map(([si, int, cv, vp, sf, est], i) => ({
+            externalId: `P2${String(i + 1).padStart(2, '0')}`, clientId: socio.id, idVm: 'SOL30',
+            saldoInicial: si, cuotasPrestamo: 12, interesMensual: 0.014, valorInteresesAmortizados: int,
+            fechaPagoMax: `${ANIO}-${String(Math.min(12, i + 8)).padStart(2, '0')}-${String(10 + i).padStart(2, '0')}`,
+            valorCuotaVariable: cv, estado: est, valorCuotaPago: vp, saldoFinal: sf,
+            itemQuantity: i + 1, estadoPrestamo: 'Vigente',
+        })));
+
+        const plan = await abonos.planificarPrestamo({ idVm: 'SOL30' });
+        comprobar('el abono se detecta pese a estar ya anotado en la cuota pagada', plan.aplicable, plan.motivo);
+        comprobar('NO se da el préstamo por al día', !plan.yaAlDia);
+        if (plan.aplicable) {
+            await abonos.aplicarPlan(plan, { origen: 'prueba' });
+            const f = await leer('SOL30');
+            comprobar('la cuota 2 arranca en el saldo ya rebajado', cerca(f[1].saldoInicial, 7112000),
+                `arranca en ${money(f[1].saldoInicial)}`);
+            comprobar('la cuota 2 baja de $769.333 a $746.113,45', cerca(f[1].valorCuotaVariable, 746113.45),
+                `quedó en ${money(f[1].valorCuotaVariable)}`);
+            comprobar('el ahorro para la socia es $18.592', cerca(plan.resumen.ahorroInteres, 18592),
+                money(plan.resumen.ahorroInteres));
+            await invariantes('SOL30', 8000000, 'caso de producción');
+        }
+    }
+
+    console.log('\n15. La tolerancia al corte no debilita la guarda');
+    {
+        // Un corte del mismo tamaño pero SIN excedente que lo justifique sigue
+        // invalidando el cronograma: es una cifra que no cuadra, no un abono.
+        const p = await sembrar({ principal: 8000000, cuotas: 12, tasa: 0.014, pagos: { 1: 1000000 } });
+        const f = await leer(p.idVm);
+        await f[4].update({ saldoFinal: num(f[4].saldoFinal) - 221333 });
+        const d = analizarCronograma(await leer(p.idVm));
+        comprobar('un corte sin abono detrás sigue invalidando el cronograma', !d.encadenado);
+
+        // Y un corte de tamaño distinto al excedente tampoco se admite.
+        const q = await sembrar({ principal: 8000000, cuotas: 12, tasa: 0.014, pagos: { 1: 1000000 } });
+        const g = await leer(q.idVm);
+        await g[0].update({ saldoFinal: num(g[0].saldoFinal) - 500000 });
+        const d2 = analizarCronograma(await leer(q.idVm));
+        comprobar('un corte que no vale el excedente tampoco se admite', !d2.encadenado);
+    }
+
     console.log(`\n──────────────────────────────────────────────\n${ok} comprobaciones correctas · ${fallos} fallidas\n`);
     await sequelize.close();
     try { fs.unlinkSync(RUTA); } catch { /* la base temporal ya no importa */ }

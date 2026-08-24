@@ -105,10 +105,18 @@ function analizarCronograma(cuotas) {
 
     let encadenado = true;
     for (let i = 0; i < filas.length - 1; i++) {
-        if (Math.abs(num(filas[i].saldoFinal) - num(filas[i + 1].saldoInicial)) > TOLERANCIA) {
-            encadenado = false;
-            break;
-        }
+        const desfase = num(filas[i].saldoFinal) - num(filas[i + 1].saldoInicial);
+        if (Math.abs(desfase) <= TOLERANCIA) continue;
+        // Un corte que vale exactamente lo que el socio pagó de más en esa misma
+        // cuota no es una carga histórica incoherente: es un abono anotado en su
+        // cuota y nunca propagado al resto —lo que deja el formulario de pagos,
+        // que recalcula ese saldoFinal solo—. Rechazarlo dejaba el préstamo
+        // marcado "sin recalcular" para siempre, que es justo el caso que hay
+        // que arreglar. El resto de cortes siguen invalidando el cronograma.
+        const excedente = excedenteDe(filas[i]);
+        if (excedente > 0 && Math.abs(Math.abs(desfase) - excedente) <= TOLERANCIA) continue;
+        encadenado = false;
+        break;
     }
 
     let coherente = true;
@@ -404,7 +412,8 @@ function abonosSinAplicar(cuotas) {
     const filas = ordenarCuotas(cuotas);
     const tasa = num(filas[0] && filas[0].interesMensual);
     const sinAplicar = [];
-    for (const c of filas) {
+    for (let i = 0; i < filas.length; i++) {
+        const c = filas[i];
         const exc = excedenteDe(c);
         if (exc <= 0) continue;
         const interes = redondear(num(c.saldoInicial) * tasa);
@@ -412,7 +421,21 @@ function abonosSinAplicar(cuotas) {
         // no amortiza nada. Sin este tope, un crédito ya cancelado por un abono
         // seguiría apareciendo como pendiente en cada barrido nocturno.
         const saldoEsperado = Math.max(0, redondear(num(c.saldoInicial) - (num(c.valorCuotaPago) - interes)));
-        if (Math.abs(num(c.saldoFinal) - saldoEsperado) > TOLERANCIA) sinAplicar.push({ cuota: c, excedente: exc });
+        if (Math.abs(num(c.saldoFinal) - saldoEsperado) > TOLERANCIA) {
+            sinAplicar.push({ cuota: c, excedente: exc });
+            continue;
+        }
+        // Que la cuota abonada muestre el saldo ya rebajado NO significa que el
+        // abono esté aplicado. El formulario de pagos calcula ese saldoFinal por
+        // su cuenta mientras el administrador escribe el importe, así que la
+        // cuota queda rebajada aunque el resto del cronograma no se haya tocado
+        // nunca. Visto en producción: la cuota 1 cerraba en $7.112.000 y la
+        // cuota 2 seguía arrancando en $7.333.333. El abono está aplicado solo
+        // si la rebaja continúa en la cuota siguiente.
+        const siguiente = filas[i + 1];
+        if (siguiente && Math.abs(num(siguiente.saldoInicial) - saldoEsperado) > TOLERANCIA) {
+            sinAplicar.push({ cuota: c, excedente: exc, soloEnLaCuota: true });
+        }
     }
     return sinAplicar;
 }
