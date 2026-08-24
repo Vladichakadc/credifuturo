@@ -70,7 +70,7 @@ Both `routes/auth.js` (token issuance) and `middleware/authMiddleware.js` (token
 
 ### Frontend Structure (`client/src/`)
 - **`App.jsx`** — React Router v6 routes; splits into `/admin` (DashboardLayout) and `/dashboard` (UserDashboardLayout) role trees; root `/` redirects by role
-- **`pages/admin/`** — Active modular admin pages: dashboard, clients, loans, savings, aportes, payments, reports, account detail, plus `LoanApprovalsPage` (Junta voting), `PropuestasPage`, `ExecutivePanelPage`, `AccessLogsPage`, `InformesViewerPage`, `OrphanLoansPage`, `DevolucionesAhorrosPage`, `SavingsMatrixPage` (socio × month savings control grid — see below)
+- **`pages/admin/`** — Active modular admin pages: dashboard, clients, loans, savings, aportes, payments, reports, account detail, plus `LoanApprovalsPage` (Junta voting), `PropuestasPage`, `ExecutivePanelPage`, `AccessLogsPage`, `InformesViewerPage`, `OrphanLoansPage`, `DevolucionesAhorrosPage`, `SavingsMatrixPage` and `LoansMatrixPage` (socio × month control grids — see below)
 - **`pages/user/`** — Active member-facing pages: loans, savings, contributions, payments, account details (with PDF export components), plus `JuntaAprobacionesPage` (loan-vote UI for Junta members), `UserResolutionsPage` (Propuestas), `MiPanelPage`, `CapacidadBetaPage` / `UserLoanAnalyzerPage` (credit-score capacity), `MisCreditosPage`, `UserStatutesPage`
 - **`pages/Login.jsx`** — Authentication entry point
 - **`pages/ChangePasswordPage.jsx`** — Password change page at `/change-password`
@@ -219,6 +219,14 @@ The control grid for "who has not paid this month". Three conventions it depends
 
 Figures render in `font-mono` with `tabular-nums`: in a twelve-column grid proportional digits break vertical alignment and the eye loses the column.
 
+### Loans matrix (`LoansMatrixPage` + `GET /payments/matriz`)
+The savings matrix translated to credit. It shares the layout, the mono tabular figures and the sticky first/total columns, but the domain forces two departures — both load-bearing:
+- **The row is the loan, not the socio.** A member with two credits has two quotas in the same month; summing them into one cell erases the only thing the screen exists to show, which is whether each one is paid.
+- **An empty cell is not a default.** In savings, a past month with no movement means the member did not pay. In loans it may just mean that credit had no quota that month — it started in July, or already ended. `estadoCelda` therefore asks `n === 0` *first*; asking "is it paid?" first would paint those cells red and accuse the member of missing a payment they never owed.
+- **Coverage before payment.** A month can hold two quotas of the same loan (retanqueos, migrated schedules). Checking "is any quota paid?" painted the cell green and hid the unpaid one — the summary counted five quotas in arrears while the grid showed none. The cell compares `pagadas + prepago` against `n` and shows a partial state (`parcial`, amber, rendered as `2/3`) when they differ.
+
+Reconciliation runs on "todos los años" + "Programado": the quotas must sum the capital lent plus the interest scheduled. A gap means schedules that do not match their loan's terms — the same condition the abono engine refuses to recalculate.
+
 ### Savings field semantics (Saving model)
 Two amount fields with different meanings — mixing them causes reporting errors:
 - `amount` — gross payment received (before any penalty deduction)
@@ -254,6 +262,7 @@ When querying savings/payments and filtering to active clients only, pass the fi
 - `POST /my/loan-requests`, `GET /loan-requests`, `PUT /loan-requests/:id/vote`, `PUT /loan-requests/:id/mark-disbursed` — Junta loan-approval workflow: a socio submits a request, the 3 Junta members each vote, and only once all 3 have voted does the aggregate status resolve to approved/rejected (see the comment above `PUT /loan-requests/:id/vote`)
 - `GET/POST/PUT/DELETE /propuestas`, `PUT /propuestas/:id/voto`, `PUT /propuestas/:id/estado` — Buzón de Propuestas (member proposal box + voting); beta-gated
 - `GET /my/notifications`, `GET /my/notifications/unread-count`, `PUT /my/notifications/:id/read`, `PUT /my/notifications/read-all` — in-app notification inbox
+- `GET /payments/matriz?anio=YYYY|todos` — the quota control grid: one row per **loan** (not per socio), twelve month cells, column totals, and each loan's outstanding balance. Each cell carries `n` (how many quotas fall in that month), `pagadas`, `mora`, `prepago`, `programado`, `pagado` and `excedente`
 - `GET /payments/abonos`, `POST /payments/abonos/aplicar`, `POST /payments/abonos/:id/revertir`, `GET /payments/abonos/historial` — extraordinary-principal review, application and undo. The `GET` is a pure dry run: it computes exactly what would be written without writing it
 - `GET/PUT /settings/:key` — `AppSetting` key/value store; writing `utilidadesADistribuir` fan-outs a `Notification` to admins + the Ranking-de-Ahorro beta cohort
 - `GET /informes`, `GET /informes/:name`, `DELETE /informes/:name` — serves shared report files (`.md`/`.txt`/`.pdf`) from `Informes/` and `server/shared-informes/`; PDFs stream as `application/pdf` for the in-browser viewer, everything else as JSON; non-admins only see filenames listed in `JUNTA_INFORMES_VISIBLES`
