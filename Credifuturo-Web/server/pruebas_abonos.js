@@ -478,6 +478,71 @@ async function invariantes(idVm, principal, etiqueta) {
         comprobar('un corte que no vale el excedente tampoco se admite', !d2.encadenado);
     }
 
+
+    console.log('\n16. Un pago que cubre varias cuotas se reparte entre ellas');
+    {
+        // El caso real: el socio paga tres cuotas de una vez y el administrador
+        // anota el importe entero contra una sola. Las otras dos siguen como
+        // pendientes aunque el dinero ya entró.
+        const p = await sembrar({ principal: 5000000, cuotas: 12, tasa: 0.014 });
+        const f = await leer(p.idVm);
+        const tres = num(f[0].valorCuotaVariable) + num(f[1].valorCuotaVariable) + num(f[2].valorCuotaVariable);
+        await f[0].update({ estado: 'Pago', valorCuotaPago: tres });
+
+        const plan = await abonos.planificarReparto({ idVm: p.idVm });
+        comprobar('el reparto se propone', plan.aplicable, plan.motivo);
+        comprobar('salda las dos cuotas siguientes', plan.resumen.cuotasSaldadas === 2,
+            `saldó ${plan.resumen && plan.resumen.cuotasSaldadas}`);
+        comprobar('no queda sobrante', cerca(plan.resumen.sobrante, 0), money(plan.resumen.sobrante));
+
+        await abonos.aplicarReparto(plan, { origen: 'prueba' });
+        const g = await leer(p.idVm);
+        comprobar('la cuota de origen queda con su propio valor', cerca(g[0].valorCuotaPago, g[0].valorCuotaVariable),
+            `${money(g[0].valorCuotaPago)} frente a ${money(g[0].valorCuotaVariable)}`);
+        comprobar('las cuotas 2 y 3 quedan pagadas',
+            g[1].estado === 'Pago' && g[2].estado === 'Pago');
+        comprobar('cada una por su valor',
+            cerca(g[1].valorCuotaPago, g[1].valorCuotaVariable) && cerca(g[2].valorCuotaPago, g[2].valorCuotaVariable));
+        const caja = g.reduce((s2, c) => s2 + num(c.valorCuotaPago), 0);
+        comprobar('el dinero total no cambia', cerca(caja, tres), `${money(caja)} frente a ${money(tres)}`);
+
+        // Y el barrido ya no ve excedente: no puede aplicar el mismo dinero otra vez.
+        const barrido = await abonos.barrer({ aplicar: true, origen: 'prueba' });
+        comprobar('el barrido no vuelve a contar ese dinero como abono',
+            !barrido.aplicados.some((x) => x.idVm === p.idVm));
+    }
+
+    console.log('\n17. Reparto: sobrante, colisión con el abono y reversión');
+    {
+        // Lo que sobra y no alcanza para una cuota entera se queda donde estaba:
+        // eso sí es un abono a capital.
+        const p = await sembrar({ principal: 5000000, cuotas: 12, tasa: 0.014 });
+        const f = await leer(p.idVm);
+        const unaYMedia = num(f[0].valorCuotaVariable) + num(f[1].valorCuotaVariable) + 90000;
+        await f[0].update({ estado: 'Pago', valorCuotaPago: unaYMedia });
+        const plan = await abonos.planificarReparto({ idVm: p.idVm });
+        comprobar('salda solo la cuota que cabe entera', plan.resumen.cuotasSaldadas === 1);
+        comprobar('el resto queda como sobrante', cerca(plan.resumen.sobrante, 90000), money(plan.resumen.sobrante));
+
+        const hecho = await abonos.aplicarReparto(plan, { origen: 'prueba' });
+        const antes = JSON.stringify((await leer(p.idVm)).map((c) => [c.estado, c.valorCuotaPago]));
+        const rev = await abonos.revertir(hecho.registroId, { revertidoPor: 'prueba' });
+        comprobar('la reversión devuelve las cuotas a como estaban', rev.ok, rev.motivo);
+        const g = await leer(p.idVm);
+        comprobar('la cuota saldada vuelve a pendiente', g[1].estado === 'Pendiente' && num(g[1].valorCuotaPago) === 0,
+            `${g[1].estado} · ${money(g[1].valorCuotaPago)}`);
+        comprobar('la cuota de origen recupera su pago completo', cerca(g[0].valorCuotaPago, unaYMedia),
+            money(g[0].valorCuotaPago));
+        comprobar('el estado cambió con la reversión', antes !== JSON.stringify(g.map((c) => [c.estado, c.valorCuotaPago])));
+
+        // Con el abono ya aplicado, repartir contaría el mismo dinero dos veces.
+        const q = await sembrar({ principal: 5000000, cuotas: 12, tasa: 0.014, pagos: { 1: 900000 } });
+        await abonos.aplicarPlan(await abonos.planificarPrestamo({ idVm: q.idVm }), { origen: 'prueba' });
+        const choque = await abonos.planificarReparto({ idVm: q.idVm });
+        comprobar('con el abono ya aplicado, el reparto pide revertir primero',
+            !choque.aplicable && choque.requiereRevertir, choque.motivo);
+    }
+
     console.log(`\n──────────────────────────────────────────────\n${ok} comprobaciones correctas · ${fallos} fallidas\n`);
     await sequelize.close();
     try { fs.unlinkSync(RUTA); } catch { /* la base temporal ya no importa */ }

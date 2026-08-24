@@ -3739,6 +3739,53 @@ router.put('/payments/abonos/politica', async (req, res) => {
     }
 });
 
+/**
+ * Reparte entre las cuotas siguientes un pago que cubría varias.
+ *
+ * Es lo contrario de aplicar el excedente a capital: aquí el socio no abonó
+ * para deber menos, pagó por adelantado unas cuotas que ya existían y alguien
+ * las anotó todas contra una sola. El GET muestra qué quedaría saldado sin
+ * escribir nada; el POST lo confirma.
+ */
+router.get('/payments/abonos/reparto/:idVm', async (req, res) => {
+    try {
+        const abonoCapital = require('../services/abonoCapital');
+        res.json({ ok: true, plan: await abonoCapital.planificarReparto({ idVm: req.params.idVm }) });
+    } catch (err) {
+        console.error('Error al planificar el reparto:', err);
+        res.status(500).json({ error: 'No se pudo calcular el reparto.' });
+    }
+});
+
+router.post('/payments/abonos/reparto', async (req, res) => {
+    try {
+        const abonoCapital = require('../services/abonoCapital');
+        const { createNotification } = require('../services/NotificationService');
+        const plan = await abonoCapital.planificarReparto({ idVm: req.body.idVm });
+        if (!plan.aplicable) return res.status(400).json({ error: plan.motivo, requiereRevertir: plan.requiereRevertir, registroId: plan.registroId });
+
+        const hecho = await abonoCapital.aplicarReparto(plan, {
+            origen: 'manual', aplicadoPor: (req.user && req.user.cedula) || 'admin',
+        });
+
+        if (plan.clientId) {
+            const monto = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
+            await createNotification({
+                clientId: plan.clientId,
+                type: 'pago_adelantado',
+                title: 'Se registraron tus cuotas pagadas por adelantado',
+                message: `El pago que hiciste por encima de tu cuota cubre ${plan.resumen.cuotasSaldadas} cuota(s) más`
+                    + `${plan.resumen.sobrante > 0 ? `, y los ${monto(plan.resumen.sobrante)} restantes abonan a capital.` : '.'}`,
+                link: '/dashboard/mis-creditos?tab=cuotas',
+            }).catch((e) => console.warn('Aviso de reparto no enviado:', e.message));
+        }
+        res.json({ ok: true, ...hecho });
+    } catch (err) {
+        console.error('Error al aplicar el reparto:', err);
+        res.status(500).json({ error: 'No se pudo aplicar el reparto.' });
+    }
+});
+
 /** Deshace un reajuste devolviendo cada cuota a como estaba antes. */
 router.post('/payments/abonos/:id/revertir', async (req, res) => {
     try {
