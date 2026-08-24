@@ -626,6 +626,11 @@ export default function SavingsMatrixPage() {
  */
 function DetalleCelda({ socio, mes, anio, onCerrar }) {
     const [movs, setMovs] = useState(null);
+    // Un fallo de permiso no es lo mismo que "no hubo movimientos": presentarlo
+    // como una casilla vacía haría creer que el socio no aportó ese mes. La
+    // Junta ve la matriz, pero el detalle movimiento a movimiento sigue siendo
+    // del administrador, así que ese caso hay que decirlo tal cual.
+    const [sinAcceso, setSinAcceso] = useState(false);
     const celda = socio.meses[mes - 1];
 
     useEffect(() => {
@@ -640,7 +645,11 @@ function DetalleCelda({ socio, mes, anio, onCerrar }) {
                     return mm === mes && (anio === 'todos' || aa === Number(anio));
                 }));
             })
-            .catch(() => vivo && setMovs([]));
+            .catch((err) => {
+                if (!vivo) return;
+                if (err.response?.status === 403) setSinAcceso(true);
+                setMovs([]);
+            });
         return () => { vivo = false; };
     }, [socio.clientId, mes, anio]);
 
@@ -679,6 +688,13 @@ function DetalleCelda({ socio, mes, anio, onCerrar }) {
                     {movs === null ? (
                         <div className="space-y-2">
                             {[0, 1].map((i) => <div key={i} className="h-12 animate-pulse rounded-lg bg-gray-100" />)}
+                        </div>
+                    ) : sinAcceso ? (
+                        <div className="rounded-lg border border-dashed border-amber-300 bg-amber-50 p-6 text-center">
+                            <p className="text-sm font-medium text-amber-900">El detalle movimiento a movimiento es del administrador</p>
+                            <p className="mt-1 text-xs text-amber-800">
+                                Las cifras del mes que muestra la matriz sí son las tuyas para consultar.
+                            </p>
                         </div>
                     ) : movs.length === 0 ? (
                         <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center">

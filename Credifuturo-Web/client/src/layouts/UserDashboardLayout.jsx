@@ -24,7 +24,8 @@ import {
     Vote,
     Activity,
     ClipboardList,
-    BarChart3
+    BarChart3,
+    Grid3x3,
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { Button } from '../components/ui/Button';
@@ -268,6 +269,11 @@ const UserDashboardLayout = ({ user, onLogout }) => {
         ...(isJuntaMember ? [
             { type: 'label', label: 'JUNTA ADMINISTRATIVA' },
             { type: 'link', icon: Vote, label: 'Aprobación de Préstamos', path: '/dashboard/junta-prestamos' },
+            // Las dos matrices de control. La Junta aprueba créditos y responde
+            // por la cartera: necesita ver quién ahorra al día y quién lleva
+            // cuotas en descubierto, no solo el caso que está votando.
+            { type: 'link', icon: Grid3x3, label: 'Matriz de Ahorros', path: '/dashboard/junta-matriz-ahorros' },
+            { type: 'link', icon: Grid3x3, label: 'Matriz de Cuotas', path: '/dashboard/junta-matriz-cuotas' },
             {
                 type: 'submenu',
                 key: 'informesJunta',

@@ -175,6 +175,14 @@ const JUNTA_ROUTES = [
     // puede consultar documentos institucionales pero no borrarlos.
     { method: 'GET', path: '/informes' },
     { method: 'GET', test: p => /^\/informes\/[^/]+$/.test(p) },
+    // Las dos matrices de control. La Junta aprueba créditos y responde por la
+    // cartera, así que necesita ver el comportamiento de cada socio: quién
+    // ahorra al día y quién lleva cuotas en descubierto. Son de solo lectura y
+    // calculan sobre datos que la Junta ya consulta al votar una solicitud;
+    // ninguna de las dos permite escribir. Aplicar un abono o repartir un pago
+    // sigue cayendo al gate por defecto, que es solo admin.
+    { method: 'GET', path: '/savings/matriz' },
+    { method: 'GET', path: '/payments/matriz' },
 ];
 
 router.use((req, res, next) => {
