@@ -190,6 +190,12 @@ function App() {
                     <Route path="ranking-ahorro" element={<UserRankingAhorroPage />} />
                     <Route path="savings-evolution" element={<SavingsEvolutionPage user={user} />} />
                     <Route path="junta-prestamos" element={<JuntaAprobacionesPage />} />
+                    {/* Las matrices de control son las mismas páginas del panel
+                        de administración: la Junta ve exactamente lo que ve el
+                        gerente, sin una copia que se pueda desincronizar. El
+                        backend las restringe por su cuenta (JUNTA_ROUTES). */}
+                    <Route path="junta-matriz-ahorros" element={<SavingsMatrixPage />} />
+                    <Route path="junta-matriz-cuotas" element={<LoansMatrixPage />} />
                     {/* Informes: misma página que /admin/informes/:filename, reutilizada para
                         la Junta Administrativa (gerente/subgerente/tesorera). El backend ya
                         restringe /admin/informes a admin + Junta (ver JUNTA_ROUTES). */}

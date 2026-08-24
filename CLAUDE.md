@@ -155,7 +155,7 @@ These four flows span the backend, the data model, and the client — read here 
 - `req.path.startsWith('/my/')` → skipped entirely; each `/my/*` handler declares its own `verifyToken`/`requireRole`/`requireFreshPassword` inline.
 - `READ_ONLY_FOR_ALL` (`/dashboard-stats`, `/executive-stats`, `/savings-evolution`) and `READ_ONLY_PREFIXES` (`/settings/`) → any authenticated, password-fresh user, GET only.
 - `BETA_ROUTES` → gated by `requireAdminOrBetaTester`, which checks `req.user.cedula` against the hardcoded `BETA_CEDULAS` set (cédula, not name, since only cédula is in the JWT). Currently backs the Ranking de Ahorro and Buzón de Propuestas beta rollout.
-- `JUNTA_ROUTES` (loan-requests, junta/members, informes read) → gated by `requireJuntaMember`; Junta membership = all `role: 'admin'` clients **plus** the cédulas in `JUNTA_CEDULAS` (`getJuntaClientIds()`), not a separate role.
+- `JUNTA_ROUTES` (loan-requests, junta/members, informes read, **both control matrices**) → gated by `requireJuntaMember`; Junta membership = all `role: 'admin'` clients **plus** the cédulas in `JUNTA_CEDULAS` (`getJuntaClientIds()`), not a separate role.
 - Everything else → `requireRole('admin')`.
 
 **Consequence**: a new admin-only route needs no extra wiring, but a new route meant for regular socios, beta testers, or Junta members must be added to the matching table (or given its own `/my/*`-style path) — otherwise it 403s for everyone but admins.
@@ -229,6 +229,10 @@ The savings matrix translated to credit. It shares the layout, the mono tabular 
 - **Coverage before payment.** A month can hold two quotas of the same loan (retanqueos, migrated schedules). Checking "is any quota paid?" painted the cell green and hid the unpaid one — the summary counted five quotas in arrears while the grid showed none. The cell compares `pagadas + prepago` against `n` and shows a partial state (`parcial`, amber, rendered as `2/3`) when they differ.
 
 - **A pending cell shows what is owed, not what was collected.** An unpaid quota has no "amount paid"; rendering its zero says nothing and reads as if nothing were due. `contenidoCelda` shows `programado` for every uncovered state and only switches to `pagado` once the quota is covered — the Pagado/Programado toggle governs totals and settled quotas, never this. The nearest still-unpaid future quota carries a ring, since that is the one to collect now.
+
+**Who sees them.** Both matrices are in `JUNTA_ROUTES`, so the board reads them from the *member* dashboard (`/dashboard/junta-matriz-ahorros`, `/dashboard/junta-matriz-cuotas`) using the same page components as the admin — no second copy to drift. The board sees **exactly** what the gerente sees: the three calls these pages make (`/savings/matriz`, `/payments/matriz`, `/savings/list` for the per-cell detail) are all open to it, and return byte-identical payloads. Half a feature — the grid but not the detail — confuses more than it helps, and the detail exposes nothing new: the same identity fields the grid already prints, and of a payment proof only its name.
+
+Only the `GET`s are opened. Applying an abono, redistributing a payment or setting a policy still fall to the admin-only default gate. The detail modal keeps its 403 branch anyway: if permissions ever narrow, it must say so rather than render "sin movimientos" — claiming a member made no deposit when access was simply denied is the worst failure a control screen can have.
 
 Reconciliation runs on "todos los años" + "Programado": the quotas must sum the capital lent plus the interest scheduled. A gap means schedules that do not match their loan's terms — the same condition the abono engine refuses to recalculate.
 
