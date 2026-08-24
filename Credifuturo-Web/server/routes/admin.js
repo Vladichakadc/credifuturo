@@ -3436,6 +3436,163 @@ async function aplicarAbonoExtraordinario(payment, politicaPedida, contexto = {}
 }
 
 // ─────────────────────────────────────────────
+// MATRIZ DE CONTROL DE CUOTAS — préstamo × mes
+// ─────────────────────────────────────────────
+//
+// La hermana de la matriz de ahorros, con una diferencia que cambia el diseño:
+// en ahorros, una casilla vacía de un mes ya vencido es una falta del socio. En
+// préstamos no tiene por qué serlo — puede ser, simplemente, que ese crédito no
+// tenía cuota ese mes porque se desembolsó en julio o terminó en marzo. Pintarla
+// de rojo acusaría al socio de no pagar algo que nunca debió.
+//
+// Por eso cada celda dice si HAY cuota (`n`) antes de decir si está pagada, y la
+// fila es el PRÉSTAMO y no el socio: un socio con dos créditos tiene dos cuotas
+// en el mismo mes, y sumarlas en una celda borraría el estado de cada una, que
+// es justo lo que se viene a mirar.
+router.get('/payments/matriz', async (req, res) => {
+    try {
+        const { Sequelize } = require('sequelize');
+
+        const cuotas = await LoanPayment.findAll({
+            attributes: ['id', 'externalId', 'clientId', 'idVm', 'itemQuantity', 'fechaPagoMax',
+                'estado', 'valorCuotaVariable', 'valorCuotaPago', 'valorInteresesAmortizados',
+                'saldoInicial', 'saldoFinal', 'esPrepago', 'estadoPrestamo'],
+        });
+
+        const anioDe = (c) => parseInt(String(c.fechaPagoMax || '').slice(0, 4), 10);
+        const mesDe = (c) => parseInt(String(c.fechaPagoMax || '').slice(5, 7), 10);
+
+        const aniosDisponibles = new Set();
+        for (const c of cuotas) {
+            const a = anioDe(c);
+            if (Number.isFinite(a) && a > 1990) aniosDisponibles.add(a);
+        }
+        const anios = [...aniosDisponibles].sort((a, b) => b - a);
+        const anioActual = new Date().getFullYear();
+        const anioPedido = req.query.anio === 'todos'
+            ? null
+            : (parseInt(req.query.anio, 10) || (anios.includes(anioActual) ? anioActual : anios[0]) || anioActual);
+
+        const prestamos = await DisbursedLoan.findAll({
+            attributes: ['idVm', 'clientId', 'valorPrestado', 'cuotas', 'interesMensual', 'estado', 'fechaPrestamo'],
+        });
+        const infoPrestamo = new Map(prestamos.map((p) => [p.idVm, p]));
+
+        const clientes = await Client.findAll({
+            attributes: ['id', 'customerId', 'name', 'surname1', 'surname2', 'cedula', 'estatus'],
+        });
+        const infoCliente = new Map(clientes.map((c) => [c.id, c]));
+
+        const vacio = () => Array.from({ length: 12 }, () => ({
+            programado: 0, pagado: 0, n: 0, pagadas: 0, mora: 0, prepago: 0, excedente: 0, cuota: null,
+        }));
+
+        const filas = new Map();
+        for (const c of cuotas) {
+            if (!c.idVm) continue;
+            if (!filas.has(c.idVm)) {
+                const p = infoPrestamo.get(c.idVm);
+                const cli = infoCliente.get(c.clientId);
+                filas.set(c.idVm, {
+                    idVm: c.idVm,
+                    clientId: c.clientId,
+                    socio: cli ? [cli.name, cli.surname1, cli.surname2].filter(Boolean).join(' ').trim() : '(sin socio)',
+                    cedula: cli ? cli.cedula : null,
+                    customerId: cli ? cli.customerId : null,
+                    estatusSocio: cli ? cli.estatus : null,
+                    valorPrestado: p ? parseFloat(p.valorPrestado) || 0 : 0,
+                    cuotasPactadas: p ? parseInt(p.cuotas, 10) || 0 : 0,
+                    interesMensual: p ? parseFloat(p.interesMensual) || 0 : 0,
+                    estadoPrestamo: p ? p.estado : (c.estadoPrestamo || null),
+                    meses: vacio(),
+                    // Del crédito entero, no solo del año que se está mirando:
+                    // es lo que permite leer una fila sin perder de vista el todo.
+                    programadoTotal: 0, pagadoTotal: 0, cuotasTotal: 0, pagadasTotal: 0,
+                    saldoVigente: 0, interesTotal: 0,
+                });
+            }
+            const f = filas.get(c.idVm);
+            const programado = parseFloat(c.valorCuotaVariable) || 0;
+            const pagado = parseFloat(c.valorCuotaPago) || 0;
+            const esPago = String(c.estado) === 'Pago';
+
+            f.cuotasTotal += 1;
+            f.programadoTotal += programado;
+            f.interesTotal += parseFloat(c.valorInteresesAmortizados) || 0;
+            if (esPago) { f.pagadoTotal += pagado; f.pagadasTotal += 1; }
+            else f.saldoVigente += programado;
+
+            const anio = anioDe(c);
+            const mes = mesDe(c);
+            if (anioPedido !== null && anio !== anioPedido) continue;
+            if (!(mes >= 1 && mes <= 12)) continue;
+
+            const celda = f.meses[mes - 1];
+            celda.n += 1;
+            celda.programado += programado;
+            celda.pagado += pagado;
+            if (esPago) celda.pagadas += 1;
+            if (String(c.estado) === 'Mora') celda.mora += 1;
+            if (c.esPrepago) celda.prepago += 1;
+            if (esPago && pagado > programado + 1) celda.excedente += pagado - programado;
+            // Se guarda la referencia de la cuota para poder abrir su detalle.
+            if (!celda.cuota) celda.cuota = { id: c.id, externalId: c.externalId, itemQuantity: c.itemQuantity };
+        }
+
+        const salida = [...filas.values()].map((f) => ({
+            ...f,
+            meses: f.meses.map((c) => ({
+                ...c,
+                programado: parseFloat(c.programado.toFixed(2)),
+                pagado: parseFloat(c.pagado.toFixed(2)),
+                excedente: parseFloat(c.excedente.toFixed(2)),
+            })),
+            programadoAnio: parseFloat(f.meses.reduce((s2, c) => s2 + c.programado, 0).toFixed(2)),
+            pagadoAnio: parseFloat(f.meses.reduce((s2, c) => s2 + c.pagado, 0).toFixed(2)),
+            programadoTotal: parseFloat(f.programadoTotal.toFixed(2)),
+            interesTotal: parseFloat(f.interesTotal.toFixed(2)),
+            pagadoTotal: parseFloat(f.pagadoTotal.toFixed(2)),
+            saldoVigente: parseFloat(f.saldoVigente.toFixed(2)),
+        })).filter((f) => f.cuotasTotal > 0);
+
+        const totalesMes = Array.from({ length: 12 }, (_, i) => ({
+            mes: i + 1,
+            programado: parseFloat(salida.reduce((s2, f) => s2 + f.meses[i].programado, 0).toFixed(2)),
+            pagado: parseFloat(salida.reduce((s2, f) => s2 + f.meses[i].pagado, 0).toFixed(2)),
+            cuotas: salida.reduce((s2, f) => s2 + f.meses[i].n, 0),
+            pagadas: salida.reduce((s2, f) => s2 + f.meses[i].pagadas, 0),
+        }));
+
+        res.json({
+            ok: true,
+            anio: anioPedido,
+            anios,
+            // Hasta qué mes se puede exigir pago. Igual que en la matriz de
+            // ahorros: una cuota que aún no ha vencido no está en descubierto.
+            mesLimite: anioPedido === anioActual ? new Date().getMonth() + 1
+                : (anioPedido === null || anioPedido < anioActual ? 12 : 0),
+            data: salida,
+            totalesMes,
+            totales: {
+                programado: parseFloat(salida.reduce((s2, f) => s2 + f.programadoAnio, 0).toFixed(2)),
+                pagado: parseFloat(salida.reduce((s2, f) => s2 + f.pagadoAnio, 0).toFixed(2)),
+                carteraVigente: parseFloat(salida.reduce((s2, f) => s2 + f.saldoVigente, 0).toFixed(2)),
+                prestados: parseFloat(salida.reduce((s2, f) => s2 + f.valorPrestado, 0).toFixed(2)),
+                // El desglose que permite cuadrar la matriz: la suma de todas
+                // las cuotas es el capital prestado más los intereses pactados.
+                programadoTotal: parseFloat(salida.reduce((s2, f) => s2 + f.programadoTotal, 0).toFixed(2)),
+                intereses: parseFloat(salida.reduce((s2, f) => s2 + f.interesTotal, 0).toFixed(2)),
+                prestamos: salida.length,
+                socios: new Set(salida.map((f) => f.clientId)).size,
+            },
+        });
+    } catch (err) {
+        console.error('Error al construir la matriz de cuotas:', err);
+        res.status(500).json({ error: 'No se pudo construir la matriz de cuotas.' });
+    }
+});
+
+// ─────────────────────────────────────────────
 // ABONOS EXTRAORDINARIOS A CAPITAL — revisión, aplicación y reversión
 // ─────────────────────────────────────────────
 //

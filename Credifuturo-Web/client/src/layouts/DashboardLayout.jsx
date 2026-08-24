@@ -311,6 +311,7 @@ const DashboardLayout = ({ user, onLogout }) => {
             children: [
                 { icon: List, label: 'Préstamos', path: '/admin/loans/list' },
                 { icon: List, label: 'Pagos', path: '/admin/payments/list' },
+                { icon: Grid3x3, label: 'Matriz de Cuotas', path: '/admin/payments/matriz' },
                 { icon: Scale, label: 'Analizador', path: '/admin/loans/analyzer' },
                 { icon: Inbox, label: 'Aprobaciones de Préstamos', path: '/admin/loans/approvals' },
                 ...(orphanLoansCount > 0 ? [{ icon: AlertTriangle, label: `Préstamos sin asignar (${orphanLoansCount})`, path: '/admin/loans/orphans' }] : []),
