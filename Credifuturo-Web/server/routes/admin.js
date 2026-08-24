@@ -183,6 +183,13 @@ const JUNTA_ROUTES = [
     // sigue cayendo al gate por defecto, que es solo admin.
     { method: 'GET', path: '/savings/matriz' },
     { method: 'GET', path: '/payments/matriz' },
+    // El detalle que abre una casilla de la matriz de ahorros. Va aquí para que
+    // la Junta vea exactamente la misma pantalla que el gerente: media función
+    // —la rejilla sí, el detalle no— confunde más que ayuda, y el dato que
+    // añade es el mismo que la matriz ya agrega, solo que movimiento a
+    // movimiento. No expone nada nuevo del socio: la identidad que devuelve es
+    // la que la propia matriz ya muestra, y del soporte solo el nombre.
+    { method: 'GET', path: '/savings/list' },
 ];
 
 router.use((req, res, next) => {
