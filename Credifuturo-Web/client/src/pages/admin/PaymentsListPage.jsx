@@ -507,6 +507,32 @@ const PaymentsListPage = () => {
         }
     }, [fetchAbonos, toast]);
 
+    // Cuando el pago no era un abono sino varias cuotas anotadas contra una
+    // sola, lo que corresponde no es amortizar capital sino repartirlo.
+    const handleRepartir = useCallback(async (idVm) => {
+        setAplicandoAbonos(true);
+        try {
+            const res = await api.post('/admin/payments/abonos/reparto', { idVm });
+            const r = res.data?.resumen;
+            toast.success(r
+                ? `${idVm}: quedaron cubiertas ${r.cuotasSaldadas} cuota(s)`
+                    + (r.sobrante > 0 ? `, y ${formatCurrency(r.sobrante)} siguen como abono a capital.` : '.')
+                : 'Pago repartido entre las cuotas siguientes.');
+            await fetchPayments();
+            await fetchAbonos();
+        } catch (err) {
+            const d = err.response?.data;
+            toast.error(d?.requiereRevertir
+                ? `${d.error} Puedes revertirlo desde el historial de abonos.`
+                : 'No se pudo repartir el pago: ' + (d?.error || err.message || ''));
+        } finally {
+            setAplicandoAbonos(false);
+        }
+        // fetchPayments se declara más abajo; la referencia se resuelve en
+        // tiempo de ejecución.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [fetchAbonos, toast]);
+
     const handleAplicarAbonos = useCallback(async (idVm = null) => {
         setAplicandoAbonos(true);
         try {
@@ -1365,15 +1391,28 @@ const PaymentsListPage = () => {
                                         {p.origenPolitica === 'abono-anterior' && (
                                             <span className="text-xs text-amber-700">heredada del abono anterior</span>
                                         )}
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => handleAplicarAbonos(p.idVm)}
-                                            disabled={aplicandoAbonos}
-                                            className="ml-auto"
-                                        >
-                                            Aplicar a este préstamo
-                                        </Button>
+                                        <div className="ml-auto flex flex-wrap gap-2">
+                                            {/* El socio no siempre abona para deber menos: a veces paga
+                                                varias cuotas de una vez y se anotan contra una sola. Esa
+                                                corrección es distinta y no debe confundirse con el abono. */}
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => handleRepartir(p.idVm)}
+                                                disabled={aplicandoAbonos}
+                                                title="Si el socio pagó varias cuotas de una vez, reparte el importe entre ellas en vez de abonarlo a capital"
+                                            >
+                                                Cubrir cuotas siguientes
+                                            </Button>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => handleAplicarAbonos(p.idVm)}
+                                                disabled={aplicandoAbonos}
+                                            >
+                                                Aplicar a este préstamo
+                                            </Button>
+                                        </div>
                                     </div>
                                 </li>
                             ))}

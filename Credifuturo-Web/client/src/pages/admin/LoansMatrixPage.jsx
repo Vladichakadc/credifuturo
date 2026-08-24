@@ -467,6 +467,39 @@ export default function LoansMatrixPage() {
                 </div>
             </div>
 
+            {/* Cuotas que existen pero cuya fecha no dice en qué mes caen. Sin
+                este aviso su casilla sale vacía, igual que un mes en el que el
+                préstamo no tenía cuota, y el descubierto pasa inadvertido. */}
+            {datos?.sinUbicar?.length > 0 && (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">
+                    <div className="flex items-start gap-3">
+                        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                        <div>
+                            <p className="font-semibold text-amber-900">
+                                {datos.sinUbicar.length} cuota(s) no se pueden ubicar en el calendario
+                            </p>
+                            <p className="mt-0.5 text-sm text-amber-800">
+                                Su fecha de vencimiento no permite saber a qué mes corresponden, así que no aparecen en la
+                                rejilla ni suman en los totales. Conviene corregirlas desde Lista Estado Préstamos.
+                            </p>
+                            <ul className="mt-2 space-y-0.5 font-mono text-[11px] tabular-nums text-amber-900">
+                                {datos.sinUbicar.slice(0, 6).map((c, i) => (
+                                    <li key={i}>
+                                        <span className="font-semibold">{c.idVm}</span>
+                                        {c.cuota ? ` · ${c.cuota}` : ''}
+                                        {c.socio ? ` · ${c.socio}` : ''}
+                                        {' → '}{String(c.fecha || 'sin fecha')}
+                                    </li>
+                                ))}
+                                {datos.sinUbicar.length > 6 && (
+                                    <li className="font-sans text-amber-700">… y {datos.sinUbicar.length - 6} más.</li>
+                                )}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <div className="overflow-hidden rounded-xl border border-ui-border bg-white shadow-card">
                 {cargando ? (
                     <div className="space-y-2 p-6">

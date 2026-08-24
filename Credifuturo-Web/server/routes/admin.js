@@ -3455,12 +3455,48 @@ router.get('/payments/matriz', async (req, res) => {
 
         const cuotas = await LoanPayment.findAll({
             attributes: ['id', 'externalId', 'clientId', 'idVm', 'itemQuantity', 'fechaPagoMax',
-                'estado', 'valorCuotaVariable', 'valorCuotaPago', 'valorInteresesAmortizados',
-                'saldoInicial', 'saldoFinal', 'esPrepago', 'estadoPrestamo'],
+                // mesPago es el dato con el que se desambigua una fecha invertida:
+                // sin traerlo, mesDe() no tiene con qué corregirla.
+                'mesPago', 'estado', 'valorCuotaVariable', 'valorCuotaPago',
+                'valorInteresesAmortizados', 'saldoInicial', 'saldoFinal', 'esPrepago', 'estadoPrestamo'],
         });
 
+        // ── En qué mes cae realmente una cuota ────────────────────────
+        //
+        // No se puede leer el mes de la posición 5-7 y ya. Las cuotas cargadas
+        // por importación guardan la fecha como YYYY-DD-MM —día y mes al revés—,
+        // y la pantalla de pagos lleva tiempo compensándolo con `displayFecha`.
+        // Leerla a ciegas tiene dos efectos, y los dos se vieron en producción:
+        // una cuota con día 15 daba "mes 15", quedaba fuera de rango y
+        // desaparecía de la matriz sin dejar rastro; y las de día 9 caían todas
+        // en septiembre, apilando media docena de cuotas en una sola casilla.
+        //
+        // `mesPago` guarda el nombre del mes y es el dato explícito: manda sobre
+        // cualquier posición. Sin él se deduce por descarte —un componente mayor
+        // que 12 solo puede ser el día— y, si tampoco así se puede, la cuota se
+        // cuenta aparte en vez de perderse.
+        const MESES_NOMBRE = {
+            enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6,
+            julio: 7, agosto: 8, septiembre: 9, setiembre: 9, octubre: 10,
+            noviembre: 11, diciembre: 12,
+        };
         const anioDe = (c) => parseInt(String(c.fechaPagoMax || '').slice(0, 4), 10);
-        const mesDe = (c) => parseInt(String(c.fechaPagoMax || '').slice(5, 7), 10);
+        const mesDe = (c) => {
+            const s = String(c.fechaPagoMax || '');
+            if (s.length < 10) return NaN;
+            // `mesPago` viene del histórico y no tiene una forma única: unas
+            // filas guardan el nombre del mes y otras el número como texto.
+            const declarado = String(c.mesPago || '').trim().toLowerCase();
+            const porNombre = MESES_NOMBRE[declarado];
+            if (porNombre) return porNombre;
+            const porNumero = parseInt(declarado, 10);
+            if (porNumero >= 1 && porNumero <= 12) return porNumero;
+            const p1 = parseInt(s.slice(5, 7), 10);
+            const p2 = parseInt(s.slice(8, 10), 10);
+            if (p1 >= 1 && p1 <= 12) return p1;
+            if (p2 >= 1 && p2 <= 12) return p2;
+            return NaN;
+        };
 
         const aniosDisponibles = new Set();
         for (const c of cuotas) {
@@ -3488,6 +3524,10 @@ router.get('/payments/matriz', async (req, res) => {
         }));
 
         const filas = new Map();
+        // Cuotas cuya fecha no permite decir en qué mes caen. Antes se
+        // descartaban sin más y la casilla salía vacía, indistinguible de un mes
+        // en el que el préstamo simplemente no tenía cuota.
+        const sinUbicar = [];
         for (const c of cuotas) {
             if (!c.idVm) continue;
             if (!filas.has(c.idVm)) {
@@ -3524,8 +3564,18 @@ router.get('/payments/matriz', async (req, res) => {
 
             const anio = anioDe(c);
             const mes = mesDe(c);
+            // Lo ilegible se cuenta ANTES de filtrar por año. Una fila cuya
+            // fecha no se puede leer no pertenece a ningún año, así que el
+            // filtro la descartaba sin más: no aparecía en la rejilla y tampoco
+            // en ninguna cuenta. Una casilla vacía por este motivo es
+            // indistinguible de un mes en que el préstamo no tenía cuota, y esa
+            // confusión es justo la que hay que evitar.
+            const fechaIlegible = !Number.isFinite(anio) || !(mes >= 1 && mes <= 12);
+            if (fechaIlegible) {
+                sinUbicar.push({ idVm: c.idVm, socio: filas.get(c.idVm).socio, cuota: c.externalId, fecha: c.fechaPagoMax });
+                continue;
+            }
             if (anioPedido !== null && anio !== anioPedido) continue;
-            if (!(mes >= 1 && mes <= 12)) continue;
 
             const celda = f.meses[mes - 1];
             celda.n += 1;
@@ -3573,6 +3623,7 @@ router.get('/payments/matriz', async (req, res) => {
                 : (anioPedido === null || anioPedido < anioActual ? 12 : 0),
             data: salida,
             totalesMes,
+            sinUbicar,
             totales: {
                 programado: parseFloat(salida.reduce((s2, f) => s2 + f.programadoAnio, 0).toFixed(2)),
                 pagado: parseFloat(salida.reduce((s2, f) => s2 + f.pagadoAnio, 0).toFixed(2)),
@@ -3685,6 +3736,53 @@ router.put('/payments/abonos/politica', async (req, res) => {
     } catch (err) {
         console.error('Error al fijar la política de abono:', err);
         res.status(500).json({ error: 'No se pudo guardar la política.' });
+    }
+});
+
+/**
+ * Reparte entre las cuotas siguientes un pago que cubría varias.
+ *
+ * Es lo contrario de aplicar el excedente a capital: aquí el socio no abonó
+ * para deber menos, pagó por adelantado unas cuotas que ya existían y alguien
+ * las anotó todas contra una sola. El GET muestra qué quedaría saldado sin
+ * escribir nada; el POST lo confirma.
+ */
+router.get('/payments/abonos/reparto/:idVm', async (req, res) => {
+    try {
+        const abonoCapital = require('../services/abonoCapital');
+        res.json({ ok: true, plan: await abonoCapital.planificarReparto({ idVm: req.params.idVm }) });
+    } catch (err) {
+        console.error('Error al planificar el reparto:', err);
+        res.status(500).json({ error: 'No se pudo calcular el reparto.' });
+    }
+});
+
+router.post('/payments/abonos/reparto', async (req, res) => {
+    try {
+        const abonoCapital = require('../services/abonoCapital');
+        const { createNotification } = require('../services/NotificationService');
+        const plan = await abonoCapital.planificarReparto({ idVm: req.body.idVm });
+        if (!plan.aplicable) return res.status(400).json({ error: plan.motivo, requiereRevertir: plan.requiereRevertir, registroId: plan.registroId });
+
+        const hecho = await abonoCapital.aplicarReparto(plan, {
+            origen: 'manual', aplicadoPor: (req.user && req.user.cedula) || 'admin',
+        });
+
+        if (plan.clientId) {
+            const monto = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
+            await createNotification({
+                clientId: plan.clientId,
+                type: 'pago_adelantado',
+                title: 'Se registraron tus cuotas pagadas por adelantado',
+                message: `El pago que hiciste por encima de tu cuota cubre ${plan.resumen.cuotasSaldadas} cuota(s) más`
+                    + `${plan.resumen.sobrante > 0 ? `, y los ${monto(plan.resumen.sobrante)} restantes abonan a capital.` : '.'}`,
+                link: '/dashboard/mis-creditos?tab=cuotas',
+            }).catch((e) => console.warn('Aviso de reparto no enviado:', e.message));
+        }
+        res.json({ ok: true, ...hecho });
+    } catch (err) {
+        console.error('Error al aplicar el reparto:', err);
+        res.status(500).json({ error: 'No se pudo aplicar el reparto.' });
     }
 });
 

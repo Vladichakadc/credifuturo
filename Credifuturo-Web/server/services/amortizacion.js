@@ -399,6 +399,76 @@ function planificarReajuste({ cuotas, capitalPactado = null, politica = REDUCIR_
     };
 }
 
+
+/**
+ * Reparte entre las cuotas siguientes lo que se pagó de más en una.
+ *
+ * ── QUÉ CORRIGE ──────────────────────────────────────────────────────
+ *
+ * Un socio paga tres cuotas de una vez y el administrador anota el importe
+ * entero contra una sola: esa cuota queda con un excedente enorme y las otras
+ * dos siguen figurando como pendientes, aunque el dinero ya entró. Visto en
+ * producción: un pago de $1.250.000 sobre cuotas de unos $410.000, con los dos
+ * meses siguientes en descubierto.
+ *
+ * Esto NO es un abono a capital y no debe tratarse como tal. En un abono el
+ * socio entrega dinero para deber menos y ahorrar intereses; aquí simplemente
+ * pagó por adelantado unas cuotas que ya existían, con su interés y todo. Son
+ * dos intenciones distintas y confundirlas le cambia las cifras al socio.
+ *
+ * Lo que hace la función es un reparto: mueve el excedente de la cuota donde se
+ * anotó a las cuotas que de verdad cubre, dejando cada una saldada por su
+ * valor. El dinero total es el mismo, el cronograma no se toca y no hay
+ * intereses que recalcular — solo se corrige a qué cuota se imputó cada peso.
+ *
+ * Si sobra algo que no alcanza para una cuota entera, se queda donde estaba:
+ * eso sí es un abono a capital, y lo aplicará quien corresponde.
+ */
+function planificarPagoAdelantado({ cuotas }) {
+    const filas = ordenarCuotas(cuotas);
+    if (filas.length === 0) return { ok: false, motivo: 'El préstamo no tiene cuotas registradas.' };
+
+    const origen = filas.find((c) => excedenteDe(c) > 0);
+    if (!origen) return { ok: false, motivo: 'Ninguna cuota se pagó por encima de su valor.' };
+
+    const posicion = filas.indexOf(origen);
+    let disponible = excedenteDe(origen);
+    const saldadas = [];
+
+    for (let i = posicion + 1; i < filas.length && disponible > TOLERANCIA; i++) {
+        const c = filas[i];
+        if (String(c.estado) !== 'Pendiente' || estaAnulada(c)) continue;
+        const valor = num(c.valorCuotaVariable);
+        // Solo se saldan cuotas completas. Dejar una a medias la convertiría en
+        // un pago incompleto, que es precisamente lo que el reajuste rechaza.
+        if (valor <= 0 || valor > disponible + TOLERANCIA) break;
+        saldadas.push({ id: c.id, cuota: c.externalId || c.itemQuantity, valor: redondear(valor) });
+        disponible = redondear(disponible - valor);
+    }
+
+    if (saldadas.length === 0) {
+        return {
+            ok: false,
+            motivo: 'El excedente no alcanza para saldar la siguiente cuota completa; corresponde aplicarlo a capital.',
+        };
+    }
+
+    return {
+        ok: true,
+        origen: { id: origen.id, cuota: origen.externalId || origen.itemQuantity },
+        // Lo que queda en la cuota de origen tras el reparto: su propio valor
+        // más lo que sobró y no alcanzó para otra cuota entera.
+        pagoOrigen: redondear(num(origen.valorCuotaVariable) + disponible),
+        saldadas,
+        resumen: {
+            excedente: redondear(excedenteDe(origen)),
+            cuotasSaldadas: saldadas.length,
+            repartido: redondear(saldadas.reduce((s, x) => s + x.valor, 0)),
+            sobrante: redondear(disponible),
+        },
+    };
+}
+
 /**
  * ¿El cronograma ya refleja los abonos que registran sus cuotas?
  *
@@ -446,6 +516,7 @@ module.exports = {
     TOLERANCIA,
     analizarCronograma,
     planificarReajuste,
+    planificarPagoAdelantado,
     abonosSinAplicar,
     excedenteDe,
     ordenarCuotas,

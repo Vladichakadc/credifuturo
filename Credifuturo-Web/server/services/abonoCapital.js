@@ -34,7 +34,8 @@ const AbonoAplicado = require('../models/AbonoAplicado');
 const AppSetting = require('../models/AppSetting');
 const {
     REDUCIR_PLAZO, REDUCIR_CUOTA, TOLERANCIA,
-    analizarCronograma, planificarReajuste, abonosSinAplicar, ordenarCuotas,
+    analizarCronograma, planificarReajuste, planificarPagoAdelantado,
+    abonosSinAplicar, ordenarCuotas, excedenteDe,
 } = require('./amortizacion');
 
 // Columnas que el reajuste puede tocar. Todo lo demás —estado, lo que el socio
@@ -299,6 +300,96 @@ async function aplicarPlan(plan, { origen = 'barrido', aplicadoPor = 'sistema' }
     }
 }
 
+
+// ─────────────────────────────────────────────────────────────────────
+// PAGO ADELANTADO DE CUOTAS
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Qué cuotas quedarían saldadas al repartir un pago que cubre varias.
+ *
+ * No escribe nada. Es el previo del reparto, y se lee igual que el del abono:
+ * lo que muestra es exactamente lo que quedará registrado si se confirma.
+ */
+async function planificarReparto({ idVm, anio = anioBogota() }) {
+    const filas = ordenarCuotas(await LoanPayment.findAll({ where: { idVm } }));
+    if (filas.length === 0) return { idVm, aplicable: false, motivo: 'El préstamo no tiene cuotas registradas.' };
+
+    // El reparto y el abono a capital se disputan el mismo dinero: si el abono
+    // ya se aplicó, repartir ahora contaría dos veces el excedente. Hay que
+    // revertirlo primero, que para eso existe el registro.
+    const aplicado = await AbonoAplicado.findOne({
+        where: { idVm, revertidoEn: null },
+        order: [['createdAt', 'DESC']],
+    });
+    if (aplicado) {
+        return {
+            idVm, aplicable: false, requiereRevertir: true, registroId: aplicado.id,
+            motivo: `El excedente de este préstamo ya se aplicó a capital el ${new Date(aplicado.createdAt).toLocaleDateString('es-CO')}. `
+                + 'Para repartirlo entre las cuotas siguientes hay que revertir antes ese reajuste.',
+        };
+    }
+
+    const plan = planificarPagoAdelantado({ cuotas: filas });
+    if (!plan.ok) return { idVm, aplicable: false, motivo: plan.motivo };
+
+    const primera = filas.find((c) => excedenteDe(c) > 0);
+    const anioCuota = anioDe(primera);
+    if (Number.isFinite(anioCuota) && anioCuota < anio) {
+        return {
+            idVm, aplicable: false, fueraDePeriodo: true,
+            motivo: `El pago es de ${anioCuota} y el ajuste solo opera sobre ${anio} en adelante.`,
+        };
+    }
+
+    return {
+        idVm, aplicable: true, clientId: filas[0].clientId,
+        ...plan,
+    };
+}
+
+/** Persiste el reparto, guardando cómo estaba cada cuota antes. */
+async function aplicarReparto(plan, { origen = 'manual', aplicadoPor = 'sistema' } = {}) {
+    if (!plan.aplicable) return { ...plan, aplicado: false };
+
+    const t = await sequelize.transaction({ type: 'IMMEDIATE' });
+    try {
+        const antes = [];
+        const cuotaOrigen = await LoanPayment.findByPk(plan.origen.id, { transaction: t });
+        antes.push({ id: cuotaOrigen.id, antes: { valorCuotaPago: num(cuotaOrigen.valorCuotaPago) }, estado: cuotaOrigen.estado });
+        await cuotaOrigen.update({ valorCuotaPago: plan.pagoOrigen }, { transaction: t });
+
+        for (const s2 of plan.saldadas) {
+            const c = await LoanPayment.findByPk(s2.id, { transaction: t });
+            if (!c) continue;
+            antes.push({ id: c.id, antes: { valorCuotaPago: num(c.valorCuotaPago) }, estado: c.estado });
+            await c.update({
+                estado: 'Pago',
+                valorCuotaPago: s2.valor,
+                observaciones: `Cubierta por el pago adelantado registrado en la cuota ${plan.origen.cuota}.`,
+            }, { transaction: t });
+        }
+
+        const registro = await AbonoAplicado.create({
+            idVm: plan.idVm,
+            clientId: plan.clientId,
+            loanPaymentId: plan.origen.id,
+            excedente: plan.resumen.excedente,
+            politica: 'pago-adelantado',
+            origen,
+            aplicadoPor: String(aplicadoPor || 'sistema'),
+            estadoAnterior: JSON.stringify(antes),
+            resumen: JSON.stringify(plan.resumen),
+        }, { transaction: t });
+
+        await t.commit();
+        return { ...plan, aplicado: true, registroId: registro.id };
+    } catch (err) {
+        await t.rollback();
+        throw err;
+    }
+}
+
 /** Deshace un reajuste devolviendo cada cuota a como estaba. */
 async function revertir(registroId, { revertidoPor = 'sistema' } = {}) {
     const registro = await AbonoAplicado.findByPk(registroId);
@@ -315,6 +406,11 @@ async function revertir(registroId, { revertidoPor = 'sistema' } = {}) {
             if (fila.cancelada) {
                 datos.estado = fila.estado;
                 datos.esPrepago = false;
+                datos.observaciones = null;
+            } else if (registro.politica === 'pago-adelantado') {
+                // Un reparto no cancela cuotas: las salda. Al revertirlo hay que
+                // devolverlas al estado que tenían, o quedarían pagadas sin dinero.
+                datos.estado = fila.estado;
                 datos.observaciones = null;
             }
             await destino.update(datos, { transaction: t });
@@ -514,6 +610,8 @@ async function barridoProgramado({ anio = anioBogota() } = {}) {
 
 module.exports = {
     anioBogota,
+    planificarReparto,
+    aplicarReparto,
     mensajeParaElSocio,
     resolverPolitica,
     guardarPolitica,
