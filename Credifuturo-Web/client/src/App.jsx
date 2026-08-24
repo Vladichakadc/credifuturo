@@ -10,6 +10,7 @@ import ClientDetailPage from './pages/admin/ClientDetailPage';
 import LoansListPage from './pages/admin/LoansListPage';
 import SavingsPage from './pages/admin/SavingsPage';
 import SavingsListPage from './pages/admin/SavingsListPage';
+import SavingsMatrixPage from './pages/admin/SavingsMatrixPage';
 import ReportsPage from './pages/admin/ReportsPage';
 import PaymentsListPage from './pages/admin/PaymentsListPage';
 import InitialContributionsListPage from './pages/admin/InitialContributionsListPage';
@@ -119,6 +120,7 @@ function App() {
                     <Route path="loans/orphans" element={<OrphanLoansPage />} />
                     <Route path="savings" element={<SavingsPage />} />
                     <Route path="savings/list" element={<SavingsListPage />} />
+                    <Route path="savings/matriz" element={<SavingsMatrixPage />} />
                     <Route path="savings/summary" element={<SavingsSummaryPage />} />
                     <Route path="savings/ranking" element={<RankingAhorroPage />} />
                     {/* Evolución de Ahorros (beta): tríada stock/flujo/composición con negativos visibles */}

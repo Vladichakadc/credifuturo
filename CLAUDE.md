@@ -70,7 +70,7 @@ Both `routes/auth.js` (token issuance) and `middleware/authMiddleware.js` (token
 
 ### Frontend Structure (`client/src/`)
 - **`App.jsx`** — React Router v6 routes; splits into `/admin` (DashboardLayout) and `/dashboard` (UserDashboardLayout) role trees; root `/` redirects by role
-- **`pages/admin/`** — Active modular admin pages: dashboard, clients, loans, savings, aportes, payments, reports, account detail, plus `LoanApprovalsPage` (Junta voting), `PropuestasPage`, `ExecutivePanelPage`, `AccessLogsPage`, `InformesViewerPage`, `OrphanLoansPage`, `DevolucionesAhorrosPage`
+- **`pages/admin/`** — Active modular admin pages: dashboard, clients, loans, savings, aportes, payments, reports, account detail, plus `LoanApprovalsPage` (Junta voting), `PropuestasPage`, `ExecutivePanelPage`, `AccessLogsPage`, `InformesViewerPage`, `OrphanLoansPage`, `DevolucionesAhorrosPage`, `SavingsMatrixPage` (socio × month savings control grid — see below)
 - **`pages/user/`** — Active member-facing pages: loans, savings, contributions, payments, account details (with PDF export components), plus `JuntaAprobacionesPage` (loan-vote UI for Junta members), `UserResolutionsPage` (Propuestas), `MiPanelPage`, `CapacidadBetaPage` / `UserLoanAnalyzerPage` (credit-score capacity), `MisCreditosPage`, `UserStatutesPage`
 - **`pages/Login.jsx`** — Authentication entry point
 - **`pages/ChangePasswordPage.jsx`** — Password change page at `/change-password`
@@ -211,6 +211,14 @@ Anything that writes to the DB at startup must go **after** `listen()` and carry
 
 ## Non-obvious Patterns & Gotchas
 
+### Savings matrix (`SavingsMatrixPage` + `GET /savings/matriz`)
+The control grid for "who has not paid this month". Three conventions it depends on, all easy to break:
+- **Three cell states, not two.** Green where there is a deposit, red only where the month is *past due* without one, neutral for months that have not arrived. Painting December red in August floods the grid with false alarms and makes the real ones invisible — `mesLimite` from the endpoint is what separates the two.
+- **`abonos` vs `neto` are never merged.** The mode toggle switches which one the cells, row totals and column totals use. `abonos` is the control figure; `neto` is the one that reconciles with the member's accumulated savings. A cell with `abonos === 0` but `n > 0` (fund movement, no deposit) gets its own amber state — green or red would both be lies.
+- **The reconciliation banner is mode-aware.** Only `neto` + "todos los años" can assert an exact match against the all-time total; in `abonos` mode the gap *is* the concept movements, and the banner says so instead of reporting a false mismatch.
+
+Figures render in `font-mono` with `tabular-nums`: in a twelve-column grid proportional digits break vertical alignment and the eye loses the column.
+
 ### Savings field semantics (Saving model)
 Two amount fields with different meanings — mixing them causes reporting errors:
 - `amount` — gross payment received (before any penalty deduction)
@@ -239,6 +247,7 @@ When querying savings/payments and filtering to active clients only, pass the fi
 ### `admin.js` endpoint inventory (key routes)
 - `GET /clients/:id/loan-capacity` — viability analysis for a second loan (3× savings rule); a request over this cap requires Junta approval instead of direct disbursement (see `PUT /loans` and the "aprobadoDirectoPorGerente" override path)
 - `GET /savings/ranking` — monthly savings per active socio with `mesAbonado`/`anioAbonado`
+- `GET /savings/matriz?anio=YYYY|todos` — the savings control grid: one row per socio, twelve month cells, plus column totals and each member's all-time accumulated. Every cell carries **two figures** — `abonos` (only what the member deposited) and `neto` (everything, refunds and discounts included) — because they answer different questions and merging them hides gaps: a member who skipped March but got a refund that month would show a number and paint green. `mesLimite` marks how far the year has actually run, so the UI never flags a month that has not arrived yet as missing
 - `GET /payments/list?clientId=` — all quota rows for a client (no pagination limit)
 - `GET /disbursed-loans/list` — all disbursed loans (filter client-side by `clientId`)
 - `GET /dashboard-stats` — aggregate KPIs for the admin dashboard

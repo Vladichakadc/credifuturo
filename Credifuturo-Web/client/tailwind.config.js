@@ -28,6 +28,11 @@ export default {
             },
             fontFamily: {
                 sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+                // Cifras. En una matriz de doce columnas los dígitos
+                // proporcionales rompen la lectura vertical: la coma de miles
+                // de una fila no cae sobre la de la siguiente y el ojo pierde
+                // la columna. Un mono con dígitos tabulares la reconstruye.
+                mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
             },
             boxShadow: {
                 'card': '0 1px 3px 0 rgb(0 0 0 / 0.07), 0 1px 2px -1px rgb(0 0 0 / 0.05)',

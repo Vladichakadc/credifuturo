@@ -31,7 +31,8 @@ import {
     Inbox,
     Lightbulb,
     MessageSquareMore,
-    Eye
+    Eye,
+    Grid3x3,
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import api, { apiWithRetry } from '../config/api';
@@ -322,6 +323,7 @@ const DashboardLayout = ({ user, onLogout }) => {
             label: 'Ahorros y Aportes',
             children: [
                 { icon: List, label: 'Lista de Ahorros', path: '/admin/savings/list' },
+                { icon: Grid3x3, label: 'Matriz de Ahorros', path: '/admin/savings/matriz' },
                 { icon: PlusCircle, label: 'Nuevo Ahorro', path: '/admin/savings?action=new' },
                 { icon: TrendingUp, label: 'Evolución Ahorros (beta)', path: '/admin/savings/evolution' },
                 { icon: Banknote, label: 'Devoluciones Ahorros', path: '/admin/savings/devoluciones' },
