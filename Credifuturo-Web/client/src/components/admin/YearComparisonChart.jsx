@@ -189,9 +189,29 @@ const YearComparisonChart = ({ data, error = false }) => {
                 // una línea que cae a cero en septiembre se leería como un desplome.
                 const esFuturo = serie.esAnioEnCurso && mesCorte !== null && mes > mesCorte;
                 if (esFuturo) { fila[String(serie.anio)] = null; return; }
-                fila[String(serie.anio)] = acumulado
-                    ? serie.meses.filter(m => m.mes <= mes).reduce((s, m) => s + (m[metrica] || 0), 0)
-                    : (serie.meses.find(m => m.mes === mes)?.[metrica] || 0);
+                if (!acumulado) {
+                    fila[String(serie.anio)] = serie.meses.find(m => m.mes === mes)?.[metrica] || 0;
+                    return;
+                }
+                let suma = serie.meses.filter(m => m.mes <= mes).reduce((s, m) => s + (m[metrica] || 0), 0);
+                // El interés de una cuota se ubica por su fecha de VENCIMIENTO,
+                // que es la única que existe: LoanPayment no guarda fecha de pago
+                // real. Así que una cuota pagada por adelantado, con vencimiento
+                // más allá del corte, quedaba fuera del acumulado aunque el
+                // dinero ya estuviera cobrado — y el gráfico terminaba mostrando
+                // menos que la tabla "lo que llevamos", para el mismo concepto.
+                // Ese dinero se suma en el último punto de la línea, que es donde
+                // corresponde: está cobrado a día de hoy.
+                //
+                // Solo en el AÑO EN CURSO. En un año ya cerrado, una cuota que
+                // vence en noviembre se cobró en noviembre, no por adelantado:
+                // adelantarla al mes de corte inflaría su acumulado y rompería
+                // justo la comparación entre períodos equivalentes que este
+                // gráfico existe para hacer.
+                if (metrica === 'intereses' && serie.esAnioEnCurso && mes === mesCorte) {
+                    suma += serie.interesesCobrados?.fueraDeCorte || 0;
+                }
+                fila[String(serie.anio)] = suma;
             });
             return fila;
         });
@@ -228,7 +248,16 @@ const YearComparisonChart = ({ data, error = false }) => {
         if (!enCurso || !previos.length) return null;
         const prev = data.series.find(s => s.anio === previos[0]);
         if (!prev) return null;
-        const actual = enCurso.ytdAlCorte?.[metrica] ?? 0;
+        // El interés del año en curso incluye lo ya cobrado de cuotas que
+        // vencen más adelante: es dinero que está en caja hoy, y sin sumarlo el
+        // encabezado contradecía a la tabla "lo que llevamos" para el mismo
+        // concepto. Al año de referencia no se le suma nada: allí una cuota que
+        // vence en noviembre se cobró en noviembre, no por adelantado, y
+        // adelantarla rompería la comparación entre períodos equivalentes.
+        const extraCobrado = metrica === 'intereses'
+            ? (enCurso.interesesCobrados?.fueraDeCorte || 0)
+            : 0;
+        const actual = (enCurso.ytdAlCorte?.[metrica] ?? 0) + extraCobrado;
         const anterior = prev.ytdAlCorte?.[metrica] ?? 0;
         if (!anterior) return null;
         return { anioPrev: prev.anio, actual, anterior, pct: (actual / anterior - 1) * 100 };
