@@ -236,6 +236,11 @@ Only the `GET`s are opened. Applying an abono, redistributing a payment or setti
 
 Reconciliation runs on "todos los años" + "Programado": the quotas must sum the capital lent plus the interest scheduled. A gap means schedules that do not match their loan's terms — the same condition the abono engine refuses to recalculate.
 
+### One figure, one definition (Panel de Inteligencia Financiera)
+Two long-standing discrepancies, both of the same shape — the same concept computed differently in two places on the same screen:
+- **"Ahorro de los Socios"** (`ahorroPorAnio` in `/dashboard-stats`) summed gross `amount`, matched `status = 'Abono'` *exactly* against a free-text field from the Excel import, and grouped by `year` instead of the credited period — while claiming in a comment to filter active members, which it never did. It read $11.000.000 where the Matriz de Ahorros read $10.850.000 and the comparator's savings line read $10.500.000. It now uses the matrix's criteria (net `valorAhorrado`, `anioAbonado` with `year` as fallback, concept movements excluded by normalized match), so the three agree.
+- **Interest in the year comparator** cut by quota *due date* up to today. `LoanPayment` stores no real payment date, so a quota paid in advance whose due date is later in the year fell out of the accumulated even though the cash is in — the same defect already fixed in the "lo que llevamos" table, left unfixed in the chart. `/year-comparison` now also returns `interesesCobrados: { total, fueraDeCorte }` per year, and the chart adds `fueraDeCorte` at the cut point **for the current year only**: in a closed year a quota due in November was collected in November, and moving it earlier would break the equal-period comparison the chart exists to make.
+
 ### Savings field semantics (Saving model)
 Two amount fields with different meanings — mixing them causes reporting errors:
 - `amount` — gross payment received (before any penalty deduction)

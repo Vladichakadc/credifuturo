@@ -4407,33 +4407,55 @@ router.get('/dashboard-stats', async (req, res) => {
         }) || 0;
 
         // ── 3.6 AHORRO POR AÑO (no acumulable) ──
-        // Suma de amount agrupada por año de transacción (year) y tipo, solo socios
-        // activos y solo registros con status='Abono' (excluye distribuciones de
-        // intereses, devoluciones, descuentos por penalización, etc.).
-        // Cada año es independiente (NO acumulado): mensual + aportes del año.
-        // Usamos `year` (fecha en que entró el dinero) porque parte limpiamente todos
-        // los registros — los "Aporte Inicial" casi nunca tienen anioAbonado.
-        const ahorroPorAnioRows = await Saving.findAll({
-            attributes: ['year', 'type', [fn('SUM', col('amount')), 'tot']],
-            where: {
-                year: { [Op.ne]: null },
-                [Op.or]: [
-                    { status: 'Abono' },
-                    { type: 'Aporte Inicial' }
-                ]
-            },
-            include: [{
-                model: Client,
-                attributes: []
-            }],
-            group: ['year', 'type'],
-            raw: true
+        // Lo que los socios ahorraron cada año: ahorro mensual + aportes iniciales.
+        // Cada año es independiente (NO acumulado).
+        //
+        // Se calcula con el MISMO criterio que la Matriz de Ahorros, que es la
+        // pantalla de control y cuadra al peso con el acumulado de cada socio.
+        // Antes no coincidían y la misma pantalla mostraba tres cifras distintas
+        // para el mismo concepto: la tarjeta decía $11.000.000, la matriz
+        // $10.850.000 y la línea de ahorro del comparador $10.500.000. Tres
+        // números para una sola pregunta es peor que no dar ninguno.
+        //
+        // Las tres diferencias que había, y por qué se resuelven así:
+        //
+        //   · `amount` es el bruto recibido y `valorAhorrado` el neto acreditado
+        //     al socio. Esta tarjeta se llama "Ahorro de los Socios", así que la
+        //     cifra que le corresponde es la que el socio tiene ahorrado — la
+        //     neta, la misma del Ranking y de la Matriz. La diferencia son las
+        //     penalizaciones cobradas.
+        //   · El filtro exigía status='Abono' EXACTO sobre un campo que viene del
+        //     histórico en Excel y no tiene redacción única, así que cualquier
+        //     variante de redacción quedaba fuera y el año salía corto. Ahora se
+        //     excluye por concepto —devoluciones, distribuciones, descuentos—
+        //     con el mismo criterio normalizado que usa el resto del módulo.
+        //   · Agrupaba por `year` (cuándo entró el dinero) en vez de por el
+        //     período acreditado. Un aporte de diciembre que cubre enero
+        //     siguiente caía en el año equivocado. Se usa `anioAbonado` y se cae
+        //     a `year` cuando falta, que es el caso de los "Aporte Inicial".
+        //
+        // Nota: incluye a TODOS los socios, activos y desactivados. Lo que ahorró
+        // en su momento quien después se retiró sigue siendo ahorro que el fondo
+        // recibió ese año, y descontarlo cambiaría la historia hacia atrás.
+        const ahorroFilas = await Saving.findAll({
+            attributes: ['year', 'anioAbonado', 'type', 'status', 'amount', 'valorAhorrado'],
+            raw: true,
         });
+        const esConceptoAhorro = (status) => {
+            const e = normalizarEstado(status);
+            return e.includes('evoluc') || e.includes('istribuc') || e.includes('escuent') || e.includes('enaliz');
+        };
         const ahorroAnioMap = {};
-        ahorroPorAnioRows.forEach(r => {
-            const y = r.year;
+        ahorroFilas.forEach(r => {
+            const bruto = parseFloat(r.amount) || 0;
+            // Un movimiento negativo lo mueve el fondo, no el socio: no es ahorro.
+            if (bruto <= 0) return;
+            if (esConceptoAhorro(r.status)) return;
+            const y = Number(r.anioAbonado || r.year || 0);
+            if (!y) return;
             if (!ahorroAnioMap[y]) ahorroAnioMap[y] = { anio: y, mensual: 0, aportes: 0, total: 0 };
-            const val = Math.round(parseFloat(r.tot) || 0);
+            const neto = parseFloat(r.valorAhorrado) > 0 ? parseFloat(r.valorAhorrado) : bruto;
+            const val = Math.round(neto);
             if (r.type === 'Aporte Inicial') ahorroAnioMap[y].aportes += val;
             else ahorroAnioMap[y].mensual += val;
             ahorroAnioMap[y].total += val;
@@ -6175,6 +6197,19 @@ router.get('/year-comparison', async (req, res) => {
                 colocacion: sumar('colocacion', 12),
                 nu: nuDeAnio(anio),
             };
+            // Interés que YA está cobrado pero vence más adelante en el año.
+            //
+            // El corte por día usa la fecha de VENCIMIENTO, que es la única que
+            // guarda LoanPayment: no hay fecha de pago real. Así que una cuota
+            // que el socio pagó por adelantado, con vencimiento posterior a hoy,
+            // queda fuera del acumulado aunque el dinero ya entró — y el gráfico
+            // acaba mostrando menos de lo que la tabla "lo que llevamos" dice.
+            // Es el mismo desfase que ya se corrigió en la tabla; aquí se expone
+            // aparte para que el gráfico pueda cerrar la misma cifra.
+            const cobradoAnio = sumar('intereses', 12);
+            const cobradoFueraDeCorte = Math.max(0, cobradoAnio
+                - (Number(interesesYtdRows.find(r => Number(r.anio) === anio)?.total) || 0));
+
             const ytdAlCorte = {
                 // Intereses: corte al día exacto (la fecha de la cuota lo permite).
                 intereses: Number(interesesYtdRows.find(r => Number(r.anio) === anio)?.total) || 0,
@@ -6191,6 +6226,10 @@ router.get('/year-comparison', async (req, res) => {
                 meses,
                 totalAnio: { ...totalAnio, ganancia: totalAnio.intereses + totalAnio.mora + totalAnio.nu },
                 ytdAlCorte,
+                // Todo el interés cobrado del año, sin cortar por vencimiento, y
+                // la parte que el corte deja fuera. Con esto el acumulado del
+                // gráfico puede cuadrar con la tabla en vez de contradecirla.
+                interesesCobrados: { total: cobradoAnio, fueraDeCorte: cobradoFueraDeCorte },
             };
         });
 
