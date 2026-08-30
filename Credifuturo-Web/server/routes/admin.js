@@ -6,7 +6,7 @@ const bcrypt = require('bcryptjs');
 const { verifyToken, requireRole, requireFreshPassword } = require('../middleware/authMiddleware');
 const { validatePassword, generateTempPassword } = require('../services/passwordPolicy');
 const { hoyISOFondo } = require('../services/fechaFondo');
-const { logSecurityEvent, getClientIp, LOG_FILE } = require('../services/securityLogger');
+const { logSecurityEvent, getClientIp } = require('../services/securityLogger');
 const { getLastActivity } = require('../services/sessionActivity');
 const { verifyFileMagicBytes, sanitizeFilename } = require('../services/fileValidator');
 
@@ -5442,20 +5442,42 @@ const ACCESS_LOG_EVENTS = new Set([
     'PASSWORD_RESET_BY_ADMIN',
 ]);
 
+// Lee eventos de la tabla SecurityEvents y los devuelve en el mismo formato
+// plano que tenían las líneas del archivo, para que el resto del endpoint no
+// tenga que saber de dónde salieron.
+async function leerEventos(tipos, limit) {
+    const SecurityEvent = require('../models/SecurityEvent');
+    const filas = await SecurityEvent.findAll({
+        where: { event: { [require('sequelize').Op.in]: [...tipos] } },
+        order: [['ts', 'DESC'], ['id', 'DESC']],
+        limit,
+    });
+    return filas.map(f => {
+        let extra = {};
+        if (f.extra) { try { extra = JSON.parse(f.extra); } catch { /* fila antigua o truncada */ } }
+        return {
+            ts: new Date(f.ts).toISOString(),
+            event: f.event,
+            userId: f.userId ?? undefined,
+            targetClientId: f.targetClientId ?? undefined,
+            cedula: f.cedula ?? undefined,
+            role: f.role ?? undefined,
+            ip: f.ip ?? undefined,
+            mustChangePassword: f.mustChangePassword ?? undefined,
+            ...extra,
+        };
+    });
+}
+
 router.get('/logs/access', async (req, res) => {
     try {
-        if (!fs.existsSync(LOG_FILE)) return res.json({ data: [] });
-
-        const lines = fs.readFileSync(LOG_FILE, 'utf-8').split('\n').filter(Boolean);
         const limit = Math.min(parseInt(req.query.limit, 10) || 500, 2000);
 
-        const entries = [];
-        for (let i = lines.length - 1; i >= 0 && entries.length < limit; i--) {
-            const jsonStr = lines[i].replace(/^\[SECURITY\]\s*/, '');
-            let obj;
-            try { obj = JSON.parse(jsonStr); } catch { continue; }
-            if (ACCESS_LOG_EVENTS.has(obj.event)) entries.push(obj);
-        }
+        // Antes esto se leía de logs/security.log. Ese archivo vive en el disco
+        // del contenedor, que en Railway se borra en cada despliegue: la
+        // pantalla aparecía vacía o recortada al día siguiente de cada subida.
+        // La tabla está en el volumen persistente, junto a la base.
+        const entries = await leerEventos(ACCESS_LOG_EVENTS, limit);
 
         const ids = [...new Set(entries.map(e => e.userId || e.targetClientId).filter(Boolean))];
         const clients = ids.length
@@ -5541,18 +5563,8 @@ const ATTACK_SEVERITY = {
 
 router.get('/logs/security-events', async (req, res) => {
     try {
-        if (!fs.existsSync(LOG_FILE)) return res.json({ data: [] });
-
-        const lines = fs.readFileSync(LOG_FILE, 'utf-8').split('\n').filter(Boolean);
         const limit = Math.min(parseInt(req.query.limit, 10) || 500, 2000);
-
-        const entries = [];
-        for (let i = lines.length - 1; i >= 0 && entries.length < limit; i--) {
-            const jsonStr = lines[i].replace(/^\[SECURITY\]\s*/, '');
-            let obj;
-            try { obj = JSON.parse(jsonStr); } catch { continue; }
-            if (ATTACK_LOG_EVENTS.has(obj.event)) entries.push(obj);
-        }
+        const entries = await leerEventos(ATTACK_LOG_EVENTS, limit);
 
         const ids = [...new Set(entries.map(e => e.userId).filter(Boolean))];
         const clients = ids.length

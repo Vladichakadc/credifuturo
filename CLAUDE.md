@@ -46,7 +46,7 @@ SQLite3 (Credifuturo-Web/database.sqlite, ~11 MB)
 ### Backend Structure (`server/`)
 - **`server.js`** — Express entry point; loads middleware, routes, and starts the cron job for daily backups
 - **`config/database.js`** — Sequelize SQLite setup; DB path resolves to `Credifuturo-Web/database.sqlite` via `path.join(__dirname, '..', '..', 'database.sqlite')`; `sequelize.sync()` runs on startup
-- **`models/`** — Fifteen Sequelize models. `index.js` wires associations for `Client`, `Saving`, `Loan`, `DisbursedLoan`, `LoanPayment`, `Soporte`, `Propuesta`, `VotoPropuesta`. The rest — `PasswordResetRequest`, `AppSetting`, `LoanRequest`, `LoanBoardVote`, `Notification`, `ScoreSnapshot`, `AbonoAplicado` — are defined standalone and `require()`'d directly where used (route file or `server.js`), not wired through `index.js`
+- **`models/`** — Seventeen Sequelize models. `index.js` wires associations for `Client`, `Saving`, `Loan`, `DisbursedLoan`, `LoanPayment`, `Soporte`, `Propuesta`, `VotoPropuesta`. The rest — `PasswordResetRequest`, `AppSetting`, `LoanRequest`, `LoanBoardVote`, `Notification`, `ScoreSnapshot`, `AbonoAplicado`, `SecurityEvent`, `SessionActivity` — are defined standalone and `require()`'d directly where used (route file or `server.js`), not wired through `index.js`
 - **`routes/auth.js`** — Login (rate-limited), JWT issuance, `PUT /change-password`, and `POST /request-reset` (creates a `PasswordResetRequest` + emails a notification via `EmailService`)
 - **`routes/admin.js`** — All CRUD operations (members, loans, savings, payments) plus the `/my/*` user-facing endpoints and the governance flows (loan-request approval, notifications, proposals, `settings/:key`). At ~5,500 lines / ~90 routes, this is the bulk of the API — see "Authorization gate in `admin.js`" below before adding a route.
 - **`routes/user.js`** — Legacy minimal file; active user-dashboard pages call `/api/admin/my/*` instead
@@ -59,8 +59,8 @@ SQLite3 (Credifuturo-Web/database.sqlite, ~11 MB)
 - **`services/abonoCapital.js`** — orchestration for extraordinary principal payments: `planificarPrestamo` (dry run), `aplicarPlan` (persist + audit), `revertir`, `barrer`, `barridoProgramado`. See "Extraordinary principal payments" below
 - **`services/NotificationService.js`** — `createNotification` / `notifyAdmins` / `notifyMany`; writes `Notification` rows consumed by the `/my/notifications*` endpoints, the bell icon in both dashboards, and the loan-approval flow
 - **`services/fileValidator.js`** — magic-byte verification (`verifyFileMagicBytes`) and filename sanitization for `Soporte` uploads, beyond multer's declared MIME type
-- **`services/sessionActivity.js`** — tracks last-seen-at per user id (`touch()` called on every `verifyToken` pass); backs the admin "Registros de Acceso" (Access-Logs) page
-- **`services/passwordPolicy.js` / `securityLogger.js`** — temp-password generation and security-event logging (used by the admin auto-seed and reset flow)
+- **`services/sessionActivity.js`** — last-seen-at per user id (`touch()` on every `verifyToken` pass); backs the session-duration / "en línea" columns of "Registros de Acceso". In-memory `Map` for hot reads, mirrored to the `SessionActivities` table **throttled to one write per user per 2 min** (unthrottled it would be a DB write on the app's hottest path); `precargarDesdeBase()` refills the map after `listen()`
+- **`services/passwordPolicy.js` / `securityLogger.js`** — temp-password generation and security-event logging (used by the admin auto-seed and reset flow). `logSecurityEvent` fans out to three places: console, `logs/security.log`, and the `SecurityEvents` table — see "Access-log persistence" below
 - **`lib/security-middleware.js`** (at `Credifuturo-Web/lib/`) — `setupSecurity(app)`, the helmet/CORS/logging middleware assembled in `server.js`; `Credifuturo-Web/Dockerfile` builds the single-service Railway container
 
 > The `server/` directory also contains one-off utility/migration scripts from past data-fix operations (root of `server/` and `server/scratch/`). These are not part of the live application. No automated test suite exists (`server/tests/` holds a single manual repro script, not a runnable suite).
@@ -91,7 +91,7 @@ Both `routes/auth.js` (token issuance) and `middleware/authMiddleware.js` (token
 
 > Many `.jsx` files exist flat under `pages/` (e.g., `ClientsPage.jsx`, `DashboardHome.jsx`) — these are earlier versions. The active pages imported by `App.jsx` live in `pages/admin/` and `pages/user/`. `AdminDashboard.jsx` and `UserDashboard.jsx` at the root are accessible via `/admin/legacy` but are fully superseded.
 
-### Data Model (15 Sequelize tables)
+### Data Model (17 Sequelize tables)
 
 | Model | Table | Purpose |
 |-------|-------|---------|
@@ -110,6 +110,8 @@ Both `routes/auth.js` (token issuance) and `middleware/authMiddleware.js` (token
 | `AbonoAplicado` | AbonosAplicados | One row per applied extraordinary-principal adjustment: `idVm`, `excedente`, `politica`, `origen`, and `estadoAnterior` (JSON with the pre-change values of every quota touched). It is the audit trail **and** the undo record — the only way to reverse a schedule rewrite in production |
 | `Propuesta` | Propuestas | Member suggestion box (BETA): `titulo`, `descripcion`, `categoria` enum, `estado` ("pendiente"/"en_revision"/"aprobada"/"rechazada") |
 | `VotoPropuesta` | VotosPropuesta | One vote per socio per `Propuesta`; unique-indexed on `(propuestaId, clientId)` to prevent double voting |
+| `SecurityEvent` | SecurityEvents | Permanent audit of logins, password changes/resets, failed attempts and brute-force alerts. Columns for the fields the screens read by name (`ts`, `event`, `userId`, `cedula`, `ip`, …) plus `extra` (JSON) for everything else, so a new detail on an event needs no migration |
+| `SessionActivity` | SessionActivities | One row per socio with `lastSeenAt`; the restart-proof copy of the in-memory activity map |
 
 Relationships: `Client` 1→N `Saving`, `DisbursedLoan`, `LoanPayment`, `Propuesta`, `VotoPropuesta`. `DisbursedLoan` 1→N `LoanPayment` (via `idVm` string match, not a formal FK). `Propuesta` 1→N `VotoPropuesta`. Core associations are declared in `models/index.js`; `LoanRequest`/`LoanBoardVote`/`Notification`/`ScoreSnapshot`/`AppSetting` are used directly by `admin.js` without being wired into `index.js`.
 
@@ -211,6 +213,16 @@ The backend has had a deliberate OWASP-oriented hardening pass (code comments re
 - **Global error handler**: 5xx error messages/stacks are hidden in production (only generic text returned); 4xx messages pass through. Don't leak internals in new 5xx paths.
 - **Maintenance endpoints** (`/api/setup/restore-db`, `/download-db`, `/reset-password`): gated by a `SETUP_KEY` (≥32 chars) sent in the `x-setup-key` header, and additionally require `ALLOW_SETUP_IN_PRODUCTION=true` to mount in production. These are the operational path for syncing/restoring the Railway SQLite DB.
 - **Crash logging**: `POST /api/log-crash` (rate-limited, no auth) appends client-side React crash reports to `server/crash_log.txt`.
+
+### Access-log persistence (`SecurityEvents`)
+**The container filesystem is not storage.** `logs/security.log` lives on Railway's ephemeral disk; the persistent volume is mounted where `DATABASE_PATH` points, not there. Every deploy and every restart wiped the file, so "Registros de Acceso" and the attack-events screen — which read it line by line — lost the entire audit trail every few days. The same applies to `crash_log.txt` and to `Backups/`: anything written to a path that isn't the volume is gone at the next deploy.
+
+`logSecurityEvent` now also inserts into `SecurityEvents`, and both `/logs/access` and `/logs/security-events` read from that table. Points worth keeping:
+- **The DB write is fire-and-forget with its own `catch`.** An audit record must never delay or fail the request that produced it; console + file remain as the fallback path when the insert fails (notably for events emitted before `sync()` finishes).
+- **`ts` is the event's own timestamp, not `createdAt`.** The one-shot import of the old file has to preserve when things actually happened.
+- **The file import runs only when the table is empty**, after `listen()`. It is the cutover, not a sync: once the table has rows, the DB is the only source and re-importing would duplicate.
+- `extra` (JSON) absorbs any field the event carries beyond the columns, so adding detail to an event never needs a migration — which matters because `sync()` runs without `alter`.
+- The table only grows; there is no retention job. At this fund's volume (logins and failed attempts) that is thousands of rows a year, which SQLite handles without trouble.
 
 ### Startup sequence (`server.js` after `sequelize.sync()`)
 `sync()` runs **without `alter`** (to avoid SQLite FK migration issues — schema changes must be applied manually). Then, in order: auto-seed admin if none exists → create performance indexes (`CREATE INDEX IF NOT EXISTS` on Savings, LoanPayments, DisbursedLoans, plus `CREATE UNIQUE INDEX ux_disbursed_id_vm` — see below) → `listen()` → register the daily 8 PM `America/Bogota` backup cron, the score-snapshot cron (`0 10 20 * * *`, `America/Bogota`, plus a ~20s post-boot seed run) **and** the abono sweep (`0 30 20 * * *`, plus a ~45s post-boot run). Adding a column requires a manual migration/SQL since `alter` is off.
