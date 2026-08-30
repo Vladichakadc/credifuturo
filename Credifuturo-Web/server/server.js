@@ -49,6 +49,12 @@ const Notification = require('./models/Notification'); // Notificaciones en la a
 // que ya estén definidos cuando corre: cargarlo dentro de una ruta lo deja
 // fuera del sync y el primer barrido falla con "no such table".
 const AbonoAplicado = require('./models/AbonoAplicado');
+// Auditoría de acceso y actividad de sesión. Van aquí por el mismo motivo que
+// AbonoAplicado: sync() solo crea las tablas de los modelos ya definidos cuando
+// corre. Antes ambas cosas vivían fuera de la base —el log en un archivo del
+// contenedor y la actividad en un Map— y se perdían enteras en cada despliegue.
+const SecurityEvent = require('./models/SecurityEvent');
+const SessionActivity = require('./models/SessionActivity');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -413,6 +419,10 @@ sequelize.sync().then(async () => {
         // pago. Las bases antiguas no traen esa FK y por eso nunca se notó.
         // Si hubiera id_vm repetidos el índice no se crea y el warning lo dice.
         'CREATE UNIQUE INDEX IF NOT EXISTS ux_disbursed_id_vm ON DisbursedLoans(id_vm)',
+        // Registros de Acceso: se consulta siempre por tipo de evento y ordenado
+        // por fecha descendente. La tabla solo crece.
+        'CREATE INDEX IF NOT EXISTS idx_secevent_ts          ON SecurityEvents(ts)',
+        'CREATE INDEX IF NOT EXISTS idx_secevent_event       ON SecurityEvents(event)',
     ];
     for (const sql of indexStatements) {
         await sequelize.query(sql).catch(e => console.warn('[INDEX] Skipped:', e.message));
@@ -421,6 +431,52 @@ sequelize.sync().then(async () => {
 
     app.listen(PORT, () => {
         console.log('Server running on port ' + PORT);
+
+        // ── Auditoría de acceso: rescatar lo que quedara en el archivo ──────
+        // Solo la primera vez (tabla vacía). El archivo es de disco efímero:
+        // lo que tenga ahora es lo último que sobrevivió al despliegue, y a
+        // partir de aquí la base es la fuente. Va después de listen() y con su
+        // propio try/catch porque el bloque de arranque termina en un .catch
+        // que diagnostica "Database connection failed": una excepción antes de
+        // abrir el puerto dejaría el servidor caído y con el motivo equivocado.
+        (async () => {
+            try {
+                const yaHay = await SecurityEvent.count();
+                if (yaHay === 0) {
+                    const { LOG_FILE } = require('./services/securityLogger');
+                    if (fs.existsSync(LOG_FILE)) {
+                        const filas = [];
+                        for (const linea of fs.readFileSync(LOG_FILE, 'utf-8').split('\n')) {
+                            if (!linea.trim()) continue;
+                            let o;
+                            try { o = JSON.parse(linea.replace(/^\[SECURITY\]\s*/, '')); } catch { continue; }
+                            if (!o || !o.event) continue;
+                            const { ts, event, userId, targetClientId, cedula, role, ip, mustChangePassword, ...resto } = o;
+                            filas.push({
+                                ts: ts ? new Date(ts) : new Date(),
+                                event,
+                                userId: userId ?? null,
+                                targetClientId: targetClientId ?? null,
+                                cedula: cedula ?? null,
+                                role: role ?? null,
+                                ip: ip ?? null,
+                                mustChangePassword: mustChangePassword ?? null,
+                                extra: Object.keys(resto).length ? JSON.stringify(resto) : null,
+                            });
+                        }
+                        if (filas.length) {
+                            await SecurityEvent.bulkCreate(filas);
+                            console.log(`[AUDITORÍA] ${filas.length} evento(s) del archivo importados a la base.`);
+                        }
+                    }
+                }
+                const { precargarDesdeBase } = require('./services/sessionActivity');
+                const n = await precargarDesdeBase();
+                console.log(`[AUDITORÍA] Registros de acceso en base: ${await SecurityEvent.count()} · actividad de ${n} socio(s) precargada.`);
+            } catch (e) {
+                console.warn('[AUDITORÍA] No se pudo preparar el registro de accesos:', e.message);
+            }
+        })();
 
         // ── Backup Automático Diario a las 8 PM ────────────────────────────
         // Formato cron: 'segundo minuto hora dia mes dia-semana'
