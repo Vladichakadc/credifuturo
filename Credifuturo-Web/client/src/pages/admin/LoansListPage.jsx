@@ -675,19 +675,35 @@ const LoansListPage = () => {
         }
         // Solo verificar en modo creación (no al editar)
         if (isEditing) return;
-        setActiveLoanWarning(null);
         setClientCapacity(null);
-        api.get(`/admin/clients/${disbursedForm.clientId}/active-loan`)
-            .then(res => {
-                if (res.data.tienePrestamoActivo) setActiveLoanWarning(res.data.prestamo);
-            })
-            .catch(() => {}); // silencioso; no bloquea el formulario
         // Capacidad de crédito (regla 3× / mora EP) — misma fuente que el Analizador y
         // que ya bloquea el guardado en el backend; se trae para advertir en vivo.
         api.get(`/admin/clients/${disbursedForm.clientId}/loan-capacity`)
             .then(res => setClientCapacity(res.data))
             .catch(() => {}); // silencioso; no bloquea el formulario
     }, [disbursedForm.clientId, clients, isEditing]);
+
+    // Refinanciación: qué se cancela del préstamo vigente. Va en su propio efecto porque
+    // depende TAMBIÉN de la fecha del desembolso — el interés causado se cobra por días
+    // corridos hasta esa fecha, así que si el gerente la cambia, el aviso tiene que
+    // recalcularse. Antes se consultaba una sola vez al elegir el socio y con la fecha de
+    // hoy, de modo que la cifra mostrada podía no ser la que se terminaba cobrando.
+    useEffect(() => {
+        if (isEditing || !disbursedForm.clientId || !disbursedForm.fechaPrestamo) {
+            setActiveLoanWarning(null);
+            return;
+        }
+        let vigente = true;
+        api.get(`/admin/clients/${disbursedForm.clientId}/active-loan`, {
+            params: { fecha: disbursedForm.fechaPrestamo }
+        })
+            .then(res => {
+                if (!vigente) return;
+                setActiveLoanWarning(res.data.tienePrestamoActivo ? res.data.prestamo : null);
+            })
+            .catch(() => {}); // silencioso; no bloquea el formulario
+        return () => { vigente = false; };
+    }, [disbursedForm.clientId, disbursedForm.fechaPrestamo, isEditing]);
 
     const handleOpenDisbursedModal = (loan = null, overrides = null) => {
         const today = hoyISO();
@@ -797,13 +813,18 @@ const LoansListPage = () => {
                 if (ref && ref.idVmAnterior) {
                     const fmt = n => Number(n).toLocaleString('es-CO');
                     const interesCausadoTxt = Number(ref.interesCausado) > 0
-                        ? ` Interés cobrado por días transcurridos: $${fmt(ref.interesCausado)}.`
+                        ? ` Interés cobrado por ${ref.diasTranscurridos} día(s): $${fmt(ref.interesCausado)}.`
                         : '';
+                    // El neto cierra el mensaje porque es lo único que queda por hacer
+                    // después de guardar: transferir esa cantidad, no el valor prestado.
+                    const netoTxt = Number(ref.netoEntregado) >= 0
+                        ? ` ➜ ENTREGAR AL SOCIO: $${fmt(ref.netoEntregado)}`
+                        : ` ➜ EL SOCIO DEBE CONSIGNAR: $${fmt(Math.abs(Number(ref.netoEntregado)))}`;
                     toast.success(
                         `✅ Refinanciación completada — Préstamo anterior ${ref.idVmAnterior} cancelado. ` +
                         `${ref.cuotasSaldadas} cuota(s) saldadas, interés condonado: $${fmt(ref.interesCondonado)}.` +
-                        interesCausadoTxt,
-                        9000 // mensaje largo, con cifras — 3s por defecto no alcanza a leerse
+                        interesCausadoTxt + netoTxt,
+                        12000 // mensaje largo, con cifras — 3s por defecto no alcanza a leerse
                     );
                 } else if (gerenteAprueba) {
                     toast.success(
@@ -1243,6 +1264,20 @@ const LoansListPage = () => {
                 }
                 const fmt = v => Math.round(v).toLocaleString('es-CO');
 
+                // ── liquidación del retanqueo ──────────────────────────────────────────
+                // Un retanqueo no mueve dos sumas de dinero: el fondo entrega la DIFERENCIA
+                // entre el préstamo nuevo y lo que se salda del viejo. Y lo que se salda es
+                // el capital MÁS el interés de los días corridos, no el saldo pelado — ese
+                // interés ya queda contabilizado como cobrado (entra a "Intereses de
+                // préstamos" y al recaudo de Caja Disponible), así que si no se retiene al
+                // entregar el dinero, el fondo reporta un ingreso que nunca entró.
+                // Mismas cuentas que hace el servidor al guardar (POST /disbursed-loans).
+                const totalACancelar = activeLoanWarning
+                    ? (Number(activeLoanWarning.totalACancelar) ||
+                       (Number(activeLoanWarning.saldoPendiente) || 0) + (Number(activeLoanWarning.interesCausado) || 0))
+                    : 0;
+                const netoAEntregar = P - totalACancelar;
+
                 // ── capacidad de crédito (regla 3× / mora EP) — MISMA regla que ya
                 // bloquea el guardado en el backend (POST /disbursed-loans).
                 let cupoMaximo = 0, capacidadDisponible = 0, excedeCapacidad = false;
@@ -1541,14 +1576,35 @@ const LoansListPage = () => {
                                                 <AlertTriangle className="h-4 w-4" /> Refinanciación — Préstamo {activeLoanWarning.idVm} será cancelado
                                             </p>
                                             <ul className="text-xs text-amber-700 space-y-1 ml-1">
-                                                <li>• Saldo pendiente: <strong>${Number(activeLoanWarning.saldoPendiente).toLocaleString('es-CO')}</strong></li>
+                                                <li>• Capital pendiente: <strong>${Number(activeLoanWarning.saldoPendiente).toLocaleString('es-CO')}</strong></li>
                                                 <li>• {activeLoanWarning.cuotasPendientes} cuota(s): Estado Pago <strong>Pendiente → PAGO</strong></li>
                                                 {Number(activeLoanWarning.interesCausado) > 0 && (
-                                                    <li>• Interés causado por días transcurridos (<strong>SÍ se cobra</strong>): <strong>${Number(activeLoanWarning.interesCausado).toLocaleString('es-CO')}</strong></li>
+                                                    <li>• Interés causado por {activeLoanWarning.diasTranscurridos ?? '—'} día(s) transcurrido(s) (<strong>SÍ se cobra</strong>): <strong>${Number(activeLoanWarning.interesCausado).toLocaleString('es-CO')}</strong></li>
                                                 )}
                                                 <li>• Interés condonado (no cobrado): <strong>${Number(activeLoanWarning.interesCondonable).toLocaleString('es-CO')}</strong></li>
+                                                <li>• Total a cancelar de {activeLoanWarning.idVm}: <strong>${fmt(totalACancelar)}</strong></li>
                                                 <li>• Préstamo {activeLoanWarning.idVm}: <strong>Vigente → CANCELADO</strong></li>
                                             </ul>
+
+                                            {/* El neto es la instrucción operativa de esta pantalla: el dinero que
+                                                de verdad sale de la cuenta del fondo. Va destacado porque la cifra
+                                                más visible del aviso —el capital pendiente— es redonda e invita a
+                                                restarla sola, dejando por fuera el interés causado que la
+                                                contabilidad ya dio por cobrado. */}
+                                            {P > 0 && (
+                                                netoAEntregar >= 0 ? (
+                                                    <div className="mt-3 pt-3 border-t border-amber-300 flex items-baseline justify-between gap-3 flex-wrap">
+                                                        <span className="text-xs font-bold text-amber-800 uppercase tracking-wide">Neto a entregar al socio</span>
+                                                        <span className="text-xl font-extrabold text-amber-900 tabular-nums">${fmt(netoAEntregar)}</span>
+                                                    </div>
+                                                ) : (
+                                                    <div className="mt-3 pt-3 border-t border-amber-300">
+                                                        <p className="text-xs font-bold text-red-700 uppercase tracking-wide mb-0.5">El socio debe consignar</p>
+                                                        <p className="text-xl font-extrabold text-red-700 tabular-nums">${fmt(Math.abs(netoAEntregar))}</p>
+                                                        <p className="text-[11px] text-red-600 mt-1">El préstamo nuevo (${fmt(P)}) no alcanza a cubrir lo que se cancela de {activeLoanWarning.idVm} (${fmt(totalACancelar)}). No sale dinero del fondo: entra.</p>
+                                                    </div>
+                                                )
+                                            )}
                                         </div>
                                     )}
 
@@ -1575,6 +1631,16 @@ const LoansListPage = () => {
                                                 { label: 'Socio', value: `${disbursedForm.nombre} ${disbursedForm.apellido}`, full: true },
                                                 { label: 'Fecha', value: `${disbursedForm.mesDesembolso} ${disbursedForm.anioDesembolso}` },
                                                 { label: 'Valor prestado', value: `$${fmt(P)}`, bold: true, color: 'text-green-700' },
+                                                // En un retanqueo el "valor prestado" NO es el dinero que sale del
+                                                // fondo: parte se queda cancelando el préstamo anterior. El neto es
+                                                // el número con el que se hace la transferencia, así que va aquí con
+                                                // el mismo peso, y no solo en la alerta de arriba.
+                                                ...(!isEditing && activeLoanWarning && P > 0 ? [
+                                                    { label: `Se cancela de ${activeLoanWarning.idVm}`, value: `− $${fmt(totalACancelar)}` },
+                                                    netoAEntregar >= 0
+                                                        ? { label: 'Neto a entregar al socio', value: `$${fmt(netoAEntregar)}`, bold: true, color: 'text-amber-700', full: true }
+                                                        : { label: 'El socio debe consignar', value: `$${fmt(Math.abs(netoAEntregar))}`, bold: true, color: 'text-red-700', full: true },
+                                                ] : []),
                                                 { label: 'Cuotas', value: `${n} cuotas` },
                                                 { label: 'Tasa mensual', value: `${iPct.toFixed(2)}%` },
                                                 { label: n > 1 ? 'Primera cuota' : 'Cuota', value: primeraCuota > 0 ? `$${fmt(primeraCuota)}` : '—', bold: true, color: 'text-brand-primary' },

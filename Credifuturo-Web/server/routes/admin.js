@@ -805,6 +805,24 @@ function safeParseDateAdmin(dateVal, mesRef) {
     return new Date(dateStr + 'T00:00:00');
 }
 
+// Ancla una fecha al día calendario de Colombia, a medianoche. El conteo de días de un
+// retanqueo es CALENDARIO, no cronómetro: entre el 17 y el 30 hay 13 días, sea la hora
+// que sea. Sin esto, la previsualización (que usaba `new Date()`, con la hora incluida) y
+// el cobro real (que usa la fecha del formulario, a medianoche) contaban distinto: el
+// Math.ceil de abajo redondeaba la fracción de día hacia arriba y el aviso mostraba
+// SIEMPRE un día más del que se terminaba cobrando — medido en $1.867 sobre un saldo de
+// $4.000.000 al 1,4%. El gerente hacía sus cuentas con una cifra que nunca se cobró.
+function diaCalendarioBogota(valor) {
+    let iso;
+    if (valor instanceof Date) {
+        // en-CA da 'YYYY-MM-DD' ya convertido al huso del fondo
+        iso = valor.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+    } else {
+        iso = String(valor).split('T')[0];
+    }
+    return new Date(iso + 'T00:00:00Z');
+}
+
 // Interés proporcional en retanqueos — cálculo compartido entre la previsualización
 // (GET /clients/:id/active-loan, lo que el admin ve ANTES de confirmar) y la operación
 // real (POST /disbursed-loans, sección REFINANCIACIÓN). Antes vivía duplicado en un solo
@@ -825,16 +843,18 @@ function calcularInteresRetanqueo({ prestamoAnterior, cuotasPendientesAnteriores
 
         let fechaInicio;
         if (primeraCuota.itemQuantity === 1 && prestamoAnterior.fechaPrestamo) {
-            fechaInicio = new Date(prestamoAnterior.fechaPrestamo);
+            fechaInicio = diaCalendarioBogota(prestamoAnterior.fechaPrestamo);
         } else if (primeraCuota.fechaPagoMax) {
             const fechaMax = safeParseDateAdmin(primeraCuota.fechaPagoMax, primeraCuota.mesPago) || new Date(primeraCuota.fechaPagoMax);
-            fechaInicio = new Date(fechaMax);
-            fechaInicio.setMonth(fechaInicio.getMonth() - 1);
+            fechaInicio = diaCalendarioBogota(fechaMax);
+            fechaInicio.setUTCMonth(fechaInicio.getUTCMonth() - 1);
         } else {
-            fechaInicio = new Date();
+            fechaInicio = diaCalendarioBogota(new Date());
         }
 
-        const fechaActual = new Date(fechaNuevoDesembolso);
+        // Ambos extremos anclados al mismo día calendario: la resta da días enteros y
+        // Math.ceil ya no tiene fracción que redondear.
+        const fechaActual = diaCalendarioBogota(fechaNuevoDesembolso);
         const diffTime = fechaActual.getTime() - fechaInicio.getTime();
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         diasTranscurridos = Math.max(0, Math.min(30, diffDays));
@@ -881,14 +901,18 @@ router.get('/clients/:id/active-loan', async (req, res) => {
         // saldoPendiente = saldoInicial de la primera cuota pendiente (balance actual outstanding)
         const saldoPendiente = cuotasPendientes.length > 0 ? parseFloat(cuotasPendientes[0].saldoInicial || 0) : 0;
 
-        // Misma fórmula que se aplica de verdad al guardar (POST /disbursed-loans). Como
-        // todavía no se conoce la fecha exacta del nuevo desembolso en este punto del
-        // formulario (recién se seleccionó el socio), se usa hoy — es lo que el admin va a
-        // dejar en el 99% de los casos, y si la cambia, el cálculo real al guardar manda.
-        const { interesCausado, interesCondonado } = calcularInteresRetanqueo({
+        // Misma fórmula que se aplica de verdad al guardar (POST /disbursed-loans), y ahora
+        // también sobre la MISMA fecha: el formulario manda la que tenga elegida en el campo
+        // "Fecha Préstamo". Antes aquí se usaba `new Date()` mientras el guardado usaba la
+        // fecha del formulario, así que lo que el gerente veía no era lo que se cobraba.
+        const fechaPrevia = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.fecha || ''))
+            ? req.query.fecha
+            : new Date();
+
+        const { interesCausado, interesCondonado, diasTranscurridos } = calcularInteresRetanqueo({
             prestamoAnterior: prestamoVigente,
             cuotasPendientesAnteriores: cuotasPendientes,
-            fechaNuevoDesembolso: new Date()
+            fechaNuevoDesembolso: fechaPrevia
         });
 
         res.json({
@@ -901,7 +925,13 @@ router.get('/clients/:id/active-loan', async (req, res) => {
                 cuotasPendientes: cuotasPendientes.length,
                 saldoPendiente: Math.round(saldoPendiente),
                 interesCausado: Math.round(interesCausado),
-                interesCondonable: Math.round(interesCondonado)
+                interesCondonable: Math.round(interesCondonado),
+                diasTranscurridos,
+                // Lo que de verdad se salda con el desembolso nuevo. La pantalla resta esto
+                // —no el saldo pelado— para decir cuánto entregarle al socio: el interés
+                // causado ya queda contabilizado como cobrado, así que si no se retiene, el
+                // fondo reporta un ingreso que nunca entró.
+                totalACancelar: Math.round(saldoPendiente + interesCausado)
             }
         });
     } catch (err) {
@@ -2754,16 +2784,44 @@ router.post('/disbursed-loans', async (req, res) => {
                 { transaction: t }
             );
 
+            // Liquidación de la operación. El retanqueo no mueve dos sumas de dinero: el
+            // fondo entrega la DIFERENCIA entre el préstamo nuevo y lo que se salda del
+            // viejo — capital más el interés de los días corridos. Ese neto se calcula
+            // aquí y se devuelve para que la pantalla lo muestre, porque hasta ahora el
+            // gerente tenía que deducirlo de memoria: la contabilidad ya daba el interés
+            // por cobrado (entra a "Intereses de préstamos" y al recaudo de Caja
+            // Disponible) sin que nadie le dijera que había que retenerlo.
+            const capitalCancelado = Math.round(saldoPrestamoQueSeCancela);
+            const totalCancelado = capitalCancelado + Math.round(interesCausado);
+            const netoEntregado = Math.round(valorPrestado) - totalCancelado;
+
             refinanciacion = {
                 idVmAnterior: prestamoAnterior.idVm,
                 cuotasSaldadas: cuotasPendientesAnteriores.length,
+                diasTranscurridos,
+                capitalCancelado,
                 interesCausado: Math.round(interesCausado),
-                interesCondonado: Math.round(interesCondonado)
+                interesCondonado: Math.round(interesCondonado),
+                totalCancelado,
+                netoEntregado
             };
+
+            // Constancia permanente en el préstamo nuevo. Sin esto la operación no se puede
+            // auditar después: el sistema guarda banco, número de transferencia y cuenta,
+            // pero nunca el valor que salió, así que no había forma de comprobar si el
+            // interés causado se retuvo o se entregó de más.
+            const pesos = (n) => `$${Math.round(n).toLocaleString('es-CO')}`;
+            const notaRetanqueo = netoEntregado >= 0
+                ? `[Retanqueo de ${prestamoAnterior.idVm}: se cancelan ${pesos(capitalCancelado)} de capital + ${pesos(interesCausado)} de interés por ${diasTranscurridos} día(s) = ${pesos(totalCancelado)}. Interés condonado: ${pesos(interesCondonado)}. Neto entregado al socio: ${pesos(netoEntregado)}]`
+                : `[Retanqueo de ${prestamoAnterior.idVm}: se cancelan ${pesos(capitalCancelado)} de capital + ${pesos(interesCausado)} de interés por ${diasTranscurridos} día(s) = ${pesos(totalCancelado)}. Interés condonado: ${pesos(interesCondonado)}. El préstamo nuevo no alcanza a cubrirlo: el socio debe consignar ${pesos(Math.abs(netoEntregado))}]`;
+            loanData.observaciones = loanData.observaciones
+                ? `${notaRetanqueo} ${loanData.observaciones}`
+                : notaRetanqueo;
 
             console.log(`🔄 Refinanciación: préstamo ${prestamoAnterior.idVm} cancelado. ` +
                 `${cuotasPendientesAnteriores.length} cuotas saldadas, ` +
-                `interés condonado: $${Math.round(interesCondonado)}`);
+                `interés condonado: $${Math.round(interesCondonado)}, ` +
+                `neto entregado: $${netoEntregado}`);
         }
 
         // ==== 10. CREAR NUEVO PRÉSTAMO ====
