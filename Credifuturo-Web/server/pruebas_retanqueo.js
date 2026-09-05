@@ -289,6 +289,40 @@ async function main() {
         comprobar('no se ensucian las observaciones', !/Retanqueo/i.test(body.loan.observaciones || ''));
     }
 
+    // ───────────────────────────────────────────────────────────────────────
+    console.log('\n9. Editar un préstamo con cuotas pagadas no puede tocar su fecha de desembolso');
+    // El 409 salía DESPUÉS del update, así que la fecha ya quedaba cambiada: el gerente
+    // leía "no se puede regenerar" y daba por hecho que no había pasado nada. Como el
+    // interés del retanqueo se cuenta desde esa fecha, el préstamo dejaba de cobrarlo.
+    {
+        const { socio, idVm } = await sembrar({
+            principal: 6000000, cuotas: 6, tasa: 0.014, pagadas: 2,
+            fechaPrestamo: '2026-06-10',
+            vencimientos: ['2026-08-10','2026-09-10','2026-10-10','2026-11-10','2026-12-10','2027-01-10'],
+        });
+        const antes = await DisbursedLoan.findOne({ where: { idVm } });
+        const r = await fetch(`${BASE}/admin/disbursed-loans/${antes.id}`, {
+            method: 'PUT', headers: H,
+            body: JSON.stringify({
+                clientId: socio.id, fechaPrestamo: '2026-09-05', mesDesembolso: 'Septiembre',
+                anioDesembolso: 2026, valorPrestado: 6000000, cuotas: 6, interesMensual: 0.014,
+                numeroTransaccion: 'CORRECCION-123',
+            }),
+        });
+        comprobar('el servidor se niega a regenerar', r.status === 409, `HTTP ${r.status}`);
+        const despues = await DisbursedLoan.findOne({ where: { idVm } });
+        comprobar('la fecha de desembolso NO cambió',
+            String(despues.fechaPrestamo).slice(0, 10) === '2026-06-10',
+            `quedó en ${despues.fechaPrestamo}`);
+        comprobar('el mes de desembolso NO cambió', despues.mesDesembolso === 'Enero',
+            `quedó en ${despues.mesDesembolso}`);
+
+        // Y por tanto el retanqueo sigue cobrando lo que corresponde.
+        const p = (await previsualizar(socio.id, '2026-09-25')).prestamo;
+        comprobar('el retanqueo sigue cobrando interés causado', num(p.interesCausado) > 0,
+            `dio ${money(p.interesCausado)}`);
+    }
+
     console.log('\n──────────────────────────────────────────────');
     console.log(`${ok} comprobaciones correctas · ${fallos} fallidas`);
     console.log('──────────────────────────────────────────────\n');

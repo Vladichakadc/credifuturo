@@ -2999,6 +2999,23 @@ router.put('/disbursed-loans/:id', async (req, res) => {
             socio = `${client.name} ${client.surname1 || ''}`.trim();
         }
 
+        // La negativa a regenerar se comprueba ANTES de escribir nada. Estaba después del
+        // update, así que el 409 llegaba con la cabecera del préstamo ya modificada: el
+        // gerente veía "no se puede regenerar", daba por hecho que no había pasado nada, y
+        // la fecha de desembolso quedaba cambiada en la base. Como el interés proporcional
+        // de un retanqueo se cuenta desde esa fecha, un préstamo así deja de cobrar lo que
+        // le corresponde — hasta $0 si la fecha quedó en el día de hoy.
+        if (interesMensual && cuotas > 0) {
+            const pagosPrevios = await LoanPayment.count({
+                where: { idVm: loan.idVm, estado: ['Pago', 'Mora'] }
+            });
+            if (pagosPrevios > 0) {
+                return res.status(409).json({
+                    error: `No se puede regenerar el plan de cuotas: el préstamo ${loan.idVm} tiene ${pagosPrevios} cuota(s) con pago registrado. Edite las cuotas individuales en su lugar.`
+                });
+            }
+        }
+
         // A08: whitelist explícita. Bloquea mass-assignment de idVm, orderId, etc.
         const updateData = {
             ...pickFields(req.body, ALLOWED_DISBURSED_LOAN_FIELDS),
@@ -3032,15 +3049,7 @@ router.put('/disbursed-loans/:id', async (req, res) => {
             const idVmActual = loan.idVm; // El idVm NO cambia en edición
             const sequelize = require('../config/database');
 
-            // Verificar si existen cuotas con pagos registrados (estado 'Pago' o 'Mora')
-            const pagosRegistrados = await LoanPayment.count({
-                where: { idVm: idVmActual, estado: ['Pago', 'Mora'] }
-            });
-            if (pagosRegistrados > 0) {
-                return res.status(409).json({
-                    error: `No se puede regenerar el plan de cuotas: el préstamo ${idVmActual} tiene ${pagosRegistrados} cuota(s) con pago registrado. Edite las cuotas individuales en su lugar.`
-                });
-            }
+            // La guarda de cuotas con pago ya se aplicó arriba, antes de escribir.
 
             // Envolver todo en una transacción para evitar pérdida de datos si falla el bulkCreate
             const t = await sequelize.transaction();
