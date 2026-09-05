@@ -805,22 +805,50 @@ function safeParseDateAdmin(dateVal, mesRef) {
     return new Date(dateStr + 'T00:00:00');
 }
 
-// Ancla una fecha al día calendario de Colombia, a medianoche. El conteo de días de un
-// retanqueo es CALENDARIO, no cronómetro: entre el 17 y el 30 hay 13 días, sea la hora
-// que sea. Sin esto, la previsualización (que usaba `new Date()`, con la hora incluida) y
-// el cobro real (que usa la fecha del formulario, a medianoche) contaban distinto: el
-// Math.ceil de abajo redondeaba la fracción de día hacia arriba y el aviso mostraba
-// SIEMPRE un día más del que se terminaba cobrando — medido en $1.867 sobre un saldo de
-// $4.000.000 al 1,4%. El gerente hacía sus cuentas con una cifra que nunca se cobró.
-function diaCalendarioBogota(valor) {
-    let iso;
+// El conteo de días de un retanqueo es CALENDARIO, no cronómetro: entre el 17 y el 30 hay
+// 13 días, sea la hora que sea. Para contarlos hay que anclar los dos extremos al mismo
+// día a medianoche, y para eso hay que distinguir DOS clases de valor que aquí se cruzan.
+// Confundirlas cuesta exactamente un día de interés en cada retanqueo.
+//
+//   1. UN INSTANTE REAL — `new Date()`. Lleva hora, y la hora decide de qué día se trata:
+//      a las 20:00 en Colombia ya es el día siguiente en UTC, que es el huso del
+//      contenedor. Hay que preguntarle a Colombia qué día es.
+//
+//   2. UN DÍA DE CALENDARIO YA DECIDIDO — una columna DATEONLY, que Sequelize entrega como
+//      'YYYY-MM-DD', o un Date construido con componentes locales (lo que devuelve
+//      safeParseDateAdmin). Aquí NO hay husos que convertir: el día ya está dicho.
+//      Convertirlo a Colombia resta un día, porque medianoche UTC son las 19:00 del día
+//      anterior en Bogotá.
+
+/** Día de calendario en Colombia correspondiente a un instante real. */
+function diaEnBogota(instante) {
+    // en-CA da 'YYYY-MM-DD' ya convertido al huso del fondo
+    return new Date(instante.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' }) + 'T00:00:00Z');
+}
+
+/** Día de calendario que un valor YA denota. No convierte husos: los leería mal. */
+function diaCalendario(valor) {
     if (valor instanceof Date) {
-        // en-CA da 'YYYY-MM-DD' ya convertido al huso del fondo
-        iso = valor.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
-    } else {
-        iso = String(valor).split('T')[0];
+        return new Date(Date.UTC(valor.getFullYear(), valor.getMonth(), valor.getDate()));
     }
-    return new Date(iso + 'T00:00:00Z');
+    return new Date(String(valor).split('T')[0] + 'T00:00:00Z');
+}
+
+/** Cualquiera de los dos, según lo que sea: string de fecha, o instante con hora. */
+function aDiaCalendario(valor) {
+    return valor instanceof Date ? diaEnBogota(valor) : diaCalendario(valor);
+}
+
+/**
+ * Un mes antes, sin desbordar. `setUTCMonth(m - 1)` sobre un día 29, 30 o 31 cae en un mes
+ * que no tiene ese día y JavaScript lo empuja hacia adelante: el 31 de marzo menos un mes
+ * da el 3 de MARZO, no el 28 de febrero. En el retanqueo eso mueve el arranque del periodo
+ * casi un mes entero y deja el interés causado por el suelo.
+ */
+function unMesAntes(dia) {
+    const y = dia.getUTCFullYear(), m = dia.getUTCMonth(), d = dia.getUTCDate();
+    const ultimoDelMesAnterior = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    return new Date(Date.UTC(y, m - 1, Math.min(d, ultimoDelMesAnterior)));
 }
 
 // Interés proporcional en retanqueos — cálculo compartido entre la previsualización
@@ -843,18 +871,21 @@ function calcularInteresRetanqueo({ prestamoAnterior, cuotasPendientesAnteriores
 
         let fechaInicio;
         if (primeraCuota.itemQuantity === 1 && prestamoAnterior.fechaPrestamo) {
-            fechaInicio = diaCalendarioBogota(prestamoAnterior.fechaPrestamo);
+            // DATEONLY: llega como 'YYYY-MM-DD', un día ya decidido.
+            fechaInicio = diaCalendario(prestamoAnterior.fechaPrestamo);
         } else if (primeraCuota.fechaPagoMax) {
+            // safeParseDateAdmin devuelve un Date con componentes LOCALES, no un instante:
+            // pasarlo por la conversión a Colombia le restaba un día y le cobraba al socio
+            // una jornada de interés que no había corrido.
             const fechaMax = safeParseDateAdmin(primeraCuota.fechaPagoMax, primeraCuota.mesPago) || new Date(primeraCuota.fechaPagoMax);
-            fechaInicio = diaCalendarioBogota(fechaMax);
-            fechaInicio.setUTCMonth(fechaInicio.getUTCMonth() - 1);
+            fechaInicio = unMesAntes(diaCalendario(fechaMax));
         } else {
-            fechaInicio = diaCalendarioBogota(new Date());
+            fechaInicio = diaEnBogota(new Date());
         }
 
         // Ambos extremos anclados al mismo día calendario: la resta da días enteros y
         // Math.ceil ya no tiene fracción que redondear.
-        const fechaActual = diaCalendarioBogota(fechaNuevoDesembolso);
+        const fechaActual = aDiaCalendario(fechaNuevoDesembolso);
         const diffTime = fechaActual.getTime() - fechaInicio.getTime();
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         diasTranscurridos = Math.max(0, Math.min(30, diffDays));
