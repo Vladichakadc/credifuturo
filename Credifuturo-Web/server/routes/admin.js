@@ -840,6 +840,34 @@ function aDiaCalendario(valor) {
 }
 
 /**
+ * Día del mes en que vencen las cuotas de un préstamo, según la regla de gracia del fondo
+ * (aprobada por la Junta el 6 de septiembre de 2026):
+ *
+ *   - Los primeros diez días del mes son de gracia: quien desembolsa el día 1 o el día 10
+ *     paga igualmente el 10 del mes siguiente.
+ *   - Quien desembolsa DESPUÉS del 10 conserva ese mismo margen: si recibe el dinero el
+ *     día 15, paga hasta el 15. Fijarle el 10 le habría recortado la gracia a cinco días
+ *     por el mero hecho de desembolsar más tarde.
+ *
+ * Antes el vencimiento estaba fijo en el día 10 para todos, y el campo "Días máximos de
+ * pago" que pide el formulario no lo leía ningún cálculo.
+ */
+function diaVencimientoDe(fechaDesembolso) {
+    return Math.max(10, diaCalendario(fechaDesembolso).getUTCDate());
+}
+
+/**
+ * Arma 'YYYY-MM-DD' con el día pedido, recortado al último del mes destino. Sin el recorte,
+ * un desembolso del 31 generaría un vencimiento el 31 de febrero — una fecha que no existe
+ * y que la base guardaría corrida.
+ */
+function fechaVencimiento(anio, mesIdx, dia) {
+    const ultimoDelMes = new Date(Date.UTC(anio, mesIdx + 1, 0)).getUTCDate();
+    const d = Math.min(dia, ultimoDelMes);
+    return `${anio}-${String(mesIdx + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
+/**
  * Un mes antes, sin desbordar. `setUTCMonth(m - 1)` sobre un día 29, 30 o 31 cae en un mes
  * que no tiene ese día y JavaScript lo empuja hacia adelante: el 31 de marzo menos un mes
  * da el 3 de MARZO, no el 28 de febrero. En el retanqueo eso mueve el arranque del periodo
@@ -2679,7 +2707,10 @@ router.post('/disbursed-loans', async (req, res) => {
             valorPrestado,
             cuotas,
             interesMensual: interesMensual || null,
-            diasPagoMax: parseInt(req.body.diasPagoMax) || null,
+            // Se guarda el día de vencimiento que de verdad se aplicó, no lo que venga del
+            // formulario: el campo existía y ningún cálculo lo leía, así que anunciaba una
+            // gracia que no era la real.
+            diasPagoMax: diaVencimientoDe(fechaPrestamo),
             itemQuantity: parseInt(req.body.itemQuantity) || 1,
             banco: req.body.banco || null,
             numeroTransaccion: req.body.numeroTransaccion || null,
@@ -2923,6 +2954,8 @@ router.post('/disbursed-loans', async (req, res) => {
             const capitalPorCuota = valorPrestado / cuotas;
             const disbMes = fechaDate.getUTCMonth();
             const disbAnio = fechaDate.getUTCFullYear();
+            // Regla de gracia del fondo: el 10, o el día del desembolso si fue después.
+            const diaVencimiento = diaVencimientoDe(fechaPrestamo);
 
             const monthNamesList = [
                 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -2955,7 +2988,7 @@ router.post('/disbursed-loans', async (req, res) => {
                     cuotasPrestamo: cuotas,
                     interesMensual,
                     valorInteresesAmortizados: interesesCuota,
-                    fechaPagoMax: `${pagoAnio}-${String(pagoMesIdx + 1).padStart(2, '0')}-10`,
+                    fechaPagoMax: fechaVencimiento(pagoAnio, pagoMesIdx, diaVencimiento),
                     mesPago: monthNamesList[pagoMesIdx],
                     valorCuotaVariable,
                     estado: 'Pendiente',
@@ -3156,8 +3189,7 @@ router.put('/disbursed-loans/:id', async (req, res) => {
                     const saldoFinal = parseFloat((saldoInicialActual - capitalPorCuota).toFixed(2));
                     const pagoMesIdx = (disbMes + i) % 12;
                     const pagoAnio = disbAnio + Math.floor((disbMes + i) / 12);
-                    const mm = String(pagoMesIdx + 1).padStart(2, '0');
-                    const fechaPagoMaxStr = pagoAnio + '-' + mm + '-10';
+                    const fechaPagoMaxStr = fechaVencimiento(pagoAnio, pagoMesIdx, diaVencimientoDe(fechaPrestamo));
                     const mesPagoStr = monthNamesList[pagoMesIdx];
 
                     scheduleRows.push({

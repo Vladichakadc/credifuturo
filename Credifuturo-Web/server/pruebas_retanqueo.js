@@ -637,6 +637,65 @@ async function main() {
             `en local dio ${enLocal + 1}; si coincide con UTC, la prueba dejó de medir nada`);
     }
 
+    // ───────────────────────────────────────────────────────────────────────
+    console.log('\n16. Días de gracia: el 10, o el día del desembolso si fue después');
+    // Regla aprobada por la Junta el 6 de septiembre de 2026. Antes el vencimiento
+    // estaba fijo en el día 10 para todos, y quien desembolsaba el 15 se quedaba con
+    // cinco días de gracia en vez de diez.
+    const nuevoSocio = async (cedula) => {
+        const c = await Client.create({
+            name: `Gracia${cedula}`, apellido1: 'Prueba', cedula: String(cedula), customerId: String(cedula),
+            email: `g${cedula}@prueba.local`, password: bcrypt.hashSync('x', 10), role: 'user', estatus: 'Activo',
+        });
+        await Saving.create({
+            clientId: c.id, amount: 50000000, valorAhorrado: 50000000, type: 'Mensual',
+            status: 'Abono', monthInt: 1, year: 2026, mesAbonado: 1, anioAbonado: 2026, date: '2026-01-15',
+        });
+        return c;
+    };
+    {
+        // Desembolso el día 3: la gracia son los diez primeros días -> vence el 10.
+        const a = await nuevoSocio(7799020);
+        const rA = await desembolsar({
+            clientId: a.id, fechaPrestamo: '2026-09-03', mesDesembolso: 'Septiembre', anioDesembolso: 2026,
+            valorPrestado: 3000000, cuotas: 3, interesMensual: 0.014, estado: 'Vigente',
+        });
+        const cuotasA = await LoanPayment.findAll({ where: { idVm: rA.body.loan.idVm }, order: [['item_quantity', 'ASC']] });
+        comprobar('desembolso el día 3 -> vence el 10', cuotasA[0].fechaPagoMax === '2026-10-10',
+            `venció ${cuotasA[0].fechaPagoMax}`);
+
+        // Desembolso el día 15: conserva su margen -> vence el 15.
+        const b = await nuevoSocio(7799021);
+        const rB = await desembolsar({
+            clientId: b.id, fechaPrestamo: '2026-09-15', mesDesembolso: 'Septiembre', anioDesembolso: 2026,
+            valorPrestado: 3000000, cuotas: 3, interesMensual: 0.014, estado: 'Vigente',
+        });
+        const cuotasB = await LoanPayment.findAll({ where: { idVm: rB.body.loan.idVm }, order: [['item_quantity', 'ASC']] });
+        comprobar('desembolso el día 15 -> vence el 15', cuotasB[0].fechaPagoMax === '2026-10-15',
+            `venció ${cuotasB[0].fechaPagoMax}`);
+        comprobar('y todas sus cuotas siguen el día 15',
+            cuotasB.every(c => String(c.fechaPagoMax).endsWith('-15')),
+            cuotasB.map(c => c.fechaPagoMax).join(', '));
+        comprobar('el día aplicado queda guardado en el préstamo',
+            Number((await DisbursedLoan.findByPk(rB.body.loan.id)).diasPagoMax) === 15,
+            `guardó ${(await DisbursedLoan.findByPk(rB.body.loan.id)).diasPagoMax}`);
+
+        // Desembolso el 31 de enero: febrero no tiene 31, hay que recortar al último día.
+        const c = await nuevoSocio(7799022);
+        const rC = await desembolsar({
+            clientId: c.id, fechaPrestamo: '2026-01-31', mesDesembolso: 'Enero', anioDesembolso: 2026,
+            valorPrestado: 3000000, cuotas: 3, interesMensual: 0.014, estado: 'Vigente',
+        });
+        const cuotasC = await LoanPayment.findAll({ where: { idVm: rC.body.loan.idVm }, order: [['item_quantity', 'ASC']] });
+        comprobar('desembolso el 31 de enero -> la cuota de febrero vence el 28',
+            cuotasC[0].fechaPagoMax === '2026-02-28', `venció ${cuotasC[0].fechaPagoMax}`);
+        comprobar('y la de marzo vuelve al 31', cuotasC[1].fechaPagoMax === '2026-03-31',
+            `venció ${cuotasC[1].fechaPagoMax}`);
+        comprobar('ninguna fecha es inválida',
+            cuotasC.every(x => !isNaN(new Date(x.fechaPagoMax + 'T00:00:00Z').getTime())),
+            cuotasC.map(x => x.fechaPagoMax).join(', '));
+    }
+
     console.log('\n──────────────────────────────────────────────');
     console.log(`${ok} comprobaciones correctas · ${fallos} fallidas`);
     console.log('──────────────────────────────────────────────\n');
