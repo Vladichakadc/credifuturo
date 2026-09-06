@@ -43,7 +43,7 @@ export default function PesoPorMes({ porMes = [], periodo, altura = 240 }) {
         .map(f => ({
             ...f,
             nombre: NOMBRE_MES[f.mes] ?? `M${f.mes}`,
-            movido: (f.aportado || 0) + (f.retirado || 0),
+            movido: (f.ahorro || 0) + (f.fondo || 0),
             pesoPct: Math.round((f.peso || 0) * 100),
         })), [porMes]);
 
@@ -70,7 +70,7 @@ export default function PesoPorMes({ porMes = [], periodo, altura = 240 }) {
                     <Tooltip
                         cursor={{ fill: 'rgba(0,0,0,.04)' }}
                         contentStyle={{ borderRadius: 12, border: '1px solid #e5e7eb', fontSize: 12, boxShadow: '0 8px 24px rgba(0,0,0,.08)' }}
-                        formatter={(valor, nombre) => [fmt(valor), nombre === 'movido' ? 'Movido en el mes' : 'Cuenta para el reparto']}
+                        formatter={(valor, nombre) => [fmt(valor), nombre === 'movido' ? 'Entró en el mes' : 'Cuenta para el reparto']}
                         labelFormatter={(etiqueta) => {
                             const f = datos.find(d => d.nombre === etiqueta);
                             if (!f) return etiqueta;
@@ -93,7 +93,7 @@ export default function PesoPorMes({ porMes = [], periodo, altura = 240 }) {
                 deja fijada, que es lo que el socio necesita para reconstruir su
                 propia cifra con una calculadora. */}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-[10px] text-gray-500">
-                <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-gray-300" /> lo que ahorraste</span>
+                <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-gray-300" /> lo que entró</span>
                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-brand-primary" /> lo que cuenta</span>
                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-amber-700" /> capital anterior</span>
                 <span className="text-gray-400">

@@ -141,15 +141,25 @@ function ponderarSocio(movimientos, periodo) {
 
     let capitalApertura = 0;   // lo que el socio traía cuando empezó el año
     let capitalPonderado = 0;
-    let abonosPeriodo = 0;
-    let retirosPeriodo = 0;
+    let ahorroPeriodo = 0;     // solo lo que consignó el socio
+    let fondoPeriodo = 0;      // solo lo que movió el fondo (devoluciones, descuentos…)
+    let entradasPeriodo = 0;   // todo lo que sumó, venga de donde venga
     let netoPeriodo = 0;
     const detalle = [];
     const conteoOrigen = { pago: 0, periodo: 0, sin: 0 };
     // Un renglón por mes, más el 0 para lo que venía de antes. Es lo que la
     // pantalla necesita para mostrar el peso de cada mes sin recalcular nada.
+    //
+    // AHORRO y FONDO van separados a propósito, y no se suman en una sola cifra.
+    // En esta tabla conviven dos cosas distintas: lo que el SOCIO consignó y lo
+    // que movió el FONDO —una devolución, el descuento anual por mora, una
+    // distribución de intereses—. Mezclarlas fue un defecto real: un socio que
+    // ahorró $500.000 en julio y recibió otro movimiento ese mes aparecía con
+    // $1.000.000 en una columna llamada "movido", que no cuadraba con la Matriz
+    // de Ahorros ni con lo que él recordaba haber consignado. Es la misma regla
+    // que la matriz aplica desde siempre entre `abonos` y `neto`.
     const porMes = Array.from({ length: MESES_ANIO + 1 }, (_, i) => ({
-        mes: i, peso: pesoDeMes(i), aportado: 0, retirado: 0, ponderado: 0, n: 0,
+        mes: i, peso: pesoDeMes(i), ahorro: 0, fondo: 0, ponderado: 0, n: 0,
     }));
 
     for (const mov of movimientos) {
@@ -179,16 +189,22 @@ function ponderarSocio(movimientos, periodo) {
         const peso = pesoDeMes(mes);
         const ponderado = valor * peso;
 
+        // Un movimiento de concepto lo mueve el fondo, no el socio. `esConcepto`
+        // llega calculado desde la ruta con el mismo criterio que usa la Matriz
+        // de Ahorros, para que las dos pantallas no puedan discrepar.
+        const deFondo = !!mov.esConcepto;
+
         if (previo) {
             capitalApertura += valor;
         } else {
             netoPeriodo += valor;
-            if (valor >= 0) abonosPeriodo += valor; else retirosPeriodo += valor;
+            if (valor >= 0) entradasPeriodo += valor;
+            if (deFondo) fondoPeriodo += valor; else ahorroPeriodo += valor;
         }
 
         const fila = porMes[mes];
         fila.n += 1;
-        if (valor >= 0) fila.aportado += valor; else fila.retirado += valor;
+        if (deFondo) fila.fondo += valor; else fila.ahorro += valor;
         fila.ponderado += ponderado;
 
         capitalPonderado += ponderado;
@@ -206,12 +222,16 @@ function ponderarSocio(movimientos, periodo) {
     const aperturaPositiva = Math.max(capitalApertura, 0);
     const capitalCierre = aperturaPositiva + netoPeriodo;
 
-    // El capital SIN ponderar: todo lo que el socio puso, sin mirar cuándo.
-    // Existe para poder mostrarlo al lado del ponderado, porque una cifra
-    // ponderada sola no se puede juzgar: $5.616.667 no dice si es un socio que
-    // ahorró mucho tarde o poco temprano. La distancia entre las dos ES el peso,
-    // y verla es lo que hace comprensible el reparto.
-    const capitalBase = aperturaPositiva + abonosPeriodo;
+    // El capital SIN ponderar: todo lo que entró, sin mirar cuándo. Existe para
+    // poder mostrarlo al lado del ponderado, porque una cifra ponderada sola no
+    // se puede juzgar: $5.616.667 no dice si es un socio que ahorró mucho tarde
+    // o poco temprano. La distancia entre las dos ES el peso, y verla es lo que
+    // hace comprensible el reparto.
+    //
+    // Cuenta TODAS las entradas, no solo los abonos del socio, para que el peso
+    // efectivo no pueda pasar del 100%: lo que el fondo abonó también estuvo
+    // trabajando y ya está dentro del ponderado.
+    const capitalBase = aperturaPositiva + entradasPeriodo;
     // Qué fracción de su capital acabó contando. Nunca pasa de 1: los pesos son
     // ≤ 1 y los retiros solo restan. 100% = todo su dinero estuvo desde enero o
     // desde antes; 40% = llegó tarde, o salió durante el año.
@@ -224,8 +244,9 @@ function ponderarSocio(movimientos, periodo) {
         capitalBase,
         capitalPonderado: Math.max(0, capitalPonderado),
         pesoEfectivo,
-        abonosPeriodo,
-        retirosPeriodo,
+        ahorroPeriodo,
+        fondoPeriodo,
+        entradasPeriodo,
         netoPeriodo,
         // La parte del capital de apertura que REALMENTE permaneció hasta el
         // cierre. Es la única que puede llevar premio de permanencia: quien abrió

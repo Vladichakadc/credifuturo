@@ -73,6 +73,7 @@ const CUOTA = 200000;
     const conservo = await crear('Conservo', '52001003', 5);
     const retiro = await crear('Retiro', '52001004', 6);
     const parcial = await crear('Parcial', '52001005', 7);
+    const mixto = await crear('Mixto', '52001006', 8);
 
     const abono = (cliente, fechaPago, mesAbonado, valor = CUOTA, extra = {}) => Saving.create({
         clientId: cliente.id, amount: valor, valorAhorrado: valor, date: fechaPago,
@@ -93,6 +94,10 @@ const CUOTA = 200000;
     // Retiro PARCIAL: mismo capital de apertura, saca solo una parte.
     await abono(parcial, `${ANIO - 2}-06-10`, 6, 5000000, { anioAbonado: ANIO - 2 });
     await abono(parcial, `${ANIO}-03-31`, 3, -2000000, { status: 'Devolucion Parcial' });
+    // El caso que reportó el fondo: ahorro del socio y movimiento del fondo en el
+    // mismo mes. Sumados daban una cifra que no cuadraba con la Matriz de Ahorros.
+    await abono(mixto, `${ANIO}-07-10`, 7, 500000);
+    await abono(mixto, `${ANIO}-07-20`, 7, 500000, { status: 'Distribucion Intereses' });
 
     // Un movimiento con la fecha de pago ilegible. El modelo declara `date` como
     // obligatoria, así que por la aplicación no puede entrar vacía — pero la
@@ -158,9 +163,9 @@ const CUOTA = 200000;
             e.capitalPonderado > t.capitalPonderado * 10,
             `${money(e.capitalPonderado)} vs ${money(t.capitalPonderado)}`);
         comprobar('los dos ahorraron exactamente lo mismo',
-            e.abonosPeriodo === t.abonosPeriodo && e.abonosPeriodo === 12 * CUOTA);
+            e.ahorroPeriodo === t.ahorroPeriodo && e.ahorroPeriodo === 12 * CUOTA);
         comprobar('el desglose por mes pone todo el aporte de Enero en enero',
-            de(d, 'Enero').porMes[1].aportado === 12 * CUOTA);
+            de(d, 'Enero').porMes[1].ahorro === 12 * CUOTA);
         comprobar('con peso 100%', de(d, 'Enero').porMes[1].peso === 1);
 
         // El capital sin ponderar viaja junto al ponderado: sin él, la cifra
@@ -202,13 +207,30 @@ const CUOTA = 200000;
         const g = de(d, 'Gerente');
         comprobar('el aporte inicial de enero pesa el año completo',
             cerca(g.capitalPonderado, 1000000, 1), `dio ${money(g.capitalPonderado)}`);
-        comprobar('y aparece en el renglón de su mes', g.porMes[1].aportado === 1000000);
+        comprobar('y aparece en el renglón de su mes', g.porMes[1].ahorro === 1000000);
     }
 
     // ───────────────────────────────────────────────────────────────
+    console.log('\n4b. El ahorro del socio no se mezcla con lo que mueve el fondo');
+    {
+        const m = de(d, 'Mixto');
+        comprobar('el ahorro de julio es lo que el socio consignó', m.porMes[7].ahorro === 500000,
+            `dio ${money(m.porMes[7].ahorro)}`);
+        comprobar('el movimiento del fondo va en su propia columna', m.porMes[7].fondo === 500000,
+            `dio ${money(m.porMes[7].fondo)}`);
+        comprobar('el ahorro del año no arrastra el movimiento del fondo', m.ahorroPeriodo === 500000,
+            `dio ${money(m.ahorroPeriodo)}`);
+        comprobar('que se informa aparte', m.fondoPeriodo === 500000, `dio ${money(m.fondoPeriodo)}`);
+        // Los dos sí son capital dentro del fondo, así que los dos pesan.
+        comprobar('los dos pesan para el reparto, con el peso de julio',
+            cerca(m.porMes[7].ponderado, 1000000 * 0.5, 1), `dio ${money(m.porMes[7].ponderado)}`);
+        comprobar('cada movimiento se puede rastrear en el detalle',
+            (m.movimientos || []).filter(x => x.mes === 7).length === 2);
+    }
+
     console.log('\n5. La calidad de las fechas se informa, no se esconde');
     {
-        comprobar('se cuentan los movimientos con fecha de pago real', d.diagnostico.pago === 30,
+        comprobar('se cuentan los movimientos con fecha de pago real', d.diagnostico.pago === 32,
             `dio ${d.diagnostico.pago}`);
         comprobar('y el que no la tiene se marca como estimado', d.diagnostico.periodo === 1,
             `dio ${d.diagnostico.periodo}`);

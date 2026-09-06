@@ -84,7 +84,7 @@ afirmar('sus doce cuotas pesan el año completo, porque el dinero entró en ener
     aEnero.capitalPonderado, 12 * CUOTA, 1);
 afirmar('el método anterior le reconocía mucho menos', metodoViejo(enEnero), 1300000, 1);
 cierto('la corrección lo favorece en más de un millón', aEnero.capitalPonderado - metodoViejo(enEnero) > 1000000);
-afirmar('todo su aporte cae en el renglón de enero', aEnero.porMes[1].aportado, 12 * CUOTA);
+afirmar('todo su aporte cae en el renglón de enero', aEnero.porMes[1].ahorro, 12 * CUOTA);
 afirmar('con peso 100%', aEnero.porMes[1].peso, 1);
 
 seccion('5. El socio que paga puntual, mes a mes');
@@ -135,7 +135,7 @@ afirmar('todo ese capital es permanente', conservo.aperturaPermanente, 5000000);
 // Retiro TOTAL en marzo: el dinero trabajó enero, febrero y marzo.
 const retiroTotal = ponderarSocio([
     previo,
-    { valor: -5000000, date: '2025-03-31', mesAbonado: 3, anioAbonado: 2025, status: 'Devolucion Total Intereses' },
+    { valor: -5000000, date: '2025-03-31', mesAbonado: 3, anioAbonado: 2025, status: 'Devolucion Total Intereses', esConcepto: true },
 ], P);
 afirmar('un retiro total en marzo descuenta con el peso de marzo (10/12)',
     retiroTotal.capitalPonderado, 5000000 - 5000000 * (10 / 12), 1);
@@ -145,7 +145,7 @@ afirmar('y no queda nada permanente que premiar', retiroTotal.aperturaPermanente
 // Retiro PARCIAL: la misma regla, sin un caso aparte.
 const retiroParcial = ponderarSocio([
     previo,
-    { valor: -2000000, date: '2025-03-31', mesAbonado: 3, anioAbonado: 2025, status: 'Devolucion Parcial' },
+    { valor: -2000000, date: '2025-03-31', mesAbonado: 3, anioAbonado: 2025, status: 'Devolucion Parcial', esConcepto: true },
 ], P);
 afirmar('un retiro parcial descuenta solo lo retirado, con el peso de su mes',
     retiroParcial.capitalPonderado, 5000000 - 2000000 * (10 / 12), 1);
@@ -211,7 +211,7 @@ afirmar('un socio sin movimientos pesa cero', ponderarSocio([], P).capitalPonder
 // Más devuelto que ahorrado antes del año: dato mal registrado.
 const negativo = ponderarSocio([
     { valor: 1000000, date: '2023-05-01' },
-    { valor: -3000000, date: '2023-09-01' },
+    { valor: -3000000, date: '2023-09-01', esConcepto: true },
 ], P);
 afirmar('un capital de apertura negativo se protege en cero', negativo.capitalApertura, 0);
 afirmar('no arrastra el capital ponderado a negativo', negativo.capitalPonderado, 0);
@@ -255,19 +255,48 @@ cierto('el peso efectivo nunca pasa del 100%',
     [aEnero, aMesAMes, aTarde, conservo, retiroTotal, retiroParcial, aAdelanto, conAporteInicial]
         .every(a => a.pesoEfectivo >= 0 && a.pesoEfectivo <= 1));
 
-seccion('14. El desglose por mes que ve el socio');
+seccion('14. Lo que ahorró el socio y lo que movió el fondo, separados');
+
+// El defecto que reportó el fondo: un socio que ahorró $500.000 en julio
+// aparecía con $1.000.000 en la columna, porque ese mes también hubo un
+// movimiento del fondo y los dos se sumaban en una sola cifra. Es la misma
+// mezcla que la Matriz de Ahorros lleva años evitando entre `abonos` y `neto`.
+const julioMixto = ponderarSocio([
+    { valor: 500000, date: '2025-07-10', mesAbonado: 7, anioAbonado: 2025 },
+    { valor: 500000, date: '2025-07-20', mesAbonado: 7, anioAbonado: 2025, status: 'Distribucion Intereses', esConcepto: true },
+], P);
+afirmar('el ahorro del socio en julio es lo que él consignó', julioMixto.porMes[7].ahorro, 500000);
+afirmar('el movimiento del fondo va aparte', julioMixto.porMes[7].fondo, 500000);
+cierto('y nunca se suman en una sola cifra', julioMixto.porMes[7].ahorro !== julioMixto.capitalBase);
+afirmar('los dos sí pesan para el reparto, con el peso de julio',
+    julioMixto.porMes[7].ponderado, 1000000 * 0.5, 1);
+afirmar('el ahorro del año no incluye lo que movió el fondo', julioMixto.ahorroPeriodo, 500000);
+afirmar('que se reporta por su cuenta', julioMixto.fondoPeriodo, 500000);
+
+// Un descuento por mora es del fondo y va en negativo: no puede restarle al
+// ahorro declarado del socio, porque él sí consignó lo que consignó.
+const conDescuento = ponderarSocio([
+    { valor: 300000, date: '2025-03-05', mesAbonado: 3, anioAbonado: 2025 },
+    { valor: -12000, date: '2025-03-31', mesAbonado: 3, anioAbonado: 2025, status: 'Descuento Total Anual Penalizacion', esConcepto: true },
+], P);
+afirmar('el socio ahorró lo que ahorró', conDescuento.porMes[3].ahorro, 300000);
+afirmar('y el descuento no se lo resta a esa cifra', conDescuento.porMes[3].fondo, -12000);
+afirmar('aunque sí al capital que pesa', conDescuento.porMes[3].ponderado, 288000 * (10 / 12), 1);
+
+seccion('15. El desglose por mes que ve el socio');
 
 const mixto = ponderarSocio([
     previo,
     { valor: 300000, date: '2025-02-10', mesAbonado: 2, anioAbonado: 2025 },
     { valor: 300000, date: '2025-07-10', mesAbonado: 7, anioAbonado: 2025 },
-    { valor: -1000000, date: '2025-10-05', mesAbonado: 10, anioAbonado: 2025, status: 'Devolucion Parcial' },
+    { valor: -1000000, date: '2025-10-05', mesAbonado: 10, anioAbonado: 2025, status: 'Devolucion Parcial', esConcepto: true },
 ], P);
-afirmar('el capital de años anteriores va al renglón 0', mixto.porMes[0].aportado, 5000000);
+afirmar('el capital de años anteriores va al renglón 0', mixto.porMes[0].ahorro, 5000000);
 afirmar('febrero pesa 11/12', mixto.porMes[2].peso, 11 / 12, 1e-9);
 afirmar('y aporta su importe por ese peso', mixto.porMes[2].ponderado, 300000 * (11 / 12), 1);
 afirmar('julio pesa la mitad', mixto.porMes[7].ponderado, 150000, 1);
-afirmar('el retiro de octubre entra como retirado, no como aporte', mixto.porMes[10].retirado, -1000000);
+afirmar('el retiro de octubre entra como movimiento del fondo, no como ahorro', mixto.porMes[10].fondo, -1000000);
+afirmar('y no ensucia el ahorro de ese mes', mixto.porMes[10].ahorro, 0);
 afirmar('y descuenta con el peso de octubre (3/12)', mixto.porMes[10].ponderado, -1000000 * 0.25, 1);
 afirmar('la suma de los renglones es el capital ponderado',
     mixto.porMes.reduce((s, f) => s + f.ponderado, 0), mixto.capitalPonderado, 1);
