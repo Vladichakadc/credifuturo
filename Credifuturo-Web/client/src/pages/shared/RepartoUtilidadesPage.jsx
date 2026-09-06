@@ -263,8 +263,10 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                                 pie={yo.aperturaPermanente > 0
                                     ? `${fmt(yo.aperturaPermanente)} sigue en el fondo`
                                     : 'retirado durante el año'} />
-                            <Dato etiqueta="Ahorraste este año" valor={fmt(yo.abonosPeriodo)}
-                                pie={yo.retirosPeriodo < 0 ? `y retiraste ${fmt(-yo.retirosPeriodo)}` : 'sin retiros'} />
+                            <Dato etiqueta="Ahorraste este año" valor={fmt(yo.ahorroPeriodo)}
+                                pie={yo.fondoPeriodo !== 0
+                                    ? `${yo.fondoPeriodo < 0 ? 'menos' : 'más'} ${fmt(Math.abs(yo.fondoPeriodo))} movidos por el fondo`
+                                    : 'sin movimientos del fondo'} />
                         </div>
 
                         {yo.premioPermanencia > 0 && (
@@ -280,7 +282,7 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                                 <p className="text-[10px] text-gray-400">un peso de enero rinde todo el año; uno de diciembre, un mes</p>
                             </div>
                             <PesoPorMes porMes={yo.porMes} periodo={periodo} />
-                            <TablaPesos porMes={yo.porMes} total={yo.capitalPonderado} />
+                            <TablaPesos porMes={yo.porMes} total={yo.capitalPonderado} movimientos={yo.movimientos} />
                         </div>
                     </div>
                 </Tarjeta>
@@ -362,7 +364,7 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                                                 <tr className="bg-gray-50/70">
                                                     <td colSpan={7} className="px-5 py-4">
                                                         <PesoPorMes porMes={f.porMes} periodo={periodo} altura={170} />
-                                                        <TablaPesos porMes={f.porMes} total={f.capitalPonderado} />
+                                                        <TablaPesos porMes={f.porMes} total={f.capitalPonderado} movimientos={f.movimientos} />
                                                     </td>
                                                 </tr>
                                             )}
@@ -429,42 +431,89 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
 }
 
 /**
- * El desglose escrito: mes, lo ahorrado, su peso y lo que cuenta.
+ * El desglose escrito: mes, lo que ahorró el socio, lo que movió el fondo, el
+ * peso y lo que cuenta.
  *
  * El gráfico muestra la forma; esta tabla da las cifras exactas. Hacen falta las
- * dos: la forma se entiende de un vistazo, pero para reconstruir el propio número
+ * dos: la forma se entiende de un vistazo, pero para rehacer el propio número
  * con una calculadora —que es lo que un socio hace cuando desconfía— se necesita
  * la columna del peso al lado del importe.
+ *
+ * AHORRO y MOVIMIENTOS DEL FONDO no se suman en una sola cifra. Antes sí, bajo
+ * el rótulo "movido", y produjo justo lo que tenía que producir: un socio que
+ * consignó $500.000 en julio veía $1.000.000 porque ese mes también hubo un
+ * movimiento del fondo, y la cifra no cuadraba ni con la Matriz de Ahorros ni
+ * con lo que él recordaba. La columna del fondo solo aparece cuando hay algo que
+ * mostrar, para no cargar la tabla del socio que nunca ha tenido uno.
+ *
+ * Cada mes se puede abrir y ver los movimientos que lo componen, con su fecha y
+ * su concepto. Es lo que cierra de raíz este tipo de duda: en vez de discutir si
+ * una cifra está bien, se mira de qué está hecha.
  */
-function TablaPesos({ porMes = [], total = 0 }) {
+function TablaPesos({ porMes = [], total = 0, movimientos = null }) {
+    const [abierto, setAbierto] = useState(null);
     const filas = porMes.filter(f => f.n > 0);
     if (!filas.length) return null;
 
+    const hayFondo = filas.some(f => (f.fondo || 0) !== 0);
+    const cols = hayFondo ? 'grid-cols-5' : 'grid-cols-4';
+    // El detalle solo llega de quien puede verlo; sin él, los meses no se abren.
+    const detalleDe = (mes) => (movimientos || []).filter(m => m.mes === mes);
+
     return (
         <div className="mt-3 rounded-xl border border-gray-200 overflow-hidden bg-white">
-            <div className="grid grid-cols-4 bg-gray-50 px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-gray-400 border-b border-gray-100">
+            <div className={`grid ${cols} bg-gray-50 px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-gray-400 border-b border-gray-100`}>
                 <div>Mes</div>
-                <div className="text-right">Movido</div>
+                <div className="text-right">Ahorro</div>
+                {hayFondo && <div className="text-right" title="Devoluciones, descuentos y distribuciones: los mueve el fondo, no el socio">Mov. del fondo</div>}
                 <div className="text-right">Peso</div>
                 <div className="text-right">Cuenta</div>
             </div>
-            <div className="divide-y divide-gray-50 max-h-64 overflow-y-auto">
+            <div className="divide-y divide-gray-50 max-h-80 overflow-y-auto">
                 {filas.map(f => {
-                    const movido = (f.aportado || 0) + (f.retirado || 0);
+                    const detalle = detalleDe(f.mes);
+                    const sePuedeAbrir = detalle.length > 0;
+                    const estaAbierto = abierto === f.mes;
                     return (
-                        <div key={f.mes} className={`grid grid-cols-4 px-3 py-1.5 text-[10px] ${f.mes === 0 ? 'bg-amber-50/50' : ''}`}>
-                            <div className="font-bold text-gray-600">
-                                {f.mes === 0 ? 'De años anteriores' : NOMBRE_MES[f.mes]}
+                        <div key={f.mes}>
+                            <div
+                                onClick={() => sePuedeAbrir && setAbierto(estaAbierto ? null : f.mes)}
+                                className={`grid ${cols} px-3 py-1.5 text-[10px] ${f.mes === 0 ? 'bg-amber-50/50' : ''} ${sePuedeAbrir ? 'cursor-pointer hover:bg-gray-50' : ''} ${estaAbierto ? 'bg-gray-50' : ''}`}>
+                                <div className="font-bold text-gray-600 flex items-center gap-1">
+                                    {f.mes === 0 ? 'De años anteriores' : NOMBRE_MES[f.mes]}
+                                    {sePuedeAbrir && f.n > 1 && <span className="text-[9px] font-normal text-gray-400">({f.n} mov.)</span>}
+                                </div>
+                                <div className="text-right tabular-nums text-gray-700">{f.ahorro ? fmt(f.ahorro) : '—'}</div>
+                                {hayFondo && (
+                                    <div className={`text-right tabular-nums ${(f.fondo || 0) < 0 ? 'text-red-600' : (f.fondo ? 'text-amber-700' : 'text-gray-300')}`}>
+                                        {f.fondo ? fmt(f.fondo) : '—'}
+                                    </div>
+                                )}
+                                <div className="text-right text-gray-500 tabular-nums">{Math.round(f.peso * 100)}%</div>
+                                <div className={`text-right font-black tabular-nums ${f.ponderado < 0 ? 'text-red-600' : 'text-brand-primary'}`}>{fmt(f.ponderado)}</div>
                             </div>
-                            <div className={`text-right tabular-nums ${movido < 0 ? 'text-red-600' : 'text-gray-700'}`}>{fmt(movido)}</div>
-                            <div className="text-right text-gray-500 tabular-nums">{Math.round(f.peso * 100)}%</div>
-                            <div className={`text-right font-black tabular-nums ${f.ponderado < 0 ? 'text-red-600' : 'text-brand-primary'}`}>{fmt(f.ponderado)}</div>
+
+                            {estaAbierto && (
+                                <div className="bg-gray-50/70 px-3 pb-2 border-t border-gray-100">
+                                    {detalle.map((m, i) => (
+                                        <div key={m.id ?? i} className="flex items-baseline justify-between gap-3 py-1 text-[10px] border-b border-gray-100 last:border-b-0">
+                                            <span className="text-gray-500">
+                                                {m.fecha}
+                                                <span className={`ml-2 ${m.esConcepto ? 'text-amber-700' : 'text-gray-400'}`}>
+                                                    {m.esConcepto ? (m.status || 'movimiento del fondo') : (m.esAporteInicial ? 'aporte inicial' : 'ahorro del socio')}
+                                                </span>
+                                            </span>
+                                            <span className={`font-bold tabular-nums ${m.valor < 0 ? 'text-red-600' : 'text-gray-700'}`}>{fmt(m.valor)}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     );
                 })}
             </div>
-            <div className="grid grid-cols-4 px-3 py-2 bg-brand-primary/5 border-t border-gray-100 text-[10px]">
-                <div className="font-black text-gray-600 col-span-3">Capital ponderado</div>
+            <div className={`grid ${cols} px-3 py-2 bg-brand-primary/5 border-t border-gray-100 text-[10px]`}>
+                <div className={`font-black text-gray-600 ${hayFondo ? 'col-span-4' : 'col-span-3'}`}>Capital ponderado</div>
                 <div className="text-right font-black text-brand-primary tabular-nums">{fmt(total)}</div>
             </div>
         </div>

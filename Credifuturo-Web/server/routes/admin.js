@@ -1797,15 +1797,20 @@ router.get('/savings/ranking', async (req, res) => {
                 capitalPonderado: Math.round(agg.capitalPonderado),
                 pesoEfectivo: Number(agg.pesoEfectivo.toFixed(6)),
                 aperturaPermanente: Math.round(agg.aperturaPermanente),
-                abonosPeriodo: Math.round(agg.abonosPeriodo),
-                retirosPeriodo: Math.round(agg.retirosPeriodo),
+                // Lo que consignó el socio y lo que movió el fondo van por
+                // separado: sumarlos daba una cifra que no cuadraba con la
+                // Matriz de Ahorros ni con lo que el socio recordaba haber
+                // ahorrado. Es la misma separación que la matriz hace entre
+                // `abonos` y `neto`.
+                ahorroPeriodo: Math.round(agg.ahorroPeriodo),
+                fondoPeriodo: Math.round(agg.fondoPeriodo),
                 // El peso de cada mes, que es lo que la pantalla muestra y lo que
                 // permite al socio reconstruir su propia cifra con una calculadora.
                 porMes: agg.porMes.map(f => ({
                     mes: f.mes,
                     peso: Number(f.peso.toFixed(6)),
-                    aportado: Math.round(f.aportado),
-                    retirado: Math.round(f.retirado),
+                    ahorro: Math.round(f.ahorro),
+                    fondo: Math.round(f.fondo),
                     ponderado: Math.round(f.ponderado),
                     n: f.n,
                 })),
