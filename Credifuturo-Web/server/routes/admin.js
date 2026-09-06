@@ -1,4 +1,5 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const multer = require('multer');
 const { Client, Saving, Soporte, Loan, DisbursedLoan, LoanPayment } = require('../models');
@@ -6838,7 +6839,19 @@ router.get('/loan-requests/:id', verifyToken, requireFreshPassword, async (req, 
 //      sobre un monto, un plazo y una tasa; cambiarlos por debajo convertiría su voto en
 //      un aval de algo que nunca vio. Corregir el banco o las observaciones no toca los
 //      votos, porque no cambian lo que se está aprobando.
-router.put('/loan-requests/:id', verifyToken, requireFreshPassword, async (req, res) => {
+// Corregir es una operación de bajo volumen: se arregla un dato y ya. Un límite holgado
+// no estorba a nadie y acota lo que puede hacer un token robado o un cliente en bucle,
+// porque cada corrección que cambie las condiciones BORRA los votos de la Junta — una
+// ráfaga contra esta ruta dejaría una solicitud imposible de aprobar.
+const corregirSolicitudLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Demasiadas correcciones seguidas. Espere unos minutos.' },
+});
+
+router.put('/loan-requests/:id', corregirSolicitudLimiter, verifyToken, requireFreshPassword, async (req, res) => {
     try {
         const LoanRequest = require('../models/LoanRequest');
         const LoanBoardVote = require('../models/LoanBoardVote');
