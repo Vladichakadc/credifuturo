@@ -1670,48 +1670,51 @@ router.get('/savings/matriz', async (req, res) => {
 
 // ── GET /savings/ranking — el reparto de utilidades ──────────────────────────
 //
-// Reparte la ganancia del fondo en proporción al CAPITAL-TIEMPO de cada socio:
-// cuánto dinero suyo estuvo disponible para prestar, y durante cuántos días.
+// Reparte la ganancia del fondo en proporción al CAPITAL que cada socio puso a
+// trabajar, ponderado por los MESES que ese dinero estuvo disponible para
+// prestar. Es el método de las entidades de ahorro: enero pesa 100%, julio 50%,
+// diciembre 8%.
 //
-// Lo que se corrigió aquí, y por qué importa
-// ------------------------------------------
-// El cálculo anterior ponderaba cada movimiento por su MES ACREDITADO
-// (mesAbonado), no por el día en que el dinero llegó. Como quien paga el año
+//     capitalPonderado = Σ ( importe × meses que trabajará ÷ 12 )
+//
+// Lo que se corrigió, y por qué importa
+// -------------------------------------
+// El cálculo original ponderaba cada movimiento por su MES ACREDITADO
+// (mesAbonado), no por el mes en que el dinero llegó. Como quien paga el año
 // entero por adelantado genera doce filas con mesAbonado 1..12, el fondo le
-// reconocía exactamente el mismo peso que a quien fue pagando mes a mes — y que
-// a quien pagó los doce meses en diciembre. Los tres salían iguales, con el
-// dinero de uno trabajando 351 días y el del otro 12. Medido sobre doce cuotas
-// de $200.000: $1.300.000 de saldo promedio reconocido frente a los $2.307.945
-// que realmente aportó el que pagó en enero.
+// reconocía exactamente el mismo peso que a quien pagaba mes a mes — y que a
+// quien pagaba los doce meses en diciembre. Medido sobre doce cuotas de
+// $200.000: $1.300.000 para los tres, cuando el de enero puso $2.400.000 a
+// trabajar el año completo y el de diciembre solo un mes.
 //
-// Ahora se pondera por `date`, la Fecha Pago —el único campo que significa lo
-// mismo lo haya creado el formulario o la importación de Excel—. Ver
+// Ahora el mes sale de `date`, la Fecha Pago — el único campo que significa lo
+// mismo lo haya creado el formulario o la importación de Excel. Ver
 // services/reparto.js, que explica por qué year/monthInt no sirven para esto.
 //
-// Qué decide la Junta y qué no
+// Qué entra en el capital
+// -----------------------
+// TODO el ahorro del socio, incluido el APORTE INICIAL: ese dinero también está
+// en el fondo prestándose, y dejarlo fuera subestimaba a los socios antiguos.
+// Lo de años anteriores que el socio no retiró entra como capital de apertura
+// con peso completo; un retiro —total o parcial— descuenta con el peso de SU
+// mes, no del principio del año, porque hasta ese mes el dinero sí trabajó.
+//
+// Lo único que decide la Junta
 // ----------------------------
-// El saldo promedio es un hecho aritmético y no se negocia. Encima de él hay
-// dos decisiones de política, las dos guardadas en AppSettings y las dos
-// simulables en pantalla antes de aplicarse:
-//
-//   · reparto.factorPermanencia   — cuánto se premia a quien NO retiró sus
-//                                   ahorros del año anterior. 1 = sin premio.
-//   · reparto.incluyeAporteInicial— si el aporte inicial cuenta como capital.
-//
-// Ninguna trae un valor por defecto que mueva dinero: el reparto arranca en el
-// puro hecho aritmético y solo cambia cuando una persona lo decide y lo guarda.
+// `reparto.factorPermanencia`: cuánto premiar de más a quien no retiró sus
+// ahorros del año anterior. Arranca en 1 (sin premio) y se simula en pantalla
+// antes de guardarse. El capital ponderado no se negocia; el premio sí, y por eso
+// van separados y se muestran por separado.
 //
 // Qué se devuelve, y a quién
 // --------------------------
-// A todos, los AGREGADOS de cada socio (cuatro números por socio), que es lo que
-// necesita la pantalla para recomponer el reparto con cualquier parámetro sin
+// A todos, los AGREGADOS de cada socio y su desglose por mes, que es lo que la
+// pantalla necesita para recomponer el reparto con cualquier parámetro sin
 // volver a pedir nada. El DETALLE movimiento a movimiento solo del propio socio
-// —y de todos, para el gerente y la Junta, que son quienes tienen que auditarlo—.
-// Mandar el detalle de todos a todos no aportaría nada a la pantalla y expondría
-// el calendario de pagos de cada persona.
+// —y de todos, para el gerente y la Junta, que son quienes lo auditan—.
 router.get('/savings/ranking', async (req, res) => {
     try {
-        const { Sequelize, Op } = require('sequelize');
+        const { Op } = require('sequelize');
         const reparto = require('../services/reparto');
         const AppSetting = require('../models/AppSetting');
 
@@ -1729,12 +1732,13 @@ router.get('/savings/ranking', async (req, res) => {
         });
         const ids = clients.map(c => c.id);
 
-        // Todo el histórico: el saldo de apertura del período se construye
-        // sumando lo anterior a él, así que no se puede filtrar por año.
+        // Todo el histórico: el capital de apertura del período se construye
+        // sumando lo anterior a él, así que no se puede filtrar por año. Y sin
+        // filtrar por `type`, porque el aporte inicial también es capital.
         const movimientos = await Saving.findAll({
             where: { clientId: { [Op.in]: ids } },
             attributes: ['id', 'clientId', 'date', 'mesAbonado', 'anioAbonado', 'amount',
-                'valorAhorrado', 'status', 'type', 'banco', 'observaciones'],
+                'valorAhorrado', 'status', 'type'],
             order: [['date', 'ASC'], ['id', 'ASC']],
         });
 
@@ -1752,7 +1756,6 @@ router.get('/savings/ranking', async (req, res) => {
             lista.push({
                 id: m.id,
                 valor: neto,
-                bruto: parseFloat(m.amount) || 0,
                 date: m.date,
                 mesAbonado: m.mesAbonado,
                 anioAbonado: m.anioAbonado,
@@ -1766,31 +1769,16 @@ router.get('/savings/ranking', async (req, res) => {
 
         const anomalias = [];
         const socios = clients.map(c => {
-            const todos = porSocio.get(c.id) || [];
-            const soloMensual = todos.filter(m => !m.esAporteInicial);
+            const agg = reparto.ponderarSocio(porSocio.get(c.id) || [], periodo);
 
-            // Se pondera dos veces —con y sin los aportes iniciales— para que la
-            // Junta pueda ver el efecto de incluirlos sin pedir la página otra vez.
-            const conAporte = reparto.ponderarSocio(todos, periodo);
-            const sinAporte = reparto.ponderarSocio(soloMensual, periodo);
-
-            if (sinAporte.saldoAperturaCrudo < 0) {
+            if (agg.capitalAperturaCrudo < 0) {
                 anomalias.push({
                     clientId: c.id,
                     fullName: `${c.name} ${c.surname1} ${c.surname2 || ''}`.trim(),
-                    tipo: 'saldo_apertura_negativo',
-                    detalle: `Las devoluciones registradas superan lo ahorrado antes de ${anio} por $${Math.round(Math.abs(sinAporte.saldoAperturaCrudo)).toLocaleString('es-CO')}. El saldo de apertura se protege en cero, pero conviene revisar los movimientos de este socio antes de repartir.`,
+                    tipo: 'capital_apertura_negativo',
+                    detalle: `Las devoluciones registradas superan lo ahorrado antes de ${anio} por $${Math.round(Math.abs(agg.capitalAperturaCrudo)).toLocaleString('es-CO')}. El capital de apertura se protege en cero, pero conviene revisar los movimientos de este socio antes de repartir.`,
                 });
             }
-
-            const agregados = (a) => ({
-                saldoApertura: Math.round(a.saldoApertura),
-                saldoCierre: Math.round(a.saldoCierre),
-                saldoPromedio: Math.round(a.saldoPromedio),
-                aperturaPermanente: Math.round(a.aperturaPermanente),
-                abonosPeriodo: Math.round(a.abonosPeriodo),
-                retirosPeriodo: Math.round(a.retirosPeriodo),
-            });
 
             const propio = req.user?.id === c.id;
             return {
@@ -1800,14 +1788,27 @@ router.get('/savings/ranking', async (req, res) => {
                 fullName: `${c.name} ${c.surname1} ${c.surname2 || ''}`.trim(),
                 fechaIngreso: c.fechaIngreso,
                 esYo: propio,
-                sinAporteInicial: agregados(sinAporte),
-                conAporteInicial: agregados(conAporte),
-                // El detalle solo va cuando quien pregunta puede verlo.
+                capitalApertura: Math.round(agg.capitalApertura),
+                capitalCierre: Math.round(agg.capitalCierre),
+                capitalPonderado: Math.round(agg.capitalPonderado),
+                aperturaPermanente: Math.round(agg.aperturaPermanente),
+                abonosPeriodo: Math.round(agg.abonosPeriodo),
+                retirosPeriodo: Math.round(agg.retirosPeriodo),
+                // El peso de cada mes, que es lo que la pantalla muestra y lo que
+                // permite al socio reconstruir su propia cifra con una calculadora.
+                porMes: agg.porMes.map(f => ({
+                    mes: f.mes,
+                    peso: Number(f.peso.toFixed(6)),
+                    aportado: Math.round(f.aportado),
+                    retirado: Math.round(f.retirado),
+                    ponderado: Math.round(f.ponderado),
+                    n: f.n,
+                })),
                 movimientos: (puedeVerTodo || propio)
-                    ? conAporte.detalle.map(d => ({
+                    ? agg.detalle.map(d => ({
                         id: d.id, fecha: d.fecha, valor: Math.round(d.valor),
-                        dias: d.dias, factor: Number(d.factor.toFixed(6)),
-                        aporte: Math.round(d.aporte),
+                        mes: d.mes, peso: d.peso === null ? 0 : Number(d.peso.toFixed(6)),
+                        ponderado: Math.round(d.ponderado),
                         origenFecha: d.origenFecha, previo: !!d.previo, futuro: !!d.futuro,
                         dentroPeriodo: d.dentroPeriodo, status: d.status,
                         esAporteInicial: d.esAporteInicial, esConcepto: d.esConcepto,
@@ -1826,46 +1827,26 @@ router.get('/savings/ranking', async (req, res) => {
         }
         const anios = [...aniosSet].sort((a, b) => b - a);
 
-        const leerAjuste = async (clave, porDefecto) => {
-            const fila = await AppSetting.findOne({ where: { key: clave } });
-            if (!fila) return porDefecto;
-            const n = Number(fila.value);
-            return Number.isFinite(n) ? n : porDefecto;
-        };
-        const [utilidadesSetting, factorPermanencia, incluyeAporteInicial] = await Promise.all([
-            AppSetting.findOne({ where: { key: 'utilidadesADistribuir' } }),
-            leerAjuste('reparto.factorPermanencia', 1),
-            leerAjuste('reparto.incluyeAporteInicial', 0),
-        ]);
-        const utilidadesADistribuir = utilidadesSetting && Number(utilidadesSetting.value) > 0
-            ? Number(utilidadesSetting.value) : null;
-
-        const devolucionSum = await Saving.sum('amount', {
-            where: {
-                clientId: { [Op.in]: ids },
-                status: { [Op.like]: '%Devolucion Total Intereses%' },
-            },
-        }) || 0;
+        const filaFactor = await AppSetting.findOne({ where: { key: 'reparto.factorPermanencia' } });
+        const factorLeido = Number(filaFactor?.value);
+        const factorPermanencia = Number.isFinite(factorLeido) && factorLeido >= 1 ? factorLeido : 1;
 
         res.json({
             ok: true,
             periodo: {
                 anio,
                 inicio: periodo.inicio.toISOString().slice(0, 10),
-                corte: periodo.corte.toISOString().slice(0, 10),
-                dias: periodo.dias,
+                corte: periodo.corte,
+                meses: periodo.meses,
+                mesActual: periodo.mesActual,
                 cerrado: periodo.cerrado,
+                esAnioActual: anio === anioActual,
             },
             anios,
-            parametros: {
-                factorPermanencia,
-                incluyeAporteInicial: !!incluyeAporteInicial,
-            },
+            parametros: { factorPermanencia },
             puedeVerTodo,
             yoId: req.user?.id || null,
             socios,
-            utilidadesADistribuir,
-            totalDevolucionIntereses: Math.abs(Math.round(parseFloat(devolucionSum))),
             // Cuántos movimientos se pudieron fechar de verdad. Una pantalla de
             // reparto que no dice de qué calidad son sus datos invita a confiar
             // en una cifra que quizá se apoya en fechas supuestas.
@@ -7172,13 +7153,6 @@ router.put('/settings/:key', verifyToken, requireFreshPassword, requireRole('adm
                 return res.status(400).json({ error: 'El factor de permanencia debe estar entre 1 (sin premio) y 3.' });
             }
         }
-        if (key === 'reparto.incluyeAporteInicial') {
-            const v = String(value);
-            if (v !== '0' && v !== '1') {
-                return res.status(400).json({ error: 'Incluir el aporte inicial solo admite 0 o 1.' });
-            }
-        }
-
         const [setting] = await AppSetting.upsert({ key, value: String(value) });
 
         // Avisa al grupo que hoy puede ver el Ranking de Ahorro (beta) que la

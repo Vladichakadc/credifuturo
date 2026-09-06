@@ -1,14 +1,22 @@
 /**
  * Reparto de utilidades — la aritmética, sin base de datos.
  *
- * El fondo reparte su ganancia entre los socios en proporción al CAPITAL-TIEMPO
- * que cada uno aportó: no cuánto ahorró, sino cuánto dinero suyo estuvo
- * disponible para prestar, y durante cuántos días.
+ * El fondo reparte su ganancia entre los socios en proporción al CAPITAL que cada
+ * uno puso a trabajar, PONDERADO POR LOS MESES que ese dinero estuvo disponible
+ * para prestar. Es el método con el que los bancos y las entidades de ahorro
+ * reparten rendimientos: un peso que entró en enero trabaja los doce meses del
+ * año y pesa 100%; uno que entró en julio trabaja seis y pesa 50%.
+ *
+ *     capitalPonderado = Σ ( importe × meses que trabajará ÷ 12 )
+ *
+ * No es un promedio ni un saldo medio: es la suma de cada aporte multiplicado por
+ * su peso. Cada línea del cálculo se puede leer, verificar y explicar por
+ * separado, que es lo que hace falta para defender un reparto en una asamblea.
  *
  * Todo lo que hay aquí son funciones puras sobre números y fechas. La ruta que
  * las usa vive en routes/admin.js (GET /savings/ranking) y el cliente vuelve a
  * aplicar solo la parte de política (resolverBase + repartir) para poder
- * simular; la parte frágil —la que decide QUÉ DÍA entró cada peso— tiene una
+ * simular; la parte frágil —la que decide EN QUÉ MES entró cada peso— tiene una
  * sola implementación, y es esta.
  */
 
@@ -25,8 +33,9 @@
 //                             entero en enero genera doce filas con mesAbonado
 //                             1..12 y todas con la misma `date` de enero.
 //                             Ponderar por aquí es el error que este módulo
-//                             existe para corregir: le cobraba al socio puntual
-//                             como si su dinero hubiera ido entrando mes a mes.
+//                             existe para corregir: le daba al socio que paga por
+//                             adelantado el mismo peso que al que paga tarde,
+//                             porque los dos acreditan los mismos doce meses.
 //   · year/monthInt         — INSERVIBLES para ponderar, porque el par es
 //                             incoherente según quién creó la fila:
 //                               · POST /savings guarda year = año de pago pero
@@ -38,13 +47,12 @@
 //                             year=2025, monthInt=1: se lee "enero de 2025", un
 //                             año entero de diferencia. Por eso no se usan.
 //
-// Cuando `date` falta o no se puede leer se cae al período acreditado a mitad de
-// mes (día 15). Es un respaldo declarado, no un silencio: cada movimiento sale
-// con `origenFecha` y la pantalla informa cuántos cayeron en cada nivel — una
-// celda vacía por dato malo es indistinguible de un socio que no ahorró, y esa
-// confusión es la peor falla posible en una pantalla de control.
+// Cuando `date` falta o no se puede leer se cae al período acreditado. Es un
+// respaldo declarado, no un silencio: cada movimiento sale con `origenFecha` y la
+// pantalla informa cuántos cayeron en cada nivel — una cifra mal fechada es
+// indistinguible de una correcta si nadie la cuenta.
 
-const DIA_MS = 24 * 60 * 60 * 1000;
+const MESES_ANIO = 12;
 
 /** Un día calendario a medianoche UTC, a partir de 'YYYY-MM-DD' o de un Date. */
 function diaUTC(valor) {
@@ -52,8 +60,7 @@ function diaUTC(valor) {
         if (isNaN(valor.getTime())) return null;
         return new Date(Date.UTC(valor.getUTCFullYear(), valor.getUTCMonth(), valor.getUTCDate()));
     }
-    const texto = String(valor || '').trim();
-    const m = texto.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const m = String(valor || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
     if (!m) return null;
     const [, a, mes, d] = m;
     const anio = Number(a), mm = Number(mes), dd = Number(d);
@@ -62,10 +69,6 @@ function diaUTC(valor) {
     // Rechaza un 31 de febrero: Date lo desborda al mes siguiente en silencio.
     if (fecha.getUTCMonth() !== mm - 1) return null;
     return fecha;
-}
-
-function diasEntre(desde, hasta) {
-    return Math.round((hasta.getTime() - desde.getTime()) / DIA_MS);
 }
 
 /**
@@ -85,58 +88,69 @@ function fechaValorDe(mov) {
 }
 
 /**
- * El período sobre el que se reparte.
+ * El peso de un mes dentro del año.
  *
- * En un año cerrado va del 1 de enero al 31 de diciembre. En el año en curso
- * el corte es HOY, no el 31 de diciembre: ponderar contra un cierre que todavía
- * no llegó haría que el dinero de enero valiera 1,0 y el de hoy 0,0 sobre un
- * año que aún no ha pasado, y todas las participaciones se moverían solas cada
- * día por una razón que nadie escribió. Con el corte en hoy, el resultado es el
- * SALDO PROMEDIO de lo que va corrido, que es una cifra estable y explicable.
+ *   enero  → 12/12 = 100%      julio → 6/12 = 50%      diciembre → 1/12 ≈ 8%
  *
- * `hoy` se recibe como 'YYYY-MM-DD' para que la función siga siendo pura y
- * las pruebas puedan fijar el día.
+ * Cuenta el propio mes de entrada: el dinero que llega en julio trabaja julio,
+ * agosto, septiembre, octubre, noviembre y diciembre — seis meses, la mitad del
+ * año, que es exactamente lo que la Junta espera ver.
+ *
+ * El mes 0 es el capital que ya estaba antes de que empezara el año: pesa el año
+ * completo, porque estuvo desde el primer día.
  */
-function construirPeriodo(anio, hoy) {
-    const inicio = new Date(Date.UTC(anio, 0, 1));
-    const finAnio = new Date(Date.UTC(anio, 11, 31));
-    const diaHoy = diaUTC(hoy) || finAnio;
-
-    let corte;
-    if (diaHoy < inicio) corte = inicio;          // un año futuro: período de un día
-    else if (diaHoy > finAnio) corte = finAnio;   // un año cerrado
-    else corte = diaHoy;                          // el año en curso
-
-    // +1 porque el propio día del corte cuenta: un período que empieza y termina
-    // el 1 de enero dura un día, no cero (y dividir por cero anularía el reparto).
-    const dias = diasEntre(inicio, corte) + 1;
-    return { anio, inicio, corte, dias, cerrado: diaHoy > finAnio };
+function pesoDeMes(mes) {
+    if (mes <= 0) return 1;
+    if (mes > MESES_ANIO) return 0;
+    return (MESES_ANIO - mes + 1) / MESES_ANIO;
 }
 
 /**
- * El capital-tiempo de un socio dentro del período.
+ * El período sobre el que se reparte.
  *
- * saldoPromedio = Σ ( importe × días que ese importe estuvo dentro del período ) / días del período
+ * Los pesos siempre se cuentan sobre los DOCE meses del año, también cuando el
+ * año va en curso: es el método de las entidades de ahorro y es lo que hace que
+ * "mitad de año" sea exactamente 50%. En un año abierto eso convierte el reparto
+ * en una proyección al cierre, y la pantalla lo dice con todas las letras en vez
+ * de presentar como definitiva una cifra que aún se va a mover.
  *
- * Que es, literalmente, el promedio de dinero que el socio tuvo en el fondo
- * durante el período. Un abono de enero pesa 1,0; uno de hoy, casi 0. Un retiro
- * entra con importe negativo y su propia fecha, así que quien sacó su dinero en
- * marzo deja de contarlo desde marzo — no basta con restarle el monto, porque
- * hasta marzo ese dinero sí estuvo trabajando.
+ * `hoy` se recibe como 'YYYY-MM-DD' para que la función siga siendo pura y las
+ * pruebas puedan fijar el día.
+ */
+function construirPeriodo(anio, hoy) {
+    const inicio = new Date(Date.UTC(anio, 0, 1));
+    const fin = new Date(Date.UTC(anio, 11, 31));
+    const diaHoy = diaUTC(hoy) || fin;
+    const cerrado = diaHoy > fin;
+    const mesActual = cerrado ? 12 : (diaHoy < inicio ? 0 : diaHoy.getUTCMonth() + 1);
+    return { anio, inicio, fin, meses: MESES_ANIO, cerrado, mesActual, corte: (cerrado ? fin : diaHoy).toISOString().slice(0, 10) };
+}
+
+/**
+ * El capital ponderado de un socio dentro del período.
  *
- * Lo anterior al período se colapsa en el saldo de apertura, que pesa 1,0
- * completo: estuvo ahí desde el primer día.
+ * Un retiro entra con importe negativo y el peso de SU mes, no del principio del
+ * año: quien sacó su dinero en marzo lo tuvo trabajando enero, febrero y marzo, y
+ * limitarse a restarle el monto le borraría esos tres meses. Así, un retiro
+ * parcial y uno total se tratan con la misma regla, sin un caso aparte.
+ *
+ * Lo anterior al período se acumula en el capital de apertura, con peso 1.
  */
 function ponderarSocio(movimientos, periodo) {
-    const { inicio, corte, dias } = periodo;
+    const { inicio, fin } = periodo;
 
-    let saldoApertura = 0;      // caja del socio en el fondo al abrir el período
-    let saldoPromedio = 0;      // el capital-tiempo del período
-    let abonosPeriodo = 0;      // solo lo que consignó el socio
-    let retirosPeriodo = 0;     // solo lo que salió (negativo)
+    let capitalApertura = 0;   // lo que el socio traía cuando empezó el año
+    let capitalPonderado = 0;
+    let abonosPeriodo = 0;
+    let retirosPeriodo = 0;
     let netoPeriodo = 0;
     const detalle = [];
     const conteoOrigen = { pago: 0, periodo: 0, sin: 0 };
+    // Un renglón por mes, más el 0 para lo que venía de antes. Es lo que la
+    // pantalla necesita para mostrar el peso de cada mes sin recalcular nada.
+    const porMes = Array.from({ length: MESES_ANIO + 1 }, (_, i) => ({
+        mes: i, peso: pesoDeMes(i), aportado: 0, retirado: 0, ponderado: 0, n: 0,
+    }));
 
     for (const mov of movimientos) {
         const valor = Number(mov.valor) || 0;
@@ -145,54 +159,67 @@ function ponderarSocio(movimientos, periodo) {
 
         if (!fecha) {
             // Sin fecha utilizable no se puede ponderar. No se inventa una: se
-            // deja fuera del cálculo y se reporta, que es lo que permite
-            // arreglarlo. Meterlo con una fecha supuesta movería dinero real.
-            detalle.push({ ...mov, valor, fecha: null, origenFecha: origen, dentroPeriodo: false, dias: 0, factor: 0, aporte: 0 });
+            // deja fuera y se reporta, que es lo que permite arreglarlo. Meterla
+            // con una fecha supuesta movería dinero real entre socios.
+            detalle.push({ ...mov, valor, fecha: null, origenFecha: origen, mes: null, peso: 0, ponderado: 0, dentroPeriodo: false });
             continue;
         }
 
-        if (fecha < inicio) {
-            saldoApertura += valor;
-            detalle.push({ ...mov, valor, fecha: fecha.toISOString().slice(0, 10), origenFecha: origen, dentroPeriodo: false, previo: true, dias: dias, factor: 1, aporte: valor });
+        const iso = fecha.toISOString().slice(0, 10);
+
+        if (fecha > fin) {
+            // Posterior al año: todavía no participa. Se muestra igual, con
+            // aporte cero, para que el socio vea que su abono sí quedó registrado.
+            detalle.push({ ...mov, valor, fecha: iso, origenFecha: origen, mes: null, peso: 0, ponderado: 0, dentroPeriodo: false, futuro: true });
             continue;
         }
 
-        if (fecha > corte) {
-            // Posterior al corte: todavía no ha trabajado ni un día. Se registra
-            // para que el socio vea que su abono llegó, con aporte cero.
-            detalle.push({ ...mov, valor, fecha: fecha.toISOString().slice(0, 10), origenFecha: origen, dentroPeriodo: false, futuro: true, dias: 0, factor: 0, aporte: 0 });
-            continue;
+        const previo = fecha < inicio;
+        const mes = previo ? 0 : fecha.getUTCMonth() + 1;
+        const peso = pesoDeMes(mes);
+        const ponderado = valor * peso;
+
+        if (previo) {
+            capitalApertura += valor;
+        } else {
+            netoPeriodo += valor;
+            if (valor >= 0) abonosPeriodo += valor; else retirosPeriodo += valor;
         }
 
-        const diasActivos = diasEntre(fecha, corte) + 1;
-        const factor = diasActivos / dias;
-        const aporte = valor * factor;
-        saldoPromedio += aporte;
-        netoPeriodo += valor;
-        if (valor >= 0) abonosPeriodo += valor; else retirosPeriodo += valor;
+        const fila = porMes[mes];
+        fila.n += 1;
+        if (valor >= 0) fila.aportado += valor; else fila.retirado += valor;
+        fila.ponderado += ponderado;
 
-        detalle.push({ ...mov, valor, fecha: fecha.toISOString().slice(0, 10), origenFecha: origen, dentroPeriodo: true, dias: diasActivos, factor, aporte });
+        capitalPonderado += ponderado;
+        detalle.push({ ...mov, valor, fecha: iso, origenFecha: origen, mes, peso, ponderado, dentroPeriodo: !previo, previo });
     }
 
-    // El saldo de apertura pesa el período entero.
-    const aperturaPositiva = Math.max(saldoApertura, 0);
-    saldoPromedio += aperturaPositiva;
-
-    const saldoCierre = aperturaPositiva + netoPeriodo;
+    // Un capital de apertura negativo es un dato mal registrado (una devolución
+    // duplicada, o cargada al socio equivocado). Se protege en cero para no
+    // repartir sobre un número imposible, y el valor crudo se conserva para poder
+    // señalarlo en pantalla en vez de esconderlo.
+    if (capitalApertura < 0) {
+        capitalPonderado -= capitalApertura; // quita la parte negativa ya sumada
+        porMes[0].ponderado = 0;
+    }
+    const aperturaPositiva = Math.max(capitalApertura, 0);
+    const capitalCierre = aperturaPositiva + netoPeriodo;
 
     return {
-        saldoApertura: aperturaPositiva,
-        saldoAperturaCrudo: saldoApertura,
-        saldoCierre,
-        saldoPromedio,
+        capitalApertura: aperturaPositiva,
+        capitalAperturaCrudo: capitalApertura,
+        capitalCierre,
+        capitalPonderado: Math.max(0, capitalPonderado),
         abonosPeriodo,
         retirosPeriodo,
         netoPeriodo,
-        // La parte del saldo de apertura que REALMENTE permaneció hasta el corte.
-        // Es la única que puede llevar premio de permanencia: quien abrió el año
-        // con $5.000.000 y los retiró en marzo no conservó nada, y premiarlo por
-        // un saldo que ya no está convertiría el incentivo en su contrario.
-        aperturaPermanente: Math.max(0, Math.min(aperturaPositiva, saldoCierre)),
+        // La parte del capital de apertura que REALMENTE permaneció hasta el
+        // cierre. Es la única que puede llevar premio de permanencia: quien abrió
+        // el año con saldo y lo retiró en marzo no conservó nada, y premiarlo por
+        // un dinero que ya no está convertiría el incentivo en su contrario.
+        aperturaPermanente: Math.max(0, Math.min(aperturaPositiva, capitalCierre)),
+        porMes,
         detalle,
         conteoOrigen,
     };
@@ -201,23 +228,19 @@ function ponderarSocio(movimientos, periodo) {
 /**
  * La base de reparto: el hecho aritmético más la decisión de política.
  *
- * saldoPromedio es lo que el socio aportó en capital-tiempo, y no se discute.
- * El factor de permanencia es una decisión de la Junta: cuánto quiere premiar a
- * quien NO retiró sus ahorros del año anterior. Se aplica solo sobre el saldo de
- * apertura que permaneció, nunca sobre el ahorro nuevo del año.
- *
- * Se mantienen separados a propósito, y la pantalla los muestra por separado:
- * mezclarlos haría imposible responder "¿cuánto de esto es mi ahorro y cuánto
- * es el premio?", que es justo la pregunta que se hace en una asamblea.
- *
- * factor = 1 deja el reparto en el puro hecho aritmético.
+ * El capital ponderado no se discute. El factor de permanencia sí es una decisión
+ * de la Junta —cuánto premiar a quien no retiró sus ahorros del año anterior— y
+ * se aplica solo sobre el capital de apertura que permaneció, nunca sobre el
+ * ahorro nuevo del año. Se mantienen separados a propósito y la pantalla los
+ * muestra por separado: mezclarlos haría imposible responder "¿cuánto de esto es
+ * mi ahorro y cuánto es el premio?", que es justo lo que se pregunta en una
+ * asamblea. factor = 1 deja el reparto en el puro hecho aritmético.
  */
 function resolverBase(agg, factorPermanencia = 1) {
     const f = Number(factorPermanencia);
     const factor = Number.isFinite(f) && f >= 1 ? f : 1;
     const premio = (agg.aperturaPermanente || 0) * (factor - 1);
-    const base = Math.max(0, (agg.saldoPromedio || 0) + premio);
-    return { base, premioPermanencia: premio, factorAplicado: factor };
+    return { base: Math.max(0, (agg.capitalPonderado || 0) + premio), premioPermanencia: premio, factorAplicado: factor };
 }
 
 /**
@@ -226,33 +249,26 @@ function resolverBase(agg, factorPermanencia = 1) {
  * Método del resto mayor (Hare): a cada quien su parte entera, y los pesos que
  * sobran por el redondeo van uno a uno a quienes tenían el resto decimal más
  * alto. Repartir con Math.round por separado deja un descuadre de unos pocos
- * pesos entre lo repartido y lo que la Junta aprobó, y en un acta ese descuadre
+ * pesos entre lo repartido y la ganancia del fondo, y en un acta ese descuadre
  * hay que explicarlo. Aquí la suma cuadra siempre, por construcción.
  */
 function repartir(bases, monto) {
-    const total = bases.reduce((s, b) => s + Math.max(0, Number(b) || 0), 0);
+    const limpias = bases.map(b => Math.max(0, Number(b) || 0));
+    const total = limpias.reduce((s, b) => s + b, 0);
     const M = Math.round(Number(monto) || 0);
 
-    if (!(total > 0) || M <= 0) {
-        return bases.map(() => ({ participacion: 0, utilidad: 0 }));
-    }
+    if (!(total > 0) || M <= 0) return limpias.map(() => ({ participacion: 0, utilidad: 0 }));
 
-    const exactos = bases.map(b => (Math.max(0, Number(b) || 0) / total) * M);
+    const exactos = limpias.map(b => (b / total) * M);
     const enteros = exactos.map(v => Math.floor(v));
     let sobrante = M - enteros.reduce((s, v) => s + v, 0);
 
-    const porResto = exactos
+    exactos
         .map((v, i) => ({ i, resto: v - Math.floor(v) }))
-        .sort((a, b) => b.resto - a.resto || a.i - b.i);
+        .sort((a, b) => b.resto - a.resto || a.i - b.i)
+        .forEach(({ i }) => { if (sobrante > 0) { enteros[i] += 1; sobrante--; } });
 
-    for (let k = 0; k < porResto.length && sobrante > 0; k++, sobrante--) {
-        enteros[porResto[k].i] += 1;
-    }
-
-    return bases.map((b, i) => ({
-        participacion: Math.max(0, Number(b) || 0) / total,
-        utilidad: enteros[i],
-    }));
+    return limpias.map((b, i) => ({ participacion: b / total, utilidad: enteros[i] }));
 }
 
-module.exports = { diaUTC, diasEntre, fechaValorDe, construirPeriodo, ponderarSocio, resolverBase, repartir };
+module.exports = { MESES_ANIO, diaUTC, fechaValorDe, pesoDeMes, construirPeriodo, ponderarSocio, resolverBase, repartir };

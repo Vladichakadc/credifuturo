@@ -26,7 +26,7 @@ const bcrypt = require('bcryptjs');
 const CLAVE = require('crypto').randomBytes(12).toString('hex');
 const sequelize = require('./config/database');
 const { Client, Saving } = require('./models');
-const { construirPeriodo } = require('./services/reparto');
+const { construirPeriodo, pesoDeMes } = require('./services/reparto');
 
 let ok = 0, fallos = 0;
 const money = n => '$' + Math.round(Number(n) || 0).toLocaleString('es-CO');
@@ -72,6 +72,7 @@ const CUOTA = 200000;
     const tarde = await crear('Tarde', '52001002', 4);
     const conservo = await crear('Conservo', '52001003', 5);
     const retiro = await crear('Retiro', '52001004', 6);
+    const parcial = await crear('Parcial', '52001005', 7);
 
     const abono = (cliente, fechaPago, mesAbonado, valor = CUOTA, extra = {}) => Saving.create({
         clientId: cliente.id, amount: valor, valorAhorrado: valor, date: fechaPago,
@@ -89,6 +90,9 @@ const CUOTA = 200000;
     await abono(conservo, `${ANIO - 2}-06-10`, 6, 5000000, { anioAbonado: ANIO - 2 });
     await abono(retiro, `${ANIO - 2}-06-10`, 6, 5000000, { anioAbonado: ANIO - 2 });
     await abono(retiro, `${ANIO}-03-31`, 3, -5000000, { status: 'Devolucion Total Intereses' });
+    // Retiro PARCIAL: mismo capital de apertura, saca solo una parte.
+    await abono(parcial, `${ANIO - 2}-06-10`, 6, 5000000, { anioAbonado: ANIO - 2 });
+    await abono(parcial, `${ANIO}-03-31`, 3, -2000000, { status: 'Devolucion Parcial' });
 
     // Un movimiento con la fecha de pago ilegible. El modelo declara `date` como
     // obligatoria, así que por la aplicación no puede entrar vacía — pero la
@@ -135,58 +139,68 @@ const CUOTA = 200000;
     comprobar('un año pasado va del 1 de enero al 31 de diciembre',
         d.periodo.inicio === `${ANIO}-01-01` && d.periodo.corte === `${ANIO}-12-31`);
     comprobar('y se marca como cerrado', d.periodo.cerrado === true);
+    comprobar('los pesos se cuentan sobre doce meses', d.periodo.meses === 12);
     comprobar('el premio de permanencia arranca apagado', d.parametros.factorPermanencia === 1);
-    comprobar('y el aporte inicial también', d.parametros.incluyeAporteInicial === false);
 
     // ───────────────────────────────────────────────────────────────
     console.log('\n2. Se pondera por la fecha de pago, no por el mes acreditado');
     {
-        const e = de(d, 'Enero').sinAporteInicial;
-        const t = de(d, 'Tarde').sinAporteInicial;
-        // 15 de enero → 31 de diciembre = 351 días de 365.
-        comprobar('quien pagó todo en enero pesa los 351 días que su dinero estuvo',
-            cerca(e.saldoPromedio, 12 * CUOTA * (351 / 365), 2), `dio ${money(e.saldoPromedio)}`);
-        comprobar('quien pagó lo mismo en diciembre pesa solo 12 días',
-            cerca(t.saldoPromedio, 12 * CUOTA * (12 / 365), 2), `dio ${money(t.saldoPromedio)}`);
+        const e = de(d, 'Enero');
+        const t = de(d, 'Tarde');
+        comprobar('quien pagó todo en enero pesa el año completo (100%)',
+            cerca(e.capitalPonderado, 12 * CUOTA, 2), `dio ${money(e.capitalPonderado)}`);
+        comprobar('quien pagó lo mismo en diciembre pesa un mes de doce',
+            cerca(t.capitalPonderado, 12 * CUOTA / 12, 2), `dio ${money(t.capitalPonderado)}`);
         // El hallazgo que motivó el rediseño: los dos acreditan los meses 1..12,
         // así que el método anterior —que ponderaba por mesAbonado— les daba
         // exactamente la misma cifra a pesar de mover el dinero de forma opuesta.
         comprobar('los dos ya NO pesan igual, que era el defecto',
-            e.saldoPromedio > t.saldoPromedio * 20,
-            `${money(e.saldoPromedio)} vs ${money(t.saldoPromedio)}`);
+            e.capitalPonderado > t.capitalPonderado * 10,
+            `${money(e.capitalPonderado)} vs ${money(t.capitalPonderado)}`);
         comprobar('los dos ahorraron exactamente lo mismo',
             e.abonosPeriodo === t.abonosPeriodo && e.abonosPeriodo === 12 * CUOTA);
+        comprobar('el desglose por mes pone todo el aporte de Enero en enero',
+            de(d, 'Enero').porMes[1].aportado === 12 * CUOTA);
+        comprobar('con peso 100%', de(d, 'Enero').porMes[1].peso === 1);
     }
 
     // ───────────────────────────────────────────────────────────────
     console.log('\n3. Quien no retiró el saldo del año anterior');
     {
-        const c = de(d, 'Conservo').sinAporteInicial;
-        const r = de(d, 'Retiro').sinAporteInicial;
-        comprobar('el saldo previo entra como apertura y pesa el año completo',
-            cerca(c.saldoPromedio, 5000000, 1), `dio ${money(c.saldoPromedio)}`);
-        comprobar('quien retiró en marzo conserva lo que su dinero trabajó hasta marzo',
-            cerca(r.saldoPromedio, 5000000 - 5000000 * (276 / 365), 2), `dio ${money(r.saldoPromedio)}`);
-        comprobar('el que conservó tiene saldo permanente', c.aperturaPermanente === 5000000);
-        comprobar('el que retiró no tiene nada que premiar', r.aperturaPermanente === 0);
-        comprobar('un retiro no borra el tiempo anterior: su peso no es cero', r.saldoPromedio > 0);
+        const c = de(d, 'Conservo');
+        const r = de(d, 'Retiro');
+        const pa = de(d, 'Parcial');
+        comprobar('el capital previo entra como apertura y pesa el año completo',
+            cerca(c.capitalPonderado, 5000000, 1), `dio ${money(c.capitalPonderado)}`);
+        comprobar('un retiro TOTAL en marzo descuenta con el peso de marzo (10/12)',
+            cerca(r.capitalPonderado, 5000000 - 5000000 * (10 / 12), 2), `dio ${money(r.capitalPonderado)}`);
+        comprobar('un retiro PARCIAL descuenta solo lo retirado, con el peso de su mes',
+            cerca(pa.capitalPonderado, 5000000 - 2000000 * (10 / 12), 2), `dio ${money(pa.capitalPonderado)}`);
+        comprobar('quien retiró parcialmente pesa más que quien retiró todo',
+            pa.capitalPonderado > r.capitalPonderado);
+        comprobar('y menos que quien no retiró nada', pa.capitalPonderado < c.capitalPonderado);
+        comprobar('el que conservó tiene capital permanente', c.aperturaPermanente === 5000000);
+        comprobar('el que retiró todo no tiene nada que premiar', r.aperturaPermanente === 0);
+        comprobar('el que retiró la mitad conserva la mitad como permanente', pa.aperturaPermanente === 3000000,
+            `dio ${money(pa.aperturaPermanente)}`);
+        comprobar('un retiro no borra los meses anteriores: su peso no es cero', r.capitalPonderado > 0);
     }
 
     // ───────────────────────────────────────────────────────────────
-    console.log('\n4. El aporte inicial se pondera aparte, sin cambiar el reparto vigente');
+    console.log('\n4. El aporte inicial cuenta como capital');
     {
+        // Ese dinero también está en el fondo prestándose; dejarlo fuera
+        // subestimaba a los socios más antiguos.
         const g = de(d, 'Gerente');
-        comprobar('sin contarlo, el aporte inicial no pesa', g.sinAporteInicial.saldoPromedio === 0,
-            `dio ${money(g.sinAporteInicial.saldoPromedio)}`);
-        comprobar('contándolo, sí pesa', g.conAporteInicial.saldoPromedio > 0);
-        comprobar('y las dos cifras llegan juntas, para poder simular el cambio',
-            g.conAporteInicial.saldoPromedio !== g.sinAporteInicial.saldoPromedio);
+        comprobar('el aporte inicial de enero pesa el año completo',
+            cerca(g.capitalPonderado, 1000000, 1), `dio ${money(g.capitalPonderado)}`);
+        comprobar('y aparece en el renglón de su mes', g.porMes[1].aportado === 1000000);
     }
 
     // ───────────────────────────────────────────────────────────────
     console.log('\n5. La calidad de las fechas se informa, no se esconde');
     {
-        comprobar('se cuentan los movimientos con fecha de pago real', d.diagnostico.pago === 28,
+        comprobar('se cuentan los movimientos con fecha de pago real', d.diagnostico.pago === 30,
             `dio ${d.diagnostico.pago}`);
         comprobar('y el que no la tiene se marca como estimado', d.diagnostico.periodo === 1,
             `dio ${d.diagnostico.periodo}`);
@@ -202,7 +216,7 @@ const CUOTA = 200000;
         comprobar('el socio recibe su propio detalle', !!de(dSocio, 'Enero').movimientos?.length);
         comprobar('pero no el de los demás', de(dSocio, 'Conservo').movimientos === null);
         comprobar('y sí los agregados de todos, que es lo que pinta la pantalla',
-            de(dSocio, 'Conservo').sinAporteInicial.saldoPromedio > 0);
+            de(dSocio, 'Conservo').capitalPonderado > 0);
         comprobar('el socio no ve el panel de parámetros', dSocio.puedeVerTodo === false);
 
         const dJunta = await pedir(HJunta);
@@ -228,15 +242,12 @@ const CUOTA = 200000;
         comprobar('un factor por debajo de 1 también', (await poner('reparto.factorPermanencia', 0.5)).status === 400);
         comprobar('un factor no numérico también', (await poner('reparto.factorPermanencia', 'mucho')).status === 400);
         comprobar('1,25 se acepta', (await poner('reparto.factorPermanencia', 1.25)).status === 200);
-        comprobar('el aporte inicial solo admite 0 o 1', (await poner('reparto.incluyeAporteInicial', 7)).status === 400);
-        comprobar('1 se acepta', (await poner('reparto.incluyeAporteInicial', 1)).status === 200);
         // Guardar sigue siendo del gerente: la Junta simula, no escribe.
-        comprobar('la Junta no puede guardarlos',
+        comprobar('la Junta no puede guardarlo',
             (await poner('reparto.factorPermanencia', 1.5, HJunta)).status === 403);
 
         const d2 = await pedir(H);
-        comprobar('el reparto ya lee los parámetros guardados',
-            d2.parametros.factorPermanencia === 1.25 && d2.parametros.incluyeAporteInicial === true);
+        comprobar('el reparto ya lee el parámetro guardado', d2.parametros.factorPermanencia === 1.25);
     }
 
     // ───────────────────────────────────────────────────────────────
@@ -245,8 +256,8 @@ const CUOTA = 200000;
         const vacio = await fetch(`${BASE}/admin/savings/ranking?anio=2005`, { headers: H }).then(r => r.json());
         comprobar('responde correctamente', vacio.ok === true);
         comprobar('todos los socios pesan cero',
-            vacio.socios.every(s => s.sinAporteInicial.saldoPromedio === 0));
-        comprobar('el período existe igual', vacio.periodo.dias === 365, `dio ${vacio.periodo.dias}`);
+            vacio.socios.every(s => s.capitalPonderado === 0));
+        comprobar('el período existe igual', vacio.periodo.meses === 12, `dio ${vacio.periodo.meses}`);
 
         // Un año imposible no puede tumbar la pantalla ni, peor, calcular un
         // reparto sobre un período inventado: se ignora y se usa el año en curso.
