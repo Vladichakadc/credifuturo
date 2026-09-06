@@ -1586,11 +1586,16 @@ const LoansListPage = () => {
                                                 {/* La línea se muestra SIEMPRE, también cuando vale cero. Estaba dentro
                                                     de un `> 0` y desaparecía: quien miraba la pantalla no podía distinguir
                                                     «son cero días y es correcto» de «el cálculo no se hizo». En el
-                                                    retanqueo de SOL16 el interés salió en $0 y nada lo dijo. */}
+                                                    retanqueo de SOL16 el interés salió en $0 y nada lo dijo.
+
+                                                    En cero hay dos causas y conviene separarlas, porque llevan a
+                                                    revisiones distintas: o el socio va por delante y su próximo período
+                                                    no ha empezado, o la fecha del desembolso es anterior al arranque de
+                                                    ese período — que casi siempre significa que la fecha está mal. */}
                                                 {Number(activeLoanWarning.interesCausado) > 0 ? (
                                                     <li>• Interés causado por {activeLoanWarning.diasTranscurridos ?? '—'} día(s) transcurrido(s) (<strong>SÍ se cobra</strong>): <strong>${Number(activeLoanWarning.interesCausado).toLocaleString('es-CO')}</strong></li>
                                                 ) : (
-                                                    <li>• Interés causado: <strong>$0</strong> — han transcurrido <strong>{activeLoanWarning.diasTranscurridos ?? 0} día(s)</strong> desde que arrancó el período de la próxima cuota, así que no hay interés que cobrar.</li>
+                                                    <li>• Interés causado: <strong>$0</strong> — el período de la próxima cuota aún no empieza a correr, así que no hay días que cobrar. El socio ya pagó por adelantado el mes en curso. <span className="text-amber-600">Revisa la fecha del desembolso si no esperabas esto.</span></li>
                                                 )}
                                                 <li>• Interés condonado (no cobrado): <strong>${Number(activeLoanWarning.interesCondonable).toLocaleString('es-CO')}</strong></li>
                                                 <li>• Total a cancelar de {activeLoanWarning.idVm}: <strong>${fmt(totalACancelar)}</strong></li>
