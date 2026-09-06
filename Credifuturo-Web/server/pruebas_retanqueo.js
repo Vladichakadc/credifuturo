@@ -323,6 +323,53 @@ async function main() {
             `dio ${money(p.interesCausado)}`);
     }
 
+    // ───────────────────────────────────────────────────────────────────────
+    console.log('\n10. Una guarda que rechaza el desembolso SIEMPRE responde, y no deja transacción abierta');
+    // El catch revertía la transacción sin mirar si ya estaba confirmada. Si algo fallaba
+    // después del commit, el rollback lanzaba, el throw escapaba del handler y Express se
+    // quedaba mudo: petición colgada, cero rastro en los registros, y la operación hecha.
+    {
+        const socio = await Client.create({
+            name: 'Sin', apellido1: 'Cupo', cedula: '7799002', customerId: '7799002',
+            email: 'sincupo@prueba.local', password: bcrypt.hashSync('x', 10), role: 'user', estatus: 'Activo',
+        });
+        await Saving.create({
+            clientId: socio.id, amount: 10000, valorAhorrado: 10000, type: 'Mensual',
+            status: 'Abono', monthInt: 1, year: 2026, mesAbonado: 1, anioAbonado: 2026, date: '2026-01-15',
+        });
+        // Doce rechazos seguidos: cada uno tiene que responder, no colgarse.
+        let respondieron = 0;
+        for (let i = 0; i < 12; i++) {
+            const r = await Promise.race([
+                desembolsar({
+                    clientId: socio.id, fechaPrestamo: '2026-09-05', mesDesembolso: 'Septiembre',
+                    anioDesembolso: 2026, valorPrestado: 9000000, cuotas: 6, interesMensual: 0.014, estado: 'Vigente',
+                }).then(r => r.status),
+                new Promise(res => setTimeout(() => res('COLGADA'), 8000)),
+            ]);
+            if (r === 400) respondieron++;
+        }
+        comprobar('las 12 peticiones rechazadas responden 400', respondieron === 12, `respondieron ${respondieron}`);
+
+        // Y el servidor sigue aceptando escrituras después de esos rechazos.
+        const otro = await Client.create({
+            name: 'Con', apellido1: 'Cupo', cedula: '7799003', customerId: '7799003',
+            email: 'concupo@prueba.local', password: bcrypt.hashSync('x', 10), role: 'user', estatus: 'Activo',
+        });
+        await Saving.create({
+            clientId: otro.id, amount: 50000000, valorAhorrado: 50000000, type: 'Mensual',
+            status: 'Abono', monthInt: 1, year: 2026, mesAbonado: 1, anioAbonado: 2026, date: '2026-01-15',
+        });
+        const bueno = await Promise.race([
+            desembolsar({
+                clientId: otro.id, fechaPrestamo: '2026-09-05', mesDesembolso: 'Septiembre',
+                anioDesembolso: 2026, valorPrestado: 3000000, cuotas: 3, interesMensual: 0.014, estado: 'Vigente',
+            }).then(r => r.status),
+            new Promise(res => setTimeout(() => res('COLGADA'), 8000)),
+        ]);
+        comprobar('un desembolso válido posterior sigue funcionando', bueno === 201, `dio ${bueno}`);
+    }
+
     console.log('\n──────────────────────────────────────────────');
     console.log(`${ok} comprobaciones correctas · ${fallos} fallidas`);
     console.log('──────────────────────────────────────────────\n');

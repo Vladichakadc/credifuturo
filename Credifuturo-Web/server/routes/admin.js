@@ -2559,6 +2559,20 @@ router.get('/loans-capacity-analysis', async (req, res) => {
 router.post('/disbursed-loans', async (req, res) => {
     const sequelize = require('../config/database');
     const t = await sequelize.transaction();
+
+    // Cierra la transacción SOLO si sigue abierta. Sequelize lanza al revertir una
+    // transacción ya confirmada ("cannot be rolled back because it has been finished
+    // with state: commit"), y ese throw ocurría DENTRO del catch, así que escapaba del
+    // handler: Express no respondía nada, la petición se quedaba colgada y no quedaba
+    // ninguna línea de estado en los registros — mientras el desembolso y la cancelación
+    // del préstamo anterior YA estaban confirmados. El gerente veía un fallo y el
+    // retanqueo se había hecho; reintentar creaba un segundo préstamo.
+    const cerrarTransaccion = async () => {
+        if (t.finished) return;
+        try { await t.rollback(); }
+        catch (e) { console.warn('[disbursed-loans] no se pudo revertir la transacción:', e.message); }
+    };
+
     try {
         // ==== 1. ID_VM CONSECUTIVO (MODELO: SOL{N}) ====
         // Lectura dentro de la transacción para evitar race condition con requests simultáneos
@@ -2595,22 +2609,26 @@ router.post('/disbursed-loans', async (req, res) => {
         // ==== 2. VALIDAR CLIENT_ID ====
         const clientId = parseInt(req.body.clientId);
         if (!clientId) {
+            await cerrarTransaccion();
             return res.status(400).json({ error: 'Debe seleccionar un socio válido.' });
         }
 
         const client = await Client.findByPk(clientId);
         if (!client) {
+            await cerrarTransaccion();
             return res.status(400).json({ error: 'El socio seleccionado no existe.' });
         }
 
         // ==== 3. VALIDAR FECHA PRESTAMO ====
         const fechaPrestamo = req.body.fechaPrestamo; // YYYY-MM-DD
         if (!fechaPrestamo) {
+            await cerrarTransaccion();
             return res.status(400).json({ error: 'Fecha de Préstamo es requerida.' });
         }
 
         const fechaDate = new Date(fechaPrestamo);
         if (isNaN(fechaDate.getTime())) {
+            await cerrarTransaccion();
             return res.status(400).json({ error: 'Fecha de Préstamo inválida.' });
         }
 
@@ -2625,12 +2643,14 @@ router.post('/disbursed-loans', async (req, res) => {
         // ==== 5. VALIDAR VALOR PRESTADO ====
         const valorPrestado = parseFloat(req.body.valorPrestado);
         if (!valorPrestado || valorPrestado <= 0) {
+            await cerrarTransaccion();
             return res.status(400).json({ error: 'El Valor Prestado debe ser mayor a 0.' });
         }
 
         // ==== 6. VALIDAR # CUOTAS ====
         const cuotas = parseInt(req.body.cuotas);
         if (!cuotas || cuotas <= 0) {
+            await cerrarTransaccion();
             return res.status(400).json({ error: 'El número de cuotas debe ser mayor a 0.' });
         }
 
@@ -2639,6 +2659,7 @@ router.post('/disbursed-loans', async (req, res) => {
         if (interesMensual) {
             interesMensual = parseFloat(interesMensual);
             if (isNaN(interesMensual) || interesMensual < 0 || interesMensual > 1) {
+                await cerrarTransaccion();
                 return res.status(400).json({ error: 'El Interés Mensual debe estar entre 0 y 1 (ej: 0.015 para 1.5%).' });
             }
         }
@@ -2702,6 +2723,7 @@ router.post('/disbursed-loans', async (req, res) => {
         const capacidad = await getLoanCapacityAnalysis(clientId);
 
         if (capacidad.enMoraActual) {
+            await cerrarTransaccion();
             return res.status(400).json({
                 error: `No se puede desembolsar: ${capacidad.nombre} tiene ${capacidad.totalCuotasMoraEP} cuota(s) en mora EP vigente por $${Math.round(capacidad.totalMoraEPValor).toLocaleString('es-CO')}. El reglamento del fondo no autoriza nuevos desembolsos con mora vigente — regularice los pagos primero.`
             });
@@ -2734,6 +2756,7 @@ router.post('/disbursed-loans', async (req, res) => {
         const gerenteAprueba = req.body.gerenteAprueba === true;
 
         if (!vieneDeSolicitudAprobada && !gerenteAprueba && valorPrestado > capacidadDisponible) {
+            await cerrarTransaccion();
             return res.status(400).json({
                 error: `El monto solicitado ($${valorPrestado.toLocaleString('es-CO')}) supera el cupo máximo sin votación de ${capacidad.nombre} (3× ahorro: $${Math.round(cupoMaximo).toLocaleString('es-CO')}, disponible: $${Math.round(Math.max(0, capacidadDisponible)).toLocaleString('es-CO')}). Este monto requiere aprobación de la Junta Administrativa — regístralo primero como solicitud en Aprobación de Préstamos, o usa "Aprobar como Gerente" si decides autorizarlo directamente.`
             });
@@ -2925,23 +2948,34 @@ router.post('/disbursed-loans', async (req, res) => {
 
         await t.commit();
 
-        const { createNotification } = require('../services/NotificationService');
-        await createNotification({
-            clientId: loan.clientId,
-            type: 'loan_disbursed',
-            title: 'Se registró tu préstamo',
-            message: `Tu préstamo de $${Math.round(Number(loan.valorPrestado)).toLocaleString('es-CO')} (${loan.idVm}) fue registrado.`,
-            link: '/dashboard/loans'
-        });
+        // A partir de aquí el desembolso YA está registrado y el préstamo anterior YA está
+        // cancelado. Nada de lo que siga puede presentarse como un fallo de la operación:
+        // avisar al socio es un extra. Antes iba sin protección y su excepción caía en el
+        // catch de abajo, que intentaba revertir una transacción ya confirmada; el rollback
+        // lanzaba, el throw escapaba del handler y Express se quedaba sin responder. Para el
+        // gerente eso es un error sin mensaje y sin rastro en los registros, sobre una
+        // operación que en realidad sí se hizo — y reintentarla crea un segundo préstamo.
+        try {
+            const { createNotification } = require('../services/NotificationService');
+            await createNotification({
+                clientId: loan.clientId,
+                type: 'loan_disbursed',
+                title: 'Se registró tu préstamo',
+                message: `Tu préstamo de $${Math.round(Number(loan.valorPrestado)).toLocaleString('es-CO')} (${loan.idVm}) fue registrado.`,
+                link: '/dashboard/loans'
+            });
+        } catch (e) {
+            console.warn(`[disbursed-loans] ${loan.idVm} quedó registrado, pero no se pudo notificar al socio:`, e.message);
+        }
 
         return res.status(201).json({ loan, schedule, refinanciacion });
 
     } catch (err) {
-        await t.rollback();
+        await cerrarTransaccion();
         if (err.name === 'SequelizeUniqueConstraintError') {
             return res.status(409).json({ error: 'ID_VM duplicado (concurrencia). Intente de nuevo.' });
         }
-        res.status(400).json({ error: err.message });
+        return res.status(400).json({ error: err.message });
     }
 });
 
