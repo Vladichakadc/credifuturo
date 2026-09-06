@@ -7,7 +7,7 @@ import api from '../../config/api';
 import { computeFundProjection } from '../../utils/fundProjection';
 import { construirReparto, NOMBRE_MES } from '../../utils/reparto';
 import PesoPorMes from '../../components/reparto/PesoPorMes';
-import BarraReparto from '../../components/reparto/BarraReparto';
+import GraficoReparto from '../../components/reparto/GraficoReparto';
 import SimuladorAbono from '../../components/reparto/SimuladorAbono';
 import PanelJunta from '../../components/reparto/PanelJunta';
 
@@ -302,7 +302,7 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
             {/* ── El reparto completo ──────────────────────────────────────── */}
             <Tarjeta className="overflow-hidden">
                 <div className="px-5 py-3 bg-gray-50 border-b border-gray-100">
-                    <h2 className="font-bold text-sm text-gray-800">Cómo se divide el total</h2>
+                    <h2 className="font-bold text-sm text-gray-800">Cómo se reparte la ganancia</h2>
                     <p className="text-[11px] text-gray-500">
                         {fmt(ganancia.monto)} repartidos entre {conParte} socios.
                         {reparto.cuadra
@@ -311,7 +311,12 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                     </p>
                 </div>
                 <div className="p-5">
-                    <BarraReparto filas={reparto.filas} yoId={datos.yoId}
+                    {/* En la vista de administración no se resalta "lo tuyo": una
+                        cifra personal no pinta en la pantalla con la que se
+                        gobierna el reparto de todos. Ahí el tercer indicador pasa
+                        a ser el reparto promedio, que sí es de gobierno. */}
+                    <GraficoReparto filas={reparto.filas} yoId={esVistaAdmin ? null : datos.yoId} monto={ganancia.monto}
+                        totalPonderado={reparto.totalCapitalPonderado}
                         onSeleccionar={(f) => setExpandido(prev => prev === f.id ? null : f.id)} />
                 </div>
 
@@ -335,10 +340,14 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                                         orden, las dos columnas cuentan la historia sola —esto puso,
                                         esto le cuenta— y la tercera dice por qué. Sin la primera, el
                                         capital ponderado es un número que no se puede juzgar. */}
-                                    <th className="px-3 py-2 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider hidden md:table-cell">Ahorro</th>
-                                    <th className="px-3 py-2 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider">Capital ponderado</th>
-                                    <th className="px-3 py-2 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider hidden lg:table-cell" title="Qué fracción del ahorro acabó contando: 100% si estuvo desde enero o desde antes">Peso</th>
-                                    <th className="px-3 py-2 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider hidden sm:table-cell">Participación</th>
+                                    <th className="px-3 py-2 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider">Ahorro</th>
+                                    {/* El capital ponderado sale de la tabla: es la cuenta
+                                        intermedia, no el resultado. Sigue estando en el
+                                        desglose que se abre bajo cada socio, que es donde
+                                        se comprueba de dónde sale. Aquí manda lo que el
+                                        socio reconoce —lo que ahorró— y lo que recibe. */}
+                                    <th className="px-3 py-2 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider hidden lg:table-cell" title="Qué fracción del ahorro acabó contando: 100% si estuvo desde el 1 de enero o desde antes">Peso</th>
+                                    <th className="px-3 py-2 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider hidden sm:table-cell" title="Qué porcentaje de la ganancia total del fondo le corresponde a este socio">% de la ganancia</th>
                                     <th className="px-5 py-2 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider">Le corresponde</th>
                                 </tr>
                             </thead>
@@ -367,8 +376,7 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                                                         </span>
                                                     )}
                                                 </td>
-                                                <td className="px-3 py-2.5 text-right text-gray-400 tabular-nums hidden md:table-cell">{fmt(f.capitalBase)}</td>
-                                                <td className="px-3 py-2.5 text-right text-gray-700 font-bold tabular-nums">{fmt(f.capitalPonderado)}</td>
+                                                <td className="px-3 py-2.5 text-right text-gray-600 tabular-nums">{fmt(f.capitalBase)}</td>
                                                 <td className="px-3 py-2.5 text-right tabular-nums hidden lg:table-cell">
                                                     <PesoEfectivo valor={f.pesoEfectivo} />
                                                 </td>
@@ -377,7 +385,7 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                                             </tr>
                                             {abierto && (
                                                 <tr className="bg-gray-50/70">
-                                                    <td colSpan={7} className="px-5 py-4">
+                                                    <td colSpan={6} className="px-5 py-4">
                                                         <PesoPorMes porMes={f.porMes} periodo={periodo} altura={170} />
                                                         <TablaPesos porMes={f.porMes} total={f.capitalPonderado} movimientos={f.movimientos} />
                                                     </td>
@@ -390,8 +398,7 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                             <tfoot>
                                 <tr className="bg-gray-50 border-t-2 border-gray-200">
                                     <td className="px-5 py-2.5 text-[10px] font-black uppercase tracking-wider text-gray-500" colSpan={2}>Total</td>
-                                    <td className="px-3 py-2.5 text-right font-black text-gray-500 tabular-nums hidden md:table-cell">{fmt(reparto.totalCapitalBase)}</td>
-                                    <td className="px-3 py-2.5 text-right font-black text-gray-700 tabular-nums">{fmt(reparto.totalCapitalPonderado)}</td>
+                                    <td className="px-3 py-2.5 text-right font-black text-gray-700 tabular-nums">{fmt(reparto.totalCapitalBase)}</td>
                                     <td className="px-3 py-2.5 text-right font-black text-gray-500 tabular-nums hidden lg:table-cell">
                                         {reparto.totalCapitalBase > 0 ? `${Math.round((reparto.totalCapitalPonderado / reparto.totalCapitalBase) * 100)}%` : '—'}
                                     </td>
