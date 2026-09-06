@@ -1850,6 +1850,19 @@ router.get('/savings/ranking', async (req, res) => {
         const factorLeido = Number(filaFactor?.value);
         const factorPermanencia = Number.isFinite(factorLeido) && factorLeido >= 1 ? factorLeido : 1;
 
+        // ── Lo que la asamblea decidió no repartir ───────────────────────────
+        // La ganancia es un hecho contable y no se toca; lo que se decide es
+        // cuánto se retiene y para qué. Las dos van en JSON porque llevan más de
+        // un dato (tipo, valor y destino), y AppSetting.value es TEXT.
+        const leerJson = async (clave, porDefecto) => {
+            try {
+                const fila = await AppSetting.findOne({ where: { key: clave } });
+                return fila?.value ? JSON.parse(fila.value) : porDefecto;
+            } catch { return porDefecto; }
+        };
+        const retencion = await leerJson('reparto.retencion', { tipo: 'porcentaje', valor: 0, destino: '' });
+        const descuentos = await leerJson('reparto.descuentos', {});
+
         res.json({
             ok: true,
             periodo: {
@@ -1869,7 +1882,7 @@ router.get('/savings/ranking', async (req, res) => {
                 esAnioActual: anio === anioActual,
             },
             anios,
-            parametros: { factorPermanencia },
+            parametros: { factorPermanencia, retencion, descuentos },
             puedeVerTodo,
             yoId: req.user?.id || null,
             socios,
@@ -7215,7 +7228,10 @@ router.put('/settings/:key', verifyToken, requireFreshPassword, requireRole('adm
     try {
         const AppSetting = require('../models/AppSetting');
         const { key } = req.params;
-        const { value } = req.body;
+        // `let` porque la retención y los descuentos se normalizan antes de
+        // guardarse: lo que queda en la base es siempre la misma forma, venga
+        // como venga del formulario o de la API.
+        let { value } = req.body;
         if (value === undefined || value === null) {
             return res.status(400).json({ error: 'El campo value es requerido.' });
         }
@@ -7224,6 +7240,46 @@ router.put('/settings/:key', verifyToken, requireFreshPassword, requireRole('adm
         // que se validan aquí y no solo en el formulario: un factor de 50 llegado
         // por API dejaría a quien conservó saldo con casi toda la utilidad y al
         // resto sin nada, sin que nada lo hubiera impedido.
+        // La retención y los descuentos mueven dinero entre los socios y el fondo,
+        // así que sus topes viven aquí y no solo en el formulario.
+        if (key === 'reparto.retencion') {
+            let r;
+            try { r = typeof value === 'string' ? JSON.parse(value) : value; } catch { r = null; }
+            const v = Number(r?.valor);
+            if (!r || !['porcentaje', 'valor'].includes(r.tipo) || !Number.isFinite(v) || v < 0) {
+                return res.status(400).json({ error: 'La retención debe indicar tipo (porcentaje o valor) y un monto no negativo.' });
+            }
+            if (r.tipo === 'porcentaje' && v > 100) {
+                return res.status(400).json({ error: 'Una retención en porcentaje no puede pasar del 100%.' });
+            }
+            if (String(r.destino || '').length > 200) {
+                return res.status(400).json({ error: 'El destino de la retención no puede pasar de 200 caracteres.' });
+            }
+            // Se normaliza antes de guardar: así lo que se lee es siempre lo mismo.
+            value = JSON.stringify({ tipo: r.tipo, valor: v, destino: String(r.destino || '').trim() });
+        }
+        if (key === 'reparto.descuentos') {
+            let d;
+            try { d = typeof value === 'string' ? JSON.parse(value) : value; } catch { d = null; }
+            if (!d || typeof d !== 'object' || Array.isArray(d)) {
+                return res.status(400).json({ error: 'Los descuentos deben venir como un objeto por socio.' });
+            }
+            const limpio = {};
+            for (const [id, dto] of Object.entries(d)) {
+                const v = Number(dto?.valor);
+                if (!/^\d+$/.test(String(id))) {
+                    return res.status(400).json({ error: 'Cada descuento debe ir contra un socio válido.' });
+                }
+                if (!['porcentaje', 'valor'].includes(dto?.tipo) || !Number.isFinite(v) || v < 0) {
+                    return res.status(400).json({ error: 'Cada descuento debe indicar tipo (porcentaje o valor) y un monto no negativo.' });
+                }
+                if (dto.tipo === 'porcentaje' && v > 100) {
+                    return res.status(400).json({ error: 'Un descuento en porcentaje no puede pasar del 100%.' });
+                }
+                if (v > 0) limpio[id] = { tipo: dto.tipo, valor: v, motivo: String(dto.motivo || '').trim().slice(0, 200) };
+            }
+            value = JSON.stringify(limpio);
+        }
         if (key === 'reparto.factorPermanencia') {
             const f = Number(value);
             if (!Number.isFinite(f) || f < 1 || f > 3) {

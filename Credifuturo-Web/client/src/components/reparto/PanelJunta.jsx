@@ -21,18 +21,21 @@ const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
  * quiera —eso no toca nada— pero el valor que rige el reparto lo escribe una sola
  * persona, que es como estaba antes y no algo que corresponda ampliar de paso.
  */
-export default function PanelJunta({ socios, guardado, monto, puedeGuardar, onGuardado, periodo, diagnostico, anomalias, origenMonto }) {
+export default function PanelJunta({ socios, guardado, monto, puedeGuardar, onGuardado, periodo, diagnostico, anomalias, origenMonto, retencion, descuentos, reparto }) {
     const { toast } = useUi();
     const factorGuardado = guardado.factorPermanencia ?? 1;
     const [factor, setFactor] = useState(factorGuardado);
     const [guardando, setGuardando] = useState(false);
 
+    // Las dos simulaciones llevan la retención y los descuentos vigentes: medir
+    // el efecto del premio sobre un reparto sin ellos compararía contra algo que
+    // ya no existe.
     const actual = useMemo(
-        () => construirReparto(socios, { factorPermanencia: factorGuardado, monto }),
-        [socios, factorGuardado, monto]);
+        () => construirReparto(socios, { factorPermanencia: factorGuardado, monto, retencion, descuentos }),
+        [socios, factorGuardado, monto, retencion, descuentos]);
     const simulado = useMemo(
-        () => construirReparto(socios, { factorPermanencia: factor, monto }),
-        [socios, factor, monto]);
+        () => construirReparto(socios, { factorPermanencia: factor, monto, retencion, descuentos }),
+        [socios, factor, monto, retencion, descuentos]);
 
     const hayCambio = factor !== factorGuardado;
 
@@ -48,14 +51,21 @@ export default function PanelJunta({ socios, guardado, monto, puedeGuardar, onGu
             .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
     }, [hayCambio, actual, simulado]);
 
+    // Los tres ajustes se guardan juntos porque juntos definen un reparto: dejar
+    // guardada la retención sin los descuentos —o al revés— dejaría a los socios
+    // viendo un reparto que la Junta nunca aprobó entero.
     const guardar = async () => {
         setGuardando(true);
         try {
-            await api.put('/admin/settings/reparto.factorPermanencia', { value: factor });
-            toast.success('Premio por permanencia guardado. El reparto que ven los socios ya lo usa.', 7000);
+            await Promise.all([
+                api.put('/admin/settings/reparto.factorPermanencia', { value: factor }),
+                api.put('/admin/settings/reparto.retencion', { value: JSON.stringify(retencion || {}) }),
+                api.put('/admin/settings/reparto.descuentos', { value: JSON.stringify(descuentos || {}) }),
+            ]);
+            toast.success('Reparto guardado. Lo que ven los socios ya usa estos valores.', 7000);
             onGuardado?.({ factorPermanencia: factor });
         } catch (err) {
-            toast.error(err.response?.data?.error || 'No se pudo guardar el parámetro.');
+            toast.error(err.response?.data?.error || 'No se pudo guardar el reparto.');
         } finally {
             setGuardando(false);
         }
@@ -126,19 +136,27 @@ export default function PanelJunta({ socios, guardado, monto, puedeGuardar, onGu
                     </div>
                 ) : (
                     <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-500">
-                        El premio en pantalla es el que está guardado. Muévelo para ver el efecto antes de aplicarlo.
+                        El premio en pantalla es el que está guardado. Muévelo para ver el efecto antes de aplicarlo. La retención y los descuentos se guardan con este mismo botón.
                     </div>
                 )}
 
                 {/* ── Comprobaciones ── */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {/* La identidad completa, no solo "repartido = ganancia": desde que
+                        el fondo puede retener, lo que un acta firma es que nada se
+                        pierde y nada aparece. */}
                     <div className={`rounded-xl border px-3 py-2.5 flex items-start gap-2 ${simulado.cuadra ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
                         <ShieldCheck className={`h-4 w-4 flex-shrink-0 mt-0.5 ${simulado.cuadra ? 'text-emerald-600' : 'text-red-600'}`} />
-                        <div>
+                        <div className="min-w-0">
                             <p className={`text-[10px] font-black uppercase tracking-wider ${simulado.cuadra ? 'text-emerald-700' : 'text-red-700'}`}>
-                                {simulado.cuadra ? 'El reparto cuadra' : 'El reparto NO cuadra'}
+                                {simulado.cuadra ? 'Todo cuadra' : 'NO cuadra'}
                             </p>
-                            <p className="text-[11px] text-gray-600 tabular-nums">Repartido {fmt(simulado.totalRepartido)} de {fmt(monto)}</p>
+                            <p className="text-[11px] text-gray-600 tabular-nums leading-snug">
+                                Repartido {fmt(simulado.totalRepartido)}
+                                {simulado.retenido > 0 && <> · retenido {fmt(simulado.retenido)}</>}
+                                {simulado.totalDescuentos > 0 && <> · descuentos {fmt(simulado.totalDescuentos)}</>}
+                                {' '}= {fmt(simulado.ganancia)}
+                            </p>
                         </div>
                     </div>
 
@@ -160,6 +178,15 @@ export default function PanelJunta({ socios, guardado, monto, puedeGuardar, onGu
                     </div>
                 </div>
 
+                {(reparto?.totalRetenido > 0) && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[11px] text-amber-900 leading-snug">
+                        <strong>{fmt(reparto.totalRetenido)}</strong> se quedan en el fondo y no se reparten
+                        {reparto.retenido > 0 && <> — {fmt(reparto.retenido)} de retención general{retencion?.destino ? ` para «${retencion.destino}»` : ' (sin destino escrito)'}</>}
+                        {reparto.totalDescuentos > 0 && <> — {fmt(reparto.totalDescuentos)} en descuentos a socios</>}.
+                        {' '}Lo descontado a un socio <strong>no se reparte entre los demás</strong>: queda en el fondo, que es de todos por igual.
+                    </div>
+                )}
+
                 {!!anomalias?.length && (
                     <div className="rounded-xl border border-red-200 bg-red-50 p-3 space-y-1.5">
                         <p className="text-[10px] font-black uppercase tracking-wider text-red-700 flex items-center gap-1.5">
@@ -173,9 +200,9 @@ export default function PanelJunta({ socios, guardado, monto, puedeGuardar, onGu
 
                 {puedeGuardar ? (
                     <div className="flex justify-end">
-                        <Button onClick={guardar} disabled={guardando || !hayCambio} className="gap-2">
+                        <Button onClick={guardar} disabled={guardando} className="gap-2">
                             {guardando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                            Guardar premio
+                            Guardar reparto
                         </Button>
                     </div>
                 ) : (
