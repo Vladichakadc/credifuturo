@@ -2626,7 +2626,11 @@ router.post('/disbursed-loans', async (req, res) => {
             return res.status(400).json({ error: 'Fecha de Préstamo es requerida.' });
         }
 
-        const fechaDate = new Date(fechaPrestamo);
+        // Anclado al día de calendario que el formulario escribió, y leído en UTC.
+        // `new Date('YYYY-MM-DD')` es medianoche UTC, pero getMonth()/getFullYear()
+        // leen en el huso del proceso: con el huso de Colombia un desembolso del día 1
+        // caería en el mes anterior y correría el cronograma entero.
+        const fechaDate = diaCalendario(fechaPrestamo);
         if (isNaN(fechaDate.getTime())) {
             await cerrarTransaccion();
             return res.status(400).json({ error: 'Fecha de Préstamo inválida.' });
@@ -2637,8 +2641,8 @@ router.post('/disbursed-loans', async (req, res) => {
             'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
             'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
         ];
-        const mesDesembolso = monthNames[fechaDate.getMonth()];
-        const anioDesembolso = fechaDate.getFullYear();
+        const mesDesembolso = monthNames[fechaDate.getUTCMonth()];
+        const anioDesembolso = fechaDate.getUTCFullYear();
 
         // ==== 5. VALIDAR VALOR PRESTADO ====
         const valorPrestado = parseFloat(req.body.valorPrestado);
@@ -2917,8 +2921,8 @@ router.post('/disbursed-loans', async (req, res) => {
             let nextPNumber = pNumbers.length === 0 ? 1 : Math.max(...pNumbers) + 1;
 
             const capitalPorCuota = valorPrestado / cuotas;
-            const disbMes = fechaDate.getMonth();
-            const disbAnio = fechaDate.getFullYear();
+            const disbMes = fechaDate.getUTCMonth();
+            const disbAnio = fechaDate.getUTCFullYear();
 
             const monthNamesList = [
                 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -2930,8 +2934,16 @@ router.post('/disbursed-loans', async (req, res) => {
 
             for (let i = 1; i <= cuotas; i++) {
                 const interesesCuota = parseFloat((saldoInicialActual * interesMensual).toFixed(2));
-                const valorCuotaVariable = parseFloat((capitalPorCuota + interesesCuota).toFixed(2));
-                const saldoFinal = parseFloat((saldoInicialActual - capitalPorCuota).toFixed(2));
+                // La última cuota amortiza lo que quede, no una porción teórica. Repartir
+                // el capital en partes iguales deja un residuo de céntimos cuando la
+                // división no es exacta ($5.500.000 entre 6 cerraba en −$0,02), y ese
+                // residuo hace que el cuadre de la Matriz de Cuotas nunca dé exacto y que
+                // el crédito no se extinga del todo. Mismo criterio que ya aplica el motor
+                // de abonos al rehacer un cronograma.
+                const esUltima = i === cuotas;
+                const capitalCuota = esUltima ? saldoInicialActual : capitalPorCuota;
+                const valorCuotaVariable = parseFloat((capitalCuota + interesesCuota).toFixed(2));
+                const saldoFinal = esUltima ? 0 : parseFloat((saldoInicialActual - capitalCuota).toFixed(2));
                 const pagoMesIdx = (disbMes + i) % 12;
                 const pagoAnio = disbAnio + Math.floor((disbMes + i) / 12);
 
@@ -3006,7 +3018,11 @@ router.put('/disbursed-loans/:id', async (req, res) => {
 
         // Recalcular Mes y Año si se cambia la fecha
         const fechaPrestamo = req.body.fechaPrestamo || loan.fechaPrestamo;
-        const fechaDate = new Date(fechaPrestamo);
+        // Anclado al día de calendario que el formulario escribió, y leído en UTC.
+        // `new Date('YYYY-MM-DD')` es medianoche UTC, pero getMonth()/getFullYear()
+        // leen en el huso del proceso: con el huso de Colombia un desembolso del día 1
+        // caería en el mes anterior y correría el cronograma entero.
+        const fechaDate = diaCalendario(fechaPrestamo);
 
         if (isNaN(fechaDate.getTime())) {
             return res.status(400).json({ error: 'Fecha de Préstamo inválida.' });
@@ -3016,8 +3032,8 @@ router.put('/disbursed-loans/:id', async (req, res) => {
             'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
             'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
         ];
-        const mesDesembolso = monthNames[fechaDate.getMonth()];
-        const anioDesembolso = fechaDate.getFullYear();
+        const mesDesembolso = monthNames[fechaDate.getUTCMonth()];
+        const anioDesembolso = fechaDate.getUTCFullYear();
 
         // Validar Valor Prestado
         const valorPrestado = parseFloat(req.body.valorPrestado !== undefined ? req.body.valorPrestado : loan.valorPrestado);
@@ -3129,8 +3145,8 @@ router.put('/disbursed-loans/:id', async (req, res) => {
                     'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
                 ];
                 const capitalPorCuota = valorPrestado / cuotas;
-                const disbMes = fechaDate.getMonth();
-                const disbAnio = fechaDate.getFullYear();
+                const disbMes = fechaDate.getUTCMonth();
+                const disbAnio = fechaDate.getUTCFullYear();
                 const scheduleRows = [];
                 let saldoInicialActual = valorPrestado;
 

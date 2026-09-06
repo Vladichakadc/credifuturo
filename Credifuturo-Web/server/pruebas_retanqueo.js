@@ -571,6 +571,72 @@ async function main() {
         comprobar('no se canceló ninguno de los dos', sigueVigente === 2, `quedan ${sigueVigente}`);
     }
 
+    // ───────────────────────────────────────────────────────────────────────
+    console.log('\n14. El cronograma cierra el saldo en cero y suma exactamente lo prestado');
+    // Repartir el capital en partes iguales deja céntimos sueltos cuando la división
+    // no es exacta, y entonces el crédito no se extingue ni el cuadre da exacto.
+    {
+        const socio = await Client.create({
+            name: 'Cierre', apellido1: 'Exacto', cedula: '7799010', customerId: '7799010',
+            email: 'cierre@prueba.local', password: bcrypt.hashSync('x', 10), role: 'user', estatus: 'Activo',
+        });
+        await Saving.create({
+            clientId: socio.id, amount: 50000000, valorAhorrado: 50000000, type: 'Mensual',
+            status: 'Abono', monthInt: 1, year: 2026, mesAbonado: 1, anioAbonado: 2026, date: '2026-01-15',
+        });
+        // 1.000.000 entre 3 no es exacto: es donde aparecía el residuo.
+        const { status, body } = await desembolsar({
+            clientId: socio.id, fechaPrestamo: '2026-09-05', mesDesembolso: 'Septiembre',
+            anioDesembolso: 2026, valorPrestado: 1000000, cuotas: 3, interesMensual: 0.014, estado: 'Vigente',
+        });
+        comprobar('el desembolso se registra', status === 201, `HTTP ${status}`);
+        const filas = await LoanPayment.findAll({ where: { idVm: body.loan.idVm }, order: [['item_quantity', 'ASC']] });
+        comprobar('la última cuota deja el saldo en cero exacto', num(filas[filas.length - 1].saldoFinal) === 0,
+            `dio ${num(filas[filas.length - 1].saldoFinal)}`);
+        const capital = filas.reduce((s2, c) => s2 + (num(c.saldoInicial) - num(c.saldoFinal)), 0);
+        comprobar('el capital de las cuotas suma lo prestado', cerca(capital, 1000000, 0.001),
+            `sumó ${capital}`);
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    console.log('\n15. El mes de desembolso no depende del huso del proceso');
+    // `new Date('YYYY-MM-DD')` es medianoche UTC; leerlo con getMonth() en el huso de
+    // Colombia devolvía el mes anterior para un desembolso del día 1.
+    {
+        const socio = await Client.create({
+            name: 'Primero', apellido1: 'DeMes', cedula: '7799011', customerId: '7799011',
+            email: 'primero@prueba.local', password: bcrypt.hashSync('x', 10), role: 'user', estatus: 'Activo',
+        });
+        await Saving.create({
+            clientId: socio.id, amount: 50000000, valorAhorrado: 50000000, type: 'Mensual',
+            status: 'Abono', monthInt: 1, year: 2026, mesAbonado: 1, anioAbonado: 2026, date: '2026-01-15',
+        });
+        const { body } = await desembolsar({
+            clientId: socio.id, fechaPrestamo: '2026-09-01', mesDesembolso: 'Septiembre',
+            anioDesembolso: 2026, valorPrestado: 3000000, cuotas: 3, interesMensual: 0.014, estado: 'Vigente',
+        });
+        const guardado = await DisbursedLoan.findByPk(body.loan.id);
+        comprobar('un desembolso del día 1 se registra en SU mes', guardado.mesDesembolso === 'Septiembre',
+            `quedó en ${guardado.mesDesembolso}`);
+        comprobar('y en su año', Number(guardado.anioDesembolso) === 2026, `quedó en ${guardado.anioDesembolso}`);
+        const primera = await LoanPayment.findOne({ where: { idVm: body.loan.idVm }, order: [['item_quantity', 'ASC']] });
+        comprobar('la primera cuota vence el mes siguiente', String(primera.fechaPagoMax).startsWith('2026-10'),
+            `vence ${primera.fechaPagoMax}`);
+
+        // Las comprobaciones de arriba pasan igual con el defecto, porque este proceso
+        // corre en UTC. Esta fija la propiedad de verdad: con el huso de Colombia, leer
+        // el mes en local devuelve AGOSTO para una fecha de septiembre; leerlo en UTC no.
+        const husoPrevio = process.env.TZ;
+        process.env.TZ = 'America/Bogota';
+        const enLocal = new Date('2026-09-01').getMonth();
+        const enUTC = new Date('2026-09-01').getUTCMonth();
+        process.env.TZ = husoPrevio;
+        comprobar('leer el mes en UTC resiste el cambio de huso', enUTC === 8,
+            `en UTC dio ${enUTC + 1}`);
+        comprobar('y leerlo en local NO lo resiste (por eso se cambió)', enLocal === 7,
+            `en local dio ${enLocal + 1}; si coincide con UTC, la prueba dejó de medir nada`);
+    }
+
     console.log('\n──────────────────────────────────────────────');
     console.log(`${ok} comprobaciones correctas · ${fallos} fallidas`);
     console.log('──────────────────────────────────────────────\n');
