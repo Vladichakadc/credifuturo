@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Who you are working for
+
+**Vladimir Escobar** (cédula `14297227`) is the person giving the instructions in this repository. He holds **three roles at once**, and that is the single most load-bearing fact about this application's UI:
+
+- **Gerente / `role: 'admin'`** — the only admin account. Everything behind the admin-only gate is his.
+- **Socio** — he is a member like any other: he saves, he takes loans, he receives a share of the profit.
+- **Junta Administrativa** — he votes on loan requests alongside the subgerente and the tesorera.
+
+**A screen that blends two of those roles confuses him, and he has said so.** When a feature has both a personal side ("what do I get") and a governance side ("what do we decide for everyone"), split it into two routes — `/dashboard/*` for the member view, `/admin/*` for the governance view — instead of one screen that adapts by role. The profit-distribution module does exactly this and is the reference implementation; see "Profit distribution" below. Junta members who are *not* admin (subgerente, tesorera) have no `/admin` route, so their governance surface lives in the member dashboard — which is why "one place per person per task" is the rule, not "hide it from non-admins".
+
 ## Project Overview
 
 **Credifuturo** is a financial management web application for a microfinance cooperative. It manages member (socio) savings, loan disbursements, and payment quota tracking. The UI and domain terminology are in Spanish.
@@ -182,8 +192,10 @@ These five flows span the backend, the data model, and the client — read here 
   - **The distribution is exact by construction.** `repartir()` uses largest-remainder (Hare): whole pesos first, then the leftovers one by one to the largest fractional remainders. Rounding each share independently leaves the total a few pesos off the fund's profit, and in a minute that gap has to be explained.
   - **Date quality is reported, never assumed.** Every movement carries `origenFecha` (`pago` / `periodo` / `sin`) and the endpoint returns the counts. A movement with no usable date is left out of the weighting rather than given an invented one, and the Junta panel shows how many fell to each level.
   - **The table is ordered by distribution, highest first**, and each row expands into the member's month-by-month weights — the figure the whole screen exists to justify.
+  - **Two views, not one that adapts.** `RepartoUtilidadesPage` takes a `vista` prop and the two wrappers pass it: `vista="admin"` (`/admin/savings/ranking`) is the governance tool — the full table, the parameters, the data-quality checks — with **no "Tu parte" and no simulator**, even though the person looking is also a member. `vista="socio"` (`/dashboard/ranking-ahorro`) is the personal one. The gerente is also a socio and a Junta member, and one screen showing both his own share and the parameters he distributes everyone's money with made him mix them up. The header carries a link between the two so the hat he is wearing is always stated. The Junta panel appears in the socio view **only for Junta members who are not admin**, because they have no admin route — the admin already has it on his own.
+  - **The unweighted savings sit next to the weighted capital, on purpose.** A weighted figure alone cannot be judged: $5.616.667 does not say whether it is a large saver whose money came late or a small one whose money came early. The table shows `capitalBase` (opening capital + the year's deposits), then `capitalPonderado`, then `pesoEfectivo` = the ratio — 100% means the money was there from January or before, 20% means it arrived late or left during the year. That third column is what turns two members with the same savings and very different shares from an apparent error into an explanation.
   - **Who sees what.** The route is in `BETA_ROUTES`, so it is gated by `requireAdminOrBetaTester` — which, note, additionally requires the `propuestas_enabled` AppSetting, a coupling inherited from the proposals rollout. Per-movement detail is returned only for the requesting member; admin and Junta get everyone's. Saving the parameter stays admin-only; the Junta simulates.
-  Regression suites: `node server/pruebas_reparto.js` (76 assertions, pure arithmetic) and `node server/pruebas_reparto_http.js` (47 assertions over the real route).
+  Regression suites: `node server/pruebas_reparto.js` (89 assertions, pure arithmetic) and `node server/pruebas_reparto_http.js` (over the real route).
 
 - **Member proposals (BETA).** `Propuesta` + `VotoPropuesta`, gated on the client by the `BETA_USERS` name allow-list in `client/src/utils/betaAccess.js` (mirrored in the nav) and on the server by the cédula-based `BETA_CEDULAS` set in `routes/admin.js` (see "Authorization gate in `admin.js`" above). Endpoints under `/propuestas*` (create, list, update, `/voto`, `/estado`, delete).
 

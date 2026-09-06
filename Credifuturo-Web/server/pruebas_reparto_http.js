@@ -162,6 +162,14 @@ const CUOTA = 200000;
         comprobar('el desglose por mes pone todo el aporte de Enero en enero',
             de(d, 'Enero').porMes[1].aportado === 12 * CUOTA);
         comprobar('con peso 100%', de(d, 'Enero').porMes[1].peso === 1);
+
+        // El capital sin ponderar viaja junto al ponderado: sin él, la cifra
+        // ponderada no se puede juzgar en pantalla.
+        comprobar('los dos ahorraron lo mismo sin ponderar',
+            e.capitalBase === t.capitalBase && e.capitalBase === 12 * CUOTA);
+        comprobar('pero su peso efectivo es opuesto',
+            e.pesoEfectivo === 1 && cerca(t.pesoEfectivo, 1 / 12, 0.001),
+            `${e.pesoEfectivo} vs ${t.pesoEfectivo}`);
     }
 
     // ───────────────────────────────────────────────────────────────

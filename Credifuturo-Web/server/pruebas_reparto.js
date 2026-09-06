@@ -227,7 +227,35 @@ afirmar('un movimiento sin fecha utilizable no se pondera', sinFecha.capitalPond
 afirmar('y se cuenta aparte para poder reportarlo', sinFecha.conteoOrigen.sin, 1);
 afirmar('el conteo de orígenes cuadra con los movimientos', aEnero.conteoOrigen, { pago: 12, periodo: 0, sin: 0 });
 
-seccion('13. El desglose por mes que ve el socio');
+seccion('13. El capital sin ponderar, para poder juzgar el ponderado');
+
+// Una cifra ponderada sola no se puede leer: no dice si es mucho dinero que
+// llegó tarde o poco que llegó temprano. Al lado del capital sin ponderar, sí.
+afirmar('quien pagó todo en enero puso 2,4 millones', aEnero.capitalBase, 12 * CUOTA);
+afirmar('y le contaron los 2,4 completos', aEnero.capitalPonderado, 12 * CUOTA, 1);
+afirmar('su peso efectivo es del 100%', aEnero.pesoEfectivo, 1, 1e-9);
+
+afirmar('quien pagó lo mismo en diciembre puso exactamente igual', aTarde.capitalBase, 12 * CUOTA);
+afirmar('pero solo le cuenta la doceava parte', aTarde.pesoEfectivo, 1 / 12, 1e-9);
+cierto('los dos capitales son iguales y los pesos efectivos no',
+    aEnero.capitalBase === aTarde.capitalBase && aEnero.pesoEfectivo !== aTarde.pesoEfectivo);
+
+afirmar('el puntual mes a mes queda en un 54%', aMesAMes.pesoEfectivo, 6.5 / 12, 1e-9);
+
+// Un retiro baja el peso efectivo sin tocar el capital que el socio puso: es
+// justo lo que hace falta ver para entender por qué le corresponde menos.
+afirmar('quien conservó su capital tiene peso efectivo del 100%', conservo.pesoEfectivo, 1, 1e-9);
+cierto('quien retiró en marzo baja de la mitad', retiroTotal.pesoEfectivo < 0.5);
+cierto('y quien retiró parcialmente queda en medio',
+    retiroParcial.pesoEfectivo > retiroTotal.pesoEfectivo && retiroParcial.pesoEfectivo < conservo.pesoEfectivo);
+afirmar('el capital sin ponderar no cambia por retirar', retiroTotal.capitalBase, conservo.capitalBase);
+
+afirmar('un socio sin movimientos no divide por cero', ponderarSocio([], P).pesoEfectivo, 0);
+cierto('el peso efectivo nunca pasa del 100%',
+    [aEnero, aMesAMes, aTarde, conservo, retiroTotal, retiroParcial, aAdelanto, conAporteInicial]
+        .every(a => a.pesoEfectivo >= 0 && a.pesoEfectivo <= 1));
+
+seccion('14. El desglose por mes que ve el socio');
 
 const mixto = ponderarSocio([
     previo,

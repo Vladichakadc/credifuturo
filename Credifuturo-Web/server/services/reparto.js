@@ -206,11 +206,24 @@ function ponderarSocio(movimientos, periodo) {
     const aperturaPositiva = Math.max(capitalApertura, 0);
     const capitalCierre = aperturaPositiva + netoPeriodo;
 
+    // El capital SIN ponderar: todo lo que el socio puso, sin mirar cuándo.
+    // Existe para poder mostrarlo al lado del ponderado, porque una cifra
+    // ponderada sola no se puede juzgar: $5.616.667 no dice si es un socio que
+    // ahorró mucho tarde o poco temprano. La distancia entre las dos ES el peso,
+    // y verla es lo que hace comprensible el reparto.
+    const capitalBase = aperturaPositiva + abonosPeriodo;
+    // Qué fracción de su capital acabó contando. Nunca pasa de 1: los pesos son
+    // ≤ 1 y los retiros solo restan. 100% = todo su dinero estuvo desde enero o
+    // desde antes; 40% = llegó tarde, o salió durante el año.
+    const pesoEfectivo = capitalBase > 0 ? Math.max(0, capitalPonderado) / capitalBase : 0;
+
     return {
         capitalApertura: aperturaPositiva,
         capitalAperturaCrudo: capitalApertura,
         capitalCierre,
+        capitalBase,
         capitalPonderado: Math.max(0, capitalPonderado),
+        pesoEfectivo,
         abonosPeriodo,
         retirosPeriodo,
         netoPeriodo,
