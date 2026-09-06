@@ -32,7 +32,7 @@ import {
     Lightbulb,
     MessageSquareMore,
     Eye,
-    Grid3x3,
+    Grid3x3, Coins
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import api, { apiWithRetry } from '../config/api';
@@ -340,7 +340,7 @@ const DashboardLayout = ({ user, onLogout }) => {
             icon: Lightbulb,
             label: 'Propuestas',
             children: [
-                { icon: TrendingUp,         label: 'Ranking de Ahorro',  path: '/admin/savings/ranking' },
+                { icon: Coins,              label: 'Reparto de Utilidades', path: '/admin/savings/ranking' },
                 { icon: MessageSquareMore,  label: 'Buzón de Propuestas', path: '/admin/propuestas' },
             ]
         },
