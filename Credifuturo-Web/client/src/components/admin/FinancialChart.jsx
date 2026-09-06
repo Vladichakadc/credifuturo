@@ -45,13 +45,6 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
     const riskIndex = total > 0 ? ((mora / total) * 100).toFixed(1) : 0;
     const liquidity = total > 0 ? ((disponible / total) * 100).toFixed(1) : 0;
 
-    // Retorno del Capital: ganancia del año / patrimonio de socios activos. Mismo
-    // cálculo que components/admin/RiskReturnIndicators.jsx — se sube al hero junto
-    // a "Proyección al Cierre" porque responde la pregunta que sigue naturalmente a
-    // la proyección ("¿y eso qué tan bien está usando el capital del fondo?").
-    const rentabilidadTotalActual = (stats.totalInteresesPagados || 0) + (stats.rentabilidadCajaNU || 0) + (stats.totalPenaltyValue || 0);
-    const patrimonioActivos = stats.totalAhorradoGeneral || 1;
-    const retornoCapital = (rentabilidadTotalActual / patrimonioActivos) * 100;
 
     // Baselines del año anterior — calculados por el backend desde la BD y AppSettings
     // (plan de mejora de gráficas: sin cifras congeladas en el código; los valores
@@ -85,6 +78,35 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
     const rentabilidadActual = proyeccionFondo?.gananciaRealYtd
         ?? ((stats.totalInteresesPagados || 0) + (stats.rentabilidadCajaNU || 0)
             + (stats.totalPenaltyValue || 0) + (stats.descuentoAnualVigente || 0));
+
+    // ── Retorno del Capital ─────────────────────────────────────────────────
+    //
+    // Dos correcciones, las dos del mismo tipo: una cifra que se calculaba dos
+    // veces en la misma pantalla y salía distinta.
+    //
+    // EL NUMERADOR. Esta tarjeta sumaba por su cuenta
+    // `totalInteresesPagados + rentabilidadCajaNU + totalPenaltyValue`, mientras
+    // que la fila "Ganancia total del fondo" de la tabla de abajo —en este mismo
+    // archivo— usa `gananciaRealYtd`. No son lo mismo: `totalPenaltyValue`
+    // EXCLUYE el "Descuento Total Anual Penalizacion", que en 2025 fue el 100%
+    // de la mora del año. El panel mostraba dos ganancias distintas a unos
+    // centímetros una de otra. Ahora las dos leen `rentabilidadActual`, que sale
+    // de utils/fundProjection.js — la fuente única.
+    //
+    // EL DENOMINADOR. Dividir entre el patrimonio responde "cuánto rindió el
+    // dinero que los socios TIENEN"; dividir entre el capital ponderado responde
+    // "cuánto rindió el que el fondo TUVO PARA PRESTAR". El segundo es el
+    // retorno sobre el capital medio, que es lo que reporta un fondo: el dinero
+    // que entró en noviembre engorda el patrimonio sin haber podido generar casi
+    // nada, y computarlo entero subestima el rendimiento. El servidor lo calcula
+    // con el mismo services/reparto.js que el Reparto de Utilidades, así que las
+    // dos pantallas no pueden discrepar. Si no llega, se cae al patrimonio y la
+    // tarjeta lo dice.
+    const rentabilidadTotalActual = rentabilidadActual;
+    const capitalPonderadoFondo = Number(stats.capitalPonderadoTotal) || 0;
+    const baseRetorno = capitalPonderadoFondo > 0 ? capitalPonderadoFondo : (stats.totalAhorradoGeneral || 1);
+    const baseRetornoEsPonderada = capitalPonderadoFondo > 0;
+    const retornoCapital = (rentabilidadTotalActual / baseRetorno) * 100;
 
     // ── Comparación honesta contra el año anterior ────────────────────────────
     // El error que esto corrige: se dividía la ganancia ACUMULADA del año en curso
@@ -521,7 +543,7 @@ const FinancialChart = ({ stats, execStats, yearCmp, yearCmpError = false, selec
                                 style={{ width: `${Math.min(retornoCapital * 10, 100)}%` }} />
                         </div>
                         <p className="text-[10px] text-gray-500 font-bold mt-1">
-                            ${Number(rentabilidadTotalActual).toLocaleString('es-CO', { maximumFractionDigits: 0 })} ganancia / ${Number(patrimonioActivos).toLocaleString('es-CO', { maximumFractionDigits: 0 })} patrimonio
+                            ${Number(rentabilidadTotalActual).toLocaleString('es-CO', { maximumFractionDigits: 0 })} ganancia / ${Number(baseRetorno).toLocaleString('es-CO', { maximumFractionDigits: 0 })} {baseRetornoEsPonderada ? 'capital que trabajó' : 'patrimonio'}
                         </p>
                     </div>
                 </div>
