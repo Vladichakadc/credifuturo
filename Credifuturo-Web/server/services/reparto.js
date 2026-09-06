@@ -87,22 +87,51 @@ function fechaValorDe(mov) {
     return { fecha: null, origen: 'sin' };
 }
 
+const DIA_MS = 24 * 60 * 60 * 1000;
+
+/** Días entre dos fechas UTC, ambas inclusive. */
+function diasInclusive(desde, hasta) {
+    return Math.round((hasta.getTime() - desde.getTime()) / DIA_MS) + 1;
+}
+
 /**
- * El peso de un mes dentro del año.
+ * El peso de una fecha dentro del año: los días que ese dinero alcanza a
+ * trabajar, sobre los días del año.
  *
- *   enero  → 12/12 = 100%      julio → 6/12 = 50%      diciembre → 1/12 ≈ 8%
+ *   1 de enero   → 365/365 = 100%
+ *   1 de julio   → 184/365 ≈  50%
+ *   31 de julio  → 154/365 ≈  42%
+ *   31 diciembre →   1/365 ≈   0%
  *
- * Cuenta el propio mes de entrada: el dinero que llega en julio trabaja julio,
- * agosto, septiembre, octubre, noviembre y diciembre — seis meses, la mitad del
- * año, que es exactamente lo que la Junta espera ver.
+ * Antes esto se calculaba por MES, y todo julio pesaba lo mismo. Era injusto y
+ * de una forma medible: el fondo tiene el dinero en la cuenta NU desde el día
+ * que entra, y ahí el rendimiento se liquida por día. Quien consignó el 1 de
+ * julio le dio al fondo treinta días más de trabajo que quien consignó el 30, y
+ * el reparto los trataba igual. Sobre $500.000 esa diferencia era de un 8% del
+ * peso —$41.000 de capital ponderado— que el puntual regalaba al que esperaba a
+ * fin de mes.
  *
- * El mes 0 es el capital que ya estaba antes de que empezara el año: pesa el año
- * completo, porque estuvo desde el primer día.
+ * Se cuenta el propio día de entrada, porque el dinero ya está en el fondo esa
+ * jornada. Por eso el 31 de diciembre no da cero exacto sino 1/365, que en
+ * pantalla se redondea a 0%: un día de trabajo es un día, no ninguno.
+ *
+ * Lo anterior al año pesa 1 completo: estuvo desde antes del primer día.
  */
-function pesoDeMes(mes) {
+function pesoDeFecha(fecha, periodo) {
+    if (!fecha || !periodo) return 0;
+    if (fecha < periodo.inicio) return 1;
+    if (fecha > periodo.fin) return 0;
+    return diasInclusive(fecha, periodo.fin) / periodo.dias;
+}
+
+/**
+ * El peso de referencia de un mes: el de su primer día. Solo para rótulos y
+ * leyendas —"julio pesa 50%"—; el cálculo real usa siempre la fecha exacta.
+ */
+function pesoDeMes(mes, periodo) {
     if (mes <= 0) return 1;
     if (mes > MESES_ANIO) return 0;
-    return (MESES_ANIO - mes + 1) / MESES_ANIO;
+    return pesoDeFecha(new Date(Date.UTC(periodo.anio, mes - 1, 1)), periodo);
 }
 
 /**
@@ -123,7 +152,11 @@ function construirPeriodo(anio, hoy) {
     const diaHoy = diaUTC(hoy) || fin;
     const cerrado = diaHoy > fin;
     const mesActual = cerrado ? 12 : (diaHoy < inicio ? 0 : diaHoy.getUTCMonth() + 1);
-    return { anio, inicio, fin, meses: MESES_ANIO, cerrado, mesActual, corte: (cerrado ? fin : diaHoy).toISOString().slice(0, 10) };
+    // Los días del año son el denominador de todos los pesos: 365, o 366 en
+    // bisiesto. Se calcula, no se asume, porque un año de 366 días repartido
+    // sobre 365 le daría a todo el mundo un peso mayor que 1 el 1 de enero.
+    const dias = diasInclusive(inicio, fin);
+    return { anio, inicio, fin, dias, meses: MESES_ANIO, cerrado, mesActual, corte: (cerrado ? fin : diaHoy).toISOString().slice(0, 10) };
 }
 
 /**
@@ -181,8 +214,13 @@ function ponderarSocio(movimientos, periodo) {
     // $1.000.000 en una columna llamada "movido", que no cuadraba con la Matriz
     // de Ahorros ni con lo que él recordaba haber consignado. Es la misma regla
     // que la matriz aplica desde siempre entre `abonos` y `neto`.
+    // El peso del renglón ya no es un dato del mes sino el resultado de las
+    // fechas que caen en él: dos abonos de julio, uno el 1 y otro el 30, pesan
+    // distinto. Se deja en cero y al final se calcula el peso EFECTIVO de cada
+    // mes —lo que contó dividido por lo que entró—, que es la única cifra
+    // honesta cuando el mes ya no tiene un peso único.
     const porMes = Array.from({ length: MESES_ANIO + 1 }, (_, i) => ({
-        mes: i, peso: pesoDeMes(i), ahorro: 0, fondo: 0, ponderado: 0, n: 0,
+        mes: i, peso: 0, ahorro: 0, fondo: 0, ponderado: 0, n: 0,
     }));
 
     for (const mov of movimientos) {
@@ -209,7 +247,7 @@ function ponderarSocio(movimientos, periodo) {
 
         const previo = fecha < inicio;
         const mes = previo ? 0 : fecha.getUTCMonth() + 1;
-        const peso = pesoDeMes(mes);
+        const peso = pesoDeFecha(fecha, periodo);
 
         // Una distribución que perdió su condición no pesa ni suma al capital,
         // pero sigue apareciendo en el detalle con su marca: el socio tiene que
@@ -257,6 +295,14 @@ function ponderarSocio(movimientos, periodo) {
         capitalPonderado -= capitalApertura; // quita la parte negativa ya sumada
         porMes[0].ponderado = 0;
     }
+    // El peso efectivo de cada mes. Cuando el movido es cero —un abono y un
+    // retiro que se cancelan— la división no tiene sentido y se cae al peso de
+    // referencia del mes, que al menos sitúa el renglón en el año.
+    for (const fila of porMes) {
+        const movido = fila.ahorro + fila.fondo;
+        fila.peso = movido !== 0 ? fila.ponderado / movido : pesoDeMes(fila.mes, periodo);
+    }
+
     const aperturaPositiva = Math.max(capitalApertura, 0);
     const capitalCierre = aperturaPositiva + netoPeriodo;
 
@@ -348,4 +394,4 @@ function repartir(bases, monto) {
     return limpias.map((b, i) => ({ participacion: b / total, utilidad: enteros[i] }));
 }
 
-module.exports = { MESES_ANIO, diaUTC, fechaValorDe, pesoDeMes, construirPeriodo, ponderarSocio, resolverBase, repartir };
+module.exports = { MESES_ANIO, diaUTC, diasInclusive, fechaValorDe, pesoDeFecha, pesoDeMes, construirPeriodo, ponderarSocio, resolverBase, repartir };

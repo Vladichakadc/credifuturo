@@ -97,8 +97,10 @@ export default function PesoPorMes({ porMes = [], periodo, altura = 240 }) {
                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-brand-primary" /> lo que cuenta</span>
                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-amber-700" /> capital anterior</span>
                 <span className="text-gray-400">
-                    Peso: Ene 100% · Abr 75% · Jul 50% · Oct 25% · Dic 8%
-                    {periodo && !periodo.cerrado && <> — sobre los 12 meses de {periodo.anio}</>}
+                    {/* El peso baja cada día, no cada mes: la leyenda cita días
+                        concretos para que no se lea como una escala por meses. */}
+                    Peso por día: 1 ene 100% · 1 abr 75% · 1 jul 50% · 1 oct 25% · 31 dic 0%
+                    {periodo?.dias && <> — sobre los {periodo.dias} días de {periodo.anio}</>}
                 </span>
             </div>
         </div>

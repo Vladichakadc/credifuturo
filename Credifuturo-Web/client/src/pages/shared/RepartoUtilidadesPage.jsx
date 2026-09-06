@@ -191,7 +191,7 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                             <p className="text-sm font-bold text-white/90">
                                 {esVistaAdmin
                                     ? `Reparto de ${periodo.anio} — vista de administración`
-                                    : `Ganancia de ${periodo.anio}, repartida por capital y meses`}
+                                    : `Ganancia de ${periodo.anio}, repartida por capital y días`}
                             </p>
                             {/* El gerente de este fondo también es socio. El enlace deja
                                 explícito con qué sombrero está mirando y le permite
@@ -288,7 +288,7 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                         <div>
                             <div className="flex items-baseline justify-between gap-2 mb-1">
                                 <h3 className="text-xs font-bold text-gray-700">El peso de cada mes de tu ahorro</h3>
-                                <p className="text-[10px] text-gray-400">un peso de enero rinde todo el año; uno de diciembre, un mes</p>
+                                <p className="text-[10px] text-gray-400">un peso de enero rinde todo el año; uno de diciembre, unos días</p>
                             </div>
                             <PesoPorMes porMes={yo.porMes} periodo={periodo} />
                             <TablaPesos porMes={yo.porMes} total={yo.capitalPonderado} movimientos={yo.movimientos} />
@@ -427,13 +427,14 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
             <Tarjeta className="p-5">
                 <h2 className="font-bold text-sm text-gray-800 mb-2">Cómo se calcula</h2>
                 <p className="text-xs text-gray-600 leading-relaxed">
-                    Cada ahorro se multiplica por los <strong>meses que ese dinero alcanza a trabajar</strong> en el año,
-                    dividido entre doce. Es el método con el que los bancos y las entidades de ahorro reparten
-                    rendimientos. La suma de todo eso es tu <strong>capital ponderado</strong>; tu participación es tu
-                    capital ponderado dividido por el de todos, y tu parte es esa participación aplicada a la ganancia del fondo.
+                    Cada ahorro se multiplica por los <strong>días que ese dinero alcanza a trabajar</strong> en el año,
+                    dividido entre los {periodo.dias} días del año. Es el método con el que los bancos y las entidades de
+                    ahorro reparten rendimientos. La suma de todo eso es tu <strong>capital ponderado</strong>; tu
+                    participación es tu capital ponderado dividido por el de todos, y tu parte es esa participación
+                    aplicada a la ganancia del fondo.
                 </p>
                 <ul className="mt-3 space-y-1.5 text-[11px] text-gray-500 leading-snug">
-                    <li>· <strong>Enero pesa 100%</strong> (doce meses), abril 75%, <strong>julio 50%</strong>, octubre 25% y diciembre 8%.</li>
+                    <li>· El peso baja <strong>día a día</strong>, no mes a mes: el 1 de enero pesa 100%, el 1 de abril 75%, el <strong>1 de julio 50%</strong>, el 1 de octubre 25% y el 31 de diciembre 0%. Abonar el 1 de un mes rinde más que abonarlo el 30, porque el fondo tiene ese dinero rindiendo desde el día que entra.</li>
                     <li>· Se usa la <strong>fecha de pago</strong> de cada abono, no el mes que acredita. Quien paga en enero las cuotas de todo el año tiene ese dinero trabajando desde enero, y así se cuenta.</li>
                     <li>· El <strong>aporte inicial cuenta como capital</strong>: ese dinero también está en el fondo prestándose.</li>
                     <li>· Lo que traías de años anteriores y <strong>no retiraste</strong> pesa el año completo, porque estuvo desde el primer día.</li>

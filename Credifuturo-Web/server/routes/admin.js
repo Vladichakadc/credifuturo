@@ -1855,7 +1855,14 @@ router.get('/savings/ranking', async (req, res) => {
             periodo: {
                 anio,
                 inicio: periodo.inicio.toISOString().slice(0, 10),
+                // El 31 de diciembre: el otro extremo de la rampa de pesos. Sin
+                // él, el simulador del socio no puede calcular el peso de una
+                // fecha y devolvía 0% para cualquier día.
+                fin: periodo.fin.toISOString().slice(0, 10),
                 corte: periodo.corte,
+                // Los días del año son el denominador de todos los pesos: el
+                // reparto se pondera por día, no por mes.
+                dias: periodo.dias,
                 meses: periodo.meses,
                 mesActual: periodo.mesActual,
                 cerrado: periodo.cerrado,
