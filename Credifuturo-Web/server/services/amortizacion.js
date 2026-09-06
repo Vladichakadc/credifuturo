@@ -510,6 +510,61 @@ function abonosSinAplicar(cuotas) {
     return sinAplicar;
 }
 
+/**
+ * Cronograma que tendría un préstamo con estas condiciones, cuota por cuota.
+ *
+ * Reproduce exactamente la ley que aplica `POST /disbursed-loans` al desembolsar:
+ * capital constante, interés sobre el saldo que va quedando, y la ÚLTIMA cuota
+ * amortizando lo que reste para que el saldo cierre en cero — repartir en partes
+ * iguales deja céntimos sueltos cuando la división no es exacta.
+ *
+ * Sirve para enseñarle a la Junta las cuotas de una solicitud antes de aprobarla.
+ * Va aquí, junto al resto de la aritmética del crédito y sin tocar la base, para
+ * que la proyección y el cronograma real no puedan contar cosas distintas.
+ *
+ * `tasaMensual` se acepta en fracción (0.014) o en porcentaje (1.4): la solicitud
+ * guarda el porcentaje y el préstamo la fracción, y confundirlos multiplicaría el
+ * interés por cien.
+ */
+function proyectarCronograma({ capital, cuotas, tasaMensual }) {
+    const P = num(capital);
+    const n = parseInt(cuotas, 10);
+    let i = num(tasaMensual);
+    if (i > 1) i = i / 100; // llegó en porcentaje
+
+    if (!(P > 0) || !(n > 0) || i < 0) return { filas: [], totalInteres: 0, totalAPagar: 0 };
+
+    const capitalPorCuota = P / n;
+    const filas = [];
+    let saldo = P;
+    let totalInteres = 0;
+
+    for (let k = 1; k <= n; k++) {
+        const interes = redondear(saldo * i);
+        const esUltima = k === n;
+        const capitalCuota = redondear(esUltima ? saldo : capitalPorCuota);
+        const saldoFinal = esUltima ? 0 : redondear(saldo - capitalCuota);
+        filas.push({
+            n: k,
+            saldoInicial: redondear(saldo),
+            capital: capitalCuota,
+            interes,
+            cuota: redondear(capitalCuota + interes),
+            saldoFinal,
+        });
+        totalInteres = redondear(totalInteres + interes);
+        saldo = saldoFinal;
+    }
+
+    return {
+        filas,
+        totalInteres,
+        totalAPagar: redondear(P + totalInteres),
+        primeraCuota: filas.length ? filas[0].cuota : 0,
+        ultimaCuota: filas.length ? filas[filas.length - 1].cuota : 0,
+    };
+}
+
 module.exports = {
     REDUCIR_PLAZO,
     REDUCIR_CUOTA,
@@ -518,6 +573,7 @@ module.exports = {
     planificarReajuste,
     planificarPagoAdelantado,
     abonosSinAplicar,
+    proyectarCronograma,
     excedenteDe,
     ordenarCuotas,
 };
