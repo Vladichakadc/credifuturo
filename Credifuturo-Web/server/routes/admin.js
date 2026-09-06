@@ -986,11 +986,15 @@ router.get('/clients/:id/active-loan', async (req, res) => {
                 interesCausado: Math.round(interesCausado),
                 interesCondonable: Math.round(interesCondonado),
                 diasTranscurridos,
+                // Lo ya abonado a las cuotas pendientes es efectivo que el fondo recibió; si
+                // no se descuenta, el socio lo paga dos veces.
+                yaAbonado: Math.round(cuotasPendientes.reduce((s2, c) => s2 + parseFloat(c.valorCuotaPago || 0), 0)),
                 // Lo que de verdad se salda con el desembolso nuevo. La pantalla resta esto
                 // —no el saldo pelado— para decir cuánto entregarle al socio: el interés
                 // causado ya queda contabilizado como cobrado, así que si no se retiene, el
                 // fondo reporta un ingreso que nunca entró.
-                totalACancelar: Math.round(saldoPendiente + interesCausado)
+                totalACancelar: Math.round(saldoPendiente + interesCausado
+                    - cuotasPendientes.reduce((s2, c) => s2 + parseFloat(c.valorCuotaPago || 0), 0))
             }
         });
     } catch (err) {
@@ -2846,6 +2850,17 @@ router.post('/disbursed-loans', async (req, res) => {
                 fechaNuevoDesembolso: fechaPrestamo // fecha del nuevo desembolso elegida en el formulario
             });
 
+            // Lo que el socio ya había abonado a estas cuotas es dinero que el fondo YA
+            // recibió en efectivo. Si no se descuenta, se le cobra dos veces: una cuando lo
+            // pagó y otra al netearlo contra el préstamo nuevo — medido sobre un parcial de
+            // $250.000, el socio recibía $1.981.800 donde le tocaban $2.231.800.
+            //
+            // Se lee AQUÍ, antes del bucle de saldado: ese bucle sobrescribe valorCuotaPago
+            // con capital + interés causado, así que leerlo después devuelve el importe del
+            // propio retanqueo en vez del abono previo.
+            const yaAbonado = Math.round(cuotasPendientesAnteriores
+                .reduce((acc, c) => acc + parseFloat(c.valorCuotaPago || 0), 0));
+
             // Marcar todas las cuotas ya pagadas/mora del préstamo anterior como estadoPrestamo=Cancelado
             await LoanPayment.update(
                 { estadoPrestamo: 'Cancelado' },
@@ -2901,7 +2916,7 @@ router.post('/disbursed-loans', async (req, res) => {
             // por cobrado (entra a "Intereses de préstamos" y al recaudo de Caja
             // Disponible) sin que nadie le dijera que había que retenerlo.
             const capitalCancelado = Math.round(saldoPrestamoQueSeCancela);
-            const totalCancelado = capitalCancelado + Math.round(interesCausado);
+            const totalCancelado = capitalCancelado + Math.round(interesCausado) - yaAbonado;
             const netoEntregado = Math.round(valorPrestado) - totalCancelado;
 
             refinanciacion = {
@@ -2911,6 +2926,7 @@ router.post('/disbursed-loans', async (req, res) => {
                 capitalCancelado,
                 interesCausado: Math.round(interesCausado),
                 interesCondonado: Math.round(interesCondonado),
+                yaAbonado,
                 totalCancelado,
                 netoEntregado
             };
@@ -2920,9 +2936,10 @@ router.post('/disbursed-loans', async (req, res) => {
             // pero nunca el valor que salió, así que no había forma de comprobar si el
             // interés causado se retuvo o se entregó de más.
             const pesos = (n) => `$${Math.round(n).toLocaleString('es-CO')}`;
+            const detalleAbonado = yaAbonado > 0 ? ` − ${pesos(yaAbonado)} ya abonados por el socio` : '';
             const notaRetanqueo = netoEntregado >= 0
-                ? `[Retanqueo de ${prestamoAnterior.idVm}: se cancelan ${pesos(capitalCancelado)} de capital + ${pesos(interesCausado)} de interés por ${diasTranscurridos} día(s) = ${pesos(totalCancelado)}. Interés condonado: ${pesos(interesCondonado)}. Neto entregado al socio: ${pesos(netoEntregado)}]`
-                : `[Retanqueo de ${prestamoAnterior.idVm}: se cancelan ${pesos(capitalCancelado)} de capital + ${pesos(interesCausado)} de interés por ${diasTranscurridos} día(s) = ${pesos(totalCancelado)}. Interés condonado: ${pesos(interesCondonado)}. El préstamo nuevo no alcanza a cubrirlo: el socio debe consignar ${pesos(Math.abs(netoEntregado))}]`;
+                ? `[Retanqueo de ${prestamoAnterior.idVm}: se cancelan ${pesos(capitalCancelado)} de capital + ${pesos(interesCausado)} de interés por ${diasTranscurridos} día(s)${detalleAbonado} = ${pesos(totalCancelado)}. Interés condonado: ${pesos(interesCondonado)}. Neto entregado al socio: ${pesos(netoEntregado)}]`
+                : `[Retanqueo de ${prestamoAnterior.idVm}: se cancelan ${pesos(capitalCancelado)} de capital + ${pesos(interesCausado)} de interés por ${diasTranscurridos} día(s)${detalleAbonado} = ${pesos(totalCancelado)}. Interés condonado: ${pesos(interesCondonado)}. El préstamo nuevo no alcanza a cubrirlo: el socio debe consignar ${pesos(Math.abs(netoEntregado))}]`;
             loanData.observaciones = loanData.observaciones
                 ? `${notaRetanqueo} ${loanData.observaciones}`
                 : notaRetanqueo;
@@ -3238,10 +3255,19 @@ router.delete('/disbursed-loans/:id', async (req, res) => {
     const sequelize = require('../config/database');
     const { Op } = require('sequelize');
     const t = await sequelize.transaction();
+
+    // Mismo motivo que en el desembolso: revertir una transacción ya cerrada lanza, y ese
+    // throw dentro del catch escaparía del handler dejando la petición sin respuesta.
+    const cerrarTransaccionBorrado = async () => {
+        if (t.finished) return;
+        try { await t.rollback(); }
+        catch (e) { console.warn('[disbursed-loans DELETE] no se pudo revertir la transacción:', e.message); }
+    };
+
     try {
         const loan = await DisbursedLoan.findByPk(req.params.id, { transaction: t });
         if (!loan) {
-            await t.rollback();
+            await cerrarTransaccionBorrado();
             return res.status(404).json({ error: 'Préstamo no encontrado' });
         }
 
@@ -3271,7 +3297,7 @@ router.delete('/disbursed-loans/:id', async (req, res) => {
             });
             if (yaSuperado) {
                 const quienLoSuperó = (String(yaSuperado.observaciones).match(/refinanciación\s+(\S+)\s+—/) || [])[1];
-                await t.rollback();
+                await cerrarTransaccionBorrado();
                 return res.status(409).json({
                     error: `No se puede eliminar ${loan.idVm}: fue refinanciado por ${quienLoSuperó || 'un préstamo posterior'}. ` +
                         `Elimina primero ${quienLoSuperó || 'el préstamo posterior'}; si no, el socio quedaría con dos préstamos vigentes a la vez.`
@@ -3344,6 +3370,29 @@ router.delete('/disbursed-loans/:id', async (req, res) => {
             }
         }
 
+        // Un préstamo con cuotas ya cobradas no se borra: sus cuotas se destruyen con él y
+        // el dinero recibido desaparece de todos los agregados sin dejar rastro. El borrado
+        // existe para deshacer un registro equivocado, no para anular cobros — eso se hace
+        // cuota por cuota, donde queda constancia de qué se anuló.
+        //
+        // Se excluyen las cuotas marcadas por una refinanciación (esPrepago): esas no son
+        // dinero recibido sino el saldo que un retanqueo canceló contra el préstamo nuevo.
+        if (loan.idVm) {
+            const cobradas = await LoanPayment.findAll({
+                where: { idVm: loan.idVm, estado: { [Op.in]: ['Pago', 'Mora'] }, esPrepago: { [Op.not]: true } },
+                attributes: ['itemQuantity', 'valorCuotaPago'],
+                transaction: t
+            });
+            if (cobradas.length > 0) {
+                const total = cobradas.reduce((s, c) => s + parseFloat(c.valorCuotaPago || 0), 0);
+                await cerrarTransaccionBorrado();
+                return res.status(409).json({
+                    error: `No se puede eliminar ${loan.idVm}: tiene ${cobradas.length} cuota(s) con pago registrado por $${Math.round(total).toLocaleString('es-CO')}. ` +
+                        `Borrarlo haría desaparecer ese dinero de los informes. Anule primero esos pagos desde la lista de cuotas.`
+                });
+            }
+        }
+
         // Eliminar cuotas asociadas en Estado de Préstamos antes de borrar el préstamo
         if (loan.idVm) {
             const deletedCount = await LoanPayment.destroy({ where: { idVm: loan.idVm }, transaction: t });
@@ -3360,7 +3409,7 @@ router.delete('/disbursed-loans/:id', async (req, res) => {
             restauracion
         });
     } catch (err) {
-        await t.rollback();
+        await cerrarTransaccionBorrado();
         res.status(500).json({ error: err.message });
     }
 });

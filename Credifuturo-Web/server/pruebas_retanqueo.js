@@ -696,6 +696,66 @@ async function main() {
             cuotasC.map(x => x.fechaPagoMax).join(', '));
     }
 
+    // ───────────────────────────────────────────────────────────────────────
+    console.log('\n17. Borrar un préstamo con cuotas ya cobradas');
+    // El borrado destruye TODAS las cuotas del préstamo. Si alguna ya tenía pago
+    // registrado, ese dinero desaparece de todos los agregados sin dejar rastro.
+    {
+        const c = await nuevoSocio(7799030);
+        const r = await desembolsar({
+            clientId: c.id, fechaPrestamo: '2026-09-05', mesDesembolso: 'Septiembre', anioDesembolso: 2026,
+            valorPrestado: 3000000, cuotas: 3, interesMensual: 0.014, estado: 'Vigente',
+        });
+        // El socio paga su primera cuota.
+        const cuota1 = await LoanPayment.findOne({ where: { idVm: r.body.loan.idVm }, order: [['item_quantity', 'ASC']] });
+        await cuota1.update({ estado: 'Pago', valorCuotaPago: num(cuota1.valorCuotaVariable) });
+        const cobrado = num(cuota1.valorCuotaVariable);
+
+        const rDel = await fetch(`${BASE}/admin/disbursed-loans/${r.body.loan.id}`, { method: 'DELETE', headers: H });
+        const cuerpo = await rDel.json().catch(() => ({}));
+        comprobar('el borrado se niega si hay pagos registrados', rDel.status === 409,
+            `HTTP ${rDel.status}`);
+        comprobar('el mensaje dice cuánto se cobró',
+            (cuerpo.error || '').includes('1') && /pago|cobrad/i.test(cuerpo.error || ''),
+            `dijo: ${cuerpo.error}`);
+        const siguenAhi = await LoanPayment.count({ where: { idVm: r.body.loan.idVm } });
+        comprobar('las cuotas siguen ahí', siguenAhi === 3, `quedan ${siguenAhi}`);
+        void cobrado;
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    console.log('\n18. Un pago parcial no se pierde al retanquear');
+    // Una cuota Pendiente puede traer un pago parcial. El retanqueo sobrescribe
+    // valorCuotaPago con capital + interés causado, así que ese dinero deja de figurar
+    // como cobrado por separado.
+    {
+        const { socio, idVm } = await sembrar({
+            principal: 3000000, cuotas: 3, tasa: 0.014, pagadas: 0,
+            fechaPrestamo: '2026-08-17',
+            vencimientos: ['2026-10-10','2026-11-10','2026-12-10'],
+        });
+        const PARCIAL = 250000;
+        const primera = await LoanPayment.findOne({ where: { idVm }, order: [['item_quantity', 'ASC']] });
+        await primera.update({ valorCuotaPago: PARCIAL });
+
+        const r = await desembolsar({
+            clientId: socio.id, fechaPrestamo: '2026-08-30', mesDesembolso: 'Agosto', anioDesembolso: 2026,
+            valorPrestado: 5000000, cuotas: 3, interesMensual: 0.014, estado: 'Vigente',
+        });
+        comprobar('el retanqueo se registra', r.status === 201, `HTTP ${r.status}`);
+        const ref = r.body.refinanciacion || {};
+        comprobar('el parcial se reporta aparte', ref.yaAbonado === PARCIAL, `dio ${money(ref.yaAbonado)}`);
+        comprobar('se descuenta del total a cancelar',
+            ref.totalCancelado === ref.capitalCancelado + ref.interesCausado - PARCIAL,
+            `total ${money(ref.totalCancelado)} vs ${money(ref.capitalCancelado + ref.interesCausado - PARCIAL)}`);
+        comprobar('el socio recibe los $250.000 que ya había pagado',
+            ref.netoEntregado === 5000000 - ref.totalCancelado && ref.netoEntregado > 2200000,
+            `neto ${money(ref.netoEntregado)}`);
+        comprobar('la constancia lo menciona',
+            /ya abonados/i.test(String((await DisbursedLoan.findByPk(r.body.loan.id)).observaciones || '')),
+            String((await DisbursedLoan.findByPk(r.body.loan.id)).observaciones || '').slice(0, 160));
+    }
+
     console.log('\n──────────────────────────────────────────────');
     console.log(`${ok} comprobaciones correctas · ${fallos} fallidas`);
     console.log('──────────────────────────────────────────────\n');

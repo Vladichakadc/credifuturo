@@ -1277,9 +1277,14 @@ const LoansListPage = () => {
                 // préstamos" y al recaudo de Caja Disponible), así que si no se retiene al
                 // entregar el dinero, el fondo reporta un ingreso que nunca entró.
                 // Mismas cuentas que hace el servidor al guardar (POST /disbursed-loans).
+                // El respaldo replica la misma resta que hace el servidor, incluido el
+                // descuento de lo ya abonado: si divergen, la pantalla prometería un neto
+                // distinto del que se registra.
                 const totalACancelar = activeLoanWarning
                     ? (Number(activeLoanWarning.totalACancelar) ||
-                       (Number(activeLoanWarning.saldoPendiente) || 0) + (Number(activeLoanWarning.interesCausado) || 0))
+                       ((Number(activeLoanWarning.saldoPendiente) || 0)
+                        + (Number(activeLoanWarning.interesCausado) || 0)
+                        - (Number(activeLoanWarning.yaAbonado) || 0)))
                     : 0;
                 const netoAEntregar = P - totalACancelar;
 
@@ -1598,6 +1603,12 @@ const LoansListPage = () => {
                                                     <li>• Interés causado: <strong>$0</strong> — el período de la próxima cuota aún no empieza a correr, así que no hay días que cobrar. El socio ya pagó por adelantado el mes en curso. <span className="text-amber-600">Revisa la fecha del desembolso si no esperabas esto.</span></li>
                                                 )}
                                                 <li>• Interés condonado (no cobrado): <strong>${Number(activeLoanWarning.interesCondonable).toLocaleString('es-CO')}</strong></li>
+                                                {/* Lo ya abonado es efectivo que el fondo recibió: se descuenta, o el
+                                                    socio lo pagaría dos veces. Se muestra aparte para poder revisarlo
+                                                    antes de confirmar, no como un ajuste silencioso a la resta. */}
+                                                {Number(activeLoanWarning.yaAbonado) > 0 && (
+                                                    <li>• Menos lo que el socio ya abonó a esas cuotas: <strong>− ${Number(activeLoanWarning.yaAbonado).toLocaleString('es-CO')}</strong></li>
+                                                )}
                                                 <li>• Total a cancelar de {activeLoanWarning.idVm}: <strong>${fmt(totalACancelar)}</strong></li>
                                                 <li>• Préstamo {activeLoanWarning.idVm}: <strong>Vigente → CANCELADO</strong></li>
                                             </ul>
