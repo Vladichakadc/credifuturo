@@ -285,6 +285,48 @@ const CUOTA = 200000;
             `${money(panel.capitalPonderadoTotal)} vs ${money(sumaReparto)}`);
     }
 
+    console.log('\n4e. La retención y los descuentos que decide la Junta');
+    {
+        const poner = (clave, value, headers = H) => fetch(`${BASE}/admin/settings/${clave}`, {
+            method: 'PUT', headers, body: JSON.stringify({ value: JSON.stringify(value) }),
+        });
+
+        // Los topes viven en el servidor: un valor que llegue por API mueve
+        // dinero igual que uno tecleado en el formulario.
+        comprobar('una retención sin tipo se rechaza', (await poner('reparto.retencion', { valor: 10 })).status === 400);
+        comprobar('un porcentaje por encima de 100 se rechaza',
+            (await poner('reparto.retencion', { tipo: 'porcentaje', valor: 150 })).status === 400);
+        comprobar('una retención negativa se rechaza',
+            (await poner('reparto.retencion', { tipo: 'valor', valor: -1 })).status === 400);
+        comprobar('un destino larguísimo se rechaza',
+            (await poner('reparto.retencion', { tipo: 'porcentaje', valor: 5, destino: 'x'.repeat(300) })).status === 400);
+        const rOk = await poner('reparto.retencion', { tipo: 'porcentaje', valor: 15, destino: 'fondo de auxilios' });
+        comprobar('una retención válida se acepta', rOk.status === 200, `HTTP ${rOk.status} ${JSON.stringify(await rOk.json())}`);
+
+        comprobar('un descuento con socio inválido se rechaza',
+            (await poner('reparto.descuentos', { abc: { tipo: 'valor', valor: 100 } })).status === 400);
+        comprobar('un descuento sin tipo se rechaza',
+            (await poner('reparto.descuentos', { 3: { valor: 100 } })).status === 400);
+        comprobar('un descuento válido se acepta',
+            (await poner('reparto.descuentos', { [socios.Enero.id]: { tipo: 'porcentaje', valor: 20, motivo: 'aporte al fondo' } })).status === 200);
+
+        // Guardarlos sigue siendo del gerente: la Junta simula, no escribe.
+        comprobar('la Junta no puede guardar la retención',
+            (await poner('reparto.retencion', { tipo: 'porcentaje', valor: 50 }, HJunta)).status === 403);
+
+        const d3 = await pedir(H);
+        comprobar('el reparto devuelve la retención guardada',
+            d3.parametros.retencion.valor === 15 && d3.parametros.retencion.destino === 'fondo de auxilios',
+            JSON.stringify(d3.parametros.retencion));
+        comprobar('y el descuento del socio',
+            d3.parametros.descuentos[String(socios.Enero.id)]?.valor === 20,
+            JSON.stringify(d3.parametros.descuentos));
+
+        // Se limpian para no arrastrarlos a las secciones siguientes.
+        await poner('reparto.retencion', { tipo: 'porcentaje', valor: 0, destino: '' });
+        await poner('reparto.descuentos', {});
+    }
+
     console.log('\n5. La calidad de las fechas se informa, no se esconde');
     {
         comprobar('se cuentan los movimientos con fecha de pago real', d.diagnostico.pago === 37,

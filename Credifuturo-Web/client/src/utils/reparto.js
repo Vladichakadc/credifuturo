@@ -92,30 +92,105 @@ export function repartir(bases, monto) {
 /**
  * El reparto completo, listo para pintar, ordenado de mayor a menor.
  */
-export function construirReparto(socios = [], { factorPermanencia = 1, monto = 0 } = {}) {
+/**
+ * Lo que el fondo retiene antes de repartir. Espejo del servidor —
+ * `services/reparto.js`, que sigue siendo la autoridad y el que valida.
+ *
+ * La ganancia no se toca: es un hecho contable que declara el Panel de
+ * Administración. Lo que la asamblea decide es cuánto se queda el fondo y para
+ * qué, y lo repartido es la resta. Así las tres cifras quedan separadas y
+ * auditables en el acta, en vez de un único número editable que nadie puede
+ * volver a explicar seis meses después.
+ */
+export function calcularRetencion(ganancia, retencion) {
+    const G = Math.max(0, Math.round(Number(ganancia) || 0));
+    const v = Number(retencion?.valor);
+    if (!G || !Number.isFinite(v) || v <= 0) return { retenido: 0, aRepartir: G };
+    const retenido = retencion.tipo === 'porcentaje'
+        ? Math.round(G * Math.min(100, v) / 100)
+        : Math.min(G, Math.round(v));
+    return { retenido, aRepartir: G - retenido };
+}
+
+/**
+ * El descuento sobre la parte de UN socio. Lo descontado se queda en el fondo,
+ * junto a la retención general — nunca se reparte entre los demás.
+ *
+ * Repartirlo convertiría una medida sobre una persona en una ganancia para sus
+ * compañeros, y en un fondo de veinticinco personas que se conocen ese
+ * incentivo no se puede permitir.
+ */
+export function calcularDescuento(utilidadBruta, descuento) {
+    const U = Math.max(0, Math.round(Number(utilidadBruta) || 0));
+    const v = Number(descuento?.valor);
+    if (!U || !Number.isFinite(v) || v <= 0) return 0;
+    return descuento.tipo === 'porcentaje'
+        ? Math.round(U * Math.min(100, v) / 100)
+        : Math.min(U, Math.round(v));
+}
+
+/**
+ * El reparto completo, listo para pintar, ordenado de mayor a menor.
+ *
+ * El orden de las operaciones importa y es el del acta:
+ *
+ *   1. la ganancia del fondo (hecho)
+ *   2. − la retención general        → se queda en el fondo
+ *   3. el resto se reparte en proporción al capital ponderado
+ *   4. − el descuento de cada socio  → se queda en el fondo
+ *
+ * De ahí sale la única igualdad que un acta puede firmar:
+ *
+ *   ganancia = repartido + retención general + descuentos
+ *
+ * Nada se pierde y nada aparece.
+ */
+export function construirReparto(socios = [], { factorPermanencia = 1, monto = 0, retencion = null, descuentos = {} } = {}) {
+    const ganancia = Math.max(0, Math.round(Number(monto) || 0));
+    const { retenido, aRepartir } = calcularRetencion(ganancia, retencion);
+
     const filas = socios.map(s => {
         const { base, premioPermanencia } = resolverBase(s, factorPermanencia);
         return { ...s, base, premioPermanencia };
     });
 
-    const cuotas = repartir(filas.map(f => f.base), monto);
+    const cuotas = repartir(filas.map(f => f.base), aRepartir);
 
     const conReparto = filas
-        .map((f, i) => ({ ...f, participacion: cuotas[i].participacion, utilidad: cuotas[i].utilidad }))
+        .map((f, i) => {
+            const utilidadBruta = cuotas[i].utilidad;
+            const descuento = calcularDescuento(utilidadBruta, descuentos?.[f.id] || descuentos?.[String(f.id)]);
+            return {
+                ...f,
+                participacion: cuotas[i].participacion,
+                utilidadBruta,
+                descuento,
+                descuentoRegla: descuentos?.[f.id] || descuentos?.[String(f.id)] || null,
+                utilidad: utilidadBruta - descuento,
+            };
+        })
         .sort((a, b) => b.base - a.base || String(a.fullName).localeCompare(String(b.fullName), 'es'));
 
     const totalRepartido = conReparto.reduce((s, f) => s + f.utilidad, 0);
+    const totalDescuentos = conReparto.reduce((s, f) => s + f.descuento, 0);
 
     return {
         filas: conReparto,
+        ganancia,
+        retenido,
+        aRepartir,
+        totalDescuentos,
+        // Lo que se queda el fondo, por los dos caminos juntos: es la cifra que
+        // el acta necesita para decir "y esto quedó para el fondo".
+        totalRetenido: retenido + totalDescuentos,
         totalBase: filas.reduce((s, f) => s + f.base, 0),
         totalCapitalBase: filas.reduce((s, f) => s + (f.capitalBase || 0), 0),
         totalCapitalPonderado: filas.reduce((s, f) => s + (f.capitalPonderado || 0), 0),
         totalPremio: filas.reduce((s, f) => s + f.premioPermanencia, 0),
         totalRepartido,
-        // Que lo repartido cuadre con la ganancia del fondo no es una esperanza:
-        // es una propiedad del método. La pantalla lo muestra igualmente, porque
-        // una afirmación verificable vale más que una promesa.
-        cuadra: totalRepartido === Math.round(Number(monto) || 0),
+        // Que todo cuadre no es una esperanza: es una propiedad del método. La
+        // pantalla lo muestra igualmente, porque una afirmación verificable vale
+        // más que una promesa.
+        cuadra: totalRepartido + retenido + totalDescuentos === ganancia,
     };
 }

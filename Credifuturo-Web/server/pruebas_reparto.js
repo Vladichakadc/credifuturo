@@ -13,6 +13,7 @@
  */
 const {
     diaUTC, fechaValorDe, pesoDeFecha, pesoDeMes, construirPeriodo, ponderarSocio, resolverBase, repartir,
+    calcularRetencion, calcularDescuento,
 } = require('./services/reparto');
 
 let ok = 0, fallos = 0;
@@ -384,6 +385,66 @@ afirmar('y no ensucia el ahorro de ese mes', mixto.porMes[10].ahorro, 0);
 afirmar('y descuenta con el peso del 5 de octubre', mixto.porMes[10].ponderado, -1000000 * pesoDe('2025-10-05'), 1);
 afirmar('la suma de los renglones es el capital ponderado',
     mixto.porMes.reduce((s, f) => s + f.ponderado, 0), mixto.capitalPonderado, 1);
+
+seccion('17. Lo que el fondo retiene antes de repartir');
+
+const GANANCIA_ASAMBLEA = 543815;
+
+afirmar('sin retención se reparte todo', calcularRetencion(GANANCIA_ASAMBLEA, null).aRepartir, GANANCIA_ASAMBLEA);
+afirmar('un 10% retiene la décima parte', calcularRetencion(GANANCIA_ASAMBLEA, { tipo: 'porcentaje', valor: 10 }).retenido, 54382);
+afirmar('y deja el resto para repartir', calcularRetencion(GANANCIA_ASAMBLEA, { tipo: 'porcentaje', valor: 10 }).aRepartir, GANANCIA_ASAMBLEA - 54382);
+afirmar('un valor en pesos se retiene tal cual', calcularRetencion(GANANCIA_ASAMBLEA, { tipo: 'valor', valor: 200000 }).retenido, 200000);
+
+// Los topes viven aquí y no en el formulario: un valor que llegue por API mueve
+// dinero exactamente igual que uno tecleado.
+afirmar('no se puede retener más de lo que hay', calcularRetencion(GANANCIA_ASAMBLEA, { tipo: 'valor', valor: 99999999 }).retenido, GANANCIA_ASAMBLEA);
+afirmar('ni deja nada negativo para repartir', calcularRetencion(GANANCIA_ASAMBLEA, { tipo: 'valor', valor: 99999999 }).aRepartir, 0);
+afirmar('un porcentaje por encima de 100 se topa en 100', calcularRetencion(GANANCIA_ASAMBLEA, { tipo: 'porcentaje', valor: 250 }).retenido, GANANCIA_ASAMBLEA);
+afirmar('una retención negativa se ignora', calcularRetencion(GANANCIA_ASAMBLEA, { tipo: 'valor', valor: -50000 }).retenido, 0);
+afirmar('y una no numérica también', calcularRetencion(GANANCIA_ASAMBLEA, { tipo: 'valor', valor: 'mucho' }).retenido, 0);
+afirmar('sin ganancia no hay nada que retener', calcularRetencion(0, { tipo: 'porcentaje', valor: 50 }).retenido, 0);
+
+seccion('18. El descuento sobre la parte de un socio');
+
+const PARTE = 90887;
+afirmar('sin descuento no se le quita nada', calcularDescuento(PARTE, null), 0);
+afirmar('un 20% le quita la quinta parte', calcularDescuento(PARTE, { tipo: 'porcentaje', valor: 20 }), 18177);
+afirmar('un valor en pesos se descuenta tal cual', calcularDescuento(PARTE, { tipo: 'valor', valor: 30000 }), 30000);
+
+// Un descuento no puede dejar una utilidad negativa: eso ya no sería un
+// descuento sino un cobro, y un cobro se registra donde se registran los cobros.
+afirmar('nunca descuenta más que su propia parte', calcularDescuento(PARTE, { tipo: 'valor', valor: 999999 }), PARTE);
+afirmar('un porcentaje por encima de 100 se topa en su parte', calcularDescuento(PARTE, { tipo: 'porcentaje', valor: 300 }), PARTE);
+afirmar('un descuento negativo se ignora', calcularDescuento(PARTE, { tipo: 'valor', valor: -1000 }), 0);
+afirmar('a quien no le toca nada no se le puede descuentar nada', calcularDescuento(0, { tipo: 'porcentaje', valor: 50 }), 0);
+
+seccion('19. La identidad que tiene que cuadrar siempre');
+
+// ganancia = repartido + retención general + descuentos por socio
+// Es la única igualdad que un acta puede firmar: nada se pierde y nada aparece.
+{
+    const bases = [aEnero, aMesAMes, aTarde, conservo, retiroParcial].map(a => resolverBase(a, 1).base);
+    const { retenido, aRepartir } = calcularRetencion(GANANCIA_ASAMBLEA, { tipo: 'porcentaje', valor: 15 });
+    const brutas = repartir(bases, aRepartir).map(c => c.utilidad);
+
+    // Un descuento del 30% al primero y $10.000 al tercero.
+    const descuentos = [
+        calcularDescuento(brutas[0], { tipo: 'porcentaje', valor: 30 }),
+        0,
+        calcularDescuento(brutas[2], { tipo: 'valor', valor: 10000 }),
+        0, 0,
+    ];
+    const netas = brutas.map((b, i) => b - descuentos[i]);
+
+    afirmar('lo repartido en bruto suma lo que quedó tras la retención',
+        brutas.reduce((a, b) => a + b, 0), aRepartir);
+    afirmar('repartido neto + retención + descuentos = ganancia',
+        netas.reduce((a, b) => a + b, 0) + retenido + descuentos.reduce((a, b) => a + b, 0), GANANCIA_ASAMBLEA);
+    cierto('ningún socio queda con utilidad negativa', netas.every(n => n >= 0));
+    // Lo descontado a uno NO engorda la parte de los demás: sus cifras no se mueven.
+    cierto('el descuento a un socio no cambia lo que reciben los otros',
+        netas[1] === brutas[1] && netas[3] === brutas[3] && netas[4] === brutas[4]);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 console.log(`\n\x1b[1m${'═'.repeat(70)}\x1b[0m`);

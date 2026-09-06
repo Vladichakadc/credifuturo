@@ -10,6 +10,8 @@ import PesoPorMes from '../../components/reparto/PesoPorMes';
 import GraficoReparto from '../../components/reparto/GraficoReparto';
 import SimuladorAbono from '../../components/reparto/SimuladorAbono';
 import PanelJunta from '../../components/reparto/PanelJunta';
+import Retencion from '../../components/reparto/Retencion';
+import DescuentoSocio from '../../components/reparto/DescuentoSocio';
 
 const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
 const fmtCorto = (n) => {
@@ -73,6 +75,10 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
     const [anio, setAnio] = useState(null);
     const [ganancia, setGanancia] = useState({ monto: 0, origen: '' });
     const [guardado, setGuardado] = useState({ factorPermanencia: 1 });
+    // La retención y los descuentos se editan en vivo y se guardan aparte: la
+    // Junta simula cuanto quiera, y el gerente es quien los deja escritos.
+    const [retencion, setRetencion] = useState({ tipo: 'porcentaje', valor: 0, destino: '' });
+    const [descuentos, setDescuentos] = useState({});
     const [busqueda, setBusqueda] = useState('');
     const [expandido, setExpandido] = useState(null);
     const [error, setError] = useState(null);
@@ -94,6 +100,8 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
             setDatos(d);
             setAnio(d.periodo.anio);
             setGuardado(d.parametros);
+            setRetencion(d.parametros.retencion || { tipo: 'porcentaje', valor: 0, destino: '' });
+            setDescuentos(d.parametros.descuentos || {});
 
             // ── La ganancia que se reparte ──────────────────────────────────
             // Siempre la "Ganancia total del fondo" del Panel de Administración,
@@ -142,8 +150,10 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
         return construirReparto(datos.socios, {
             factorPermanencia: guardado.factorPermanencia,
             monto: ganancia.monto,
+            retencion,
+            descuentos,
         });
-    }, [datos, guardado, ganancia.monto]);
+    }, [datos, guardado, ganancia.monto, retencion, descuentos]);
 
     const yo = useMemo(() => reparto?.filas.find(f => f.id === datos?.yoId) || null, [reparto, datos]);
 
@@ -321,9 +331,11 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                 <div className="px-5 py-3 bg-gray-50 border-b border-gray-100">
                     <h2 className="font-bold text-sm text-gray-800">Cómo se reparte la ganancia</h2>
                     <p className="text-[11px] text-gray-500">
-                        {reparto.cuadra
-                            ? 'La suma de todas las partes da exactamente la ganancia del fondo.'
-                            : '⚠ La suma de las partes no cuadra con la ganancia del fondo.'}
+                        {!reparto.cuadra
+                            ? '⚠ La suma de las partes no cuadra con la ganancia del fondo.'
+                            : reparto.totalRetenido > 0
+                                ? `La suma de todas las partes da exactamente ${fmt(reparto.aRepartir - reparto.totalDescuentos)}: la ganancia del fondo menos ${fmt(reparto.totalRetenido)} que se quedan en él.`
+                                : 'La suma de todas las partes da exactamente la ganancia del fondo.'}
                     </p>
                 </div>
                 <div className="p-5">
@@ -331,9 +343,29 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                         cifra personal no pinta en la pantalla con la que se
                         gobierna el reparto de todos. Ahí el tercer indicador pasa
                         a ser el reparto promedio, que sí es de gobierno. */}
-                    <GraficoReparto filas={reparto.filas} yoId={esVistaAdmin ? null : datos.yoId} monto={ganancia.monto}
+                    {/* El gráfico se mide contra lo que REALMENTE se reparte, no
+                        contra la ganancia bruta: con una retención encima, la
+                        línea del promedio y el pie estarían midiendo las barras
+                        contra un total que nadie recibió. */}
+                    <GraficoReparto filas={reparto.filas} yoId={esVistaAdmin ? null : datos.yoId} monto={reparto.totalRepartido}
                         onSeleccionar={(f) => setExpandido(prev => prev === f.id ? null : f.id)} />
                 </div>
+
+                {/* Encima de la tabla, porque su efecto se ve en la tabla: al mover
+                    el valor, todas las filas de abajo cambian a la vez.
+
+                    Se muestra donde se muestra el panel de la Junta, no a todo el
+                    que pueda ver la tabla: retener es una decisión de gobierno, y
+                    dejarla en la vista personal del gerente es justo el cruce de
+                    sombreros que la separación existe para evitar. Al socio que no
+                    gobierna no le falta información — el encabezado de la tabla ya
+                    le dice cuánto se retuvo y que el resto es lo que se reparte. */}
+                {mostrarPanelJunta && (
+                    <div className="px-5 pb-5">
+                        <Retencion retencion={retencion} onCambio={setRetencion} editable
+                            ganancia={reparto.ganancia} retenido={reparto.retenido} aRepartir={reparto.aRepartir} />
+                    </div>
+                )}
 
                 <div className="border-t border-gray-100">
                     <div className="px-5 py-3 flex flex-wrap items-center gap-2 justify-between">
@@ -396,11 +428,40 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                                                     <PesoEfectivo valor={f.pesoEfectivo} />
                                                 </td>
                                                 <td className="px-3 py-2.5 text-right text-gray-500 tabular-nums hidden sm:table-cell">{(f.participacion * 100).toFixed(2)}%</td>
-                                                <td className="px-5 py-2.5 text-right font-black text-gray-900 tabular-nums">{fmt(f.utilidad)}</td>
+                                                <td className="px-5 py-2.5 text-right tabular-nums">
+                                                    <span className="font-black text-gray-900">{fmt(f.utilidad)}</span>
+                                                    {/* Un socio al que se le descontó tiene que ver la resta, no
+                                                        solo el resultado: la cifra final sin su origen es
+                                                        exactamente lo que genera la llamada preguntando por qué. */}
+                                                    {f.descuento > 0 && (
+                                                        <span className="block text-[10px] text-amber-700 font-bold" title={f.descuentoRegla?.motivo || 'Descuento aprobado por la Junta'}>
+                                                            {fmt(f.utilidadBruta)} − {fmt(f.descuento)}
+                                                        </span>
+                                                    )}
+                                                </td>
                                             </tr>
                                             {abierto && (
                                                 <tr className="bg-gray-50/70">
                                                     <td colSpan={6} className="px-5 py-4">
+                                                        {/* Una decisión sobre un socio se toma mirando sus cifras,
+                                                            no desde una lista: por eso el editor vive aquí dentro. */}
+                                                        {mostrarPanelJunta && (
+                                                            <DescuentoSocio socio={f} regla={f.descuentoRegla}
+                                                                // Solo el botón "quitar" borra la regla (manda null).
+                                                                // Descartarla también cuando el valor es 0 rompía el
+                                                                // orden natural de uso: elegir "pesos" ANTES de teclear
+                                                                // el monto borraba esa elección, el tipo volvía a
+                                                                // porcentaje y "50000" se leía como 100% — el socio se
+                                                                // quedaba sin nada. Las reglas en cero no reparten nada
+                                                                // (calcularDescuento las ignora) y PUT /settings las
+                                                                // descarta al guardar, así que no ensucian nada.
+                                                                onCambio={(id, regla) => setDescuentos(prev => {
+                                                                    const siguiente = { ...prev };
+                                                                    if (!regla) delete siguiente[id];
+                                                                    else siguiente[id] = regla;
+                                                                    return siguiente;
+                                                                })} />
+                                                        )}
                                                         <PesoPorMes porMes={f.porMes} periodo={periodo} altura={170} />
                                                         <TablaPesos porMes={f.porMes} total={f.capitalPonderado} movimientos={f.movimientos} />
                                                     </td>
@@ -442,6 +503,9 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                     periodo={periodo}
                     diagnostico={datos.diagnostico}
                     anomalias={datos.anomalias}
+                    retencion={retencion}
+                    descuentos={descuentos}
+                    reparto={reparto}
                 />
             )}
 
@@ -462,7 +526,10 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                     <li>· Lo que traías de años anteriores y <strong>no retiraste</strong> pesa el año completo, porque estuvo desde el primer día.</li>
                     <li>· Un retiro —total o parcial— <strong>descuenta con el peso de su propio mes</strong>: hasta ese mes ese dinero sí estuvo trabajando.</li>
                     <li>· Las <strong>utilidades que el fondo te abonó</strong> cuentan como capital tuyo <strong>siempre y cuando no retires</strong> tus ahorros durante el año. Si retiras —total o parcialmente— dejan de contar en este reparto.</li>
-                    <li>· Los pesos que sobran del redondeo se reparten uno a uno, así que la suma de todas las partes da exactamente la ganancia del fondo.</li>
+                    <li>· Los pesos que sobran del redondeo se reparten uno a uno, así que la suma de todas las partes da exactamente lo que se reparte, sin sobrar ni faltar un peso.</li>
+                    {reparto.totalRetenido > 0 && (
+                        <li>· De la ganancia se apartan <strong>{fmt(reparto.totalRetenido)}</strong> que no se reparten y se quedan en el fondo. Se reparte el resto.</li>
+                    )}
                 </ul>
             </Tarjeta>
         </div>

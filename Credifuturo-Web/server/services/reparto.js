@@ -394,4 +394,65 @@ function repartir(bases, monto) {
     return limpias.map((b, i) => ({ participacion: b / total, utilidad: enteros[i] }));
 }
 
-module.exports = { MESES_ANIO, diaUTC, diasInclusive, fechaValorDe, pesoDeFecha, pesoDeMes, construirPeriodo, ponderarSocio, resolverBase, repartir };
+/**
+ * ── Lo que el fondo retiene antes de repartir ────────────────────────────────
+ *
+ * La asamblea puede decidir que no se reparta toda la ganancia: que una parte se
+ * quede para una reserva, para un fondo con un objetivo concreto, o para
+ * cualquier destino que la Junta acuerde. Eso NO se hace tocando la ganancia:
+ * la ganancia es un hecho contable que declara el Panel de Administración y no
+ * se negocia. Lo que se decide es una RETENCIÓN, y lo repartido es la resta:
+ *
+ *     repartir = ganancia − retención
+ *
+ * Modelarlo así mantiene las tres cifras separadas y auditables —lo que se ganó,
+ * lo que se retuvo y para qué, y lo que se repartió— en vez de dejar un único
+ * número editable que nadie puede volver a explicar seis meses después.
+ *
+ * Se admite en pesos o en porcentaje porque las dos formas aparecen en las
+ * actas: "el 10% de las utilidades" y "dos millones para el fondo de auxilios"
+ * son la misma clase de decisión escrita de dos maneras.
+ *
+ * Nunca puede retener más de lo que hay ni una cantidad negativa: los topes
+ * están aquí, no en el formulario, porque un valor que llegue por API mueve
+ * dinero igual que uno tecleado.
+ */
+function calcularRetencion(ganancia, retencion) {
+    const G = Math.max(0, Math.round(Number(ganancia) || 0));
+    const v = Number(retencion?.valor);
+    if (!G || !Number.isFinite(v) || v <= 0) return { retenido: 0, aRepartir: G };
+
+    const retenido = retencion.tipo === 'porcentaje'
+        ? Math.round(G * Math.min(100, v) / 100)
+        : Math.min(G, Math.round(v));
+    return { retenido, aRepartir: G - retenido };
+}
+
+/**
+ * ── El descuento sobre la parte de un socio ─────────────────────────────────
+ *
+ * Distinto de la retención general: aquí la Junta descuenta a UN socio, no a
+ * todos. Lo descontado se queda en el fondo, con la retención general.
+ *
+ * NO se reparte entre los demás socios, y esa es la decisión de fondo de esta
+ * función. Repartirlo convertiría una medida sobre una persona en una ganancia
+ * para sus compañeros: quien vota el descuento cobraría por votarlo, y el socio
+ * afectado tendría enfrente a veinticuatro personas con un interés económico en
+ * que se le descuente. Un fondo pequeño donde todos se conocen no puede
+ * permitirse ese incentivo. Lo retenido va al fondo, que es de todos por igual.
+ *
+ * Tope en la propia parte del socio: un descuento no puede dejarle una utilidad
+ * negativa, porque eso ya no sería un descuento sino un cobro, y un cobro se
+ * registra donde se registran los cobros.
+ */
+function calcularDescuento(utilidadBruta, descuento) {
+    const U = Math.max(0, Math.round(Number(utilidadBruta) || 0));
+    const v = Number(descuento?.valor);
+    if (!U || !Number.isFinite(v) || v <= 0) return 0;
+
+    return descuento.tipo === 'porcentaje'
+        ? Math.round(U * Math.min(100, v) / 100)
+        : Math.min(U, Math.round(v));
+}
+
+module.exports = { MESES_ANIO, diaUTC, diasInclusive, fechaValorDe, pesoDeFecha, pesoDeMes, construirPeriodo, ponderarSocio, resolverBase, repartir, calcularRetencion, calcularDescuento };
