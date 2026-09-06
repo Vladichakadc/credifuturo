@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Calculator, ArrowRight, Info } from 'lucide-react';
-import { pesoDeMes, repartir, NOMBRE_MES } from '../../utils/reparto';
+import { pesoDeFecha, repartir } from '../../utils/reparto';
 
 const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
 
@@ -22,16 +22,16 @@ const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
  *    crecer con el abono simulado sería inventar un rendimiento.
  */
 export default function SimuladorAbono({ yo, filas, periodo, monto }) {
-    const mesPorDefecto = periodo?.cerrado ? 12 : Math.max(1, periodo?.mesActual || 1);
     const [importe, setImporte] = useState('200000');
-    const [mes, setMes] = useState(mesPorDefecto);
+    // Por defecto, hoy: la pregunta natural es "si abono ahora, cuánto cambia".
+    const [fecha, setFecha] = useState(periodo?.corte || periodo?.inicio || '');
 
     const sim = useMemo(() => {
         if (!yo || !periodo) return null;
         const valor = Number(String(importe).replace(/\D/g, '')) || 0;
         if (valor <= 0) return null;
 
-        const peso = pesoDeMes(mes);
+        const peso = pesoDeFecha(fecha, periodo);
         const extra = valor * peso;
 
         const bases = filas.map(f => f.base + (f.id === yo.id ? extra : 0));
@@ -39,19 +39,20 @@ export default function SimuladorAbono({ yo, filas, periodo, monto }) {
         const i = filas.findIndex(f => f.id === yo.id);
         if (i < 0) return null;
 
+        // La comparación que enseña la regla: el mismo abono el 1 de enero.
         const enEnero = repartir(
-            filas.map(f => f.base + (f.id === yo.id ? valor * pesoDeMes(1) : 0)), monto)[i];
+            filas.map(f => f.base + (f.id === yo.id ? valor * pesoDeFecha(periodo.inicio, periodo) : 0)), monto)[i];
 
         return {
-            valor, mes, peso,
-            meses: Math.round(peso * 12),
+            valor, fecha, peso,
+            dias: Math.round(peso * (periodo.dias || 365)),
             extra,
             antes: { participacion: yo.participacion, utilidad: yo.utilidad },
             despues: nuevo[i],
             delta: nuevo[i].utilidad - yo.utilidad,
             siEnEnero: enEnero.utilidad - yo.utilidad,
         };
-    }, [yo, filas, periodo, monto, importe, mes]);
+    }, [yo, filas, periodo, monto, importe, fecha]);
 
     if (!yo || !periodo) return null;
 
@@ -77,13 +78,12 @@ export default function SimuladorAbono({ yo, filas, periodo, monto }) {
                         />
                     </label>
                     <label className="block">
-                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">En qué mes</span>
-                        <select value={mes} onChange={(e) => setMes(Number(e.target.value))}
-                            className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary">
-                            {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
-                                <option key={m} value={m}>{NOMBRE_MES[m]} — peso {Math.round(pesoDeMes(m) * 100)}%</option>
-                            ))}
-                        </select>
+                        {/* Un día, no un mes: el peso cambia cada día, y el sentido
+                            del simulador es justamente que se vea. */}
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Qué día</span>
+                        <input type="date" value={fecha} min={periodo.inicio} max={periodo.fin}
+                            onChange={(e) => setFecha(e.target.value)}
+                            className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary" />
                     </label>
                 </div>
 
@@ -106,15 +106,15 @@ export default function SimuladorAbono({ yo, filas, periodo, monto }) {
                         <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-100 rounded-xl p-3">
                             <Info className="h-4 w-4 text-blue-500 flex-shrink-0 mt-0.5" />
                             <p className="text-xs text-blue-900 leading-snug">
-                                Abonando en <strong>{NOMBRE_MES[sim.mes]}</strong> ese dinero trabaja{' '}
-                                <strong>{sim.meses} de los 12 meses</strong> del año, así que pesa un{' '}
+                                Abonando el <strong>{sim.fecha}</strong> ese dinero trabaja{' '}
+                                <strong>{sim.dias} de los {periodo.dias} días</strong> del año, así que pesa un{' '}
                                 <strong>{Math.round(sim.peso * 100)}%</strong>: de tus {fmt(sim.valor)} cuentan{' '}
                                 <strong>{fmt(sim.extra)}</strong>.{' '}
                                 {sim.delta > 0
                                     ? <>Tu parte subiría <strong>{fmt(sim.delta)}</strong>.</>
                                     : <>A esta altura del año ya casi no alcanza a rendir.</>}
-                                {sim.mes > 1 && (
-                                    <> El mismo abono <strong>en enero</strong> te habría subido <strong>{fmt(sim.siEnEnero)}</strong>.</>
+                                {sim.siEnEnero > sim.delta && (
+                                    <> El mismo abono <strong>el 1 de enero</strong> te habría subido <strong>{fmt(sim.siEnEnero)}</strong>.</>
                                 )}
                             </p>
                         </div>

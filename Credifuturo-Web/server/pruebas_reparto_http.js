@@ -26,7 +26,7 @@ const bcrypt = require('bcryptjs');
 const CLAVE = require('crypto').randomBytes(12).toString('hex');
 const sequelize = require('./config/database');
 const { Client, Saving } = require('./models');
-const { construirPeriodo, pesoDeMes } = require('./services/reparto');
+const { construirPeriodo, pesoDeFecha, diaUTC } = require('./services/reparto');
 
 let ok = 0, fallos = 0;
 const money = n => '$' + Math.round(Number(n) || 0).toLocaleString('es-CO');
@@ -49,6 +49,8 @@ const entrar = async (cedula) => {
 // día en que se corran las pruebas.
 const ANIO = new Date().getUTCFullYear() - 1;
 const P = construirPeriodo(ANIO, `${ANIO + 2}-01-01`);
+// El peso de una fecha concreta: la ponderación es por día, no por mes.
+const pesoDe = (iso) => pesoDeFecha(diaUTC(iso), P);
 const CUOTA = 200000;
 
 (async () => {
@@ -154,7 +156,12 @@ const CUOTA = 200000;
     comprobar('un año pasado va del 1 de enero al 31 de diciembre',
         d.periodo.inicio === `${ANIO}-01-01` && d.periodo.corte === `${ANIO}-12-31`);
     comprobar('y se marca como cerrado', d.periodo.cerrado === true);
-    comprobar('los pesos se cuentan sobre doce meses', d.periodo.meses === 12);
+    comprobar('el año tiene sus días exactos como denominador', d.periodo.dias === 365, `dio ${d.periodo.dias}`);
+    // Sin los dos extremos de la rampa el simulador del socio no puede calcular
+    // el peso de una fecha, y devolvía 0% para cualquier día.
+    comprobar('llegan los dos extremos del período',
+        d.periodo.inicio === `${ANIO}-01-01` && d.periodo.fin === `${ANIO}-12-31`,
+        `${d.periodo.inicio} → ${d.periodo.fin}`);
     comprobar('el premio de permanencia arranca apagado', d.parametros.factorPermanencia === 1);
 
     // ───────────────────────────────────────────────────────────────
@@ -162,10 +169,10 @@ const CUOTA = 200000;
     {
         const e = de(d, 'Enero');
         const t = de(d, 'Tarde');
-        comprobar('quien pagó todo en enero pesa el año completo (100%)',
-            cerca(e.capitalPonderado, 12 * CUOTA, 2), `dio ${money(e.capitalPonderado)}`);
-        comprobar('quien pagó lo mismo en diciembre pesa un mes de doce',
-            cerca(t.capitalPonderado, 12 * CUOTA / 12, 2), `dio ${money(t.capitalPonderado)}`);
+        comprobar('quien pagó todo el 15 de enero pesa los días desde ese día',
+            cerca(e.capitalPonderado, 12 * CUOTA * pesoDe(`${ANIO}-01-15`), 2), `dio ${money(e.capitalPonderado)}`);
+        comprobar('quien pagó lo mismo el 20 de diciembre pesa doce días',
+            cerca(t.capitalPonderado, 12 * CUOTA * pesoDe(`${ANIO}-12-20`), 2), `dio ${money(t.capitalPonderado)}`);
         // El hallazgo que motivó el rediseño: los dos acreditan los meses 1..12,
         // así que el método anterior —que ponderaba por mesAbonado— les daba
         // exactamente la misma cifra a pesar de mover el dinero de forma opuesta.
@@ -176,14 +183,15 @@ const CUOTA = 200000;
             e.ahorroPeriodo === t.ahorroPeriodo && e.ahorroPeriodo === 12 * CUOTA);
         comprobar('el desglose por mes pone todo el aporte de Enero en enero',
             de(d, 'Enero').porMes[1].ahorro === 12 * CUOTA);
-        comprobar('con peso 100%', de(d, 'Enero').porMes[1].peso === 1);
+        comprobar('con el peso efectivo del día en que entró',
+            cerca(de(d, 'Enero').porMes[1].peso, pesoDe(`${ANIO}-01-15`), 1e-5));
 
         // El capital sin ponderar viaja junto al ponderado: sin él, la cifra
         // ponderada no se puede juzgar en pantalla.
         comprobar('los dos ahorraron lo mismo sin ponderar',
             e.capitalBase === t.capitalBase && e.capitalBase === 12 * CUOTA);
         comprobar('pero su peso efectivo es opuesto',
-            e.pesoEfectivo === 1 && cerca(t.pesoEfectivo, 1 / 12, 0.001),
+            cerca(e.pesoEfectivo, pesoDe(`${ANIO}-01-15`), 1e-5) && cerca(t.pesoEfectivo, pesoDe(`${ANIO}-12-20`), 1e-5),
             `${e.pesoEfectivo} vs ${t.pesoEfectivo}`);
     }
 
@@ -195,10 +203,10 @@ const CUOTA = 200000;
         const pa = de(d, 'Parcial');
         comprobar('el capital previo entra como apertura y pesa el año completo',
             cerca(c.capitalPonderado, 5000000, 1), `dio ${money(c.capitalPonderado)}`);
-        comprobar('un retiro TOTAL en marzo descuenta con el peso de marzo (10/12)',
-            cerca(r.capitalPonderado, 5000000 - 5000000 * (10 / 12), 2), `dio ${money(r.capitalPonderado)}`);
-        comprobar('un retiro PARCIAL descuenta solo lo retirado, con el peso de su mes',
-            cerca(pa.capitalPonderado, 5000000 - 2000000 * (10 / 12), 2), `dio ${money(pa.capitalPonderado)}`);
+        comprobar('un retiro TOTAL el 31 de marzo descuenta con el peso de ESE día',
+            cerca(r.capitalPonderado, 5000000 - 5000000 * pesoDe(`${ANIO}-03-31`), 2), `dio ${money(r.capitalPonderado)}`);
+        comprobar('un retiro PARCIAL descuenta solo lo retirado, con el peso de su día',
+            cerca(pa.capitalPonderado, 5000000 - 2000000 * pesoDe(`${ANIO}-03-31`), 2), `dio ${money(pa.capitalPonderado)}`);
         comprobar('quien retiró parcialmente pesa más que quien retiró todo',
             pa.capitalPonderado > r.capitalPonderado);
         comprobar('y menos que quien no retiró nada', pa.capitalPonderado < c.capitalPonderado);
@@ -215,8 +223,8 @@ const CUOTA = 200000;
         // Ese dinero también está en el fondo prestándose; dejarlo fuera
         // subestimaba a los socios más antiguos.
         const g = de(d, 'Gerente');
-        comprobar('el aporte inicial de enero pesa el año completo',
-            cerca(g.capitalPonderado, 1000000, 1), `dio ${money(g.capitalPonderado)}`);
+        comprobar('el aporte inicial pesa por su día, igual que cualquier capital',
+            cerca(g.capitalPonderado, 1000000 * pesoDe(`${ANIO}-01-05`), 1), `dio ${money(g.capitalPonderado)}`);
         comprobar('y aparece en el renglón de su mes', g.porMes[1].ahorro === 1000000);
     }
 
@@ -232,8 +240,13 @@ const CUOTA = 200000;
             `dio ${money(m.ahorroPeriodo)}`);
         comprobar('que se informa aparte', m.fondoPeriodo === 500000, `dio ${money(m.fondoPeriodo)}`);
         // Los dos sí son capital dentro del fondo, así que los dos pesan.
-        comprobar('los dos pesan para el reparto, con el peso de julio',
-            cerca(m.porMes[7].ponderado, 1000000 * 0.5, 1), `dio ${money(m.porMes[7].ponderado)}`);
+        // El del día 10 pesa más que el del 20: la ponderación es por día.
+        comprobar('los dos pesan, cada uno por el día en que entró',
+            cerca(m.porMes[7].ponderado, 500000 * pesoDe(`${ANIO}-07-10`) + 500000 * pesoDe(`${ANIO}-07-20`), 1),
+            `dio ${money(m.porMes[7].ponderado)}`);
+        comprobar('y el del día 10 pesa más que el del 20',
+            (m.movimientos.find(x => x.fecha === `${ANIO}-07-10`)?.peso || 0)
+            > (m.movimientos.find(x => x.fecha === `${ANIO}-07-20`)?.peso || 0));
         comprobar('cada movimiento se puede rastrear en el detalle',
             (m.movimientos || []).filter(x => x.mes === 7).length === 2);
     }
@@ -315,7 +328,7 @@ const CUOTA = 200000;
         comprobar('responde correctamente', vacio.ok === true);
         comprobar('todos los socios pesan cero',
             vacio.socios.every(s => s.capitalPonderado === 0));
-        comprobar('el período existe igual', vacio.periodo.meses === 12, `dio ${vacio.periodo.meses}`);
+        comprobar('el período existe igual', vacio.periodo.dias === 365, `dio ${vacio.periodo.dias}`);
 
         // Un año imposible no puede tumbar la pantalla ni, peor, calcular un
         // reparto sobre un período inventado: se ignora y se usa el año en curso.

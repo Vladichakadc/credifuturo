@@ -18,14 +18,28 @@
 export const MESES_ANIO = 12;
 export const NOMBRE_MES = ['Anterior', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
+/** Días entre dos fechas 'YYYY-MM-DD', ambas inclusive. */
+export function diasInclusive(desde, hasta) {
+    const a = Date.parse(`${desde}T00:00:00Z`);
+    const b = Date.parse(`${hasta}T00:00:00Z`);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return 0;
+    return Math.round((b - a) / 86400000) + 1;
+}
+
 /**
- * El peso de un mes: enero 100%, julio 50%, diciembre 8%.
- * El mes 0 es el capital que ya estaba antes del año y pesa completo.
+ * El peso de una fecha: los días que ese dinero alcanza a trabajar en el año,
+ * sobre los días del año. 1 de enero 100%, 1 de julio ~50%, 31 de diciembre ~0%.
+ *
+ * Antes se calculaba por mes y todo julio pesaba igual. El fondo tiene el dinero
+ * en la cuenta NU desde el día que entra, y ahí el rendimiento se liquida por
+ * día: quien consignó el 1 le dio treinta días más de trabajo que quien consignó
+ * el 30. Es la misma fórmula del servidor, que sigue siendo la autoridad.
  */
-export function pesoDeMes(mes) {
-    if (mes <= 0) return 1;
-    if (mes > MESES_ANIO) return 0;
-    return (MESES_ANIO - mes + 1) / MESES_ANIO;
+export function pesoDeFecha(fechaISO, periodo) {
+    if (!fechaISO || !periodo?.inicio || !periodo?.fin || !periodo?.dias) return 0;
+    if (fechaISO < periodo.inicio) return 1;
+    if (fechaISO > periodo.fin) return 0;
+    return diasInclusive(fechaISO, periodo.fin) / periodo.dias;
 }
 
 /**
