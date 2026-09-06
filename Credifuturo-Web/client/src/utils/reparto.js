@@ -95,6 +95,7 @@ export function construirReparto(socios = [], { factorPermanencia = 1, monto = 0
     return {
         filas: conReparto,
         totalBase: filas.reduce((s, f) => s + f.base, 0),
+        totalCapitalBase: filas.reduce((s, f) => s + (f.capitalBase || 0), 0),
         totalCapitalPonderado: filas.reduce((s, f) => s + (f.capitalPonderado || 0), 0),
         totalPremio: filas.reduce((s, f) => s + f.premioPermanencia, 0),
         totalRepartido,

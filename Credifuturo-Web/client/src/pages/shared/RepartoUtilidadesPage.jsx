@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     Loader2, RefreshCw, Coins, CalendarRange, Users, Percent, Award,
-    Search, Info, AlertTriangle,
+    Search, Info, AlertTriangle, ArrowRight,
 } from 'lucide-react';
 import api from '../../config/api';
 import { computeFundProjection } from '../../utils/fundProjection';
@@ -46,12 +46,27 @@ const Dato = ({ etiqueta, valor, pie, acento = 'text-gray-900' }) => (
  * en un pedestal cuánto dinero tiene cada persona en un fondo donde todos se
  * conocen.
  *
- * Lo que lo reemplaza son tres piezas, cada una respondiendo algo que el podio no
- * respondía: el PESO DE CADA MES (por qué me toca esto), el SIMULADOR (qué puedo
- * hacer para que me toque más) y la BARRA PROPORCIONAL (cómo se divide el total).
- * Para la Junta, el panel de parámetros con la redistribución en vivo.
+ * ── DOS VISTAS, NO UNA QUE SE ADAPTA ────────────────────────────────────────
+ *
+ * El gerente de este fondo es TAMBIÉN socio y miembro de la Junta. Una sola
+ * pantalla que mostrara a la vez "lo que me toca a mí" y "los parámetros con los
+ * que reparto a todos" obliga a cambiar de sombrero en mitad de la lectura, y
+ * eso se presta a confundir una cifra personal con una decisión de gobierno.
+ * Así que son dos:
+ *
+ *   · vista="socio"  — lo mío: mi parte, el peso de cada mes de mi ahorro, el
+ *                      simulador. Más la tabla del reparto, para poder verificar
+ *                      que el mío encaja en el de todos.
+ *   · vista="admin"  — el gobierno del reparto: la tabla completa, los
+ *                      parámetros, la calidad de los datos y las anomalías. Sin
+ *                      "Tu parte" ni simulador, aunque quien mire sea socio.
+ *
+ * La Junta que NO es admin (subgerente y tesorera) no tiene ruta de admin, así
+ * que su panel de parámetros aparece en la vista de socio. Cada persona tiene un
+ * único sitio para cada tarea, que es justo lo contrario de tenerlo todo dos veces.
  */
-export default function RepartoUtilidadesPage() {
+export default function RepartoUtilidadesPage({ vista = 'socio' }) {
+    const esVistaAdmin = vista === 'admin';
     const [datos, setDatos] = useState(null);
     const [cargando, setCargando] = useState(true);
     const [refrescando, setRefrescando] = useState(false);
@@ -156,6 +171,12 @@ export default function RepartoUtilidadesPage() {
 
     const { periodo, puedeVerTodo } = datos;
     const conParte = reparto.filas.filter(f => f.base > 0).length;
+    const esAdmin = (JSON.parse(localStorage.getItem('user') || '{}')).role === 'admin';
+    // El gerente gobierna el reparto desde su propia ruta; la Junta que no es
+    // admin no tiene otra, así que su panel vive aquí. Pintarlo en los dos sitios
+    // para la misma persona es exactamente la duplicación que esta separación
+    // existe para quitar.
+    const mostrarPanelJunta = esVistaAdmin ? puedeVerTodo : (puedeVerTodo && !esAdmin);
 
     return (
         <div className="max-w-6xl mx-auto space-y-5 pb-10">
@@ -166,9 +187,23 @@ export default function RepartoUtilidadesPage() {
                     <div className="flex flex-wrap items-center justify-between gap-4">
                         {/* Sin título: la cabecera de la ruta (paginasInfo.js) ya lo pinta
                             justo encima, y repetirlo deja el mismo texto dos veces. */}
-                        <p className="text-sm font-bold text-white/90">
-                            Ganancia de {periodo.anio}, repartida por capital y meses
-                        </p>
+                        <div>
+                            <p className="text-sm font-bold text-white/90">
+                                {esVistaAdmin
+                                    ? `Reparto de ${periodo.anio} — vista de administración`
+                                    : `Ganancia de ${periodo.anio}, repartida por capital y meses`}
+                            </p>
+                            {/* El gerente de este fondo también es socio. El enlace deja
+                                explícito con qué sombrero está mirando y le permite
+                                cambiarlo sin buscar en el menú. */}
+                            {esAdmin && (
+                                <a href={esVistaAdmin ? '/dashboard/ranking-ahorro' : '/admin/savings/ranking'}
+                                    className="inline-flex items-center gap-1 text-[11px] text-white/60 hover:text-brand-gold transition-colors mt-0.5">
+                                    {esVistaAdmin ? 'Estás viendo el reparto como administrador · ver lo tuyo como socio' : 'Estás viendo lo tuyo como socio · ir a la vista de administración'}
+                                    <ArrowRight className="h-3 w-3" />
+                                </a>
+                            )}
+                        </div>
                         <div className="flex items-center gap-2">
                             <select value={anio ?? ''} onChange={(e) => { const a = Number(e.target.value); setAnio(a); cargar(a, true); }}
                                 className="bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-gold [&>option]:text-gray-800">
@@ -211,8 +246,8 @@ export default function RepartoUtilidadesPage() {
                 )}
             </Tarjeta>
 
-            {/* ── Lo tuyo ──────────────────────────────────────────────────── */}
-            {yo && (
+            {/* ── Lo tuyo — solo en la vista de socio ──────────────────────── */}
+            {!esVistaAdmin && yo && (
                 <Tarjeta className="overflow-hidden">
                     <div className="px-5 py-3 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
                         <Award className="h-4 w-4 text-brand-gold" />
@@ -223,7 +258,7 @@ export default function RepartoUtilidadesPage() {
                             <Dato etiqueta="Te correspondería" valor={fmt(yo.utilidad)} acento="text-brand-primary"
                                 pie={`${(yo.participacion * 100).toFixed(2)}% del reparto`} />
                             <Dato etiqueta="Tu capital ponderado" valor={fmt(yo.capitalPonderado)}
-                                pie="tu capital, por los meses que trabaja" />
+                                pie={`de ${fmt(yo.capitalBase)} ahorrados · pesa ${Math.round(yo.pesoEfectivo * 100)}%`} />
                             <Dato etiqueta="Traías del año anterior" valor={fmt(yo.capitalApertura)}
                                 pie={yo.aperturaPermanente > 0
                                     ? `${fmt(yo.aperturaPermanente)} sigue en el fondo`
@@ -251,7 +286,7 @@ export default function RepartoUtilidadesPage() {
                 </Tarjeta>
             )}
 
-            {yo && <SimuladorAbono yo={yo} filas={reparto.filas} periodo={periodo} monto={ganancia.monto} />}
+            {!esVistaAdmin && yo && <SimuladorAbono yo={yo} filas={reparto.filas} periodo={periodo} monto={ganancia.monto} />}
 
             {/* ── El reparto completo ──────────────────────────────────────── */}
             <Tarjeta className="overflow-hidden">
@@ -285,7 +320,13 @@ export default function RepartoUtilidadesPage() {
                                 <tr className="border-y border-gray-100">
                                     <th className="px-5 py-2 text-left text-[10px] font-black text-gray-400 uppercase tracking-wider">#</th>
                                     <th className="px-3 py-2 text-left text-[10px] font-black text-gray-400 uppercase tracking-wider">Socio</th>
+                                    {/* El ahorro sin ponderar va ANTES del ponderado: leídas en ese
+                                        orden, las dos columnas cuentan la historia sola —esto puso,
+                                        esto le cuenta— y la tercera dice por qué. Sin la primera, el
+                                        capital ponderado es un número que no se puede juzgar. */}
+                                    <th className="px-3 py-2 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider hidden md:table-cell">Ahorro</th>
                                     <th className="px-3 py-2 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider">Capital ponderado</th>
+                                    <th className="px-3 py-2 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider hidden lg:table-cell" title="Qué fracción del ahorro acabó contando: 100% si estuvo desde enero o desde antes">Peso</th>
                                     <th className="px-3 py-2 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider hidden sm:table-cell">Participación</th>
                                     <th className="px-5 py-2 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider">Le corresponde</th>
                                 </tr>
@@ -309,13 +350,17 @@ export default function RepartoUtilidadesPage() {
                                                         </span>
                                                     )}
                                                 </td>
-                                                <td className="px-3 py-2.5 text-right text-gray-600 tabular-nums">{fmt(f.capitalPonderado)}</td>
+                                                <td className="px-3 py-2.5 text-right text-gray-400 tabular-nums hidden md:table-cell">{fmt(f.capitalBase)}</td>
+                                                <td className="px-3 py-2.5 text-right text-gray-700 font-bold tabular-nums">{fmt(f.capitalPonderado)}</td>
+                                                <td className="px-3 py-2.5 text-right tabular-nums hidden lg:table-cell">
+                                                    <PesoEfectivo valor={f.pesoEfectivo} />
+                                                </td>
                                                 <td className="px-3 py-2.5 text-right text-gray-500 tabular-nums hidden sm:table-cell">{(f.participacion * 100).toFixed(2)}%</td>
                                                 <td className="px-5 py-2.5 text-right font-black text-gray-900 tabular-nums">{fmt(f.utilidad)}</td>
                                             </tr>
                                             {abierto && (
                                                 <tr className="bg-gray-50/70">
-                                                    <td colSpan={5} className="px-5 py-4">
+                                                    <td colSpan={7} className="px-5 py-4">
                                                         <PesoPorMes porMes={f.porMes} periodo={periodo} altura={170} />
                                                         <TablaPesos porMes={f.porMes} total={f.capitalPonderado} />
                                                     </td>
@@ -328,7 +373,11 @@ export default function RepartoUtilidadesPage() {
                             <tfoot>
                                 <tr className="bg-gray-50 border-t-2 border-gray-200">
                                     <td className="px-5 py-2.5 text-[10px] font-black uppercase tracking-wider text-gray-500" colSpan={2}>Total</td>
+                                    <td className="px-3 py-2.5 text-right font-black text-gray-500 tabular-nums hidden md:table-cell">{fmt(reparto.totalCapitalBase)}</td>
                                     <td className="px-3 py-2.5 text-right font-black text-gray-700 tabular-nums">{fmt(reparto.totalCapitalPonderado)}</td>
+                                    <td className="px-3 py-2.5 text-right font-black text-gray-500 tabular-nums hidden lg:table-cell">
+                                        {reparto.totalCapitalBase > 0 ? `${Math.round((reparto.totalCapitalPonderado / reparto.totalCapitalBase) * 100)}%` : '—'}
+                                    </td>
                                     <td className="px-3 py-2.5 text-right font-black text-gray-500 tabular-nums hidden sm:table-cell">100,00%</td>
                                     <td className="px-5 py-2.5 text-right font-black text-gray-900 tabular-nums">{fmt(reparto.totalRepartido)}</td>
                                 </tr>
@@ -339,7 +388,7 @@ export default function RepartoUtilidadesPage() {
             </Tarjeta>
 
             {/* ── Panel de la Junta ────────────────────────────────────────── */}
-            {puedeVerTodo && (
+            {mostrarPanelJunta && (
                 <PanelJunta
                     // Los controles arrancan en el valor guardado, así que si ese valor
                     // cambia el panel tiene que volver a montarse: si no, seguiría
@@ -349,7 +398,7 @@ export default function RepartoUtilidadesPage() {
                     guardado={guardado}
                     monto={ganancia.monto}
                     origenMonto={ganancia.origen}
-                    puedeGuardar={(JSON.parse(localStorage.getItem('user') || '{}')).role === 'admin'}
+                    puedeGuardar={esAdmin}
                     onGuardado={(nuevos) => setGuardado(nuevos)}
                     periodo={periodo}
                     diagnostico={datos.diagnostico}
@@ -419,5 +468,28 @@ function TablaPesos({ porMes = [], total = 0 }) {
                 <div className="text-right font-black text-brand-primary tabular-nums">{fmt(total)}</div>
             </div>
         </div>
+    );
+}
+
+/**
+ * El peso efectivo: qué fracción del ahorro de un socio acabó contando.
+ *
+ * Es la columna que hace legible el reparto. Dos socios con el mismo ahorro y
+ * participaciones muy distintas parecen un error hasta que se ve que uno pesa
+ * 100% y el otro 20%; entonces deja de ser un error y pasa a ser la explicación.
+ *
+ * El color va de verde a rojo, pero el número siempre está: quien no distinga
+ * los colores tiene que poder leerlo igual.
+ */
+function PesoEfectivo({ valor = 0 }) {
+    const pct = Math.round((Number(valor) || 0) * 100);
+    const tono = pct >= 80 ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+        : pct >= 50 ? 'text-brand-primary bg-brand-primary/5 border-brand-primary/20'
+            : pct >= 25 ? 'text-amber-700 bg-amber-50 border-amber-200'
+                : 'text-red-700 bg-red-50 border-red-200';
+    return (
+        <span className={`inline-block min-w-[2.75rem] rounded-full border px-1.5 py-0.5 text-[10px] font-black ${tono}`}>
+            {pct}%
+        </span>
     );
 }

@@ -6,10 +6,13 @@ import { useBetaAccess } from '../../utils/betaAccess';
 /**
  * Reparto de Utilidades para los socios beta.
  *
- * Usa exactamente el mismo componente que el gerente y la Junta: la pantalla se
- * adapta sola a quién la mira —el detalle movimiento a movimiento solo llega de
- * quien puede verlo, y el panel de parámetros no se pinta— así que no hay una
- * segunda copia que se pueda desviar de la primera.
+ * Es la vista de SOCIO: lo que me toca, el peso de cada mes de mi ahorro y el
+ * simulador. El mismo componente que la vista de administración, con vista="socio",
+ * así que no hay una segunda copia que se pueda desviar de la primera.
+ *
+ * El panel de parámetros aparece aquí solo para la Junta que NO es admin
+ * (subgerente y tesorera): no tienen ruta de administración, así que este es su
+ * único sitio. Para el gerente no se pinta, porque ya lo tiene en la suya.
  *
  * La restricción beta se comprueba aquí y no solo escondiendo el enlace del
  * menú: la pantalla muestra el reparto de todos los socios, y cualquiera podría
@@ -36,7 +39,7 @@ const RankingAhorroPage = () => {
         );
     }
 
-    return <div className="min-h-screen p-4 sm:p-6"><RepartoUtilidadesPage /></div>;
+    return <div className="min-h-screen p-4 sm:p-6"><RepartoUtilidadesPage vista="socio" /></div>;
 };
 
 export default RankingAhorroPage;

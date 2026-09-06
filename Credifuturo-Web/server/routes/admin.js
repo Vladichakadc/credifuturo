@@ -1790,7 +1790,12 @@ router.get('/savings/ranking', async (req, res) => {
                 esYo: propio,
                 capitalApertura: Math.round(agg.capitalApertura),
                 capitalCierre: Math.round(agg.capitalCierre),
+                // El capital sin ponderar viaja junto al ponderado a propósito:
+                // la pantalla los muestra lado a lado porque una cifra ponderada
+                // sola no se puede juzgar, y la distancia entre las dos es el peso.
+                capitalBase: Math.round(agg.capitalBase),
                 capitalPonderado: Math.round(agg.capitalPonderado),
+                pesoEfectivo: Number(agg.pesoEfectivo.toFixed(6)),
                 aperturaPermanente: Math.round(agg.aperturaPermanente),
                 abonosPeriodo: Math.round(agg.abonosPeriodo),
                 retirosPeriodo: Math.round(agg.retirosPeriodo),
