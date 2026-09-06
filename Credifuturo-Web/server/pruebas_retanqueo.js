@@ -756,6 +756,48 @@ async function main() {
             String((await DisbursedLoan.findByPk(r.body.loan.id)).observaciones || '').slice(0, 160));
     }
 
+    // ───────────────────────────────────────────────────────────────────────
+    console.log('\n19. La fecha invertida se corrige también cuando el mes viene como número');
+    // Las cuotas importadas guardan fechaPagoMax con día y mes al revés. La corrección
+    // solo miraba el NOMBRE del mes, y mesPago guarda unas veces el nombre y otras el
+    // número — así que en esas filas el arranque del período caía meses fuera.
+    {
+        const socio = await Client.create({
+            name: 'Fecha', apellido1: 'Invertida', cedula: '7799040', customerId: '7799040',
+            email: 'invertida@prueba.local', password: bcrypt.hashSync('x', 10), role: 'user', estatus: 'Activo',
+        });
+        await Saving.create({
+            clientId: socio.id, amount: 50000000, valorAhorrado: 50000000, type: 'Mensual',
+            status: 'Abono', monthInt: 1, year: 2026, mesAbonado: 1, anioAbonado: 2026, date: '2026-01-15',
+        });
+        const idVm = 'SOLINV1';
+        await DisbursedLoan.create({
+            idVm, clientId: socio.id, valorPrestado: 4000000, cuotas: 2, interesMensual: 0.014,
+            estado: 'Vigente', fechaPrestamo: '2026-03-09', mesDesembolso: 'Marzo',
+            anioDesembolso: 2026, monto: 4000000,
+        });
+        // Cuota 1 pagada, cuota 2 pendiente con la fecha INVERTIDA y el mes en número.
+        // Vence de verdad el 2026-06-09; guardada como '2026-09-06'.
+        await LoanPayment.bulkCreate([
+            { externalId:'PI1', clientId:socio.id, idVm, itemQuantity:1, saldoInicial:4000000,
+              valorInteresesAmortizados:56000, valorCuotaVariable:2056000, valorCuotaPago:2056000,
+              saldoFinal:2000000, estado:'Pago', estadoPrestamo:'Pago', cuotasPrestamo:2,
+              interesMensual:0.014, fechaPagoMax:'2026-05-09', mesPago:'5', mesDesembolso:'Marzo' },
+            { externalId:'PI2', clientId:socio.id, idVm, itemQuantity:2, saldoInicial:2000000,
+              valorInteresesAmortizados:28000, valorCuotaVariable:2028000, valorCuotaPago:0,
+              saldoFinal:0, estado:'Pendiente', estadoPrestamo:'Pendiente', cuotasPrestamo:2,
+              interesMensual:0.014, fechaPagoMax:'2026-09-06', mesPago:'6', mesDesembolso:'Marzo' },
+        ]);
+
+        // La cuota 2 vence el 2026-06-09, así que su período arrancó el 2026-05-09.
+        // Retanqueo el 2026-05-20 -> 11 días sobre 2.000.000 al 1,4% = $10.267.
+        const p = (await previsualizar(socio.id, '2026-05-20')).prestamo;
+        comprobar('lee la fecha invertida con el mes en número', p.diasTranscurridos === 11,
+            `dio ${p.diasTranscurridos} días`);
+        comprobar('y cobra el interés que corresponde', cerca(p.interesCausado, 2000000 * 0.014 * 11 / 30, 1),
+            `dio ${money(p.interesCausado)}`);
+    }
+
     console.log('\n──────────────────────────────────────────────');
     console.log(`${ok} comprobaciones correctas · ${fallos} fallidas`);
     console.log('──────────────────────────────────────────────\n');

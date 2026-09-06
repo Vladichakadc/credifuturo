@@ -1300,6 +1300,26 @@ const LoansListPage = () => {
                 }
 
                 // ── socio seleccionado ──
+                // Retrofechar está permitido (decisión de la Junta), pero tiene una
+                // consecuencia que conviene ver antes de confirmar: el cronograma se corre
+                // hacia atrás con la fecha, y si la primera cuota cae en el pasado nace ya
+                // vencida. Una cuota vencida cuenta como mora, y la mora bloquea al socio
+                // para cualquier desembolso futuro — incluido el que se acaba de registrar.
+                let primerVencimiento = null;
+                if (!isEditing && disbursedForm.fechaPrestamo && n > 0) {
+                    const [aa, mm, dd] = disbursedForm.fechaPrestamo.split('-').map(Number);
+                    if (aa && mm && dd) {
+                        const diaVence = Math.max(10, dd);
+                        const mesIdx = mm; // el mes siguiente, en base 0 sobre (mm-1)+1
+                        const anioVence = aa + Math.floor(mesIdx / 12);
+                        const mesVence = mesIdx % 12;
+                        const ultimoDelMes = new Date(Date.UTC(anioVence, mesVence + 1, 0)).getUTCDate();
+                        primerVencimiento = new Date(Date.UTC(anioVence, mesVence, Math.min(diaVence, ultimoDelMes)));
+                    }
+                }
+                const hoyUTC = (() => { const h = hoyISO().split('-').map(Number); return new Date(Date.UTC(h[0], h[1] - 1, h[2])); })();
+                const naceVencida = primerVencimiento && primerVencimiento < hoyUTC;
+
                 const socioSel = clients.find(c => String(c.id) === String(disbursedForm.clientId));
                 const clientesFiltrados = clientSearchModal.trim()
                     ? clients.filter(c => `${c.name} ${c.surname1 || ''} ${c.cedula || ''} ${c.customerId || ''}`.toLowerCase().includes(clientSearchModal.toLowerCase()))
@@ -1643,6 +1663,19 @@ const LoansListPage = () => {
                                                 <p className="text-red-700 text-xs">
                                                     ${fmt(P)} supera el cupo disponible sin votación (${fmt(Math.max(0, capacidadDisponible))} de ${fmt(cupoMaximo)}).
                                                     El servidor rechazará el guardado — regístralo primero como solicitud en Aprobación de Préstamos.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {naceVencida && (
+                                        <div className="flex gap-3 bg-amber-50 border-2 border-amber-300 rounded-2xl p-4">
+                                            <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                                            <div className="text-sm">
+                                                <p className="font-bold text-amber-800 mb-1">La primera cuota nace vencida</p>
+                                                <p className="text-amber-700 text-xs">
+                                                    Con la fecha {disbursedForm.fechaPrestamo}, la primera cuota vence el {primerVencimiento.toISOString().slice(0, 10)}, que ya pasó.
+                                                    Nacerá en mora, y la mora bloquea al socio para cualquier desembolso futuro. Se puede registrar así — solo conviene saberlo.
                                                 </p>
                                             </div>
                                         </div>

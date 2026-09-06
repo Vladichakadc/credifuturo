@@ -428,6 +428,14 @@ sequelize.sync().then(async () => {
         // pago. Las bases antiguas no traen esa FK y por eso nunca se notó.
         // Si hubiera id_vm repetidos el índice no se crea y el warning lo dice.
         'CREATE UNIQUE INDEX IF NOT EXISTS ux_disbursed_id_vm ON DisbursedLoans(id_vm)',
+        // El consecutivo de las cuotas (P1, P2, …) se deriva del máximo global leído dentro
+        // de la transacción, y SQLite no bloquea esa lectura: dos desembolsos simultáneos
+        // pueden generar el mismo id_ep. Sin índice, la colisión pasa sin un solo error y
+        // deja dos cuotas indistinguibles para quien las busque por ahí — DBClient lo hace.
+        // Con índice, la segunda escritura falla y el handler responde 409 en vez de
+        // corromper en silencio. Si la base ya trae duplicados el índice no se crea y el
+        // aviso de abajo lo dice; nada más se rompe.
+        'CREATE UNIQUE INDEX IF NOT EXISTS ux_loanpayment_id_ep ON LoanPayments(id_ep)',
         // Registros de Acceso: se consulta siempre por tipo de evento y ordenado
         // por fecha descendente. La tabla solo crece.
         'CREATE INDEX IF NOT EXISTS idx_secevent_ts          ON SecurityEvents(ts)',

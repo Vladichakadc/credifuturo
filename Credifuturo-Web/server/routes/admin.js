@@ -787,6 +787,24 @@ router.get('/clients/:id/balance', async (req, res) => {
 // nunca lo toca). Misma lógica que las copias ya usadas en getLoanCapacityAnalysis y
 // dashboard-stats para mora EP — aquí se reutiliza para no volver a calcular "días
 // transcurridos" contra una fecha corrida un mes.
+/**
+ * Número de mes (1-12) a partir de `mesPago`, que guarda unas veces el nombre y otras el
+ * número como texto — está documentado en CLAUDE.md y `mesDe()` de la Matriz de Cuotas ya
+ * lo contempla. Aquí solo se reconocía el nombre, así que en las filas con el mes numérico
+ * la fecha invertida se quedaba sin corregir y el arranque del período del retanqueo caía
+ * meses fuera. Devuelve 0 cuando no se puede determinar.
+ */
+function mesDeReferencia(mesRef) {
+    if (mesRef === null || mesRef === undefined) return 0;
+    const texto = String(mesRef).toLowerCase().trim();
+    if (!texto) return 0;
+    const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    const porNombre = MESES.indexOf(texto) + 1;
+    if (porNombre > 0) return porNombre;
+    const porNumero = parseInt(texto, 10);
+    return (porNumero >= 1 && porNumero <= 12) ? porNumero : 0;
+}
+
 function safeParseDateAdmin(dateVal, mesRef) {
     if (!dateVal) return null;
     let dateStr = dateVal instanceof Date ? dateVal.toISOString().split('T')[0] : String(dateVal);
@@ -794,13 +812,10 @@ function safeParseDateAdmin(dateVal, mesRef) {
     const parts = dateStr.split('-');
     if (parts.length !== 3) return new Date(dateStr + 'T00:00:00');
     const [y, m, d] = parts.map(Number);
-    if (mesRef) {
-        const monthsLower = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-        const targetIdx = monthsLower.indexOf(mesRef.toLowerCase().trim()) + 1;
-        if (targetIdx > 0) {
-            if (m === targetIdx) return new Date(y, m - 1, d);
-            if (d === targetIdx) return new Date(y, d - 1, m);
-        }
+    const targetIdx = mesDeReferencia(mesRef);
+    if (targetIdx > 0) {
+        if (m === targetIdx) return new Date(y, m - 1, d);
+        if (d === targetIdx) return new Date(y, d - 1, m);
     }
     return new Date(dateStr + 'T00:00:00');
 }
@@ -2607,7 +2622,15 @@ router.post('/disbursed-loans', async (req, res) => {
 
     try {
         // ==== 1. ID_VM CONSECUTIVO (MODELO: SOL{N}) ====
-        // Lectura dentro de la transacción para evitar race condition con requests simultáneos
+        // El consecutivo sale del máximo actual. `lock: t.LOCK.UPDATE` no protege nada aquí:
+        // SQLite no implementa SELECT ... FOR UPDATE y Sequelize lo ignora en este dialecto,
+        // así que dos desembolsos simultáneos pueden leer el mismo máximo. Se deja porque no
+        // molesta y porque el día que esto corra sobre Postgres sí serviría.
+        //
+        // Lo que de verdad protege es el índice único `ux_disbursed_id_vm`: el segundo
+        // INSERT falla con SequelizeUniqueConstraintError y el catch lo convierte en un 409
+        // "ID_VM duplicado (concurrencia). Intente de nuevo." Es decir, la carrera existe
+        // pero termina en un mensaje claro, no en dos préstamos con el mismo identificador.
         const allLoans = await DisbursedLoan.findAll({
             attributes: ['idVm', 'orderId'],
             transaction: t,
