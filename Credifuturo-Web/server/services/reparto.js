@@ -139,11 +139,34 @@ function construirPeriodo(anio, hoy) {
 function ponderarSocio(movimientos, periodo) {
     const { inicio, fin } = periodo;
 
+    // ── La distribución de intereses solo cuenta si el socio no retiró ──────
+    //
+    // Decisión de la Junta (6 de septiembre de 2026): las utilidades que el
+    // fondo le abonó a un socio cuentan como capital suyo para el reparto
+    // SIEMPRE Y CUANDO no haya retirado —total o parcialmente— sus ahorros.
+    // Quien saca su dinero rompe la permanencia que justifica que lo repartido
+    // el año pasado siga trabajando a su favor este año.
+    //
+    // El disparador es una DEVOLUCIÓN, que es lo que el socio decide. El
+    // descuento anual por mora no cuenta: lo cobra el fondo, no lo pide él, y
+    // castigarlo dos veces por el mismo hecho sería otra cosa distinta de lo
+    // que se decidió.
+    //
+    // Se resuelve en una primera pasada porque el retiro puede ocurrir DESPUÉS
+    // de la distribución: la regla mira el comportamiento del socio en todo el
+    // período, no el orden en que quedaron registradas las filas.
+    const huboRetiro = movimientos.some((mov) => {
+        if (!mov.esDevolucion) return false;
+        const f = fechaValorDe(mov).fecha;
+        return !!f && f >= inicio && f <= fin;
+    });
+
     let capitalApertura = 0;   // lo que el socio traía cuando empezó el año
     let capitalPonderado = 0;
     let ahorroPeriodo = 0;     // solo lo que consignó el socio
     let fondoPeriodo = 0;      // solo lo que movió el fondo (devoluciones, descuentos…)
     let entradasPeriodo = 0;   // todo lo que sumó, venga de donde venga
+    let distribucionNoContada = 0; // utilidades que el socio perdió por haber retirado
     let netoPeriodo = 0;
     const detalle = [];
     const conteoOrigen = { pago: 0, periodo: 0, sin: 0 };
@@ -187,12 +210,27 @@ function ponderarSocio(movimientos, periodo) {
         const previo = fecha < inicio;
         const mes = previo ? 0 : fecha.getUTCMonth() + 1;
         const peso = pesoDeMes(mes);
-        const ponderado = valor * peso;
+
+        // Una distribución que perdió su condición no pesa ni suma al capital,
+        // pero sigue apareciendo en el detalle con su marca: el socio tiene que
+        // ver que el abono llegó y por qué no le cuenta.
+        const distribucionAnulada = !!mov.esDistribucion && huboRetiro;
+        const ponderado = distribucionAnulada ? 0 : valor * peso;
 
         // Un movimiento de concepto lo mueve el fondo, no el socio. `esConcepto`
         // llega calculado desde la ruta con el mismo criterio que usa la Matriz
         // de Ahorros, para que las dos pantallas no puedan discrepar.
         const deFondo = !!mov.esConcepto;
+
+        if (distribucionAnulada) {
+            // No entra en ningún acumulado de capital: no cuenta, y punto.
+            distribucionNoContada += valor;
+            const fila = porMes[mes];
+            fila.n += 1;
+            fila.fondo += valor;
+            detalle.push({ ...mov, valor, fecha: iso, origenFecha: origen, mes, peso: 0, ponderado: 0, dentroPeriodo: !previo, previo, noCuenta: true });
+            continue;
+        }
 
         if (previo) {
             capitalApertura += valor;
@@ -248,6 +286,11 @@ function ponderarSocio(movimientos, periodo) {
         fondoPeriodo,
         entradasPeriodo,
         netoPeriodo,
+        // Se reportan las dos: si el socio retiró y por eso perdió la
+        // distribución, la pantalla tiene que poder decírselo con la cifra
+        // exacta en vez de dejarle una resta que no cuadra.
+        huboRetiro,
+        distribucionNoContada,
         // La parte del capital de apertura que REALMENTE permaneció hasta el
         // cierre. Es la única que puede llevar premio de permanencia: quien abrió
         // el año con saldo y lo retiró en marzo no conservó nada, y premiarlo por

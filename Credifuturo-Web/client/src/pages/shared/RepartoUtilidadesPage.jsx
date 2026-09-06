@@ -269,6 +269,15 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                                     : 'sin movimientos del fondo'} />
                         </div>
 
+                        {yo.distribucionNoContada > 0 && (
+                            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-900 leading-snug">
+                                Las utilidades que el fondo te abonó —<strong>{fmt(yo.distribucionNoContada)}</strong>— <strong>no cuentan</strong> como
+                                capital tuyo en este reparto, porque durante el año retiraste ahorros. La Junta decidió que
+                                lo repartido el año pasado sigue trabajando a favor de quien lo deja en el fondo.
+                                El abono está registrado y sigue siendo tuyo; solo no pesa aquí.
+                            </div>
+                        )}
+
                         {yo.premioPermanencia > 0 && (
                             <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-xs text-emerald-900 leading-snug">
                                 Por <strong>no haber retirado</strong> los {fmt(yo.aperturaPermanente)} que traías del año anterior,
@@ -346,6 +355,12 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                                                 <td className="px-3 py-2.5">
                                                     <span className={`font-bold ${esYo ? 'text-brand-primary' : 'text-gray-800'}`}>{f.fullName}</span>
                                                     {esYo && <span className="ml-2 text-[9px] font-black uppercase tracking-wider text-brand-gold">tú</span>}
+                                                    {f.distribucionNoContada > 0 && (
+                                                        <span className="ml-2 text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-1.5 py-0.5"
+                                                            title={`Retiró ahorros durante el año, así que ${fmt(f.distribucionNoContada)} de utilidades abonadas no cuentan como capital suyo`}>
+                                                            retiró · utilidades sin contar
+                                                        </span>
+                                                    )}
                                                     {f.premioPermanencia > 0 && (
                                                         <span className="ml-2 text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-1.5 py-0.5">
                                                             conservó capital
@@ -423,6 +438,7 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                     <li>· El <strong>aporte inicial cuenta como capital</strong>: ese dinero también está en el fondo prestándose.</li>
                     <li>· Lo que traías de años anteriores y <strong>no retiraste</strong> pesa el año completo, porque estuvo desde el primer día.</li>
                     <li>· Un retiro —total o parcial— <strong>descuenta con el peso de su propio mes</strong>: hasta ese mes ese dinero sí estuvo trabajando.</li>
+                    <li>· Las <strong>utilidades que el fondo te abonó</strong> cuentan como capital tuyo <strong>siempre y cuando no retires</strong> tus ahorros durante el año. Si retiras —total o parcialmente— dejan de contar en este reparto.</li>
                     <li>· Los pesos que sobran del redondeo se reparten uno a uno, así que la suma de todas las partes da exactamente la ganancia del fondo.</li>
                 </ul>
             </Tarjeta>
@@ -502,6 +518,12 @@ function TablaPesos({ porMes = [], total = 0, movimientos = null }) {
                                                 <span className={`ml-2 ${m.esConcepto ? 'text-amber-700' : 'text-gray-400'}`}>
                                                     {m.esConcepto ? (m.status || 'movimiento del fondo') : (m.esAporteInicial ? 'aporte inicial' : 'ahorro del socio')}
                                                 </span>
+                                                {m.noCuenta && (
+                                                    <span className="ml-2 text-[9px] font-bold text-amber-700 bg-amber-100 rounded px-1 py-0.5"
+                                                        title="El socio retiró ahorros durante el año, así que esta distribución no cuenta como capital suyo">
+                                                        no cuenta
+                                                    </span>
+                                                )}
                                             </span>
                                             <span className={`font-bold tabular-nums ${m.valor < 0 ? 'text-red-600' : 'text-gray-700'}`}>{fmt(m.valor)}</span>
                                         </div>

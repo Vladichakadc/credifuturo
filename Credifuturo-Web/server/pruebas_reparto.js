@@ -135,7 +135,7 @@ afirmar('todo ese capital es permanente', conservo.aperturaPermanente, 5000000);
 // Retiro TOTAL en marzo: el dinero trabajó enero, febrero y marzo.
 const retiroTotal = ponderarSocio([
     previo,
-    { valor: -5000000, date: '2025-03-31', mesAbonado: 3, anioAbonado: 2025, status: 'Devolucion Total Intereses', esConcepto: true },
+    { valor: -5000000, date: '2025-03-31', mesAbonado: 3, anioAbonado: 2025, status: 'Devolucion Total Intereses', esConcepto: true, esDevolucion: true },
 ], P);
 afirmar('un retiro total en marzo descuenta con el peso de marzo (10/12)',
     retiroTotal.capitalPonderado, 5000000 - 5000000 * (10 / 12), 1);
@@ -145,7 +145,7 @@ afirmar('y no queda nada permanente que premiar', retiroTotal.aperturaPermanente
 // Retiro PARCIAL: la misma regla, sin un caso aparte.
 const retiroParcial = ponderarSocio([
     previo,
-    { valor: -2000000, date: '2025-03-31', mesAbonado: 3, anioAbonado: 2025, status: 'Devolucion Parcial', esConcepto: true },
+    { valor: -2000000, date: '2025-03-31', mesAbonado: 3, anioAbonado: 2025, status: 'Devolucion Parcial', esConcepto: true, esDevolucion: true },
 ], P);
 afirmar('un retiro parcial descuenta solo lo retirado, con el peso de su mes',
     retiroParcial.capitalPonderado, 5000000 - 2000000 * (10 / 12), 1);
@@ -283,13 +283,59 @@ afirmar('el socio ahorró lo que ahorró', conDescuento.porMes[3].ahorro, 300000
 afirmar('y el descuento no se lo resta a esa cifra', conDescuento.porMes[3].fondo, -12000);
 afirmar('aunque sí al capital que pesa', conDescuento.porMes[3].ponderado, 288000 * (10 / 12), 1);
 
-seccion('15. El desglose por mes que ve el socio');
+seccion('15. La distribución solo cuenta si el socio no retiró');
+
+// Decisión de la Junta del 6 de septiembre de 2026: las utilidades abonadas
+// cuentan como capital del socio siempre y cuando no haya retirado —total ni
+// parcialmente— sus ahorros. Retirar rompe la permanencia que justifica que lo
+// repartido el año pasado siga trabajando a su favor este año.
+const traido = { valor: 3000000, date: '2024-05-01' };
+const ahorro = { valor: 500000, date: '2025-02-10', mesAbonado: 2, anioAbonado: 2025 };
+const utilidad = { valor: 400000, date: '2025-03-01', mesAbonado: 3, anioAbonado: 2025, status: 'Distribucion Intereses', esConcepto: true, esDistribucion: true };
+const devolver = (v, fecha, texto) => ({ valor: v, date: fecha, status: texto, esConcepto: true, esDevolucion: true });
+
+const fiel = ponderarSocio([traido, ahorro, utilidad], P);
+afirmar('quien no retiró conserva su distribución en el capital',
+    fiel.capitalPonderado, 3000000 + 500000 * (11 / 12) + 400000 * (10 / 12), 1);
+afirmar('y no pierde nada', fiel.distribucionNoContada, 0);
+cierto('ni se le marca retiro', fiel.huboRetiro === false);
+
+const retiroParcialTrasUtilidad = ponderarSocio(
+    [traido, ahorro, utilidad, devolver(-1000000, '2025-06-15', 'Devolucion Parcial')], P);
+cierto('un retiro parcial cuenta como retiro', retiroParcialTrasUtilidad.huboRetiro);
+afirmar('la distribución deja de contar entera', retiroParcialTrasUtilidad.distribucionNoContada, 400000);
+afirmar('y desaparece del capital ponderado',
+    retiroParcialTrasUtilidad.capitalPonderado,
+    3000000 + 500000 * (11 / 12) - 1000000 * (7 / 12), 1);
+
+const retiroTotalDespues = ponderarSocio(
+    [traido, ahorro, utilidad, devolver(-3500000, '2025-11-02', 'Devolucion Total Intereses')], P);
+// El retiro es de noviembre y la distribución de marzo: la regla mira el
+// comportamiento de todo el año, no el orden en que quedaron las filas.
+cierto('un retiro POSTERIOR a la distribución también la anula', retiroTotalDespues.distribucionNoContada === 400000);
+
+// El descuento anual por mora lo cobra el fondo, no lo pide el socio: no puede
+// costarle además la distribución.
+const conMora = ponderarSocio([traido, ahorro, utilidad,
+    { valor: -15000, date: '2025-12-20', status: 'Descuento Total Anual Penalizacion', esConcepto: true }], P);
+cierto('un descuento por mora NO es un retiro', conMora.huboRetiro === false);
+afirmar('y no le quita la distribución', conMora.distribucionNoContada, 0);
+
+// Una distribución anulada sigue en el detalle y en el renglón de su mes, para
+// que el socio vea que llegó y por qué no le cuenta.
+const filaMarzo = retiroParcialTrasUtilidad.porMes[3];
+afirmar('la distribución anulada sigue apareciendo en su mes', filaMarzo.fondo, 400000);
+afirmar('pero no aporta nada a ese mes', filaMarzo.ponderado, 0);
+cierto('y queda marcada en el detalle',
+    retiroParcialTrasUtilidad.detalle.some(d => d.noCuenta === true));
+
+seccion('16. El desglose por mes que ve el socio');
 
 const mixto = ponderarSocio([
     previo,
     { valor: 300000, date: '2025-02-10', mesAbonado: 2, anioAbonado: 2025 },
     { valor: 300000, date: '2025-07-10', mesAbonado: 7, anioAbonado: 2025 },
-    { valor: -1000000, date: '2025-10-05', mesAbonado: 10, anioAbonado: 2025, status: 'Devolucion Parcial', esConcepto: true },
+    { valor: -1000000, date: '2025-10-05', mesAbonado: 10, anioAbonado: 2025, status: 'Devolucion Parcial', esConcepto: true, esDevolucion: true },
 ], P);
 afirmar('el capital de años anteriores va al renglón 0', mixto.porMes[0].ahorro, 5000000);
 afirmar('febrero pesa 11/12', mixto.porMes[2].peso, 11 / 12, 1e-9);

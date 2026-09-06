@@ -74,6 +74,8 @@ const CUOTA = 200000;
     const retiro = await crear('Retiro', '52001004', 6);
     const parcial = await crear('Parcial', '52001005', 7);
     const mixto = await crear('Mixto', '52001006', 8);
+    const utilRetiro = await crear('UtilRetiro', '52001007', 9);
+    const utilFiel = await crear('UtilFiel', '52001008', 10);
 
     const abono = (cliente, fechaPago, mesAbonado, valor = CUOTA, extra = {}) => Saving.create({
         clientId: cliente.id, amount: valor, valorAhorrado: valor, date: fechaPago,
@@ -98,6 +100,14 @@ const CUOTA = 200000;
     // mismo mes. Sumados daban una cifra que no cuadraba con la Matriz de Ahorros.
     await abono(mixto, `${ANIO}-07-10`, 7, 500000);
     await abono(mixto, `${ANIO}-07-20`, 7, 500000, { status: 'Distribucion Intereses' });
+
+    // La regla de la Junta: la distribución cuenta solo si el socio no retiró.
+    // Dos socios idénticos salvo por el retiro.
+    for (const s of [utilRetiro, utilFiel]) {
+        await abono(s, `${ANIO - 1}-05-01`, 5, 3000000, { anioAbonado: ANIO - 1 });
+        await abono(s, `${ANIO}-03-01`, 3, 400000, { status: 'Distribucion Intereses' });
+    }
+    await abono(utilRetiro, `${ANIO}-06-15`, 6, -1000000, { status: 'Devolucion Parcial' });
 
     // Un movimiento con la fecha de pago ilegible. El modelo declara `date` como
     // obligatoria, así que por la aplicación no puede entrar vacía — pero la
@@ -228,9 +238,27 @@ const CUOTA = 200000;
             (m.movimientos || []).filter(x => x.mes === 7).length === 2);
     }
 
+    console.log('\n4c. La distribución de intereses solo cuenta si el socio no retiró');
+    {
+        const fiel = de(d, 'UtilFiel');
+        const salio = de(d, 'UtilRetiro');
+        comprobar('quien no retiró conserva su distribución', fiel.distribucionNoContada === 0);
+        comprobar('y no se le marca retiro', fiel.huboRetiro === false);
+        comprobar('quien retiró parcialmente pierde la distribución entera',
+            salio.distribucionNoContada === 400000, `dio ${money(salio.distribucionNoContada)}`);
+        comprobar('y se le marca el retiro', salio.huboRetiro === true);
+        comprobar('el capital ponderado del fiel es mayor',
+            fiel.capitalPonderado > salio.capitalPonderado);
+        // La distribución anulada sigue visible: el socio tiene que ver que
+        // llegó y por qué no le cuenta.
+        const marzo = salio.movimientos.find(m => m.mes === 3 && m.esDistribucion);
+        comprobar('la distribución anulada sigue en el detalle, marcada', marzo?.noCuenta === true);
+        comprobar('con aporte cero', marzo?.ponderado === 0);
+    }
+
     console.log('\n5. La calidad de las fechas se informa, no se esconde');
     {
-        comprobar('se cuentan los movimientos con fecha de pago real', d.diagnostico.pago === 32,
+        comprobar('se cuentan los movimientos con fecha de pago real', d.diagnostico.pago === 37,
             `dio ${d.diagnostico.pago}`);
         comprobar('y el que no la tiene se marca como estimado', d.diagnostico.periodo === 1,
             `dio ${d.diagnostico.periodo}`);
