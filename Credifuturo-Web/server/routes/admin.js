@@ -805,22 +805,50 @@ function safeParseDateAdmin(dateVal, mesRef) {
     return new Date(dateStr + 'T00:00:00');
 }
 
-// Ancla una fecha al día calendario de Colombia, a medianoche. El conteo de días de un
-// retanqueo es CALENDARIO, no cronómetro: entre el 17 y el 30 hay 13 días, sea la hora
-// que sea. Sin esto, la previsualización (que usaba `new Date()`, con la hora incluida) y
-// el cobro real (que usa la fecha del formulario, a medianoche) contaban distinto: el
-// Math.ceil de abajo redondeaba la fracción de día hacia arriba y el aviso mostraba
-// SIEMPRE un día más del que se terminaba cobrando — medido en $1.867 sobre un saldo de
-// $4.000.000 al 1,4%. El gerente hacía sus cuentas con una cifra que nunca se cobró.
-function diaCalendarioBogota(valor) {
-    let iso;
+// El conteo de días de un retanqueo es CALENDARIO, no cronómetro: entre el 17 y el 30 hay
+// 13 días, sea la hora que sea. Para contarlos hay que anclar los dos extremos al mismo
+// día a medianoche, y para eso hay que distinguir DOS clases de valor que aquí se cruzan.
+// Confundirlas cuesta exactamente un día de interés en cada retanqueo.
+//
+//   1. UN INSTANTE REAL — `new Date()`. Lleva hora, y la hora decide de qué día se trata:
+//      a las 20:00 en Colombia ya es el día siguiente en UTC, que es el huso del
+//      contenedor. Hay que preguntarle a Colombia qué día es.
+//
+//   2. UN DÍA DE CALENDARIO YA DECIDIDO — una columna DATEONLY, que Sequelize entrega como
+//      'YYYY-MM-DD', o un Date construido con componentes locales (lo que devuelve
+//      safeParseDateAdmin). Aquí NO hay husos que convertir: el día ya está dicho.
+//      Convertirlo a Colombia resta un día, porque medianoche UTC son las 19:00 del día
+//      anterior en Bogotá.
+
+/** Día de calendario en Colombia correspondiente a un instante real. */
+function diaEnBogota(instante) {
+    // en-CA da 'YYYY-MM-DD' ya convertido al huso del fondo
+    return new Date(instante.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' }) + 'T00:00:00Z');
+}
+
+/** Día de calendario que un valor YA denota. No convierte husos: los leería mal. */
+function diaCalendario(valor) {
     if (valor instanceof Date) {
-        // en-CA da 'YYYY-MM-DD' ya convertido al huso del fondo
-        iso = valor.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
-    } else {
-        iso = String(valor).split('T')[0];
+        return new Date(Date.UTC(valor.getFullYear(), valor.getMonth(), valor.getDate()));
     }
-    return new Date(iso + 'T00:00:00Z');
+    return new Date(String(valor).split('T')[0] + 'T00:00:00Z');
+}
+
+/** Cualquiera de los dos, según lo que sea: string de fecha, o instante con hora. */
+function aDiaCalendario(valor) {
+    return valor instanceof Date ? diaEnBogota(valor) : diaCalendario(valor);
+}
+
+/**
+ * Un mes antes, sin desbordar. `setUTCMonth(m - 1)` sobre un día 29, 30 o 31 cae en un mes
+ * que no tiene ese día y JavaScript lo empuja hacia adelante: el 31 de marzo menos un mes
+ * da el 3 de MARZO, no el 28 de febrero. En el retanqueo eso mueve el arranque del periodo
+ * casi un mes entero y deja el interés causado por el suelo.
+ */
+function unMesAntes(dia) {
+    const y = dia.getUTCFullYear(), m = dia.getUTCMonth(), d = dia.getUTCDate();
+    const ultimoDelMesAnterior = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    return new Date(Date.UTC(y, m - 1, Math.min(d, ultimoDelMesAnterior)));
 }
 
 // Interés proporcional en retanqueos — cálculo compartido entre la previsualización
@@ -843,18 +871,21 @@ function calcularInteresRetanqueo({ prestamoAnterior, cuotasPendientesAnteriores
 
         let fechaInicio;
         if (primeraCuota.itemQuantity === 1 && prestamoAnterior.fechaPrestamo) {
-            fechaInicio = diaCalendarioBogota(prestamoAnterior.fechaPrestamo);
+            // DATEONLY: llega como 'YYYY-MM-DD', un día ya decidido.
+            fechaInicio = diaCalendario(prestamoAnterior.fechaPrestamo);
         } else if (primeraCuota.fechaPagoMax) {
+            // safeParseDateAdmin devuelve un Date con componentes LOCALES, no un instante:
+            // pasarlo por la conversión a Colombia le restaba un día y le cobraba al socio
+            // una jornada de interés que no había corrido.
             const fechaMax = safeParseDateAdmin(primeraCuota.fechaPagoMax, primeraCuota.mesPago) || new Date(primeraCuota.fechaPagoMax);
-            fechaInicio = diaCalendarioBogota(fechaMax);
-            fechaInicio.setUTCMonth(fechaInicio.getUTCMonth() - 1);
+            fechaInicio = unMesAntes(diaCalendario(fechaMax));
         } else {
-            fechaInicio = diaCalendarioBogota(new Date());
+            fechaInicio = diaEnBogota(new Date());
         }
 
         // Ambos extremos anclados al mismo día calendario: la resta da días enteros y
         // Math.ceil ya no tiene fracción que redondear.
-        const fechaActual = diaCalendarioBogota(fechaNuevoDesembolso);
+        const fechaActual = aDiaCalendario(fechaNuevoDesembolso);
         const diffTime = fechaActual.getTime() - fechaInicio.getTime();
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         diasTranscurridos = Math.max(0, Math.min(30, diffDays));
@@ -2528,6 +2559,20 @@ router.get('/loans-capacity-analysis', async (req, res) => {
 router.post('/disbursed-loans', async (req, res) => {
     const sequelize = require('../config/database');
     const t = await sequelize.transaction();
+
+    // Cierra la transacción SOLO si sigue abierta. Sequelize lanza al revertir una
+    // transacción ya confirmada ("cannot be rolled back because it has been finished
+    // with state: commit"), y ese throw ocurría DENTRO del catch, así que escapaba del
+    // handler: Express no respondía nada, la petición se quedaba colgada y no quedaba
+    // ninguna línea de estado en los registros — mientras el desembolso y la cancelación
+    // del préstamo anterior YA estaban confirmados. El gerente veía un fallo y el
+    // retanqueo se había hecho; reintentar creaba un segundo préstamo.
+    const cerrarTransaccion = async () => {
+        if (t.finished) return;
+        try { await t.rollback(); }
+        catch (e) { console.warn('[disbursed-loans] no se pudo revertir la transacción:', e.message); }
+    };
+
     try {
         // ==== 1. ID_VM CONSECUTIVO (MODELO: SOL{N}) ====
         // Lectura dentro de la transacción para evitar race condition con requests simultáneos
@@ -2564,22 +2609,26 @@ router.post('/disbursed-loans', async (req, res) => {
         // ==== 2. VALIDAR CLIENT_ID ====
         const clientId = parseInt(req.body.clientId);
         if (!clientId) {
+            await cerrarTransaccion();
             return res.status(400).json({ error: 'Debe seleccionar un socio válido.' });
         }
 
         const client = await Client.findByPk(clientId);
         if (!client) {
+            await cerrarTransaccion();
             return res.status(400).json({ error: 'El socio seleccionado no existe.' });
         }
 
         // ==== 3. VALIDAR FECHA PRESTAMO ====
         const fechaPrestamo = req.body.fechaPrestamo; // YYYY-MM-DD
         if (!fechaPrestamo) {
+            await cerrarTransaccion();
             return res.status(400).json({ error: 'Fecha de Préstamo es requerida.' });
         }
 
         const fechaDate = new Date(fechaPrestamo);
         if (isNaN(fechaDate.getTime())) {
+            await cerrarTransaccion();
             return res.status(400).json({ error: 'Fecha de Préstamo inválida.' });
         }
 
@@ -2594,12 +2643,14 @@ router.post('/disbursed-loans', async (req, res) => {
         // ==== 5. VALIDAR VALOR PRESTADO ====
         const valorPrestado = parseFloat(req.body.valorPrestado);
         if (!valorPrestado || valorPrestado <= 0) {
+            await cerrarTransaccion();
             return res.status(400).json({ error: 'El Valor Prestado debe ser mayor a 0.' });
         }
 
         // ==== 6. VALIDAR # CUOTAS ====
         const cuotas = parseInt(req.body.cuotas);
         if (!cuotas || cuotas <= 0) {
+            await cerrarTransaccion();
             return res.status(400).json({ error: 'El número de cuotas debe ser mayor a 0.' });
         }
 
@@ -2608,6 +2659,7 @@ router.post('/disbursed-loans', async (req, res) => {
         if (interesMensual) {
             interesMensual = parseFloat(interesMensual);
             if (isNaN(interesMensual) || interesMensual < 0 || interesMensual > 1) {
+                await cerrarTransaccion();
                 return res.status(400).json({ error: 'El Interés Mensual debe estar entre 0 y 1 (ej: 0.015 para 1.5%).' });
             }
         }
@@ -2671,6 +2723,7 @@ router.post('/disbursed-loans', async (req, res) => {
         const capacidad = await getLoanCapacityAnalysis(clientId);
 
         if (capacidad.enMoraActual) {
+            await cerrarTransaccion();
             return res.status(400).json({
                 error: `No se puede desembolsar: ${capacidad.nombre} tiene ${capacidad.totalCuotasMoraEP} cuota(s) en mora EP vigente por $${Math.round(capacidad.totalMoraEPValor).toLocaleString('es-CO')}. El reglamento del fondo no autoriza nuevos desembolsos con mora vigente — regularice los pagos primero.`
             });
@@ -2703,6 +2756,7 @@ router.post('/disbursed-loans', async (req, res) => {
         const gerenteAprueba = req.body.gerenteAprueba === true;
 
         if (!vieneDeSolicitudAprobada && !gerenteAprueba && valorPrestado > capacidadDisponible) {
+            await cerrarTransaccion();
             return res.status(400).json({
                 error: `El monto solicitado ($${valorPrestado.toLocaleString('es-CO')}) supera el cupo máximo sin votación de ${capacidad.nombre} (3× ahorro: $${Math.round(cupoMaximo).toLocaleString('es-CO')}, disponible: $${Math.round(Math.max(0, capacidadDisponible)).toLocaleString('es-CO')}). Este monto requiere aprobación de la Junta Administrativa — regístralo primero como solicitud en Aprobación de Préstamos, o usa "Aprobar como Gerente" si decides autorizarlo directamente.`
             });
@@ -2894,23 +2948,34 @@ router.post('/disbursed-loans', async (req, res) => {
 
         await t.commit();
 
-        const { createNotification } = require('../services/NotificationService');
-        await createNotification({
-            clientId: loan.clientId,
-            type: 'loan_disbursed',
-            title: 'Se registró tu préstamo',
-            message: `Tu préstamo de $${Math.round(Number(loan.valorPrestado)).toLocaleString('es-CO')} (${loan.idVm}) fue registrado.`,
-            link: '/dashboard/loans'
-        });
+        // A partir de aquí el desembolso YA está registrado y el préstamo anterior YA está
+        // cancelado. Nada de lo que siga puede presentarse como un fallo de la operación:
+        // avisar al socio es un extra. Antes iba sin protección y su excepción caía en el
+        // catch de abajo, que intentaba revertir una transacción ya confirmada; el rollback
+        // lanzaba, el throw escapaba del handler y Express se quedaba sin responder. Para el
+        // gerente eso es un error sin mensaje y sin rastro en los registros, sobre una
+        // operación que en realidad sí se hizo — y reintentarla crea un segundo préstamo.
+        try {
+            const { createNotification } = require('../services/NotificationService');
+            await createNotification({
+                clientId: loan.clientId,
+                type: 'loan_disbursed',
+                title: 'Se registró tu préstamo',
+                message: `Tu préstamo de $${Math.round(Number(loan.valorPrestado)).toLocaleString('es-CO')} (${loan.idVm}) fue registrado.`,
+                link: '/dashboard/loans'
+            });
+        } catch (e) {
+            console.warn(`[disbursed-loans] ${loan.idVm} quedó registrado, pero no se pudo notificar al socio:`, e.message);
+        }
 
         return res.status(201).json({ loan, schedule, refinanciacion });
 
     } catch (err) {
-        await t.rollback();
+        await cerrarTransaccion();
         if (err.name === 'SequelizeUniqueConstraintError') {
             return res.status(409).json({ error: 'ID_VM duplicado (concurrencia). Intente de nuevo.' });
         }
-        res.status(400).json({ error: err.message });
+        return res.status(400).json({ error: err.message });
     }
 });
 
@@ -2968,6 +3033,23 @@ router.put('/disbursed-loans/:id', async (req, res) => {
             socio = `${client.name} ${client.surname1 || ''}`.trim();
         }
 
+        // La negativa a regenerar se comprueba ANTES de escribir nada. Estaba después del
+        // update, así que el 409 llegaba con la cabecera del préstamo ya modificada: el
+        // gerente veía "no se puede regenerar", daba por hecho que no había pasado nada, y
+        // la fecha de desembolso quedaba cambiada en la base. Como el interés proporcional
+        // de un retanqueo se cuenta desde esa fecha, un préstamo así deja de cobrar lo que
+        // le corresponde — hasta $0 si la fecha quedó en el día de hoy.
+        if (interesMensual && cuotas > 0) {
+            const pagosPrevios = await LoanPayment.count({
+                where: { idVm: loan.idVm, estado: ['Pago', 'Mora'] }
+            });
+            if (pagosPrevios > 0) {
+                return res.status(409).json({
+                    error: `No se puede regenerar el plan de cuotas: el préstamo ${loan.idVm} tiene ${pagosPrevios} cuota(s) con pago registrado. Edite las cuotas individuales en su lugar.`
+                });
+            }
+        }
+
         // A08: whitelist explícita. Bloquea mass-assignment de idVm, orderId, etc.
         const updateData = {
             ...pickFields(req.body, ALLOWED_DISBURSED_LOAN_FIELDS),
@@ -3001,15 +3083,7 @@ router.put('/disbursed-loans/:id', async (req, res) => {
             const idVmActual = loan.idVm; // El idVm NO cambia en edición
             const sequelize = require('../config/database');
 
-            // Verificar si existen cuotas con pagos registrados (estado 'Pago' o 'Mora')
-            const pagosRegistrados = await LoanPayment.count({
-                where: { idVm: idVmActual, estado: ['Pago', 'Mora'] }
-            });
-            if (pagosRegistrados > 0) {
-                return res.status(409).json({
-                    error: `No se puede regenerar el plan de cuotas: el préstamo ${idVmActual} tiene ${pagosRegistrados} cuota(s) con pago registrado. Edite las cuotas individuales en su lugar.`
-                });
-            }
+            // La guarda de cuotas con pago ya se aplicó arriba, antes de escribir.
 
             // Envolver todo en una transacción para evitar pérdida de datos si falla el bulkCreate
             const t = await sequelize.transaction();

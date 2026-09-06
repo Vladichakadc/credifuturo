@@ -713,7 +713,12 @@ const LoansListPage = () => {
                 ...loan,
                 nombre: loan.nombre || '',
                 apellido: loan.apellido || '',
-                fechaPrestamo: today,
+                // La fecha REAL del préstamo, no la de hoy. Ponía `today` y el guardado la
+                // persistía: abrir "Editar" para corregir un número de transferencia movía
+                // el desembolso al día en curso y regeneraba el cronograma desde ahí. Y como
+                // el interés proporcional de un retanqueo se cuenta desde esa fecha, el
+                // préstamo dejaba de cobrar lo que le correspondía — $0 si quedaba en hoy.
+                fechaPrestamo: (loan.fechaPrestamo || today).toString().slice(0, 10),
                 interesMensual: loan.interesMensual ? parseFloat((parseFloat(loan.interesMensual) * 100).toFixed(4)) : ''
             });
         } else {
