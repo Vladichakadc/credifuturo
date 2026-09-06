@@ -3188,6 +3188,28 @@ router.delete('/disbursed-loans/:id', async (req, res) => {
         // con la misma fórmula de capital fijo/interés decreciente usada al crearlas).
         let restauracion = null;
         if (loan.idVm) {
+            // Un préstamo que a su vez YA fue retanqueado no se puede deshacer suelto:
+            // restaurar a su antecesor lo dejaría Vigente al mismo tiempo que el sucesor,
+            // y el socio quedaría con dos créditos vivos. Peor aún, el siguiente retanqueo
+            // solo cancelaría uno de los dos (la búsqueda toma el de id más alto) y el otro
+            // quedaría Vigente para siempre. La cadena se deshace del final al principio.
+            const yaSuperado = await LoanPayment.findOne({
+                where: {
+                    idVm: loan.idVm,
+                    esPrepago: true,
+                    observaciones: { [Op.like]: '%refinanciación %' }
+                },
+                transaction: t
+            });
+            if (yaSuperado) {
+                const quienLoSuperó = (String(yaSuperado.observaciones).match(/refinanciación\s+(\S+)\s+—/) || [])[1];
+                await t.rollback();
+                return res.status(409).json({
+                    error: `No se puede eliminar ${loan.idVm}: fue refinanciado por ${quienLoSuperó || 'un préstamo posterior'}. ` +
+                        `Elimina primero ${quienLoSuperó || 'el préstamo posterior'}; si no, el socio quedaría con dos préstamos vigentes a la vez.`
+                });
+            }
+
             const marcador = `refinanciación ${loan.idVm} —`;
             const cuotasPrepagadas = await LoanPayment.findAll({
                 where: { esPrepago: true, observaciones: { [Op.like]: `%${marcador}%` } },
@@ -3199,14 +3221,24 @@ router.delete('/disbursed-loans/:id', async (req, res) => {
                 const prestamoAnterior = await DisbursedLoan.findOne({ where: { idVm: idVmAnterior }, transaction: t });
 
                 if (prestamoAnterior) {
-                    const capitalPorCuota = parseFloat(prestamoAnterior.valorPrestado) / prestamoAnterior.cuotas;
-
                     for (const cuota of cuotasPrepagadas) {
                         const saldoInicial = parseFloat(cuota.saldoInicial || 0);
+
+                        // El capital de ESTA cuota, leído del propio cronograma. No se puede
+                        // repartir valorPrestado entre DisbursedLoan.cuotas: ese campo puede
+                        // no coincidir con las filas reales (préstamos migrados, retanqueos a
+                        // medio cerrar) y entonces la reversión le rebaja la deuda al socio.
+                        // Medido con el campo diciendo 8 sobre un cronograma de 6: el capital
+                        // restaurado sumaba $4.500.000 de los $6.000.000 prestados.
+                        //
+                        // Sobrevive al retanqueo porque la cancelación calculó
+                        // saldoFinal = saldoInicial − capital con el capital verdadero, y
+                        // saldoInicial no lo tocó. Es el único rastro fiable que queda.
+                        const capitalCuota = parseFloat((saldoInicial - parseFloat(cuota.saldoFinal || 0)).toFixed(2));
+
                         const interesMensualCuota = parseFloat(cuota.interesMensual || 0);
                         const interesesCuota = parseFloat((saldoInicial * interesMensualCuota).toFixed(2));
-                        const valorCuotaOriginal = parseFloat((capitalPorCuota + interesesCuota).toFixed(2));
-                        const saldoFinalOriginal = Math.max(0, parseFloat((saldoInicial - capitalPorCuota).toFixed(2)));
+                        const valorCuotaOriginal = parseFloat((capitalCuota + interesesCuota).toFixed(2));
 
                         await cuota.update({
                             estado: 'Pendiente',
@@ -3214,7 +3246,8 @@ router.delete('/disbursed-loans/:id', async (req, res) => {
                             valorInteresesAmortizados: interesesCuota,
                             valorCuotaVariable: valorCuotaOriginal,
                             valorCuotaPago: 0,
-                            saldoFinal: saldoFinalOriginal,
+                            // saldoFinal NO se toca: ya trae el valor correcto y es de donde
+                            // se acaba de leer el capital.
                             esPrepago: false,
                             observaciones: null
                         }, { transaction: t });
