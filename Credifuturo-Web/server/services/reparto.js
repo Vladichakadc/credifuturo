@@ -417,10 +417,42 @@ function repartir(bases, monto) {
  * están aquí, no en el formulario, porque un valor que llegue por API mueve
  * dinero igual que uno tecleado.
  */
+/**
+ * ¿La retención se cobra de la bolsa o socio por socio?
+ *
+ * Son dos decisiones distintas de asamblea y el acta las escribe distinto:
+ *
+ *   · GENERAL   — "se aparta el 10% de las utilidades" o "dos millones para el
+ *                 fondo de auxilios". Sale del total antes de repartir, así que
+ *                 baja la parte de todos EN PROPORCIÓN a lo que cada uno ahorró.
+ *   · POR SOCIO — "cada socio aporta $50.000". No sale de la bolsa: se le cobra
+ *                 a cada uno sobre su propia parte, de una vez y para todos, sin
+ *                 tener que ir socio por socio.
+ *
+ * La diferencia SOLO existe con un valor fijo, y conviene decirlo en voz alta
+ * porque no es evidente: un porcentaje por socio da exactamente el mismo
+ * resultado que el mismo porcentaje general —recortar el 10% de cada parte es
+ * recortar el 10% del total—. Un valor fijo no: $50.000 a cada uno es una cuota
+ * plana, que pesa muchísimo más sobre el socio pequeño. Con $50.000, a quien le
+ * corresponden $2.000.000 aporta el 2,5% y a quien le corresponden $60.000
+ * aporta el 83%. Eso puede ser justo lo que la asamblea quiso —una cuota igual
+ * para todos— pero tiene que decidirse sabiéndolo, no descubrirse después.
+ */
+function esPorSocio(regla) {
+    return regla?.alcance === 'porSocio';
+}
+
+/**
+ * Lo que sale de la bolsa antes de repartir. Cero cuando la retención se cobra
+ * socio por socio: ahí no se aparta nada del total, se reparte todo y después se
+ * le descuenta a cada uno, que es lo que hace que un valor fijo sea una cuota
+ * por cabeza y no una tajada del pastel.
+ */
 function calcularRetencion(ganancia, retencion) {
     const G = Math.max(0, Math.round(Number(ganancia) || 0));
     const v = Number(retencion?.valor);
     if (!G || !Number.isFinite(v) || v <= 0) return { retenido: 0, aRepartir: G };
+    if (esPorSocio(retencion)) return { retenido: 0, aRepartir: G };
 
     const retenido = retencion.tipo === 'porcentaje'
         ? Math.round(G * Math.min(100, v) / 100)
@@ -455,4 +487,18 @@ function calcularDescuento(utilidadBruta, descuento) {
         : Math.min(U, Math.round(v));
 }
 
-module.exports = { MESES_ANIO, diaUTC, diasInclusive, fechaValorDe, pesoDeFecha, pesoDeMes, construirPeriodo, ponderarSocio, resolverBase, repartir, calcularRetencion, calcularDescuento };
+/**
+ * El aporte que la retención "por socio" le cobra a ESTE socio. Cero cuando la
+ * retención es general, porque entonces ya salió de la bolsa.
+ *
+ * Se topa en la parte del socio, igual que un descuento individual: a quien le
+ * corresponden $12.000 no se le pueden cobrar $50.000. Por eso lo recaudado
+ * puede quedar por debajo de «valor × socios», y esa diferencia se informa en
+ * vez de disimularse — si no, el fondo cuenta con una plata que nunca llegó.
+ */
+function calcularAporteSocio(utilidadBruta, retencion) {
+    if (!esPorSocio(retencion)) return 0;
+    return calcularDescuento(utilidadBruta, retencion);
+}
+
+module.exports = { MESES_ANIO, diaUTC, diasInclusive, fechaValorDe, pesoDeFecha, pesoDeMes, construirPeriodo, ponderarSocio, resolverBase, repartir, calcularRetencion, calcularDescuento, calcularAporteSocio, esPorSocio };

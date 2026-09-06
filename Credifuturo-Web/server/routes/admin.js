@@ -1860,7 +1860,7 @@ router.get('/savings/ranking', async (req, res) => {
                 return fila?.value ? JSON.parse(fila.value) : porDefecto;
             } catch { return porDefecto; }
         };
-        const retencion = await leerJson('reparto.retencion', { tipo: 'porcentaje', valor: 0, destino: '' });
+        const retencion = await leerJson('reparto.retencion', { tipo: 'porcentaje', valor: 0, alcance: 'general', destino: '' });
         const descuentos = await leerJson('reparto.descuentos', {});
 
         res.json({
@@ -7255,8 +7255,15 @@ router.put('/settings/:key', verifyToken, requireFreshPassword, requireRole('adm
             if (String(r.destino || '').length > 200) {
                 return res.status(400).json({ error: 'El destino de la retención no puede pasar de 200 caracteres.' });
             }
+            // El alcance decide si sale de la bolsa o se le cobra a cada socio.
+            // Se acepta ausente y cae en 'general', que es como se comportaba
+            // antes de que existiera: lo ya guardado sigue repartiendo igual.
+            const alcance = r.alcance === 'porSocio' ? 'porSocio' : 'general';
+            if (r.alcance !== undefined && !['general', 'porSocio'].includes(r.alcance)) {
+                return res.status(400).json({ error: 'El alcance de la retención debe ser general o porSocio.' });
+            }
             // Se normaliza antes de guardar: así lo que se lee es siempre lo mismo.
-            value = JSON.stringify({ tipo: r.tipo, valor: v, destino: String(r.destino || '').trim() });
+            value = JSON.stringify({ tipo: r.tipo, valor: v, alcance, destino: String(r.destino || '').trim() });
         }
         if (key === 'reparto.descuentos') {
             let d;

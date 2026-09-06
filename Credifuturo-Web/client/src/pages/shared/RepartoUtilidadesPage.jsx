@@ -363,7 +363,8 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                 {mostrarPanelJunta && (
                     <div className="px-5 pb-5">
                         <Retencion retencion={retencion} onCambio={setRetencion} editable
-                            ganancia={reparto.ganancia} retenido={reparto.retenido} aRepartir={reparto.aRepartir} />
+                            ganancia={reparto.ganancia} retenido={reparto.retenido} aRepartir={reparto.aRepartir}
+                            reparto={reparto} />
                     </div>
                 )}
 
@@ -434,7 +435,11 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                                                         solo el resultado: la cifra final sin su origen es
                                                         exactamente lo que genera la llamada preguntando por qué. */}
                                                     {f.descuento > 0 && (
-                                                        <span className="block text-[10px] text-amber-700 font-bold" title={f.descuentoRegla?.motivo || 'Descuento aprobado por la Junta'}>
+                                                        <span className="block text-[10px] text-amber-700 font-bold"
+                                                            title={[
+                                                                f.aporteGeneral > 0 ? `Aporte general: ${fmt(f.aporteGeneral)}` : null,
+                                                                f.descuentoIndividual > 0 ? `Descuento propio: ${fmt(f.descuentoIndividual)}${f.descuentoRegla?.motivo ? ` — ${f.descuentoRegla.motivo}` : ''}` : null,
+                                                            ].filter(Boolean).join(' · ')}>
                                                             {fmt(f.utilidadBruta)} − {fmt(f.descuento)}
                                                         </span>
                                                     )}
@@ -447,6 +452,7 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                                                             no desde una lista: por eso el editor vive aquí dentro. */}
                                                         {mostrarPanelJunta && (
                                                             <DescuentoSocio socio={f} regla={f.descuentoRegla}
+                                                                retencion={retencion}
                                                                 // Solo el botón "quitar" borra la regla (manda null).
                                                                 // Descartarla también cuando el valor es 0 rompía el
                                                                 // orden natural de uso: elegir "pesos" ANTES de teclear

@@ -154,7 +154,12 @@ export default function PanelJunta({ socios, guardado, monto, puedeGuardar, onGu
                             <p className="text-[11px] text-gray-600 tabular-nums leading-snug">
                                 Repartido {fmt(simulado.totalRepartido)}
                                 {simulado.retenido > 0 && <> · retenido {fmt(simulado.retenido)}</>}
-                                {simulado.totalDescuentos > 0 && <> · descuentos {fmt(simulado.totalDescuentos)}</>}
+                                {/* El aporte por cabeza y los descuentos uno a uno se
+                                    nombran aparte: llamar "descuentos a socios" a una
+                                    cuota que pagan todos hace pensar en veinticinco
+                                    decisiones individuales que nadie tomó. */}
+                                {simulado.totalAporteGeneral > 0 && <> · aporte de todos {fmt(simulado.totalAporteGeneral)}</>}
+                                {simulado.totalDescuentosIndividuales > 0 && <> · descuentos {fmt(simulado.totalDescuentosIndividuales)}</>}
                                 {' '}= {fmt(simulado.ganancia)}
                             </p>
                         </div>
@@ -182,8 +187,22 @@ export default function PanelJunta({ socios, guardado, monto, puedeGuardar, onGu
                     <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[11px] text-amber-900 leading-snug">
                         <strong>{fmt(reparto.totalRetenido)}</strong> se quedan en el fondo y no se reparten
                         {reparto.retenido > 0 && <> — {fmt(reparto.retenido)} de retención general{retencion?.destino ? ` para «${retencion.destino}»` : ' (sin destino escrito)'}</>}
-                        {reparto.totalDescuentos > 0 && <> — {fmt(reparto.totalDescuentos)} en descuentos a socios</>}.
-                        {' '}Lo descontado a un socio <strong>no se reparte entre los demás</strong>: queda en el fondo, que es de todos por igual.
+                        {reparto.totalAporteGeneral > 0 && <> — {fmt(reparto.totalAporteGeneral)} del aporte que pagan todos los socios{retencion?.destino ? ` para «${retencion.destino}»` : ' (sin destino escrito)'}</>}
+                        {reparto.totalDescuentosIndividuales > 0 && <> — {fmt(reparto.totalDescuentosIndividuales)} en descuentos a socios concretos</>}.
+                        {reparto.totalDescuentosIndividuales > 0
+                            ? <> Lo descontado a un socio <strong>no se reparte entre los demás</strong>: queda en el fondo, que es de todos por igual.</>
+                            : <> Ese dinero <strong>queda en el fondo</strong>, que es de todos por igual.</>}
+                    </div>
+                )}
+
+                {/* Cuadrar no es lo mismo que estar bien: un aporte que se come
+                    toda la utilidad deja el reparto en cero y la tarjeta verde
+                    seguiría diciendo "todo cuadra", que es cierto y no sirve. */}
+                {reparto?.ganancia > 0 && reparto?.totalRepartido === 0 && (
+                    <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-[11px] text-red-800 leading-snug">
+                        <strong>Ningún socio recibiría nada.</strong> Lo apartado se lleva la totalidad
+                        de {fmt(reparto.ganancia)}. Las cuentas cuadran, pero esto no es un reparto —
+                        revise el valor antes de guardar.
                     </div>
                 )}
 

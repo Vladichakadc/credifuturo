@@ -13,7 +13,7 @@
  */
 const {
     diaUTC, fechaValorDe, pesoDeFecha, pesoDeMes, construirPeriodo, ponderarSocio, resolverBase, repartir,
-    calcularRetencion, calcularDescuento,
+    calcularRetencion, calcularDescuento, calcularAporteSocio, esPorSocio,
 } = require('./services/reparto');
 
 let ok = 0, fallos = 0;
@@ -444,6 +444,59 @@ seccion('19. La identidad que tiene que cuadrar siempre');
     // Lo descontado a uno NO engorda la parte de los demás: sus cifras no se mueven.
     cierto('el descuento a un socio no cambia lo que reciben los otros',
         netas[1] === brutas[1] && netas[3] === brutas[3] && netas[4] === brutas[4]);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+seccion('El alcance: de la bolsa común, o a cada socio');
+// ═════════════════════════════════════════════════════════════════════════════
+{
+    const G = 1000000;
+
+    // Lo ya guardado no lleva `alcance`. Tiene que seguir repartiendo igual que
+    // antes de que la opción existiera, o la primera carga tras el despliegue
+    // cambiaría un reparto que nadie tocó.
+    afirmar('sin alcance escrito se comporta como general',
+        calcularRetencion(G, { tipo: 'porcentaje', valor: 10 }).retenido, 100000);
+    cierto('y no se considera por socio', esPorSocio({ tipo: 'porcentaje', valor: 10 }) === false);
+    cierto('un alcance desconocido tampoco', esPorSocio({ alcance: 'otro' }) === false);
+
+    // Por socio NO aparta nada de la bolsa: se reparte todo y se cobra después.
+    const porSocio = { tipo: 'valor', valor: 50000, alcance: 'porSocio' };
+    afirmar('por socio no retiene de la bolsa', calcularRetencion(G, porSocio).retenido, 0);
+    afirmar('y deja la ganancia entera para repartir', calcularRetencion(G, porSocio).aRepartir, G);
+
+    // El aporte por cabeza se topa en la parte del socio: a quien le tocan
+    // $12.000 no se le pueden cobrar $50.000.
+    afirmar('el aporte por socio se cobra sobre su parte', calcularAporteSocio(400000, porSocio), 50000);
+    afirmar('y se topa cuando la parte no alcanza', calcularAporteSocio(12000, porSocio), 12000);
+    afirmar('un socio sin parte no aporta nada', calcularAporteSocio(0, porSocio), 0);
+    afirmar('con alcance general no hay aporte por socio',
+        calcularAporteSocio(400000, { tipo: 'valor', valor: 50000, alcance: 'general' }), 0);
+
+    // La equivalencia que no es evidente y que la pantalla declara: un
+    // porcentaje da lo mismo por los dos caminos.
+    const pctGeneral = calcularRetencion(G, { tipo: 'porcentaje', valor: 10 }).retenido;
+    const partes = [500000, 300000, 200000];
+    const pctPorSocio = partes.reduce((a, p) =>
+        a + calcularAporteSocio(p, { tipo: 'porcentaje', valor: 10, alcance: 'porSocio' }), 0);
+    afirmar('un % por socio recauda lo mismo que el mismo % general', pctPorSocio, pctGeneral);
+
+    // Y la que sí cambia: un valor fijo por cabeza no es una tajada del total.
+    const fijoPorSocio = partes.reduce((a, p) => a + calcularAporteSocio(p, porSocio), 0);
+    cierto('un valor fijo por socio NO equivale al mismo valor general',
+        fijoPorSocio === 150000 && calcularRetencion(G, { tipo: 'valor', valor: 50000 }).retenido === 50000);
+
+    // Una cuota plana pesa distinto según el tamaño del socio: es el hecho que
+    // la pantalla advierte antes de guardar.
+    cierto('la cuota plana pesa más sobre el socio pequeño',
+        (calcularAporteSocio(60000, porSocio) / 60000) > (calcularAporteSocio(2000000, porSocio) / 2000000));
+
+    // Los dos caminos se suman, y la suma se topa en la parte del socio.
+    const parte = 70000;
+    const aporte = calcularAporteSocio(parte, porSocio);            // 50.000
+    const propio = calcularDescuento(parte, { tipo: 'valor', valor: 40000 }); // 40.000
+    afirmar('aporte y descuento propio se suman', Math.min(parte, aporte + propio), 70000);
+    cierto('y la suma nunca deja al socio debiendo', Math.min(parte, aporte + propio) <= parte);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

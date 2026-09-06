@@ -22,7 +22,7 @@ const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
  * dinero que un socio dejó de recibir sin que conste por qué, y eso es lo
  * primero que se pregunta en una asamblea.
  */
-export default function DescuentoSocio({ socio, regla, onCambio }) {
+export default function DescuentoSocio({ socio, regla, onCambio, retencion = null }) {
     const activo = !!regla && Number(regla.valor) > 0;
     const r = regla || { tipo: 'porcentaje', valor: 0, motivo: '' };
     const set = (cambios) => onCambio?.(socio.id, { ...r, ...cambios });
@@ -40,6 +40,14 @@ export default function DescuentoSocio({ socio, regla, onCambio }) {
                     </button>
                 )}
             </div>
+
+            {retencion?.alcance === 'porSocio' && Number(retencion?.valor) > 0 && (
+                <p className="text-[10px] text-gray-500 leading-snug mb-2">
+                    A este socio ya se le cobra el aporte general
+                    {socio.aporteGeneral > 0 && <> de <strong>{fmt(socio.aporteGeneral)}</strong></>}.
+                    Lo que escriba aquí <strong>se suma</strong> a ese aporte; son dos decisiones distintas.
+                </p>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-[auto,1fr,2fr] gap-2 items-end">
                 <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden bg-white self-end">
@@ -78,6 +86,10 @@ export default function DescuentoSocio({ socio, regla, onCambio }) {
                 <p className="text-[11px] text-amber-900 mt-2 leading-snug">
                     De {fmt(socio.utilidadBruta)} se le descuentan <strong className="tabular-nums">{fmt(socio.descuento)}</strong> y
                     recibe <strong className="tabular-nums">{fmt(socio.utilidad)}</strong>.
+                    {socio.aporteGeneral > 0 && (
+                        <> De esos, <strong className="tabular-nums">{fmt(socio.aporteGeneral)}</strong> son el aporte que
+                        pagan todos y <strong className="tabular-nums">{fmt(socio.descuentoIndividual)}</strong> este descuento suyo.</>
+                    )}
                     {' '}Ese dinero <strong>queda en el fondo</strong>, no se reparte entre los demás socios.
                     {!r.motivo && <span className="text-amber-700"> Falta escribir el motivo.</span>}
                 </p>
