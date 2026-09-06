@@ -4,6 +4,8 @@ import api from '../../config/api';
 import { useUi } from '../../context/UiContext';
 import LoanCapacityWidget from '../../components/admin/LoanCapacityWidget';
 import LoanBoardVotingPanel from '../../components/LoanBoardVotingPanel';
+import CuotasProyectadas from '../../components/CuotasProyectadas';
+import EditarSolicitud from '../../components/EditarSolicitud';
 import { Button } from '../../components/ui/Button';
 import {
     ClipboardCheck, Loader2, Clock, Users, Calendar,
@@ -336,7 +338,22 @@ const LoanApprovalsPage = () => {
                             {/* Análisis de viabilidad en vivo (situación actual del socio) */}
                             <LoanCapacityWidget analysis={analysis} loading={loadingAnalysis} />
 
+                            {/* Las cuotas concretas que tendría el crédito: es sobre ellas que se vota,
+                                no sobre un monto y un plazo sueltos. Abiertas mientras está pendiente,
+                                que es cuando hay que mirarlas; plegadas en el histórico. */}
+                            <CuotasProyectadas
+                                cronograma={selected.cronograma}
+                                abiertoPorDefecto={selected.status === 'pending'}
+                            />
+
                             {/* Votación de la Junta Administrativa (gerente, subgerente, tesorera) */}
+
+                            <EditarSolicitud
+                                solicitud={selected}
+                                votosEmitidos={(selected.BoardVotes || []).length}
+                                onGuardado={() => fetchRequests(true)}
+                            />
+
                             <LoanBoardVotingPanel request={selected} onVoted={() => fetchRequests(false)} />
                             <p className="text-[10px] text-gray-400 leading-relaxed px-1">
                                 El banco/cuenta de arriba son los que el socio indicó al pedir el préstamo — verifícalos con él antes de desembolsar. El registro formal (id_VM) se crea después, por separado, desde "Nuevo Desembolso" en Gestión de Préstamos, una vez la solicitud quede aprobada por los 3.

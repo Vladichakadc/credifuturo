@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import api from '../../config/api';
 import { useJuntaAccess } from '../../utils/juntaAccess';
 import LoanBoardVotingPanel from '../../components/LoanBoardVotingPanel';
+import CuotasProyectadas from '../../components/CuotasProyectadas';
+import EditarSolicitud from '../../components/EditarSolicitud';
 import LoanCapacityWidget from '../../components/admin/LoanCapacityWidget';
 import {
     Landmark, Loader2, Clock, Calendar, Vote, Calculator,
@@ -317,7 +319,18 @@ const JuntaAprobacionesPage = () => {
 
                                 <LoanCapacityWidget analysis={analysis} loading={loadingAnalysis} />
 
-                                <LoanBoardVotingPanel request={selected} onVoted={() => fetchRequests(false)} />
+                                <CuotasProyectadas
+                                    cronograma={selected.cronograma}
+                                    abiertoPorDefecto={selected.status === 'pending'}
+                                />
+
+                            <EditarSolicitud
+                                solicitud={selected}
+                                votosEmitidos={(selected.BoardVotes || []).length}
+                                onGuardado={() => fetchRequests(true)}
+                            />
+
+                            <LoanBoardVotingPanel request={selected} onVoted={() => fetchRequests(false)} />
                             </>
                         )}
                     </div>

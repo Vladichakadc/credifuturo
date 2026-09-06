@@ -168,6 +168,12 @@ const JUNTA_ROUTES = [
     { method: 'GET', path: '/loan-requests' },
     { method: 'GET', test: p => /^\/loan-requests\/\d+$/.test(p) },
     { method: 'PUT', test: p => /^\/loan-requests\/\d+\/vote$/.test(p) },
+    // Corregir una solicitud mal diligenciada. Va aquí y no en el gate por defecto
+    // porque la Junta es quien la revisa: obligarla a pedirle al gerente que arregle
+    // un cero de más convertiría una corrección de treinta segundos en dos pasos.
+    // El handler se encarga de lo que sí es delicado: solo mientras esté pendiente, y
+    // borrando los votos si cambian las condiciones económicas.
+    { method: 'PUT', test: p => /^\/loan-requests\/\d+$/.test(p) },
     { method: 'GET', test: p => /^\/clients\/\d+\/loan-capacity$/.test(p) },
     { method: 'GET', path: '/junta/members' },
     // Solo lectura — listar y ver informes. El DELETE de /informes/:name NO se
@@ -6775,7 +6781,18 @@ router.get('/loan-requests', verifyToken, requireFreshPassword, async (req, res)
             ],
             order: [['createdAt', 'DESC']]
         });
-        res.json({ ok: true, data: requests, total: requests.length });
+        // Cada solicitud viaja con su cronograma proyectado: la Junta vota sobre unas
+        // cuotas concretas, no sobre un monto y un plazo sueltos. Se calcula, no se
+        // guarda, para que no pueda quedar desfasado de lo que el desembolso generará.
+        const { proyectarCronograma } = require('../services/amortizacion');
+        const conCronograma = requests.map(r => ({
+            ...r.toJSON(),
+            cronograma: proyectarCronograma({
+                capital: r.amount, cuotas: r.installments, tasaMensual: r.monthlyRate
+            })
+        }));
+
+        res.json({ ok: true, data: conCronograma, total: conCronograma.length });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -6793,8 +6810,121 @@ router.get('/loan-requests/:id', verifyToken, requireFreshPassword, async (req, 
             ]
         });
         if (!request) return res.status(404).json({ error: 'Solicitud no encontrada.' });
-        res.json({ ok: true, data: request });
+        const { proyectarCronograma } = require('../services/amortizacion');
+        res.json({ ok: true, data: {
+            ...request.toJSON(),
+            cronograma: proyectarCronograma({
+                capital: request.amount, cuotas: request.installments, tasaMensual: request.monthlyRate
+            })
+        } });
     } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Corregir una solicitud de préstamo (Junta Administrativa y gerente).
+//
+// Existe porque el socio la llena desde su panel y a veces llega con un dato errado —
+// un cero de más en el monto, el plazo cambiado, la cuenta equivocada. Hasta ahora la
+// única salida era rechazarla y pedirle que la volviera a enviar.
+//
+// Dos reglas gobiernan qué se puede tocar y cuándo:
+//
+//   1. SOLO MIENTRAS ESTÉ PENDIENTE. Una solicitud aprobada o rechazada es una decisión
+//      ya tomada sobre unas condiciones concretas; editarla después dejaría la decisión
+//      apuntando a otras. Para eso está registrar un desembolso nuevo.
+//
+//   2. SI CAMBIAN LAS CONDICIONES ECONÓMICAS, LOS VOTOS SE BORRAN. Quien votó lo hizo
+//      sobre un monto, un plazo y una tasa; cambiarlos por debajo convertiría su voto en
+//      un aval de algo que nunca vio. Corregir el banco o las observaciones no toca los
+//      votos, porque no cambian lo que se está aprobando.
+router.put('/loan-requests/:id', verifyToken, requireFreshPassword, async (req, res) => {
+    try {
+        const LoanRequest = require('../models/LoanRequest');
+        const LoanBoardVote = require('../models/LoanBoardVote');
+        const { proyectarCronograma } = require('../services/amortizacion');
+
+        const request = await LoanRequest.findByPk(req.params.id);
+        if (!request) return res.status(404).json({ error: 'Solicitud no encontrada.' });
+
+        if (request.status !== 'pending') {
+            return res.status(409).json({
+                error: `Esta solicitud ya está ${request.status === 'approved' ? 'aprobada' : request.status === 'rejected' ? 'rechazada' : 'desembolsada'}: sus condiciones son las que se decidieron y no se pueden cambiar. Si hay que corregir algo, registre el desembolso con los datos correctos.`
+            });
+        }
+
+        const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
+        const nuevoMonto = req.body.amount !== undefined ? num(req.body.amount) : num(request.amount);
+        const nuevasCuotas = req.body.installments !== undefined ? parseInt(req.body.installments, 10) : parseInt(request.installments, 10);
+        const nuevaTasa = req.body.monthlyRate !== undefined ? num(req.body.monthlyRate) : num(request.monthlyRate);
+
+        if (!(nuevoMonto > 0)) return res.status(400).json({ error: 'El monto debe ser mayor a 0.' });
+        if (!(nuevasCuotas > 0)) return res.status(400).json({ error: 'El número de cuotas debe ser mayor a 0.' });
+        if (!(nuevaTasa >= 0) || nuevaTasa > 10) {
+            return res.status(400).json({ error: 'La tasa mensual debe estar entre 0 y 10 (en porcentaje, ej. 1.4).' });
+        }
+
+        const condicionesCambian =
+            nuevoMonto !== num(request.amount) ||
+            nuevasCuotas !== parseInt(request.installments, 10) ||
+            nuevaTasa !== num(request.monthlyRate);
+
+        // La proyección que vio el socio la mandó su simulador; si aquí se cambian las
+        // condiciones hay que recalcularla, o la solicitud mostraría unas cuotas que no
+        // corresponden a su propio monto.
+        const proy = proyectarCronograma({ capital: nuevoMonto, cuotas: nuevasCuotas, tasaMensual: nuevaTasa });
+
+        const cambios = {
+            amount: nuevoMonto,
+            installments: nuevasCuotas,
+            monthlyRate: nuevaTasa,
+            firstInstallment: proy.primeraCuota,
+            lastInstallment: proy.ultimaCuota,
+            totalInterest: proy.totalInteres,
+            totalToPay: proy.totalAPagar,
+        };
+        for (const campo of ['banco', 'cuentaAhorros', 'observaciones']) {
+            if (req.body[campo] !== undefined) cambios[campo] = req.body[campo];
+        }
+
+        const antes = {
+            amount: num(request.amount), installments: parseInt(request.installments, 10),
+            monthlyRate: num(request.monthlyRate), banco: request.banco,
+            cuentaAhorros: request.cuentaAhorros, observaciones: request.observaciones,
+        };
+
+        await request.update(cambios);
+
+        let votosBorrados = 0;
+        if (condicionesCambian) {
+            votosBorrados = await LoanBoardVote.destroy({ where: { loanRequestId: request.id } });
+        }
+
+        logSecurityEvent('LOAN_REQUEST_EDITED', {
+            actorId: req.user?.id,
+            loanRequestId: request.id,
+            condicionesCambian,
+            votosBorrados,
+            antes,
+            despues: { amount: nuevoMonto, installments: nuevasCuotas, monthlyRate: nuevaTasa },
+            ip: getClientIp(req)
+        });
+
+        const actualizada = await LoanRequest.findByPk(request.id, {
+            include: [
+                { model: Client, as: 'Client', attributes: ['id', 'name', 'surname1', 'surname2', 'cedula', 'email', 'customerId'] },
+                { model: LoanBoardVote, as: 'BoardVotes', include: [{ model: Client, as: 'Voter', attributes: ['id', 'name', 'surname1', 'cargo'] }] }
+            ]
+        });
+
+        res.json({
+            ok: true,
+            data: { ...actualizada.toJSON(), cronograma: proy },
+            condicionesCambian,
+            votosBorrados
+        });
+    } catch (err) {
+        console.error('loan-requests PUT error:', err);
         res.status(500).json({ error: err.message });
     }
 });
