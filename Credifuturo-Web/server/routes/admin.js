@@ -5237,6 +5237,43 @@ router.get('/dashboard-stats', async (req, res) => {
         // que todo socio tiene derecho a ver. Los desgloses persona por persona, no.
         const isAdminStatsReq = req.user?.role === 'admin';
 
+        // ── Capital ponderado del año en curso ──────────────────────────────
+        // Mismo servicio que el Reparto de Utilidades: una sola definición del
+        // capital que trabajó, para una sola rentabilidad del fondo.
+        let capitalPonderadoTotal = 0;
+        try {
+            const reparto = require('../services/reparto');
+            const hoyBogota = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+            const periodoActual = reparto.construirPeriodo(Number(hoyBogota.slice(0, 4)), hoyBogota);
+            const activos = await Client.findAll({ where: { estatus: 'Activo' }, attributes: ['id'] });
+            const idsActivos = activos.map(c => c.id);
+            const movsPonderar = await Saving.findAll({
+                where: { clientId: { [Op.in]: idsActivos } },
+                attributes: ['clientId', 'date', 'mesAbonado', 'anioAbonado', 'amount', 'valorAhorrado', 'status'],
+            });
+            const porCliente = new Map(idsActivos.map(id => [id, []]));
+            for (const m of movsPonderar) {
+                const lista = porCliente.get(m.clientId);
+                if (!lista) continue;
+                lista.push({
+                    valor: parseFloat(m.valorAhorrado > 0 ? m.valorAhorrado : m.amount) || 0,
+                    date: m.date, mesAbonado: m.mesAbonado, anioAbonado: m.anioAbonado,
+                    esConcepto: esMovimientoDeConcepto(m.status, m.amount),
+                    esDistribucion: normalizarEstado(m.status).includes('istribuc') && parseFloat(m.amount) > 0,
+                    esDevolucion: normalizarEstado(m.status).includes('evoluc'),
+                });
+            }
+            for (const lista of porCliente.values()) {
+                capitalPonderadoTotal += reparto.ponderarSocio(lista, periodoActual).capitalPonderado;
+            }
+            capitalPonderadoTotal = Math.round(capitalPonderadoTotal);
+        } catch (err) {
+            // Una cifra informativa no puede tumbar el panel entero: si falla, se
+            // devuelve 0 y la pantalla cae al patrimonio, diciéndolo.
+            console.error('[DASHBOARD] No se pudo calcular el capital ponderado:', err.message);
+        }
+
+
         res.json({
             baselines,
             clientsCount: totalClientsCount,
@@ -5257,6 +5294,20 @@ router.get('/dashboard-stats', async (req, res) => {
             totalInteresesPagados,
             totalInitialContributions: Math.round(totalInitialContributions),
             totalAhorradoGeneral: Math.round(totalSavingsResult + totalInitialContributions),
+            // ── El capital que de verdad trabajó ────────────────────────────────
+            // El patrimonio es el dinero que los socios TIENEN; el capital
+            // ponderado es el que el fondo TUVO PARA PRESTAR, contando los días
+            // que cada peso estuvo dentro. Dividir la ganancia entre el
+            // patrimonio subestima el rendimiento del fondo: el dinero que entró
+            // en noviembre engorda el denominador sin haber podido generar casi
+            // nada. Es la diferencia entre el retorno sobre el saldo final y el
+            // retorno sobre el capital medio, y el segundo es el que un fondo
+            // reporta.
+            //
+            // Se calcula con el MISMO services/reparto.js que usa el Reparto de
+            // Utilidades, para que las dos pantallas no puedan mostrar
+            // rentabilidades distintas del mismo fondo.
+            capitalPonderadoTotal,
             totalNetoActivos,
             ahorroPorAnio,
             totalPenaltyDays: Math.round(totalPenaltyDays),

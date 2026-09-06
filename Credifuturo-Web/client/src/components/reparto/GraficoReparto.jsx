@@ -2,7 +2,6 @@ import React, { useMemo } from 'react';
 import {
     ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, ReferenceLine, LabelList,
 } from 'recharts';
-import { TrendingUp, Coins, Users, Percent } from 'lucide-react';
 
 const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
 const fmtCorto = (n) => {
@@ -40,7 +39,7 @@ const primerNombre = (n) => String(n || '').split(' ').slice(0, 2).join(' ');
  * conocen, poder encontrarse en un vistazo es la diferencia entre un gráfico
  * que se mira y uno que se salta.
  */
-export default function GraficoReparto({ filas = [], yoId = null, monto = 0, totalPonderado = 0, onSeleccionar = null }) {
+export default function GraficoReparto({ filas = [], yoId = null, monto = 0, onSeleccionar = null }) {
     const datos = useMemo(() => filas
         .filter(f => f.utilidad > 0)
         .map(f => ({
@@ -57,9 +56,6 @@ export default function GraficoReparto({ filas = [], yoId = null, monto = 0, tot
             esYo: f.id === yoId,
         })), [filas, yoId]);
 
-    // Lo que rindió el capital que trabajó. Es la cifra con la que abre el
-    // extracto de cualquier fondo, y la que la Junta lleva a la asamblea.
-    const rentabilidadFondo = totalPonderado > 0 ? monto / totalPonderado : 0;
     const promedio = datos.length ? monto / datos.length : 0;
     const yo = datos.find(d => d.esYo) || null;
 
@@ -71,36 +67,9 @@ export default function GraficoReparto({ filas = [], yoId = null, monto = 0, tot
         );
     }
 
-    const kpis = [
-        { icono: Coins, etiqueta: 'Ganancia repartida', valor: fmtCorto(monto), pie: `entre ${datos.length} socios` },
-        { icono: TrendingUp, etiqueta: 'Rindió el fondo', valor: pct(rentabilidadFondo), pie: 'sobre el capital que trabajó', destacado: true },
-        yo
-            ? { icono: Percent, etiqueta: 'Rindió lo tuyo', valor: pct(yo.rentabilidad), pie: `por cada $100 ahorrados, $${(yo.rentabilidad * 100).toFixed(2).replace('.', ',')}`, propio: true }
-            : { icono: Users, etiqueta: 'Reparto promedio', valor: fmtCorto(promedio), pie: 'por socio' },
-    ];
-
     return (
-        <div className="space-y-4">
-            {/* ── La cabecera de extracto ── */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {kpis.map(k => (
-                    <div key={k.etiqueta}
-                        className={`rounded-xl border px-4 py-3 ${k.propio ? 'bg-brand-gold/10 border-brand-gold/40'
-                            : k.destacado ? 'bg-brand-primary/5 border-brand-primary/20' : 'bg-gray-50 border-gray-200'}`}>
-                        <div className="flex items-center gap-1.5 text-gray-400">
-                            <k.icono className="h-3 w-3" />
-                            <span className="text-[9px] font-black uppercase tracking-wider">{k.etiqueta}</span>
-                        </div>
-                        <p className={`text-xl font-black tabular-nums leading-tight mt-0.5 ${k.propio ? 'text-brand-gold' : k.destacado ? 'text-brand-primary' : 'text-gray-800'}`}>
-                            {k.valor}
-                        </p>
-                        <p className="text-[10px] text-gray-400 leading-tight">{k.pie}</p>
-                    </div>
-                ))}
-            </div>
-
+        <div>
             {/* ── Una barra por socio ── */}
-            <div>
                 <ResponsiveContainer width="100%" height={Math.max(200, datos.length * 30 + 58)}>
                     <BarChart data={datos} layout="vertical" margin={{ top: 18, right: 64, left: 4, bottom: 4 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" horizontal={false} />
@@ -135,11 +104,10 @@ export default function GraficoReparto({ filas = [], yoId = null, monto = 0, tot
                     </BarChart>
                 </ResponsiveContainer>
 
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-gray-500 mt-1">
-                    <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-brand-primary" /> lo que le corresponde a cada socio</span>
-                    {yo && <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-brand-gold" /> tú</span>}
-                    <span className="text-gray-400">Cifras en pesos · {monto > 0 ? fmt(monto) : '—'} repartidos</span>
-                </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-gray-500 mt-1">
+                <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-brand-primary" /> lo que le corresponde a cada socio</span>
+                {yo && <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-brand-gold" /> tú</span>}
+                <span className="text-gray-400">Cifras en pesos · {monto > 0 ? fmt(monto) : '—'} repartidos</span>
             </div>
         </div>
     );

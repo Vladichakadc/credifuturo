@@ -269,6 +269,22 @@ const CUOTA = 200000;
         comprobar('con aporte cero', marzo?.ponderado === 0);
     }
 
+    console.log('\n4d. El panel y el reparto no pueden discrepar en el capital ponderado');
+    {
+        // "Retorno del Capital" del Panel de Administración divide la ganancia
+        // entre esta misma cifra. Si las dos pantallas la calcularan por su
+        // cuenta acabarían mostrando rentabilidades distintas del mismo fondo,
+        // que es el problema que utils/fundProjection.js ya existe para evitar.
+        const panel = await fetch(`${BASE}/admin/dashboard-stats`, { headers: H }).then(r => r.json());
+        const dAnioActual = await fetch(`${BASE}/admin/savings/ranking`, { headers: H }).then(r => r.json());
+        const sumaReparto = dAnioActual.socios.reduce((a, s) => a + s.capitalPonderado, 0);
+        comprobar('dashboard-stats devuelve el capital ponderado',
+            typeof panel.capitalPonderadoTotal === 'number', `dio ${typeof panel.capitalPonderadoTotal}`);
+        comprobar('y coincide al peso con el del reparto',
+            panel.capitalPonderadoTotal === sumaReparto,
+            `${money(panel.capitalPonderadoTotal)} vs ${money(sumaReparto)}`);
+    }
+
     console.log('\n5. La calidad de las fechas se informa, no se esconde');
     {
         comprobar('se cuentan los movimientos con fecha de pago real', d.diagnostico.pago === 37,

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-    Loader2, RefreshCw, Coins, CalendarRange, Users, Percent, Award,
+    Loader2, RefreshCw, Coins, Users, TrendingUp, Award,
     Search, Info, AlertTriangle, ArrowRight,
 } from 'lucide-react';
 import api from '../../config/api';
@@ -147,6 +147,16 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
 
     const yo = useMemo(() => reparto?.filas.find(f => f.id === datos?.yoId) || null, [reparto, datos]);
 
+    // Lo que rindió el capital que de verdad trabajó. Es la cifra con la que abre
+    // el extracto de cualquier fondo, y ahora es la MISMA que el "Retorno del
+    // Capital" del Panel de Administración: los dos dividen la ganancia de
+    // fundProjection entre el capital ponderado que calcula services/reparto.js.
+    const rentabilidadFondo = reparto?.totalCapitalPonderado > 0
+        ? ganancia.monto / reparto.totalCapitalPonderado : 0;
+    // La del socio se mide sobre lo que AHORRÓ, no sobre lo ponderado: por eso
+    // varía según cuándo entró su dinero, que es lo que él puede cambiar.
+    const rentabilidadPropia = yo && yo.capitalBase > 0 ? yo.utilidad / yo.capitalBase : 0;
+
     // Ya vienen de mayor a menor desde construirReparto; la búsqueda no altera el orden.
     const listado = useMemo(() => {
         if (!reparto) return [];
@@ -189,9 +199,7 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                             justo encima, y repetirlo deja el mismo texto dos veces. */}
                         <div>
                             <p className="text-sm font-bold text-white/90">
-                                {esVistaAdmin
-                                    ? `Reparto de ${periodo.anio} — vista de administración`
-                                    : `Ganancia de ${periodo.anio}, repartida por capital y días`}
+                                {esVistaAdmin ? 'Vista de administración' : 'Tu reparto'}
                             </p>
                             {/* El gerente de este fondo también es socio. El enlace deja
                                 explícito con qué sombrero está mirando y le permite
@@ -216,19 +224,25 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
+                    {/* Tres cifras, no cuatro, y ninguna repetida más abajo: lo que
+                        el fondo ganó, lo que eso rindió sobre el capital que
+                        trabajó, y entre cuántos se divide. El capital ponderado
+                        salió de aquí porque ya es el denominador de la
+                        rentabilidad, y la fecha de corte la dice el aviso de
+                        abajo — repetirla era decir dos veces lo mismo. */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-5">
                         {[
-                            { icono: Coins, etiqueta: 'Ganancia del fondo', valor: fmtCorto(ganancia.monto) },
-                            { icono: Users, etiqueta: 'Socios', valor: conParte },
-                            { icono: Percent, etiqueta: 'Capital ponderado', valor: fmtCorto(reparto.totalCapitalPonderado) },
-                            { icono: CalendarRange, etiqueta: periodo.cerrado ? 'Año' : 'Datos al', valor: periodo.cerrado ? 'cerrado' : enLetras(periodo.corte).replace(` de ${periodo.anio}`, '') },
+                            { icono: Coins, etiqueta: 'Ganancia del fondo', valor: fmtCorto(ganancia.monto), pie: `en ${periodo.anio}` },
+                            { icono: TrendingUp, etiqueta: 'Rindió el fondo', valor: `${(rentabilidadFondo * 100).toFixed(2).replace('.', ',')}%`, pie: 'sobre el capital que trabajó' },
+                            { icono: Users, etiqueta: 'Se reparte entre', valor: `${conParte} socios`, pie: `promedio ${fmtCorto(conParte ? ganancia.monto / conParte : 0)}` },
                         ].map(k => (
                             <div key={k.etiqueta} className="bg-white/10 rounded-xl px-3 py-2.5 border border-white/10">
                                 <div className="flex items-center gap-1.5 text-white/60">
                                     <k.icono className="h-3 w-3" />
                                     <span className="text-[9px] font-black uppercase tracking-wider">{k.etiqueta}</span>
                                 </div>
-                                <p className="text-sm font-black mt-0.5 tabular-nums">{k.valor}</p>
+                                <p className="text-base font-black mt-0.5 tabular-nums leading-tight">{k.valor}</p>
+                                <p className="text-[9px] text-white/50 leading-tight">{k.pie}</p>
                             </div>
                         ))}
                     </div>
@@ -238,9 +252,9 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                     <div className="px-6 py-2.5 bg-blue-50 border-t border-blue-100 flex items-start gap-2">
                         <Info className="h-3.5 w-3.5 text-blue-500 flex-shrink-0 mt-0.5" />
                         <p className="text-[11px] text-blue-900 leading-snug">
-                            {periodo.anio} va en curso. Los pesos se cuentan sobre los doce meses del año, así que
-                            estas cifras son una <strong>proyección al cierre</strong>: se moverán con cada abono que
-                            entre de aquí a diciembre.
+                            {periodo.anio} va en curso — datos al <strong>{enLetras(periodo.corte)}</strong>. Los pesos se
+                            cuentan sobre los 365 días del año, así que estas cifras son una <strong>proyección al
+                            cierre</strong>: se moverán con cada abono que entre de aquí a diciembre.
                         </p>
                     </div>
                 )}
@@ -257,8 +271,11 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                             <Dato etiqueta="Te correspondería" valor={fmt(yo.utilidad)} acento="text-brand-primary"
                                 pie={`${(yo.participacion * 100).toFixed(2)}% del reparto`} />
-                            <Dato etiqueta="Tu capital ponderado" valor={fmt(yo.capitalPonderado)}
-                                pie={`de ${fmt(yo.capitalBase)} ahorrados · pesa ${Math.round(yo.pesoEfectivo * 100)}%`} />
+                            {/* La rentabilidad propia, no el capital ponderado: el socio
+                                puede comparar un porcentaje con lo que le paga su banco;
+                                una cifra ponderada no la puede comparar con nada. */}
+                            <Dato etiqueta="Te rindió" valor={`${(rentabilidadPropia * 100).toFixed(2).replace('.', ',')}%`} acento="text-brand-gold"
+                                pie={`por cada $100 ahorrados, $${(rentabilidadPropia * 100).toFixed(2).replace('.', ',')}`} />
                             <Dato etiqueta="Traías del año anterior" valor={fmt(yo.capitalApertura)}
                                 pie={yo.aperturaPermanente > 0
                                     ? `${fmt(yo.aperturaPermanente)} sigue en el fondo`
@@ -304,10 +321,9 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                 <div className="px-5 py-3 bg-gray-50 border-b border-gray-100">
                     <h2 className="font-bold text-sm text-gray-800">Cómo se reparte la ganancia</h2>
                     <p className="text-[11px] text-gray-500">
-                        {fmt(ganancia.monto)} repartidos entre {conParte} socios.
                         {reparto.cuadra
-                            ? ' La suma de todas las partes da exactamente esa cifra.'
-                            : ' ⚠ La suma de las partes no cuadra con el total.'}
+                            ? 'La suma de todas las partes da exactamente la ganancia del fondo.'
+                            : '⚠ La suma de las partes no cuadra con la ganancia del fondo.'}
                     </p>
                 </div>
                 <div className="p-5">
@@ -316,7 +332,6 @@ export default function RepartoUtilidadesPage({ vista = 'socio' }) {
                         gobierna el reparto de todos. Ahí el tercer indicador pasa
                         a ser el reparto promedio, que sí es de gobierno. */}
                     <GraficoReparto filas={reparto.filas} yoId={esVistaAdmin ? null : datos.yoId} monto={ganancia.monto}
-                        totalPonderado={reparto.totalCapitalPonderado}
                         onSeleccionar={(f) => setExpandido(prev => prev === f.id ? null : f.id)} />
                 </div>
 
