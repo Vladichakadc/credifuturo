@@ -1762,6 +1762,12 @@ router.get('/savings/ranking', async (req, res) => {
                 status: m.status,
                 esAporteInicial,
                 esConcepto: esMovimientoDeConcepto(m.status, m.amount),
+                // El vocabulario de estados vive aquí, no en el servicio: la
+                // regla de la Junta —la distribución solo cuenta si el socio no
+                // retiró— necesita distinguir un retiro que el socio pidió de un
+                // descuento que el fondo cobró, y esa distinción es de texto.
+                esDistribucion: normalizarEstado(m.status).includes('istribuc') && neto > 0,
+                esDevolucion: normalizarEstado(m.status).includes('evoluc'),
             });
             diagnostico.total += 1;
             diagnostico[reparto.fechaValorDe({ date: m.date, mesAbonado: m.mesAbonado, anioAbonado: m.anioAbonado }).origen] += 1;
@@ -1804,6 +1810,8 @@ router.get('/savings/ranking', async (req, res) => {
                 // `abonos` y `neto`.
                 ahorroPeriodo: Math.round(agg.ahorroPeriodo),
                 fondoPeriodo: Math.round(agg.fondoPeriodo),
+                huboRetiro: agg.huboRetiro,
+                distribucionNoContada: Math.round(agg.distribucionNoContada),
                 // El peso de cada mes, que es lo que la pantalla muestra y lo que
                 // permite al socio reconstruir su propia cifra con una calculadora.
                 porMes: agg.porMes.map(f => ({
@@ -1822,6 +1830,7 @@ router.get('/savings/ranking', async (req, res) => {
                         origenFecha: d.origenFecha, previo: !!d.previo, futuro: !!d.futuro,
                         dentroPeriodo: d.dentroPeriodo, status: d.status,
                         esAporteInicial: d.esAporteInicial, esConcepto: d.esConcepto,
+                        esDistribucion: d.esDistribucion, noCuenta: !!d.noCuenta,
                         mesAbonado: d.mesAbonado, anioAbonado: d.anioAbonado,
                     }))
                     : null,
