@@ -2,7 +2,7 @@ import {
     LayoutDashboard, Landmark, Activity, BarChart3, PiggyBank, TrendingUp,
     HandCoins, CreditCard, Scale, Calculator, Lightbulb, Trophy, Gavel,
     ScrollText, FileText, Users, Wallet, Receipt, ShieldCheck, SlidersHorizontal,
-    ClipboardList, Undo2, LinkIcon, FolderOpen,
+    ClipboardList, Undo2, LinkIcon, FolderOpen, Coins
 } from 'lucide-react';
 
 /**
@@ -162,12 +162,13 @@ export const PAGINAS_INFO = {
         ],
     },
     '/dashboard/ranking-ahorro': {
-        icono: Trophy,
-        titulo: 'Ranking de Ahorro',
-        descripcion: 'Cómo va el ahorro de los socios en el año, ordenado por lo acumulado.',
+        icono: Coins,
+        titulo: 'Reparto de Utilidades',
+        descripcion: 'Cómo se divide la ganancia del fondo: en proporción al dinero que cada socio tuvo dentro, y al tiempo que estuvo.',
         encontraras: [
-            'El acumulado por socio en el período',
-            'Tu posición dentro del grupo',
+            'Cuánto te correspondería y por qué',
+            'La línea de tiempo de tu saldo en el año',
+            'Un simulador para ver el efecto de abonar antes',
         ],
     },
     '/dashboard/junta-prestamos': {
@@ -262,10 +263,14 @@ export const PAGINAS_INFO = {
         ],
     },
     '/admin/savings/ranking': {
-        icono: Trophy,
-        titulo: 'Ranking de Ahorro',
-        descripcion: 'El ahorro acumulado por socio en el período, ordenado de mayor a menor.',
-        encontraras: ['El acumulado neto por socio', 'La distribución del ahorro entre los socios'],
+        icono: Coins,
+        titulo: 'Reparto de Utilidades',
+        descripcion: 'Cómo se divide la ganancia del fondo entre los socios, en proporción al capital que cada uno tuvo dentro y al tiempo que estuvo.',
+        encontraras: [
+            'La participación y la parte de cada socio',
+            'Los parámetros del reparto, con el efecto de cada ajuste antes de guardarlo',
+            'La calidad de las fechas sobre las que se calcula',
+        ],
     },
     '/admin/savings/evolution': {
         icono: TrendingUp,

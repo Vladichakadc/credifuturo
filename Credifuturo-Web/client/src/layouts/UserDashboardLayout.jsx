@@ -25,7 +25,7 @@ import {
     Activity,
     ClipboardList,
     BarChart3,
-    Grid3x3,
+    Grid3x3, Coins
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { Button } from '../components/ui/Button';
@@ -262,7 +262,7 @@ const UserDashboardLayout = ({ user, onLogout }) => {
             icon: Lightbulb,
             label: 'Propuestas (BETA)',
             children: [
-                { icon: TrendingUp, label: 'Ranking de Ahorro (BETA)', path: '/dashboard/ranking-ahorro' },
+                { icon: Coins, label: 'Reparto de Utilidades (BETA)', path: '/dashboard/ranking-ahorro' },
                 { icon: MessageSquareMore, label: 'Buzón de Propuestas (BETA)', path: '/dashboard/propuestas' }
             ]
         }] : []),
