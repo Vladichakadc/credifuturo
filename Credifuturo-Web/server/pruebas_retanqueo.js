@@ -370,6 +370,207 @@ async function main() {
         comprobar('un desembolso válido posterior sigue funcionando', bueno === 201, `dio ${bueno}`);
     }
 
+    // ───────────────────────────────────────────────────────────────────────
+    console.log('\n11. Deshacer un retanqueo devuelve el préstamo al estado exacto que tenía');
+    // La reversión reconstruye cada cuota en vez de restaurar lo que había. Si el
+    // cronograma no responde al capital pactado —porque el socio hizo un abono a
+    // capital, o porque viene migrado— la reconstrucción le devuelve una deuda que
+    // ya había pagado.
+    {
+        const { socio, idVm } = await sembrar({
+            principal: 6000000, cuotas: 6, tasa: 0.014, pagadas: 0,
+            fechaPrestamo: '2026-08-17',
+            vencimientos: ['2026-09-10','2026-10-10','2026-11-10','2026-12-10','2027-01-10','2027-02-10'],
+        });
+
+        // El socio abonó a capital: el cronograma real deja de responder a
+        // valorPrestado/cuotas. Se rebaja el saldo de las cuotas 2 en adelante.
+        const ABONO = 600000;
+        const previas = await LoanPayment.findAll({ where: { idVm }, order: [['item_quantity', 'ASC']] });
+        for (const c of previas) {
+            if (c.itemQuantity === 1) continue;
+            const saldoInicial = num(c.saldoInicial) - ABONO;
+            const saldoFinal = Math.max(0, num(c.saldoFinal) - ABONO);
+            const interes = parseFloat((saldoInicial * 0.014).toFixed(2));
+            await c.update({
+                saldoInicial, saldoFinal,
+                valorInteresesAmortizados: interes,
+                valorCuotaVariable: parseFloat(((saldoInicial - saldoFinal) + interes).toFixed(2)),
+            });
+        }
+        // Foto del estado ANTES del retanqueo, que es a lo que hay que volver.
+        const antes = (await LoanPayment.findAll({ where: { idVm }, order: [['item_quantity', 'ASC']] }))
+            .map(c => ({
+                n: c.itemQuantity, estado: c.estado,
+                saldoInicial: num(c.saldoInicial), saldoFinal: num(c.saldoFinal),
+                cuota: num(c.valorCuotaVariable), interes: num(c.valorInteresesAmortizados),
+            }));
+
+        const { status, body } = await desembolsar({
+            clientId: socio.id, fechaPrestamo: '2026-08-30', mesDesembolso: 'Agosto', anioDesembolso: 2026,
+            valorPrestado: 9000000, cuotas: 6, interesMensual: 0.014, estado: 'Vigente',
+        });
+        comprobar('el retanqueo se registra', status === 201, `HTTP ${status}`);
+
+        // Un comprobante adjunto a una cuota del préstamo NUEVO: al borrarlo hay que
+        // poder eliminarlo también, o la clave foránea aborta la reversión entera.
+        const Soporte = require('./models/Soporte');
+        const cuotaNueva = await LoanPayment.findOne({ where: { idVm: body.loan.idVm }, order: [['item_quantity', 'ASC']] });
+        await Soporte.create({
+            paymentId: cuotaNueva.id, clientId: socio.id,
+            nombreArchivo: 'comprobante.png', tipoArchivo: 'image/png',
+            archivo: Buffer.from('prueba'),
+        }).catch(() => { /* si el modelo exige otras columnas, la prueba de FK se omite sola */ });
+
+        const rBorrado = await fetch(`${BASE}/admin/disbursed-loans/${body.loan.id}`, { method: 'DELETE', headers: H });
+        const cuerpoBorrado = await rBorrado.json().catch(() => ({}));
+        comprobar('el borrado responde correctamente', rBorrado.status === 200,
+            `HTTP ${rBorrado.status} ${JSON.stringify(cuerpoBorrado).slice(0, 200)}`);
+
+        const despues = (await LoanPayment.findAll({ where: { idVm }, order: [['item_quantity', 'ASC']] }))
+            .map(c => ({
+                n: c.itemQuantity, estado: c.estado,
+                saldoInicial: num(c.saldoInicial), saldoFinal: num(c.saldoFinal),
+                cuota: num(c.valorCuotaVariable), interes: num(c.valorInteresesAmortizados),
+            }));
+
+        comprobar('vuelven todas las cuotas', despues.length === antes.length,
+            `antes ${antes.length}, después ${despues.length}`);
+
+        // Compara campo a campo y dice CUÁL difiere, no solo que difiere.
+        const diffs = [];
+        for (const a of antes) {
+            const d = despues.find(x => x.n === a.n);
+            if (!d) { diffs.push(`cuota ${a.n}: desapareció`); continue; }
+            for (const campo of ['saldoInicial', 'saldoFinal', 'cuota', 'interes']) {
+                if (!cerca(a[campo], d[campo], 1)) {
+                    diffs.push(`cuota ${a.n} ${campo}: ${money(a[campo])} -> ${money(d[campo])}`);
+                }
+            }
+        }
+        comprobar('el cronograma vuelve exactamente al estado anterior', diffs.length === 0,
+            diffs.slice(0, 3).join(' · ') + (diffs.length > 3 ? ` (+${diffs.length - 3} más)` : ''));
+
+        const vigentes = await DisbursedLoan.count({ where: { clientId: socio.id, estado: 'Vigente' } });
+        comprobar('el socio queda con un solo préstamo vigente', vigentes === 1, `tiene ${vigentes}`);
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    console.log('\n11b. Deshacer no puede repartir el capital según un número de cuotas que no existe');
+    // `DisbursedLoan.cuotas` puede no coincidir con las filas reales del cronograma
+    // (préstamos migrados, retanqueos a medio cerrar). La reversión divide el capital
+    // por ese campo en vez de leerlo del cronograma, que es la regla que el motor de
+    // abonos ya aprendió: dividir por ahí duplica el capital y cancela cuotas que el
+    // socio sigue debiendo.
+    {
+        const { socio, idVm } = await sembrar({
+            principal: 6000000, cuotas: 6, tasa: 0.014, pagadas: 0,
+            fechaPrestamo: '2026-08-17',
+            vencimientos: ['2026-09-10','2026-10-10','2026-11-10','2026-12-10','2027-01-10','2027-02-10'],
+        });
+        // El campo dice 8 cuotas; el cronograma real tiene 6.
+        await DisbursedLoan.update({ cuotas: 8 }, { where: { idVm } });
+
+        const capitalRealPorCuota = 6000000 / 6;   // 1.000.000, lo que dice el cronograma
+        const capitalSegunCampo   = 6000000 / 8;   //   750.000, lo que usa la reversión
+
+        const { body } = await desembolsar({
+            clientId: socio.id, fechaPrestamo: '2026-08-30', mesDesembolso: 'Agosto', anioDesembolso: 2026,
+            valorPrestado: 9000000, cuotas: 6, interesMensual: 0.014, estado: 'Vigente',
+        });
+        await fetch(`${BASE}/admin/disbursed-loans/${body.loan.id}`, { method: 'DELETE', headers: H });
+
+        const restauradas = await LoanPayment.findAll({ where: { idVm }, order: [['item_quantity', 'ASC']] });
+        const capitalTras = num(restauradas[0].saldoInicial) - num(restauradas[0].saldoFinal);
+        comprobar('el capital por cuota sale del cronograma, no del campo `cuotas`',
+            cerca(capitalTras, capitalRealPorCuota, 2),
+            `dio ${money(capitalTras)}; el cronograma dice ${money(capitalRealPorCuota)} y el campo ${money(capitalSegunCampo)}`);
+
+        const capitalTotal = restauradas.reduce((s, c) => s + (num(c.saldoInicial) - num(c.saldoFinal)), 0);
+        comprobar('el capital restaurado suma lo prestado', cerca(capitalTotal, 6000000, 5),
+            `sumó ${money(capitalTotal)} de ${money(6000000)}`);
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    console.log('\n12. Deshacer un retanqueo encadenado no deja dos préstamos vigentes');
+    // A retanqueado por B, y B por C. Borrar B resucita A mientras C sigue vigente.
+    {
+        const { socio, idVm: idA } = await sembrar({
+            principal: 3000000, cuotas: 3, tasa: 0.014, pagadas: 0,
+            fechaPrestamo: '2026-08-17',
+            vencimientos: ['2026-10-10','2026-11-10','2026-12-10'],
+        });
+        const b = await desembolsar({
+            clientId: socio.id, fechaPrestamo: '2026-08-25', mesDesembolso: 'Agosto', anioDesembolso: 2026,
+            valorPrestado: 5000000, cuotas: 3, interesMensual: 0.014, estado: 'Vigente',
+        });
+        const c = await desembolsar({
+            clientId: socio.id, fechaPrestamo: '2026-09-01', mesDesembolso: 'Septiembre', anioDesembolso: 2026,
+            valorPrestado: 7000000, cuotas: 3, interesMensual: 0.014, estado: 'Vigente',
+        });
+        comprobar('los dos retanqueos encadenados se registran', b.status === 201 && c.status === 201,
+            `B ${b.status}, C ${c.status}`);
+
+        const rB = await fetch(`${BASE}/admin/disbursed-loans/${b.body.loan.id}`, { method: 'DELETE', headers: H });
+        const cuerpoB = await rB.json().catch(() => ({}));
+        comprobar('borrar el eslabón intermedio se rechaza', rB.status === 409, `HTTP ${rB.status}`);
+        comprobar('y explica que hay que empezar por el último',
+            /refinanciado por|Elimina primero/i.test(cuerpoB.error || ''), `dijo: ${cuerpoB.error}`);
+
+        const vigentes = await DisbursedLoan.findAll({ where: { clientId: socio.id, estado: 'Vigente' } });
+        comprobar('el socio NO queda con dos préstamos vigentes', vigentes.length === 1,
+            `tiene ${vigentes.length}: ${vigentes.map(v => v.idVm).join(', ')}`);
+
+        // Deshacer en orden (del último al primero) sí funciona.
+        const rC = await fetch(`${BASE}/admin/disbursed-loans/${c.body.loan.id}`, { method: 'DELETE', headers: H });
+        comprobar('deshacer desde el último sí se permite', rC.status === 200, `HTTP ${rC.status}`);
+        const trasC = await DisbursedLoan.findAll({ where: { clientId: socio.id, estado: 'Vigente' } });
+        comprobar('y deja un único vigente, el intermedio', trasC.length === 1 && trasC[0].idVm === b.body.loan.idVm,
+            `quedaron ${trasC.map(v => v.idVm).join(', ')}`);
+        void idA;
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    console.log('\n13. Con dos préstamos vigentes, el retanqueo se niega en vez de cancelar uno al azar');
+    // La búsqueda del préstamo a cancelar toma el de id más alto. Con dos vigentes eso
+    // dejaría el otro vivo sin que nadie lo decida, y fuera del alcance de cualquier
+    // retanqueo posterior, que volvería a tomar el más nuevo.
+    {
+        const { socio, idVm: idPrimero } = await sembrar({
+            principal: 3000000, cuotas: 3, tasa: 0.014, pagadas: 0,
+            fechaPrestamo: '2026-08-17',
+            vencimientos: ['2026-10-10','2026-11-10','2026-12-10'],
+        });
+        // Un segundo préstamo vigente del mismo socio, como el que dejaba la reversión rota.
+        secuencia++;
+        const idSegundo = `SOLT${secuencia}`;
+        await DisbursedLoan.create({
+            idVm: idSegundo, clientId: socio.id, valorPrestado: 2000000, cuotas: 2,
+            interesMensual: 0.014, estado: 'Vigente', fechaPrestamo: '2026-08-20',
+            mesDesembolso: 'Agosto', anioDesembolso: 2026, monto: 2000000,
+        });
+        await LoanPayment.bulkCreate([1, 2].map(i => ({
+            externalId: `PD${secuencia}_${i}`, clientId: socio.id, idVm: idSegundo, itemQuantity: i,
+            saldoInicial: i === 1 ? 2000000 : 1000000, valorInteresesAmortizados: i === 1 ? 28000 : 14000,
+            valorCuotaVariable: i === 1 ? 1028000 : 1014000, valorCuotaPago: 0,
+            saldoFinal: i === 1 ? 1000000 : 0, estado: 'Pendiente', estadoPrestamo: 'Pendiente',
+            cuotasPrestamo: 2, interesMensual: 0.014,
+            fechaPagoMax: i === 1 ? '2026-10-20' : '2026-11-20',
+            mesPago: i === 1 ? 'Octubre' : 'Noviembre', mesDesembolso: 'Agosto',
+        })));
+
+        const { status, body } = await desembolsar({
+            clientId: socio.id, fechaPrestamo: '2026-09-05', mesDesembolso: 'Septiembre',
+            anioDesembolso: 2026, valorPrestado: 8000000, cuotas: 6, interesMensual: 0.014, estado: 'Vigente',
+        });
+        comprobar('el desembolso se rechaza', status === 409, `HTTP ${status}`);
+        comprobar('el mensaje nombra los dos préstamos',
+            (body.error || '').includes(idPrimero) && (body.error || '').includes(idSegundo),
+            `dijo: ${body.error}`);
+        const sigueVigente = await DisbursedLoan.count({ where: { clientId: socio.id, estado: 'Vigente' } });
+        comprobar('no se canceló ninguno de los dos', sigueVigente === 2, `quedan ${sigueVigente}`);
+    }
+
     console.log('\n──────────────────────────────────────────────');
     console.log(`${ok} comprobaciones correctas · ${fallos} fallidas`);
     console.log('──────────────────────────────────────────────\n');

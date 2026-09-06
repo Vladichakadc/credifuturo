@@ -221,12 +221,21 @@ const crashLogLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false
 });
+// Los fallos del navegador se guardan junto a la base de datos, que es lo único
+// montado en el volumen persistente. Escribirlos junto al código —lo que hacía
+// antes— los dejaba en el disco del contenedor: cada despliegue los borraba, y
+// justo después de un despliegue es cuando más falta hacen. Mismo criterio que
+// ya siguen los respaldos diarios y la auditoría de accesos.
+const RUTA_CRASH_LOG = process.env.DATABASE_PATH
+    ? path.join(path.dirname(process.env.DATABASE_PATH), 'crash_log.txt')
+    : path.join(__dirname, 'crash_log.txt');
+
 app.post('/api/log-crash', crashLogLimiter, (req, res) => {
     const error = String(req.body?.error || '').slice(0, 2000);
     const stack = String(req.body?.stack || '').slice(0, 8000);
     const line = `[${new Date().toISOString()}] ${error}\n${stack}\n---\n`;
     try {
-        require('fs').appendFileSync(path.join(__dirname, 'crash_log.txt'), line);
+        require('fs').appendFileSync(RUTA_CRASH_LOG, line);
     } catch (e) {
         console.warn('[crash-log] no se pudo escribir:', e.message);
     }
