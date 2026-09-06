@@ -8,50 +8,42 @@ import { construirReparto } from '../../utils/reparto';
 const fmt = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
 
 /**
- * El puesto de mando del reparto: los tres números que lo deciden, y el efecto
- * de moverlos ANTES de guardarlos.
+ * El puesto de mando del reparto: el efecto del premio por permanencia ANTES de
+ * guardarlo, y las comprobaciones que hacen falta para poder aprobarlo.
  *
  * Un reparto se aprueba en una reunión, no en un formulario. Lo que la Junta
  * necesita no es un campo donde escribir un factor, sino ver a quién le sube y a
- * quién le baja cada ajuste, con nombre y cifra, mientras todavía puede
- * cambiarlo. Por eso la comparación "guardado vs. simulado" es la pieza central
- * y no un extra: es lo que convierte un parámetro abstracto en una decisión que
- * se puede defender ante una asamblea.
+ * quién le baja el ajuste, con nombre y cifra, mientras todavía puede cambiarlo.
+ * Por eso la comparación "guardado vs. simulado" es la pieza central y no un
+ * extra: convierte un parámetro abstracto en una decisión defendible.
  *
- * Guardar queda reservado al gerente, igual que hasta ahora. La Junta simula
- * cuanto quiera —eso no toca nada— pero el valor que rige el reparto lo escribe
- * una sola persona, que es como estaba antes de esta pantalla y no algo que
- * corresponda ampliar de paso.
+ * Guardar queda reservado al gerente, como hasta ahora. La Junta simula cuanto
+ * quiera —eso no toca nada— pero el valor que rige el reparto lo escribe una sola
+ * persona, que es como estaba antes y no algo que corresponda ampliar de paso.
  */
-export default function PanelJunta({ socios, guardado, monto, onMonto, puedeGuardar, onGuardado, periodo, diagnostico, anomalias }) {
+export default function PanelJunta({ socios, guardado, monto, puedeGuardar, onGuardado, periodo, diagnostico, anomalias, origenMonto }) {
     const { toast } = useUi();
-    const [factor, setFactor] = useState(guardado.factorPermanencia ?? 1);
-    const [incluye, setIncluye] = useState(!!guardado.incluyeAporteInicial);
+    const factorGuardado = guardado.factorPermanencia ?? 1;
+    const [factor, setFactor] = useState(factorGuardado);
     const [guardando, setGuardando] = useState(false);
 
-    const factorGuardado = guardado.factorPermanencia ?? 1;
-    const incluyeGuardado = !!guardado.incluyeAporteInicial;
-
-    // Los dos repartos que la pantalla compara: el que rige hoy y el que
-    // resultaría de los controles. Es la comparación, no cada cifra por
-    // separado, lo que permite decidir un ajuste antes de aplicarlo.
     const actual = useMemo(
-        () => construirReparto(socios, { factorPermanencia: factorGuardado, incluyeAporteInicial: incluyeGuardado, monto }),
-        [socios, factorGuardado, incluyeGuardado, monto]);
+        () => construirReparto(socios, { factorPermanencia: factorGuardado, monto }),
+        [socios, factorGuardado, monto]);
     const simulado = useMemo(
-        () => construirReparto(socios, { factorPermanencia: factor, incluyeAporteInicial: incluye, monto }),
-        [socios, factor, incluye, monto]);
+        () => construirReparto(socios, { factorPermanencia: factor, monto }),
+        [socios, factor, monto]);
 
-    const hayCambio = factor !== factorGuardado || incluye !== incluyeGuardado;
+    const hayCambio = factor !== factorGuardado;
 
     // Quién gana y quién pierde con el ajuste. Ordenado por magnitud del cambio:
-    // lo que importa de una redistribución no es quién recibe más, sino a quién
-    // se le mueve más respecto de lo que hoy está aprobado.
+    // de una redistribución no importa quién recibe más, sino a quién se le mueve
+    // más respecto de lo que hoy está aprobado.
     const efecto = useMemo(() => {
         if (!hayCambio) return [];
         const antes = new Map(actual.filas.map(f => [f.id, f.utilidad]));
         return simulado.filas
-            .map(f => ({ id: f.id, nombre: f.fullName, antes: antes.get(f.id) || 0, despues: f.utilidad, delta: f.utilidad - (antes.get(f.id) || 0) }))
+            .map(f => ({ id: f.id, nombre: f.fullName, antes: antes.get(f.id) || 0, delta: f.utilidad - (antes.get(f.id) || 0) }))
             .filter(e => e.delta !== 0)
             .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
     }, [hayCambio, actual, simulado]);
@@ -59,22 +51,17 @@ export default function PanelJunta({ socios, guardado, monto, onMonto, puedeGuar
     const guardar = async () => {
         setGuardando(true);
         try {
-            await Promise.all([
-                api.put('/admin/settings/reparto.factorPermanencia', { value: factor }),
-                api.put('/admin/settings/reparto.incluyeAporteInicial', { value: incluye ? 1 : 0 }),
-            ]);
-            toast.success('Parámetros del reparto guardados. El reparto que ven los socios ya usa estos valores.', 7000);
-            onGuardado?.({ factorPermanencia: factor, incluyeAporteInicial: incluye });
+            await api.put('/admin/settings/reparto.factorPermanencia', { value: factor });
+            toast.success('Premio por permanencia guardado. El reparto que ven los socios ya lo usa.', 7000);
+            onGuardado?.({ factorPermanencia: factor });
         } catch (err) {
-            toast.error(err.response?.data?.error || 'No se pudieron guardar los parámetros.');
+            toast.error(err.response?.data?.error || 'No se pudo guardar el parámetro.');
         } finally {
             setGuardando(false);
         }
     };
 
-    const calidad = diagnostico?.total
-        ? Math.round((diagnostico.pago / diagnostico.total) * 100)
-        : 100;
+    const calidad = diagnostico?.total ? Math.round((diagnostico.pago / diagnostico.total) * 100) : 100;
 
     return (
         <div className="bg-white rounded-2xl border-2 border-brand-primary/20 shadow-sm overflow-hidden">
@@ -84,18 +71,18 @@ export default function PanelJunta({ socios, guardado, monto, onMonto, puedeGuar
             </div>
 
             <div className="p-5 space-y-5">
-                {/* ── Ganancia a repartir ── */}
-                <label className="block">
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Ganancia a repartir en {periodo?.anio}</span>
-                    <input
-                        inputMode="numeric"
-                        value={Number(monto || 0).toLocaleString('es-CO')}
-                        onChange={(e) => onMonto(Number(e.target.value.replace(/\D/g, '')) || 0)}
-                        className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2.5 text-lg font-black tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-primary"
-                    />
-                </label>
+                {/* ── La ganancia que se reparte ── */}
+                <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Ganancia total del fondo · {periodo?.anio}</p>
+                    <p className="text-2xl font-black text-brand-primary tabular-nums leading-tight">{fmt(monto)}</p>
+                    {/* No es un campo: es la misma cifra que el Panel de Administración
+                        muestra como "Ganancia total del fondo", tomada en vivo. Dejarla
+                        escribir aquí abriría la puerta a que la pantalla repartiera un
+                        número distinto del que el panel declara ganado. */}
+                    <p className="text-[11px] text-gray-500 leading-snug mt-1">{origenMonto}</p>
+                </div>
 
-                {/* ── Factor de permanencia ── */}
+                {/* ── Premio por permanencia ── */}
                 <div>
                     <div className="flex items-baseline justify-between gap-2">
                         <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Premio por permanencia</span>
@@ -103,38 +90,23 @@ export default function PanelJunta({ socios, guardado, monto, onMonto, puedeGuar
                             {factor === 1 ? 'sin premio' : `+${Math.round((factor - 1) * 100)}%`}
                         </span>
                     </div>
-                    <input
-                        type="range" min="1" max="2" step="0.05" value={factor}
+                    <input type="range" min="1" max="2" step="0.05" value={factor}
                         onChange={(e) => setFactor(Number(e.target.value))}
-                        className="mt-2 w-full accent-brand-primary"
-                    />
+                        className="mt-2 w-full accent-brand-primary" />
                     <p className="text-[11px] text-gray-500 leading-snug mt-1.5">
-                        Cuánto pesa de más el saldo que un socio traía del año anterior y <strong>no retiró</strong>.
-                        Se aplica solo sobre la parte que siguió en el fondo hasta hoy: quien abrió el año con saldo
-                        y lo retiró en marzo no recibe premio por un dinero que ya no está.
-                        {factor === 1 && <> Hoy está en <strong>sin premio</strong>: el reparto es puro capital-tiempo.</>}
+                        Cuánto pesa de más el capital que un socio traía del año anterior y <strong>no retiró</strong>.
+                        Se aplica solo sobre la parte que siguió en el fondo: quien lo retiró en marzo no recibe
+                        premio por un dinero que ya no está, y quien retiró la mitad lo recibe solo sobre la mitad que dejó.
+                        {factor === 1 && <> Hoy está en <strong>sin premio</strong>: el reparto es puro capital ponderado.</>}
                     </p>
                 </div>
-
-                {/* ── Aporte inicial ── */}
-                <label className="flex items-start gap-3 cursor-pointer">
-                    <input type="checkbox" checked={incluye} onChange={(e) => setIncluye(e.target.checked)}
-                        className="mt-0.5 h-4 w-4 accent-brand-primary flex-shrink-0" />
-                    <span className="text-[11px] text-gray-600 leading-snug">
-                        <strong className="text-gray-800">Contar el aporte inicial como capital.</strong> El aporte de ingreso
-                        también está en el fondo prestándose, pero el reparto histórico nunca lo ha contado. Activarlo
-                        favorece a los socios más antiguos; dejarlo apagado mantiene el criterio de siempre.
-                    </span>
-                </label>
 
                 {/* ── El efecto del ajuste ── */}
                 {hayCambio ? (
                     <div className="rounded-xl border border-amber-200 bg-amber-50 overflow-hidden">
                         <div className="px-4 py-2.5 border-b border-amber-200 flex items-center gap-2">
                             <AlertTriangle className="h-4 w-4 text-amber-600" />
-                            <p className="text-xs font-bold text-amber-900">
-                                Sin guardar todavía. Así quedaría el reparto frente a lo aprobado hoy:
-                            </p>
+                            <p className="text-xs font-bold text-amber-900">Sin guardar todavía. Así quedaría frente a lo aprobado hoy:</p>
                         </div>
                         <div className="max-h-56 overflow-y-auto divide-y divide-amber-100">
                             {efecto.map(e => (
@@ -154,7 +126,7 @@ export default function PanelJunta({ socios, guardado, monto, onMonto, puedeGuar
                     </div>
                 ) : (
                     <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-500">
-                        Los parámetros en pantalla son los que están guardados. Muévelos para ver el efecto antes de aplicar.
+                        El premio en pantalla es el que está guardado. Muévelo para ver el efecto antes de aplicarlo.
                     </div>
                 )}
 
@@ -166,9 +138,7 @@ export default function PanelJunta({ socios, guardado, monto, onMonto, puedeGuar
                             <p className={`text-[10px] font-black uppercase tracking-wider ${simulado.cuadra ? 'text-emerald-700' : 'text-red-700'}`}>
                                 {simulado.cuadra ? 'El reparto cuadra' : 'El reparto NO cuadra'}
                             </p>
-                            <p className="text-[11px] text-gray-600 tabular-nums">
-                                Repartido {fmt(simulado.totalRepartido)} de {fmt(monto)}
-                            </p>
+                            <p className="text-[11px] text-gray-600 tabular-nums">Repartido {fmt(simulado.totalRepartido)} de {fmt(monto)}</p>
                         </div>
                     </div>
 
@@ -178,9 +148,9 @@ export default function PanelJunta({ socios, guardado, monto, onMonto, puedeGuar
                             <p className={`text-[10px] font-black uppercase tracking-wider ${calidad >= 95 ? 'text-emerald-700' : 'text-amber-700'}`}>
                                 Calidad de las fechas · {calidad}%
                             </p>
-                            {/* Una pantalla de reparto que no dice de qué calidad son
-                                sus datos invita a confiar en una cifra que quizá se
-                                apoya en fechas supuestas. */}
+                            {/* Una pantalla de reparto que no dice de qué calidad son sus
+                                datos invita a confiar en una cifra que quizá se apoya en
+                                fechas supuestas. */}
                             <p className="text-[11px] text-gray-600">
                                 {diagnostico?.pago ?? 0} con fecha de pago real
                                 {(diagnostico?.periodo ?? 0) > 0 && <> · {diagnostico.periodo} estimados por el mes acreditado</>}
@@ -205,12 +175,12 @@ export default function PanelJunta({ socios, guardado, monto, onMonto, puedeGuar
                     <div className="flex justify-end">
                         <Button onClick={guardar} disabled={guardando || !hayCambio} className="gap-2">
                             {guardando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                            Guardar parámetros
+                            Guardar premio
                         </Button>
                     </div>
                 ) : (
                     <p className="text-[11px] text-gray-400 text-right">
-                        Puedes simular libremente; guardar los parámetros le corresponde al gerente.
+                        Puedes simular libremente; guardar el parámetro le corresponde al gerente.
                     </p>
                 )}
             </div>

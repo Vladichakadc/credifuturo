@@ -164,10 +164,10 @@ export const PAGINAS_INFO = {
     '/dashboard/ranking-ahorro': {
         icono: Coins,
         titulo: 'Reparto de Utilidades',
-        descripcion: 'Cómo se divide la ganancia del fondo: en proporción al dinero que cada socio tuvo dentro, y al tiempo que estuvo.',
+        descripcion: 'Cómo se divide la ganancia del fondo: en proporción al capital que cada socio puso a trabajar y a los meses que estuvo.',
         encontraras: [
             'Cuánto te correspondería y por qué',
-            'La línea de tiempo de tu saldo en el año',
+            'El peso de cada mes de tu ahorro',
             'Un simulador para ver el efecto de abonar antes',
         ],
     },
@@ -265,7 +265,7 @@ export const PAGINAS_INFO = {
     '/admin/savings/ranking': {
         icono: Coins,
         titulo: 'Reparto de Utilidades',
-        descripcion: 'Cómo se divide la ganancia del fondo entre los socios, en proporción al capital que cada uno tuvo dentro y al tiempo que estuvo.',
+        descripcion: 'Cómo se divide la ganancia del fondo entre los socios, en proporción al capital que cada uno puso a trabajar y a los meses que estuvo.',
         encontraras: [
             'La participación y la parte de cada socio',
             'Los parámetros del reparto, con el efecto de cada ajuste antes de guardarlo',
