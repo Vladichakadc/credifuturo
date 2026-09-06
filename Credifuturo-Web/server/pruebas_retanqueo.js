@@ -530,6 +530,47 @@ async function main() {
         void idA;
     }
 
+    // ───────────────────────────────────────────────────────────────────────
+    console.log('\n13. Con dos préstamos vigentes, el retanqueo se niega en vez de cancelar uno al azar');
+    // La búsqueda del préstamo a cancelar toma el de id más alto. Con dos vigentes eso
+    // dejaría el otro vivo sin que nadie lo decida, y fuera del alcance de cualquier
+    // retanqueo posterior, que volvería a tomar el más nuevo.
+    {
+        const { socio, idVm: idPrimero } = await sembrar({
+            principal: 3000000, cuotas: 3, tasa: 0.014, pagadas: 0,
+            fechaPrestamo: '2026-08-17',
+            vencimientos: ['2026-10-10','2026-11-10','2026-12-10'],
+        });
+        // Un segundo préstamo vigente del mismo socio, como el que dejaba la reversión rota.
+        secuencia++;
+        const idSegundo = `SOLT${secuencia}`;
+        await DisbursedLoan.create({
+            idVm: idSegundo, clientId: socio.id, valorPrestado: 2000000, cuotas: 2,
+            interesMensual: 0.014, estado: 'Vigente', fechaPrestamo: '2026-08-20',
+            mesDesembolso: 'Agosto', anioDesembolso: 2026, monto: 2000000,
+        });
+        await LoanPayment.bulkCreate([1, 2].map(i => ({
+            externalId: `PD${secuencia}_${i}`, clientId: socio.id, idVm: idSegundo, itemQuantity: i,
+            saldoInicial: i === 1 ? 2000000 : 1000000, valorInteresesAmortizados: i === 1 ? 28000 : 14000,
+            valorCuotaVariable: i === 1 ? 1028000 : 1014000, valorCuotaPago: 0,
+            saldoFinal: i === 1 ? 1000000 : 0, estado: 'Pendiente', estadoPrestamo: 'Pendiente',
+            cuotasPrestamo: 2, interesMensual: 0.014,
+            fechaPagoMax: i === 1 ? '2026-10-20' : '2026-11-20',
+            mesPago: i === 1 ? 'Octubre' : 'Noviembre', mesDesembolso: 'Agosto',
+        })));
+
+        const { status, body } = await desembolsar({
+            clientId: socio.id, fechaPrestamo: '2026-09-05', mesDesembolso: 'Septiembre',
+            anioDesembolso: 2026, valorPrestado: 8000000, cuotas: 6, interesMensual: 0.014, estado: 'Vigente',
+        });
+        comprobar('el desembolso se rechaza', status === 409, `HTTP ${status}`);
+        comprobar('el mensaje nombra los dos préstamos',
+            (body.error || '').includes(idPrimero) && (body.error || '').includes(idSegundo),
+            `dijo: ${body.error}`);
+        const sigueVigente = await DisbursedLoan.count({ where: { clientId: socio.id, estado: 'Vigente' } });
+        comprobar('no se canceló ninguno de los dos', sigueVigente === 2, `quedan ${sigueVigente}`);
+    }
+
     console.log('\n──────────────────────────────────────────────');
     console.log(`${ok} comprobaciones correctas · ${fallos} fallidas`);
     console.log('──────────────────────────────────────────────\n');

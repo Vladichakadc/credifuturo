@@ -819,7 +819,7 @@ const LoansListPage = () => {
                     const fmt = n => Number(n).toLocaleString('es-CO');
                     const interesCausadoTxt = Number(ref.interesCausado) > 0
                         ? ` Interés cobrado por ${ref.diasTranscurridos} día(s): $${fmt(ref.interesCausado)}.`
-                        : '';
+                        : ` Sin interés por días (${ref.diasTranscurridos ?? 0} día(s) transcurridos).`;
                     // El neto cierra el mensaje porque es lo único que queda por hacer
                     // después de guardar: transferir esa cantidad, no el valor prestado.
                     const netoTxt = Number(ref.netoEntregado) >= 0
@@ -1583,8 +1583,14 @@ const LoansListPage = () => {
                                             <ul className="text-xs text-amber-700 space-y-1 ml-1">
                                                 <li>• Capital pendiente: <strong>${Number(activeLoanWarning.saldoPendiente).toLocaleString('es-CO')}</strong></li>
                                                 <li>• {activeLoanWarning.cuotasPendientes} cuota(s): Estado Pago <strong>Pendiente → PAGO</strong></li>
-                                                {Number(activeLoanWarning.interesCausado) > 0 && (
+                                                {/* La línea se muestra SIEMPRE, también cuando vale cero. Estaba dentro
+                                                    de un `> 0` y desaparecía: quien miraba la pantalla no podía distinguir
+                                                    «son cero días y es correcto» de «el cálculo no se hizo». En el
+                                                    retanqueo de SOL16 el interés salió en $0 y nada lo dijo. */}
+                                                {Number(activeLoanWarning.interesCausado) > 0 ? (
                                                     <li>• Interés causado por {activeLoanWarning.diasTranscurridos ?? '—'} día(s) transcurrido(s) (<strong>SÍ se cobra</strong>): <strong>${Number(activeLoanWarning.interesCausado).toLocaleString('es-CO')}</strong></li>
+                                                ) : (
+                                                    <li>• Interés causado: <strong>$0</strong> — han transcurrido <strong>{activeLoanWarning.diasTranscurridos ?? 0} día(s)</strong> desde que arrancó el período de la próxima cuota, así que no hay interés que cobrar.</li>
                                                 )}
                                                 <li>• Interés condonado (no cobrado): <strong>${Number(activeLoanWarning.interesCondonable).toLocaleString('es-CO')}</strong></li>
                                                 <li>• Total a cancelar de {activeLoanWarning.idVm}: <strong>${fmt(totalACancelar)}</strong></li>

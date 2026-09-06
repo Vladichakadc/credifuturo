@@ -2720,6 +2720,26 @@ router.post('/disbursed-loans', async (req, res) => {
         // exigían al mover el dinero de verdad. Se reutiliza getLoanCapacityAnalysis
         // (misma fuente que el Analizador) para que la regla se aplique en el único
         // punto donde de verdad importa.
+        // Un retanqueo sustituye AL crédito vigente, en singular. La búsqueda de arriba
+        // toma uno solo (el de id más alto), así que con dos vigentes se cancelaría uno y
+        // el otro quedaría vivo sin que nadie lo decidiera — y sin forma de que un
+        // retanqueo posterior lo alcance, porque volvería a tomar el más nuevo. Cuál de
+        // los dos se cancela es una decisión del fondo, no un desempate por id.
+        if (prestamoAnterior) {
+            const vigentes = await DisbursedLoan.findAll({
+                where: { client_id: clientId, estado: { [Op.like]: '%Vigente%' } },
+                attributes: ['idVm'],
+                transaction: t
+            });
+            if (vigentes.length > 1) {
+                await cerrarTransaccion();
+                return res.status(409).json({
+                    error: `${client.name} tiene ${vigentes.length} préstamos vigentes a la vez (${vigentes.map(v => v.idVm).join(', ')}), y un retanqueo solo puede cancelar uno. ` +
+                        `Regularice primero cuál sigue vigente — normalmente esto indica un retanqueo anterior que quedó a medias.`
+                });
+            }
+        }
+
         const capacidad = await getLoanCapacityAnalysis(clientId);
 
         if (capacidad.enMoraActual) {
