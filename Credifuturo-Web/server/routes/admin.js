@@ -6887,10 +6887,17 @@ router.put('/loan-requests/:id', verifyToken, requireFreshPassword, async (req, 
             if (req.body[campo] !== undefined) cambios[campo] = req.body[campo];
         }
 
+        // El registro de auditoría guarda las condiciones económicas y qué OTROS campos
+        // se tocaron, no su contenido. El banco, la cuenta y las observaciones son texto
+        // que escribió el socio, y el registro de seguridad no es sitio para volcar texto
+        // libre de nadie: el valor nuevo queda en la propia solicitud, que es donde se
+        // consulta. Aquí interesa qué cambió y quién lo cambió.
+        const camposTocados = ['banco', 'cuentaAhorros', 'observaciones']
+            .filter(c => req.body[c] !== undefined && String(req.body[c]) !== String(request[c] ?? ''));
         const antes = {
-            amount: num(request.amount), installments: parseInt(request.installments, 10),
-            monthlyRate: num(request.monthlyRate), banco: request.banco,
-            cuentaAhorros: request.cuentaAhorros, observaciones: request.observaciones,
+            amount: num(request.amount),
+            installments: parseInt(request.installments, 10),
+            monthlyRate: num(request.monthlyRate),
         };
 
         await request.update(cambios);
@@ -6907,6 +6914,7 @@ router.put('/loan-requests/:id', verifyToken, requireFreshPassword, async (req, 
             votosBorrados,
             antes,
             despues: { amount: nuevoMonto, installments: nuevasCuotas, monthlyRate: nuevaTasa },
+            camposTocados,
             ip: getClientIp(req)
         });
 

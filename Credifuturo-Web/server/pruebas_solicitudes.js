@@ -12,12 +12,16 @@
 const fs = require('fs'), os = require('os'), path = require('path');
 const RUTA = path.join(os.tmpdir(), `credifuturo-solicitudes-${process.pid}.sqlite`);
 process.env.DATABASE_PATH = RUTA;
-process.env.JWT_SECRET = 'x'.repeat(48);
+process.env.JWT_SECRET = require('crypto').randomBytes(32).toString('hex');
 process.env.NODE_ENV = 'development';
 process.env.PORT = '3061';
 process.env.TZ = 'UTC';
 
 const bcrypt = require('bcryptjs');
+// La clave de las cuentas de prueba se genera en cada corrida. Dejarla escrita en el
+// archivo la convierte en una credencial en el repositorio —aunque sea de una base
+// desechable— y el análisis de seguridad la marca, con razón.
+const CLAVE = require('crypto').randomBytes(12).toString('hex');
 const sequelize = require('./config/database');
 const { Client } = require('./models');
 const LoanRequest = require('./models/LoanRequest');
@@ -49,17 +53,17 @@ const entrar = async (cedula, clave) => {
     await sequelize.query('CREATE UNIQUE INDEX IF NOT EXISTS ux_disbursed_id_vm ON DisbursedLoans(id_vm)');
 
     await Client.create({ name:'Gerente', apellido1:'P', cedula:'14297227', customerId:'1',
-        email:'g@prueba.local', password:bcrypt.hashSync('secreto123',10), role:'admin', estatus:'Activo', mustChangePassword:false });
+        email:'g@prueba.local', password:bcrypt.hashSync(CLAVE, 10), role:'admin', estatus:'Activo', mustChangePassword:false });
     // Leonardo Rojas: miembro de la Junta que NO es admin.
     await Client.create({ name:'Leonardo', apellido1:'Rojas', cedula:'79863805', customerId:'2',
-        email:'l@prueba.local', password:bcrypt.hashSync('secreto123',10), role:'user', estatus:'Activo', mustChangePassword:false });
+        email:'l@prueba.local', password:bcrypt.hashSync(CLAVE, 10), role:'user', estatus:'Activo', mustChangePassword:false });
     const socio = await Client.create({ name:'Ana', apellido1:'Gomez', cedula:'52001234', customerId:'3',
-        email:'a@prueba.local', password:bcrypt.hashSync('x',10), role:'user', estatus:'Activo' });
+        email:'a@prueba.local', password:bcrypt.hashSync(CLAVE, 10), role:'user', estatus:'Activo' });
 
     require('./server.js');
     await new Promise(r => setTimeout(r, 4500));
-    H = await entrar('14297227', 'secreto123');
-    HJunta = await entrar('79863805', 'secreto123');
+    H = await entrar('14297227', CLAVE);
+    HJunta = await entrar('79863805', CLAVE);
 
     console.log('\n══════════════════════════════════════════════');
     console.log('  CORRECCIÓN DE SOLICITUDES DE PRÉSTAMO');
@@ -182,7 +186,7 @@ const entrar = async (cedula, clave) => {
     console.log('\n7. Un socio cualquiera NO puede corregir solicitudes');
     {
         const s = await crearSolicitud();
-        const HSocio = await entrar('52001234', 'x');
+        const HSocio = await entrar('52001234', CLAVE);
         const r = await fetch(`${BASE}/admin/loan-requests/${s.id}`, {
             method: 'PUT', headers: HSocio, body: JSON.stringify({ amount: 99000000 }),
         });
