@@ -102,10 +102,18 @@ export function repartir(bases, monto) {
  * auditables en el acta, en vez de un único número editable que nadie puede
  * volver a explicar seis meses después.
  */
+export function esPorSocio(regla) {
+    return regla?.alcance === 'porSocio';
+}
+
 export function calcularRetencion(ganancia, retencion) {
     const G = Math.max(0, Math.round(Number(ganancia) || 0));
     const v = Number(retencion?.valor);
     if (!G || !Number.isFinite(v) || v <= 0) return { retenido: 0, aRepartir: G };
+    // Por socio no se aparta nada de la bolsa: se reparte todo y se le cobra a
+    // cada uno sobre su parte. Es lo que convierte un valor fijo en una cuota
+    // por cabeza en vez de una tajada del total.
+    if (esPorSocio(retencion)) return { retenido: 0, aRepartir: G };
     const retenido = retencion.tipo === 'porcentaje'
         ? Math.round(G * Math.min(100, v) / 100)
         : Math.min(G, Math.round(v));
@@ -127,6 +135,19 @@ export function calcularDescuento(utilidadBruta, descuento) {
     return descuento.tipo === 'porcentaje'
         ? Math.round(U * Math.min(100, v) / 100)
         : Math.min(U, Math.round(v));
+}
+
+/**
+ * El aporte que la retención "por socio" le cobra a ESTE socio: la misma regla
+ * aplicada a todos de una vez, para no tener que ir socio por socio.
+ *
+ * Se topa en su parte, igual que un descuento individual. Por eso lo recaudado
+ * puede quedar por debajo de «valor × socios» y la pantalla lo dice: contar con
+ * una plata que nunca llegó es peor que recaudar menos.
+ */
+export function calcularAporteSocio(utilidadBruta, retencion) {
+    if (!esPorSocio(retencion)) return 0;
+    return calcularDescuento(utilidadBruta, retencion);
 }
 
 /**
@@ -159,13 +180,24 @@ export function construirReparto(socios = [], { factorPermanencia = 1, monto = 0
     const conReparto = filas
         .map((f, i) => {
             const utilidadBruta = cuotas[i].utilidad;
-            const descuento = calcularDescuento(utilidadBruta, descuentos?.[f.id] || descuentos?.[String(f.id)]);
+            const regla = descuentos?.[f.id] || descuentos?.[String(f.id)] || null;
+            // Los dos caminos se suman en vez de reemplazarse: "todos aportan
+            // $50.000 al fondo de calamidad" y "a Juan se le descuentan $200.000"
+            // son dos decisiones distintas de la asamblea, y una no anula la otra.
+            // Ambos se miden sobre la parte íntegra del socio —así un "10%" es el
+            // 10% de lo suyo, se mire por donde se mire— y la SUMA se topa en esa
+            // parte: se le puede dejar en cero, nunca debiendo.
+            const aporteGeneral = calcularAporteSocio(utilidadBruta, retencion);
+            const descuentoIndividual = calcularDescuento(utilidadBruta, regla);
+            const descuento = Math.min(utilidadBruta, aporteGeneral + descuentoIndividual);
             return {
                 ...f,
                 participacion: cuotas[i].participacion,
                 utilidadBruta,
+                aporteGeneral,
+                descuentoIndividual,
                 descuento,
-                descuentoRegla: descuentos?.[f.id] || descuentos?.[String(f.id)] || null,
+                descuentoRegla: regla,
                 utilidad: utilidadBruta - descuento,
             };
         })
@@ -173,6 +205,21 @@ export function construirReparto(socios = [], { factorPermanencia = 1, monto = 0
 
     const totalRepartido = conReparto.reduce((s, f) => s + f.utilidad, 0);
     const totalDescuentos = conReparto.reduce((s, f) => s + f.descuento, 0);
+    const totalAporteGeneral = conReparto.reduce((s, f) => s + f.aporteGeneral, 0);
+    const totalDescuentosIndividuales = totalDescuentos - totalAporteGeneral;
+    // Cuántos socios cargan la cuota por cabeza, y cuánto daría si a todos les
+    // alcanzara la parte. Con un valor fijo, a quien le corresponden $12.000 no
+    // se le pueden cobrar $50.000, así que lo recaudado queda por debajo — y esa
+    // diferencia se informa, porque un fondo que presupuesta «$50.000 × 25» y
+    // recauda menos descubre el hueco cuando ya lo gastó.
+    const aportantes = conReparto.filter(f => f.utilidadBruta > 0).length;
+    const aporteTeorico = esPorSocio(retencion)
+        ? conReparto.reduce((s, f) => s + (f.utilidadBruta > 0
+            ? (retencion.tipo === 'porcentaje'
+                ? Math.round(f.utilidadBruta * Math.min(100, Number(retencion.valor) || 0) / 100)
+                : Math.round(Number(retencion.valor) || 0))
+            : 0), 0)
+        : 0;
 
     return {
         filas: conReparto,
@@ -180,6 +227,14 @@ export function construirReparto(socios = [], { factorPermanencia = 1, monto = 0
         retenido,
         aRepartir,
         totalDescuentos,
+        totalAporteGeneral,
+        totalDescuentosIndividuales,
+        aportantes,
+        aporteTeorico,
+        // Lo que la cuota por cabeza no alcanzó a cobrar porque a algún socio no
+        // le daba la parte. Cero en el caso normal.
+        aporteNoCubierto: Math.max(0, aporteTeorico - totalAporteGeneral),
+        porSocio: esPorSocio(retencion),
         // Lo que se queda el fondo, por los dos caminos juntos: es la cifra que
         // el acta necesita para decir "y esto quedó para el fondo".
         totalRetenido: retenido + totalDescuentos,

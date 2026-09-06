@@ -322,8 +322,29 @@ const CUOTA = 200000;
             d3.parametros.descuentos[String(socios.Enero.id)]?.valor === 20,
             JSON.stringify(d3.parametros.descuentos));
 
+        // ── El alcance: de la bolsa, o a cada socio ────────────────────────
+        comprobar('un alcance desconocido se rechaza',
+            (await poner('reparto.retencion', { tipo: 'valor', valor: 100, alcance: 'quien-sea' })).status === 400);
+
+        // Lo ya guardado no lleva alcance: al normalizar tiene que quedar
+        // 'general', o el primer guardado tras el despliegue cambiaría en
+        // silencio un reparto que nadie tocó.
+        await poner('reparto.retencion', { tipo: 'porcentaje', valor: 15, destino: 'fondo de auxilios' });
+        const sinAlcance = await pedir(H);
+        comprobar('una retención sin alcance se guarda como general',
+            sinAlcance.parametros.retencion.alcance === 'general',
+            JSON.stringify(sinAlcance.parametros.retencion));
+
+        const pOk = await poner('reparto.retencion',
+            { tipo: 'valor', valor: 50000, alcance: 'porSocio', destino: 'fondo de calamidad' });
+        comprobar('una retención por socio se acepta', pOk.status === 200);
+        const dPor = await pedir(H);
+        comprobar('y vuelve con su alcance intacto',
+            dPor.parametros.retencion.alcance === 'porSocio' && dPor.parametros.retencion.valor === 50000,
+            JSON.stringify(dPor.parametros.retencion));
+
         // Se limpian para no arrastrarlos a las secciones siguientes.
-        await poner('reparto.retencion', { tipo: 'porcentaje', valor: 0, destino: '' });
+        await poner('reparto.retencion', { tipo: 'porcentaje', valor: 0, alcance: 'general', destino: '' });
         await poner('reparto.descuentos', {});
     }
 
