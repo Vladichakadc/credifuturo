@@ -58,6 +58,15 @@ const compacto = (n) => {
  * mediana del socio convierte la rejilla en un diagnóstico: se ve quién aportó
  * de menos sin dejar de aportar, que es la señal que precede a una mora.
  */
+// El total del período de una fila, según la cifra que se está mirando. Existe
+// para no repetir el mismo ternario en las seis partes que lo necesitan —y para
+// que añadir una cifra sea un caso más aquí y no seis descuidos repartidos.
+function totalDe(fila, modo) {
+    if (modo === 'neto') return fila.totalAnio;
+    if (modo === 'aportes') return fila.aportesAnio || 0;
+    return fila.abonosAnio;
+}
+
 function tonoVerde(valor, referencia) {
     if (!(referencia > 0)) return 'bg-emerald-100 text-emerald-900 border-emerald-200';
     const r = valor / referencia;
@@ -109,7 +118,10 @@ export default function SavingsMatrixPage({ mio = false }) {
     const [error, setError] = useState(null);
 
     const [anio, setAnio] = useState(null);          // null hasta la primera carga
-    const [modo, setModo] = useState('abonos');       // 'abonos' | 'neto'
+    const [modo, setModo] = useState('abonos');       // 'abonos' | 'neto' | 'aportes'
+    // El aporte inicial se paga una vez, al entrar: no es una obligación mensual,
+    // así que en esa cifra no hay meses "en falta" ni cuadre contra el ahorro.
+    const modoAportes = modo === 'aportes';
     const [busqueda, setBusqueda] = useState('');
     const [mesFoco, setMesFoco] = useState(null);     // 1..12, o null para todos
     const [soloFaltantes, setSoloFaltantes] = useState(false);
@@ -154,7 +166,7 @@ export default function SavingsMatrixPage({ mio = false }) {
 
         // Un socio sin un solo movimiento en toda su historia no es un faltante:
         // es un registro que nunca ahorró (el propio admin, por ejemplo).
-        f = f.filter((s) => s.historico !== 0 || s.totalAnio !== 0);
+        f = f.filter((s) => s.historico !== 0 || s.totalAnio !== 0 || (s.historicoAportes || 0) !== 0);
 
         const faltaEn = (s, m) => s.meses[m - 1].abonos <= 0 && m <= datos.mesLimite;
         if (soloFaltantes) {
@@ -164,7 +176,7 @@ export default function SavingsMatrixPage({ mio = false }) {
 
         const valor = (s) => {
             if (orden.campo === 'nombre') return s.nombre.toLowerCase();
-            if (orden.campo === 'total') return modo === 'neto' ? s.totalAnio : s.abonosAnio;
+            if (orden.campo === 'total') return totalDe(s, modo);
             if (orden.campo === 'historico') return s.historico;
             if (orden.campo === 'cobertura') return s.mesesConAbono;
             if (typeof orden.campo === 'number') return s.meses[orden.campo][modo];
@@ -181,10 +193,12 @@ export default function SavingsMatrixPage({ mio = false }) {
     const resumen = useMemo(() => {
         if (!datos) return null;
         const lim = datos.mesLimite;
-        const totalPeriodo = filas.reduce((s, f) => s + (modo === 'neto' ? f.totalAnio : f.abonosAnio), 0);
-        const historico = filas.reduce((s, f) => s + f.historico, 0);
-        const huecos = filas.reduce((s, f) => s + f.meses.filter((c, i) => c.abonos <= 0 && i + 1 <= lim).length, 0);
-        const alDia = filas.filter((f) => f.meses.every((c, i) => i + 1 > lim || c.abonos > 0)).length;
+        const totalPeriodo = filas.reduce((s, f) => s + totalDe(f, modo), 0);
+        const historico = filas.reduce((s, f) => s + (modo === 'aportes' ? (f.historicoAportes || 0) : f.historico), 0);
+        const huecos = modo === 'aportes' ? 0
+            : filas.reduce((s, f) => s + f.meses.filter((c, i) => c.abonos <= 0 && i + 1 <= lim).length, 0);
+        const alDia = modo === 'aportes' ? filas.length
+            : filas.filter((f) => f.meses.every((c, i) => i + 1 > lim || c.abonos > 0)).length;
         const conceptos = filas.reduce((s2, f) => s2 + f.meses.reduce((a, c) => a + c.conceptos, 0), 0);
         const mesRef = mesFoco || lim;
         const delMes = mesRef >= 1 ? filas.reduce((s, f) => s + f.meses[mesRef - 1][modo], 0) : 0;
@@ -200,6 +214,11 @@ export default function SavingsMatrixPage({ mio = false }) {
             // descuentos. La diferencia entre ambos no es un descuadre, es esa
             // partida — y decirlo vale más que esconderla.
             cuadra: anio === 'todos' && modo === 'neto' && Math.abs(totalPeriodo - historico) < 1,
+            // Los aportes cuadran contra su propio acumulado, no contra el del
+            // ahorro mensual. Sin esta rama, mirar "Aportes" en todos los años
+            // caía en el mensaje de descuadre y denunciaba un problema que no
+            // existe — la peor avería que puede tener una pantalla de control.
+            cuadraAportes: anio === 'todos' && modo === 'aportes' && Math.abs(totalPeriodo - historico) < 1,
             explicaDiferencia: anio === 'todos' && modo === 'abonos'
                 && Math.abs(totalPeriodo + conceptos - historico) < 1,
         };
@@ -219,7 +238,7 @@ export default function SavingsMatrixPage({ mio = false }) {
                 Cédula: f.cedula,
                 'Id Socio': f.customerId,
                 ...Object.fromEntries(MESES_LARGOS.map((m, i) => [m, f.meses[i][modo]])),
-                'Total período': modo === 'neto' ? f.totalAnio : f.abonosAnio,
+                'Total período': totalDe(f, modo),
                 'Acumulado histórico': f.historico,
                 'Meses con aporte': f.mesesConAbono,
             })),
@@ -234,7 +253,10 @@ export default function SavingsMatrixPage({ mio = false }) {
     const totalesColumna = useMemo(() => (
         Array.from({ length: 12 }, (_, i) => ({
             valor: filas.reduce((s, f) => s + f.meses[i][modo], 0),
-            socios: filas.filter((f) => f.meses[i].abonos > 0).length,
+            // Contar siempre por `abonos` daba "500k · 0 soc." en la cifra de
+            // aportes: la casilla decía que hubo aporte y el total, que no hubo
+            // nadie. Se cuenta por la cifra que se está mirando.
+            socios: filas.filter((f) => (modo === 'aportes' ? f.meses[i].aportes : f.meses[i].abonos) > 0).length,
         }))
     ), [filas, modo]);
 
@@ -262,8 +284,9 @@ export default function SavingsMatrixPage({ mio = false }) {
                         <h1 className="text-2xl font-bold text-brand-primary">{mio ? 'Mi Matriz de Ahorros' : 'Matriz de Ahorros'}</h1>
                     </div>
                     <p className="mt-1.5 max-w-2xl text-sm text-gray-600">
-                        {mio ? 'Tu ahorro mes a mes. ' : 'Control mes a mes del ahorro de cada socio. '}
-                        En verde lo aportado, en rojo el mes vencido sin aporte, y en gris el que todavía no ha llegado.
+                        {modoAportes
+                            ? `${mio ? 'Tu aporte inicial' : 'El aporte inicial de cada socio'}, en el mes en que se registró. Se paga una sola vez al entrar al fondo, así que los meses en blanco no son faltas.`
+                            : `${mio ? 'Tu ahorro mes a mes. ' : 'Control mes a mes del ahorro de cada socio. '}En verde lo aportado, en rojo el mes vencido sin aporte, y en gris el que todavía no ha llegado.`}
                     </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -281,26 +304,40 @@ export default function SavingsMatrixPage({ mio = false }) {
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                     <Tarjeta
                         icon={Wallet}
-                        titulo={anio === 'todos' ? 'Ahorro histórico' : `Ahorro ${anio}`}
+                        titulo={modoAportes
+                            ? (anio === 'todos' ? 'Aporte inicial' : `Aportes ${anio}`)
+                            : (anio === 'todos' ? 'Ahorro histórico' : `Ahorro ${anio}`)}
                         valor={pesos(resumen.totalPeriodo)}
-                        nota={modo === 'neto' ? 'Neto, con devoluciones y descuentos' : (mio ? 'Solo tus abonos' : 'Solo abonos de los socios')}
+                        nota={modoAportes ? (mio ? 'Lo que aportaste al entrar' : 'Lo aportado al entrar al fondo')
+                            : modo === 'neto' ? 'Neto, con devoluciones y descuentos'
+                            : (mio ? 'Solo tus abonos' : 'Solo abonos de los socios')}
                     />
+                    {/* La cobertura y los meses en falta miden una obligación
+                        MENSUAL. El aporte inicial se paga una vez al entrar, así
+                        que ahí las dos tarjetas mentirían: dirían 100% y cero
+                        faltas por una regla que no se está aplicando. En su lugar
+                        cuentan lo que sí tiene sentido — cuántos aportaron. */}
                     <Tarjeta
                         icon={CalendarCheck}
-                        titulo="Cobertura del período"
-                        valor={`${resumen.cobertura.toFixed(1)}%`}
-                        // "meses-socio" es la unidad de una rejilla de muchas filas;
-                        // con una sola son, sencillamente, meses.
-                        nota={`${resumen.celdasExigibles - resumen.huecos} de ${resumen.celdasExigibles} ${mio ? 'meses cubiertos' : 'meses-socio cubiertos'}`}
-                        acento={resumen.cobertura >= 95 ? 'emerald' : 'amber'}
+                        titulo={modoAportes ? 'Aportes registrados' : 'Cobertura del período'}
+                        valor={modoAportes
+                            ? filas.reduce((a, f) => a + f.meses.reduce((b, c) => b + (c.nAportes || 0), 0), 0).toLocaleString('es-CO')
+                            : `${resumen.cobertura.toFixed(1)}%`}
+                        nota={modoAportes
+                            ? (mio ? 'Movimientos de aporte inicial tuyos' : 'Movimientos de aporte inicial en el período')
+                            : `${resumen.celdasExigibles - resumen.huecos} de ${resumen.celdasExigibles} ${mio ? 'meses cubiertos' : 'meses-socio cubiertos'}`}
+                        acento={modoAportes ? 'emerald' : (resumen.cobertura >= 95 ? 'emerald' : 'amber')}
                     />
                     <Tarjeta
                         icon={AlertTriangle}
-                        titulo="Meses sin aporte"
-                        valor={resumen.huecos.toLocaleString('es-CO')}
-                        nota={resumen.huecos > 0 ? 'Casillas rojas por revisar' : 'Ningún mes vencido sin aporte'}
-                        acento={resumen.huecos > 0 ? 'rose' : 'emerald'}
-                        alerta={resumen.huecos > 0}
+                        titulo={modoAportes ? (mio ? 'Socios con aporte' : 'Socios que aportaron') : 'Meses sin aporte'}
+                        valor={modoAportes
+                            ? `${filas.filter(f => (f.historicoAportes || 0) > 0).length} / ${filas.length}`
+                            : resumen.huecos.toLocaleString('es-CO')}
+                        nota={modoAportes ? 'Con aporte inicial registrado'
+                            : resumen.huecos > 0 ? 'Casillas rojas por revisar' : 'Ningún mes vencido sin aporte'}
+                        acento={modoAportes ? 'emerald' : (resumen.huecos > 0 ? 'rose' : 'emerald')}
+                        alerta={!modoAportes && resumen.huecos > 0}
                     />
                     {/* "Socios al día: 0 / 1" no dice nada de una sola persona.
                         En la vista del socio la tarjeta responde su pregunta —si
@@ -383,7 +420,7 @@ export default function SavingsMatrixPage({ mio = false }) {
                     <div>
                         <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-gray-500">Cifra</span>
                         <div className="flex rounded-lg border border-ui-border p-0.5">
-                            {[['abonos', 'Abonos'], ['neto', 'Neto']].map(([v, etiqueta]) => (
+                            {[['abonos', 'Abonos'], ['neto', 'Neto'], ['aportes', 'Aportes']].map(([v, etiqueta]) => (
                                 <button
                                     key={v}
                                     onClick={() => setModo(v)}
@@ -397,7 +434,8 @@ export default function SavingsMatrixPage({ mio = false }) {
 
                     <div className="flex flex-wrap gap-2 pb-0.5">
                         {[
-                            [soloFaltantes, setSoloFaltantes, 'Solo con faltantes'],
+                            // En aportes no hay "faltantes": no se debe uno cada mes.
+                            ...(modoAportes ? [] : [[soloFaltantes, setSoloFaltantes, 'Solo con faltantes']]),
                             // Filtrar "socios activos" sobre una sola fila —la
                             // propia— no filtra nada; en la vista del socio no va.
                             ...(mio ? [] : [[soloActivos, setSoloActivos, 'Solo socios activos']]),
@@ -418,12 +456,21 @@ export default function SavingsMatrixPage({ mio = false }) {
                 {/* Leyenda: sin ella la rejilla es un mosaico de colores sin significado. */}
                 <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-ui-border pt-3 text-xs text-gray-600">
                     <span className="font-semibold uppercase tracking-wider text-gray-500">Lectura</span>
-                    <span className="flex items-center gap-1.5"><i className="h-3.5 w-5 rounded-sm bg-emerald-700" /> por encima de lo habitual</span>
-                    <span className="flex items-center gap-1.5"><i className="h-3.5 w-5 rounded-sm bg-emerald-500" /> aporte habitual</span>
-                    <span className="flex items-center gap-1.5"><i className="h-3.5 w-5 rounded-sm bg-emerald-200" /> por debajo</span>
-                    <span className="flex items-center gap-1.5"><i className="h-3.5 w-5 rounded-sm bg-rose-500" /> mes vencido sin aporte</span>
-                    <span className="flex items-center gap-1.5"><i className="h-3.5 w-5 rounded-sm bg-gray-100 ring-1 ring-inset ring-gray-200" /> aún no vence</span>
-                    <span className="flex items-center gap-1.5"><i className="h-3.5 w-5 rounded-sm bg-amber-100 ring-1 ring-inset ring-amber-300" /> movimiento del fondo</span>
+                    {modoAportes ? (
+                        <>
+                            <span className="flex items-center gap-1.5"><i className="h-3.5 w-5 rounded-sm bg-emerald-500" /> mes en que se registró el aporte inicial</span>
+                            <span className="flex items-center gap-1.5"><i className="h-3.5 w-5 rounded-sm bg-gray-100 ring-1 ring-inset ring-gray-200" /> sin aporte ese mes — no es una falta: se paga una sola vez</span>
+                        </>
+                    ) : (
+                        <>
+                            <span className="flex items-center gap-1.5"><i className="h-3.5 w-5 rounded-sm bg-emerald-700" /> por encima de lo habitual</span>
+                            <span className="flex items-center gap-1.5"><i className="h-3.5 w-5 rounded-sm bg-emerald-500" /> aporte habitual</span>
+                            <span className="flex items-center gap-1.5"><i className="h-3.5 w-5 rounded-sm bg-emerald-200" /> por debajo</span>
+                            <span className="flex items-center gap-1.5"><i className="h-3.5 w-5 rounded-sm bg-rose-500" /> mes vencido sin aporte</span>
+                            <span className="flex items-center gap-1.5"><i className="h-3.5 w-5 rounded-sm bg-gray-100 ring-1 ring-inset ring-gray-200" /> aún no vence</span>
+                            <span className="flex items-center gap-1.5"><i className="h-3.5 w-5 rounded-sm bg-amber-100 ring-1 ring-inset ring-amber-300" /> movimiento del fondo</span>
+                        </>
+                    )}
                 </div>
             </div>
 
@@ -481,8 +528,8 @@ export default function SavingsMatrixPage({ mio = false }) {
 
                             <tbody>
                                 {filas.map((s, idx) => {
-                                    const ref = mediana(s.meses.map((c) => c.abonos));
-                                    const total = modo === 'neto' ? s.totalAnio : s.abonosAnio;
+                                    const ref = mediana(s.meses.map((c) => (modoAportes ? c.aportes : c.abonos)));
+                                    const total = totalDe(s, modo);
                                     const activa = cruz.fila === idx;
                                     return (
                                         <tr key={s.clientId} onMouseEnter={() => setCruz((c) => ({ ...c, fila: idx }))}>
@@ -506,15 +553,18 @@ export default function SavingsMatrixPage({ mio = false }) {
 
                                             {s.meses.map((c, i) => {
                                                 const valor = c[modo];
-                                                const vencido = i + 1 <= lim;
-                                                const hayAbono = c.abonos > 0;
-                                                const soloConcepto = !hayAbono && c.n > 0;
+                                                // El aporte inicial se paga UNA vez, al entrar al fondo. Un
+                                                // mes sin aporte no es una falta, así que en esta cifra no
+                                                // hay casillas rojas: o hubo aporte, o ese mes no tocaba.
+                                                const vencido = modoAportes ? false : i + 1 <= lim;
+                                                const hayAbono = modoAportes ? c.aportes > 0 : c.abonos > 0;
+                                                const soloConcepto = !modoAportes && !hayAbono && c.n > 0;
                                                 const enCruz = cruz.col === i || activa;
 
                                                 let clases;
                                                 let contenido;
                                                 if (hayAbono) {
-                                                    clases = tonoVerde(c.abonos, ref);
+                                                    clases = tonoVerde(modoAportes ? c.aportes : c.abonos, ref);
                                                     contenido = compacto(valor);
                                                 } else if (soloConcepto) {
                                                     // Hubo movimiento del fondo pero el socio no aportó: ni verde
@@ -533,8 +583,10 @@ export default function SavingsMatrixPage({ mio = false }) {
                                                     <td
                                                         key={i}
                                                         onMouseEnter={() => setCruz({ fila: idx, col: i })}
-                                                        onClick={() => (c.n > 0 || vencido) && setCelda({ socio: s, mes: i + 1 })}
-                                                        title={`${s.nombre} · ${MESES_LARGOS[i]}\n${hayAbono ? `Abonó ${pesos(c.abonos)}` : vencido ? 'Sin aporte' : 'Mes no vencido'}${c.conceptos ? `\nMovimientos del fondo: ${pesos(c.conceptos)}` : ''}`}
+                                                        onClick={() => ((modoAportes ? c.nAportes > 0 : (c.n > 0 || vencido))) && setCelda({ socio: s, mes: i + 1 })}
+                                                        title={modoAportes
+                                                            ? `${s.nombre} · ${MESES_LARGOS[i]}\n${c.aportes > 0 ? `Aporte de ${pesos(c.aportes)}` : 'Sin aporte inicial este mes'}`
+                                                            : `${s.nombre} · ${MESES_LARGOS[i]}\n${hayAbono ? `Abonó ${pesos(c.abonos)}` : vencido ? 'Sin aporte' : 'Mes no vencido'}${c.conceptos ? `\nMovimientos del fondo: ${pesos(c.conceptos)}` : ''}`}
                                                         className={`cursor-pointer border-b border-r p-0 text-center transition-[filter] ${enCruz ? 'brightness-105' : ''}`}
                                                     >
                                                         <span className={`m-[3px] flex h-8 items-center justify-center rounded-md border font-mono text-[12px] font-semibold tabular-nums ${clases}`}>
@@ -548,7 +600,7 @@ export default function SavingsMatrixPage({ mio = false }) {
                                                 {pesos(total)}
                                             </td>
                                             <td className={`sticky right-0 z-10 border-b border-l border-ui-border px-3 py-2 text-right font-mono text-[13px] tabular-nums text-gray-600 ${activa ? 'bg-emerald-50' : 'bg-white'}`}>
-                                                {pesos(s.historico)}
+                                                {pesos(modoAportes ? (s.historicoAportes || 0) : s.historico)}
                                             </td>
                                         </tr>
                                     );
@@ -590,7 +642,14 @@ export default function SavingsMatrixPage({ mio = false }) {
                     {resumen.cuadra || resumen.explicaDiferencia
                         ? <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
                         : <Info className="h-5 w-5 shrink-0 text-gray-400" />}
-                    {resumen.cuadra ? (
+                    {resumen.cuadraAportes ? (
+                        <p>
+                            <strong className="font-semibold">Cuadra.</strong> La suma de los aportes iniciales —
+                            <span className="font-mono font-semibold tabular-nums"> {pesos(resumen.totalPeriodo)}</span> — coincide
+                            con todo lo aportado al entrar al fondo. El aporte inicial se paga una sola vez, así que
+                            los meses en blanco no son faltas.
+                        </p>
+                    ) : resumen.cuadra ? (
                         <p>
                             <strong className="font-semibold">Cuadra.</strong> La suma de los doce meses —
                             <span className="font-mono font-semibold tabular-nums"> {pesos(resumen.totalPeriodo)}</span> — coincide
@@ -604,6 +663,15 @@ export default function SavingsMatrixPage({ mio = false }) {
                             y de ahí sale el acumulado de
                             <span className="font-mono font-semibold tabular-nums"> {pesos(resumen.historico)}</span>.
                             {' '}Cambia a «Neto» para verlo mes a mes.
+                        </p>
+                    ) : modoAportes ? (
+                        <p>
+                            Estás viendo los aportes de {anio}:
+                            <span className="font-mono font-semibold tabular-nums"> {pesos(resumen.totalPeriodo)}</span> frente
+                            a un total aportado de
+                            <span className="font-mono font-semibold tabular-nums"> {pesos(resumen.historico)}</span>.
+                            {' '}El aporte inicial se paga una sola vez al entrar, así que lo normal es ver una única
+                            casilla por socio.
                         </p>
                     ) : anio === 'todos' ? (
                         <p>
@@ -632,6 +700,7 @@ export default function SavingsMatrixPage({ mio = false }) {
                     mes={celda.mes}
                     anio={anio}
                     base={base}
+                    modoAportes={modoAportes}
                     onCerrar={() => setCelda(null)}
                 />
             )}
@@ -646,7 +715,7 @@ export default function SavingsMatrixPage({ mio = false }) {
  * el detalle trae los movimientos de ese socio en ese mes, que es lo que hace
  * falta para decidir si la casilla roja es un olvido o un error de registro.
  */
-function DetalleCelda({ socio, mes, anio, onCerrar, base = '/admin' }) {
+function DetalleCelda({ socio, mes, anio, onCerrar, base = '/admin', modoAportes = false }) {
     const [movs, setMovs] = useState(null);
     // Un fallo de permiso no es lo mismo que "no hubo movimientos": presentarlo
     // como una casilla vacía haría creer que el socio no aportó ese mes. La
@@ -657,7 +726,12 @@ function DetalleCelda({ socio, mes, anio, onCerrar, base = '/admin' }) {
 
     useEffect(() => {
         let vivo = true;
-        api.get(`${base}/savings/list`, { params: { clientId: socio.clientId } })
+        // Sin `type`, /savings/list EXCLUYE el aporte inicial por defecto. Al
+        // mirar esa cifra, la casilla se abriría vacía sobre un aporte que la
+        // rejilla acaba de pintar en verde — que es peor que no abrirla.
+        api.get(`${base}/savings/list`, {
+            params: { clientId: socio.clientId, ...(modoAportes ? { type: 'Aporte Inicial' } : {}) },
+        })
             .then((r) => {
                 if (!vivo) return;
                 const todos = r.data?.data || r.data || [];
@@ -673,7 +747,7 @@ function DetalleCelda({ socio, mes, anio, onCerrar, base = '/admin' }) {
                 setMovs([]);
             });
         return () => { vivo = false; };
-    }, [socio.clientId, mes, anio, base]);
+    }, [socio.clientId, mes, anio, base, modoAportes]);
 
     return (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 backdrop-blur-[2px] sm:items-center sm:p-4" onClick={onCerrar}>
