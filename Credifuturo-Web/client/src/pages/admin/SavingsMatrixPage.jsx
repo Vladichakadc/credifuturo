@@ -94,7 +94,15 @@ function Tarjeta({ icon: Icon, titulo, valor, nota, acento = 'emerald', alerta =
     );
 }
 
-export default function SavingsMatrixPage() {
+/**
+ * `mio` la convierte en la matriz del socio: misma rejilla, mismos colores y
+ * misma reconciliación, pero pidiendo `/my/savings/matriz`, que el servidor
+ * acota al id del token. Es un prop y no una copia de la página a propósito —
+ * dos rejillas de control que se desincronicen harían que el socio y el gerente
+ * discutan sobre cifras distintas, que es justo lo que la matriz evita.
+ */
+export default function SavingsMatrixPage({ mio = false }) {
+    const base = mio ? '/admin/my' : '/admin';
     const { toast } = useUi();
     const [datos, setDatos] = useState(null);
     const [cargando, setCargando] = useState(true);
@@ -116,7 +124,7 @@ export default function SavingsMatrixPage() {
         setError(null);
         try {
             const q = anioPedido === 'todos' ? '?anio=todos' : anioPedido ? `?anio=${anioPedido}` : '';
-            const res = await api.get(`/admin/savings/matriz${q}`);
+            const res = await api.get(`${base}/savings/matriz${q}`);
             if (!res.data?.ok) throw new Error(res.data?.error || 'Respuesta inesperada del servidor');
             setDatos(res.data);
             if (anio === null) setAnio(res.data.anio ?? 'todos');
@@ -128,7 +136,7 @@ export default function SavingsMatrixPage() {
         }
         // `anio` solo se usa para sembrar el valor inicial; incluirlo recargaría en bucle.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [base]);
 
     useEffect(() => { cargar(null); }, [cargar]);
 
@@ -251,11 +259,11 @@ export default function SavingsMatrixPage() {
                         <span className="rounded-lg bg-brand-primary/10 p-2 text-brand-primary ring-1 ring-brand-primary/15">
                             <Grid3x3 className="h-5 w-5" />
                         </span>
-                        <h1 className="text-2xl font-bold text-brand-primary">Matriz de Ahorros</h1>
+                        <h1 className="text-2xl font-bold text-brand-primary">{mio ? 'Mi Matriz de Ahorros' : 'Matriz de Ahorros'}</h1>
                     </div>
                     <p className="mt-1.5 max-w-2xl text-sm text-gray-600">
-                        Control mes a mes del ahorro de cada socio. En verde lo aportado, en rojo el mes vencido sin
-                        aporte, y en gris el que todavía no ha llegado.
+                        {mio ? 'Tu ahorro mes a mes. ' : 'Control mes a mes del ahorro de cada socio. '}
+                        En verde lo aportado, en rojo el mes vencido sin aporte, y en gris el que todavía no ha llegado.
                     </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -275,13 +283,15 @@ export default function SavingsMatrixPage() {
                         icon={Wallet}
                         titulo={anio === 'todos' ? 'Ahorro histórico' : `Ahorro ${anio}`}
                         valor={pesos(resumen.totalPeriodo)}
-                        nota={modo === 'neto' ? 'Neto, con devoluciones y descuentos' : 'Solo abonos de los socios'}
+                        nota={modo === 'neto' ? 'Neto, con devoluciones y descuentos' : (mio ? 'Solo tus abonos' : 'Solo abonos de los socios')}
                     />
                     <Tarjeta
                         icon={CalendarCheck}
                         titulo="Cobertura del período"
                         valor={`${resumen.cobertura.toFixed(1)}%`}
-                        nota={`${resumen.celdasExigibles - resumen.huecos} de ${resumen.celdasExigibles} meses-socio cubiertos`}
+                        // "meses-socio" es la unidad de una rejilla de muchas filas;
+                        // con una sola son, sencillamente, meses.
+                        nota={`${resumen.celdasExigibles - resumen.huecos} de ${resumen.celdasExigibles} ${mio ? 'meses cubiertos' : 'meses-socio cubiertos'}`}
                         acento={resumen.cobertura >= 95 ? 'emerald' : 'amber'}
                     />
                     <Tarjeta
@@ -292,11 +302,17 @@ export default function SavingsMatrixPage() {
                         acento={resumen.huecos > 0 ? 'rose' : 'emerald'}
                         alerta={resumen.huecos > 0}
                     />
+                    {/* "Socios al día: 0 / 1" no dice nada de una sola persona.
+                        En la vista del socio la tarjeta responde su pregunta —si
+                        él está al día— en vez de contarlo entre un total de uno. */}
                     <Tarjeta
                         icon={Users}
-                        titulo="Socios al día"
-                        valor={`${resumen.alDia} / ${filas.length}`}
-                        nota="Sin ningún mes vencido en descubierto"
+                        titulo={mio ? 'Tu estado' : 'Socios al día'}
+                        valor={mio ? (resumen.alDia === filas.length ? 'Al día' : 'Con faltantes')
+                            : `${resumen.alDia} / ${filas.length}`}
+                        nota={mio
+                            ? (resumen.alDia === filas.length ? 'Ningún mes vencido sin aporte' : 'Revisa los meses en rojo')
+                            : 'Sin ningún mes vencido en descubierto'}
                         acento={resumen.alDia === filas.length ? 'emerald' : 'amber'}
                     />
                     <Tarjeta
@@ -313,6 +329,8 @@ export default function SavingsMatrixPage() {
             {/* ── Filtros ────────────────────────────────────────────── */}
             <div className="rounded-xl border border-ui-border bg-white p-4 shadow-card">
                 <div className="flex flex-wrap items-end gap-4">
+                    {/* Buscar entre una sola fila —la propia— no busca nada. */}
+                    {!mio && (
                     <label className="min-w-[240px] flex-1">
                         <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-gray-500">Socio, cédula o id</span>
                         <div className="relative">
@@ -330,6 +348,7 @@ export default function SavingsMatrixPage() {
                             )}
                         </div>
                     </label>
+                    )}
 
                     <label>
                         <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-gray-500">Año</span>
@@ -379,7 +398,9 @@ export default function SavingsMatrixPage() {
                     <div className="flex flex-wrap gap-2 pb-0.5">
                         {[
                             [soloFaltantes, setSoloFaltantes, 'Solo con faltantes'],
-                            [soloActivos, setSoloActivos, 'Solo socios activos'],
+                            // Filtrar "socios activos" sobre una sola fila —la
+                            // propia— no filtra nada; en la vista del socio no va.
+                            ...(mio ? [] : [[soloActivos, setSoloActivos, 'Solo socios activos']]),
                         ].map(([valor, set, etiqueta]) => (
                             <button
                                 key={etiqueta}
@@ -610,6 +631,7 @@ export default function SavingsMatrixPage() {
                     socio={celda.socio}
                     mes={celda.mes}
                     anio={anio}
+                    base={base}
                     onCerrar={() => setCelda(null)}
                 />
             )}
@@ -624,7 +646,7 @@ export default function SavingsMatrixPage() {
  * el detalle trae los movimientos de ese socio en ese mes, que es lo que hace
  * falta para decidir si la casilla roja es un olvido o un error de registro.
  */
-function DetalleCelda({ socio, mes, anio, onCerrar }) {
+function DetalleCelda({ socio, mes, anio, onCerrar, base = '/admin' }) {
     const [movs, setMovs] = useState(null);
     // Un fallo de permiso no es lo mismo que "no hubo movimientos": presentarlo
     // como una casilla vacía haría creer que el socio no aportó ese mes. La
@@ -635,7 +657,7 @@ function DetalleCelda({ socio, mes, anio, onCerrar }) {
 
     useEffect(() => {
         let vivo = true;
-        api.get('/admin/savings/list', { params: { clientId: socio.clientId } })
+        api.get(`${base}/savings/list`, { params: { clientId: socio.clientId } })
             .then((r) => {
                 if (!vivo) return;
                 const todos = r.data?.data || r.data || [];
@@ -651,7 +673,7 @@ function DetalleCelda({ socio, mes, anio, onCerrar }) {
                 setMovs([]);
             });
         return () => { vivo = false; };
-    }, [socio.clientId, mes, anio]);
+    }, [socio.clientId, mes, anio, base]);
 
     return (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 backdrop-blur-[2px] sm:items-center sm:p-4" onClick={onCerrar}>

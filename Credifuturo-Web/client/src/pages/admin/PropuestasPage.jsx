@@ -5,7 +5,6 @@ import {
     Clock, CheckCircle, XCircle, Eye, Trash2, MessageSquare, Rocket,
     TrendingUp, Users, Sparkles, X, Loader2, Lock, Pencil
 } from 'lucide-react';
-import { BETA_USERS } from '../../utils/betaAccess';
 
 // ── Configuración de categorías ─────────────────────────────────────────
 const CATEGORIAS = ['Todas', 'Ahorro', 'Préstamos', 'Eventos', 'Tecnología', 'Otro'];
@@ -30,7 +29,7 @@ const ESTADOS = {
 const ESTADOS_ORDER = ['pendiente', 'en_revision', 'aprobada', 'rechazada'];
 
 // ── Componente: Tarjeta de Propuesta ────────────────────────────────────
-const PropuestaCard = ({ propuesta, isAdmin, puedeEditar, onVote, onEstadoChange, onDelete, onEdit, expandedId, setExpandedId }) => {
+const PropuestaCard = ({ propuesta, isAdmin, puedeEditar, onVote, onEstadoChange, onDelete, onEdit, onPublicar, expandedId, setExpandedId }) => {
     const [guardandoEstado, setGuardandoEstado] = useState(false);
     const [respuesta, setRespuesta] = useState(propuesta.respuestaAdmin || '');
     const [guardandoResp, setGuardandoResp] = useState(false);
@@ -160,6 +159,26 @@ const PropuestaCard = ({ propuesta, isAdmin, puedeEditar, onVote, onEstadoChange
                         <div className="text-[9px] font-black uppercase tracking-widest text-gray-400 flex items-center gap-2">
                             <div className="w-1 h-3 bg-gradient-to-b from-brand-primary to-brand-dark rounded-full" />
                             Gestionar Propuesta
+                        </div>
+
+                        {/* Publicar / volver a apartar. El buzón se abrió a todos
+                            los socios con esta propuesta ya escrita dentro, y
+                            estrenar la función mostrándola habría sido publicarla
+                            por accidente. Aquí se envía cuando el comité quiera. */}
+                        <div className={`rounded-xl border p-3 ${propuesta.oculta ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`}>
+                            <p className={`text-[11px] leading-snug ${propuesta.oculta ? 'text-amber-900' : 'text-emerald-900'}`}>
+                                {propuesta.oculta
+                                    ? <><strong>Los socios no la ven todavía.</strong> Quedó apartada al abrir el buzón; publícala cuando quieras enviarla.</>
+                                    : <><strong>Publicada.</strong> Todos los socios la ven y pueden votarla.</>}
+                            </p>
+                            <button
+                                onClick={() => onPublicar(propuesta.id, !propuesta.oculta)}
+                                className={`mt-2 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-colors ${
+                                    propuesta.oculta
+                                        ? 'bg-amber-500 text-white hover:bg-amber-600'
+                                        : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}>
+                                {propuesta.oculta ? 'Publicar para todos los socios' : 'Volver a ocultarla'}
+                            </button>
                         </div>
                         {/* Selector de estado */}
                         <div className="flex flex-wrap gap-1.5">
@@ -371,7 +390,6 @@ const PropuestasPage = () => {
     const [editingPropuesta, setEditingPropuesta] = useState(null);
     const [isAdmin, setIsAdmin] = useState(false);
     const [currentClientId, setCurrentClientId] = useState(null);
-    const [isBetaTester, setIsBetaTester] = useState(false);
     const [moduleEnabled, setModuleEnabled] = useState(false);
     const [checkingAccess, setCheckingAccess] = useState(true);
     const [toggling, setToggling] = useState(false);
@@ -381,19 +399,19 @@ const PropuestasPage = () => {
         const isAdminUser = u.role === 'admin';
         setIsAdmin(isAdminUser);
         setCurrentClientId(u.clientId || u.id || null);
-        const fullName = `${u.name || ''} ${u.surname1 || ''}`.trim().toUpperCase();
-        setIsBetaTester(BETA_USERS.includes(fullName));
-
         // Fetch config
         api.get('/admin/settings/propuestas_enabled').then(res => {
             setModuleEnabled(res.data.value === 'true');
         }).catch(err => console.error(err)).finally(() => setCheckingAccess(false));
     }, []);
 
-    // El menú solo le muestra este submenú a los 3 socios beta (o al admin), pero eso
-    // no bloquea la ruta en sí — cualquier socio podría escribirla directo en la URL.
-    // Este bloqueo replica exactamente el mismo criterio del menú.
-    const accesoPermitido = isAdmin || (isBetaTester && moduleEnabled);
+    // El buzón es de todos los socios. Estuvo restringido a tres personas mientras
+    // era beta, y esa restricción se levantó: lo que se propone en asamblea afecta
+    // a todos por igual, así que cualquiera puede escribir, leer y votar. El
+    // servidor dice lo mismo (SOCIO_ROUTES en routes/admin.js); esto es solo la
+    // pantalla. `propuestas_enabled` sigue gobernando el Reparto de Utilidades,
+    // que sí sigue en beta, pero ya no cierra el buzón.
+    const accesoPermitido = true;
 
     const toggleModule = async () => {
         setToggling(true);
@@ -449,6 +467,18 @@ const PropuestasPage = () => {
             setPropuestas(prev => prev.filter(p => p.id !== id));
         } catch (err) {
             console.error('Error eliminando:', err.message);
+        }
+    };
+
+    // Enviar (o volver a apartar) una propuesta. Es la otra mitad de "el buzón
+    // arranca vacío": lo que se apartó al abrirlo tiene que poder publicarse
+    // después, y desde aquí, sin tocar la base.
+    const handlePublicar = async (id, ocultar) => {
+        try {
+            await api.put(`/admin/propuestas/${id}/publicar`, { oculta: ocultar });
+            setPropuestas(prev => prev.map(p => (p.id === id ? { ...p, oculta: ocultar } : p)));
+        } catch (err) {
+            console.error('Error publicando la propuesta:', err.message);
         }
     };
 
@@ -643,7 +673,7 @@ const PropuestasPage = () => {
                                                     Sin propuestas
                                                 </div>
                                             ) : grupo.map(p => (
-                                                <PropuestaCard key={p.id} propuesta={p} isAdmin={isAdmin}
+                                                <PropuestaCard key={p.id} propuesta={p} isAdmin={isAdmin} onPublicar={handlePublicar}
                                                     puedeEditar={isAdmin || (p.clientId != null && p.clientId === currentClientId && p.estado === 'pendiente')}
                                                     onVote={handleVote} onEstadoChange={handleEstadoChange}
                                                     onDelete={handleDelete} onEdit={handleEdit} expandedId={expandedId}
@@ -658,7 +688,7 @@ const PropuestasPage = () => {
                         // Vista lista (cuando hay filtro)
                         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
                             {filtradas.map(p => (
-                                <PropuestaCard key={p.id} propuesta={p} isAdmin={isAdmin}
+                                <PropuestaCard key={p.id} propuesta={p} isAdmin={isAdmin} onPublicar={handlePublicar}
                                     puedeEditar={isAdmin || (p.clientId != null && p.clientId === currentClientId && p.estado === 'pendiente')}
                                     onVote={handleVote} onEstadoChange={handleEstadoChange}
                                     onDelete={handleDelete} onEdit={handleEdit} expandedId={expandedId}

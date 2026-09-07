@@ -142,6 +142,18 @@ async function requireAdminOrBetaTester(req, res, next) {
 // { método, ruta o test(path) } -> abierta a admin + grupo beta (no a cualquier autenticado)
 const BETA_ROUTES = [
     { method: 'GET', path: '/savings/ranking' },
+];
+
+// El Buzón de Propuestas es de TODOS los socios, y por eso salió de BETA_ROUTES.
+// Un buzón que solo pueden usar tres personas no es un buzón: la razón de que
+// exista es que cualquiera pueda proponer y que la propuesta se vea, porque lo
+// que se decide en asamblea afecta a todos por igual. Lo que sigue siendo beta
+// —y por eso se queda arriba— es el Reparto de Utilidades, que muestra las
+// cifras personales de cada socio y no es lo mismo que una idea escrita.
+//
+// Escribir un estado o borrar una propuesta NO está aquí: caen al gate por
+// defecto (solo admin). El socio propone y vota; el comité resuelve.
+const SOCIO_ROUTES = [
     { method: 'GET', path: '/propuestas' },
     { method: 'POST', path: '/propuestas' },
     { method: 'PUT', test: p => /^\/propuestas\/\d+\/voto$/.test(p) },
@@ -202,6 +214,10 @@ const JUNTA_ROUTES = [
 router.use((req, res, next) => {
     if (req.path.startsWith('/my/')) return next();
     if (req.method === 'GET' && (READ_ONLY_FOR_ALL.has(req.path) || READ_ONLY_PREFIXES.some(p => req.path.startsWith(p)))) {
+        return verifyToken(req, res, () => requireFreshPassword(req, res, next));
+    }
+    const socioRoute = SOCIO_ROUTES.some(r => r.method === req.method && (r.path === req.path || (r.test && r.test(req.path))));
+    if (socioRoute) {
         return verifyToken(req, res, () => requireFreshPassword(req, res, next));
     }
     const betaRoute = BETA_ROUTES.some(r => r.method === req.method && (r.path === req.path || (r.test && r.test(req.path))));
@@ -1408,9 +1424,13 @@ router.get('/savings', async (req, res) => {
 });
 
 // GET /savings/list - Lista completa de ahorros para tabla
-router.get('/savings/list', async (req, res) => {
+// El detalle que abre una casilla de la matriz. Con `forzarClientId` sirve a la
+// pantalla del socio: el id sale del token y pisa cualquier clientId del query,
+// que es lo que impide pedir los movimientos de otro cambiando la URL.
+const listaAhorros = async (req, res, forzarClientId = null) => {
     try {
-        const { q, year, status, type, clientId } = req.query;
+        const { q, year, status, type } = req.query;
+        const clientId = forzarClientId != null ? forzarClientId : req.query.clientId;
         const { Op } = require('sequelize');
         let whereClause = {};
 
@@ -1519,7 +1539,11 @@ router.get('/savings/list', async (req, res) => {
         console.error('Error en /savings/list:', err);
         res.status(500).json({ ok: false, error: err.message, data: [], total: 0 });
     }
-});
+};
+
+router.get('/savings/list', (req, res) => listaAhorros(req, res));
+router.get('/my/savings/list', verifyToken, requireFreshPassword, requireRole('user', 'admin'),
+    (req, res) => listaAhorros(req, res, req.user.id));
 
 // GET /savings/ranking - Ranking de socios activos con análisis mes a mes
 // ─────────────────────────────────────────────
@@ -1537,7 +1561,12 @@ router.get('/savings/list', async (req, res) => {
 //
 // Mezclarlas sería el error clásico: una devolución en un mes taparía la falta
 // de aporte de ese mes, o al revés, un socio al día aparecería en rojo.
-router.get('/savings/matriz', async (req, res) => {
+// La matriz de ahorros la usan dos pantallas: la de control (admin y Junta, con
+// todos los socios) y la del socio, que ve exactamente la suya. Es una sola
+// función y no dos copias: una rejilla de control que discrepe de la que ve el
+// socio es peor que no tenerla — discutirían sobre cifras distintas.
+// `soloClientId` es lo único que cambia, y lo pone el gate, nunca el query.
+const matrizAhorros = async (req, res, soloClientId = null) => {
     try {
         const { Sequelize, Op } = require('sequelize');
 
@@ -1549,13 +1578,19 @@ router.get('/savings/matriz', async (req, res) => {
         });
 
         const clientes = await Client.findAll({
+            where: soloClientId ? { id: soloClientId } : {},
             attributes: ['id', 'customerId', 'name', 'surname1', 'surname2', 'cedula', 'estatus', 'fechaIngreso'],
             order: [[Sequelize.literal('CAST(customerId AS INTEGER)'), 'ASC']],
         });
 
         // Los aportes iniciales viven en su propio menú y no son ahorro mensual.
         const movimientos = await Saving.findAll({
-            where: { type: NO_ES_APORTE_INICIAL() },
+            // Se acota en la consulta, no filtrando después: traer los movimientos
+            // de todo el fondo para descartarlos en memoria sería leer la vida
+            // financiera de los demás socios para no usarla.
+            where: soloClientId
+                ? { type: NO_ES_APORTE_INICIAL(), clientId: soloClientId }
+                : { type: NO_ES_APORTE_INICIAL() },
             attributes: ['id', 'clientId', 'year', 'monthInt', 'mesAbonado', 'anioAbonado',
                 'valorAhorrado', 'amount', 'status', 'diasPenalizacion'],
         });
@@ -1666,7 +1701,13 @@ router.get('/savings/matriz', async (req, res) => {
         console.error('Error al construir la matriz de ahorros:', err);
         res.status(500).json({ error: 'No se pudo construir la matriz de ahorros.' });
     }
-});
+};
+
+router.get('/savings/matriz', (req, res) => matrizAhorros(req, res));
+// La del socio: el id sale del token, nunca del query — si viniera del query,
+// cualquiera podría pedir la matriz de otro cambiando un número en la URL.
+router.get('/my/savings/matriz', verifyToken, requireFreshPassword, requireRole('user', 'admin'),
+    (req, res) => matrizAhorros(req, res, req.user.id));
 
 // ── GET /savings/ranking — el reparto de utilidades ──────────────────────────
 //
@@ -3863,11 +3904,15 @@ async function aplicarAbonoExtraordinario(payment, politicaPedida, contexto = {}
 // fila es el PRÉSTAMO y no el socio: un socio con dos créditos tiene dos cuotas
 // en el mismo mes, y sumarlas en una celda borraría el estado de cada una, que
 // es justo lo que se viene a mirar.
-router.get('/payments/matriz', async (req, res) => {
+// Igual que la matriz de ahorros: una sola función para la rejilla de control
+// (todos los préstamos) y para la del socio (los suyos). `soloClientId` lo pone
+// el gate a partir del token.
+const matrizCuotas = async (req, res, soloClientId = null) => {
     try {
         const { Sequelize } = require('sequelize');
 
         const cuotas = await LoanPayment.findAll({
+            where: soloClientId ? { clientId: soloClientId } : {},
             attributes: ['id', 'externalId', 'clientId', 'idVm', 'itemQuantity', 'fechaPagoMax',
                 // mesPago es el dato con el que se desambigua una fecha invertida:
                 // sin traerlo, mesDe() no tiene con qué corregirla.
@@ -3924,11 +3969,13 @@ router.get('/payments/matriz', async (req, res) => {
             : (parseInt(req.query.anio, 10) || (anios.includes(anioActual) ? anioActual : anios[0]) || anioActual);
 
         const prestamos = await DisbursedLoan.findAll({
+            where: soloClientId ? { clientId: soloClientId } : {},
             attributes: ['idVm', 'clientId', 'valorPrestado', 'cuotas', 'interesMensual', 'estado', 'fechaPrestamo'],
         });
         const infoPrestamo = new Map(prestamos.map((p) => [p.idVm, p]));
 
         const clientes = await Client.findAll({
+            where: soloClientId ? { id: soloClientId } : {},
             attributes: ['id', 'customerId', 'name', 'surname1', 'surname2', 'cedula', 'estatus'],
         });
         const infoCliente = new Map(clientes.map((c) => [c.id, c]));
@@ -4055,7 +4102,11 @@ router.get('/payments/matriz', async (req, res) => {
         console.error('Error al construir la matriz de cuotas:', err);
         res.status(500).json({ error: 'No se pudo construir la matriz de cuotas.' });
     }
-});
+};
+
+router.get('/payments/matriz', (req, res) => matrizCuotas(req, res));
+router.get('/my/payments/matriz', verifyToken, requireFreshPassword, requireRole('user', 'admin'),
+    (req, res) => matrizCuotas(req, res, req.user.id));
 
 // ─────────────────────────────────────────────
 // ABONOS EXTRAORDINARIOS A CAPITAL — revisión, aplicación y reversión
@@ -7345,6 +7396,52 @@ const VotoPropuesta = require('../models/VotoPropuesta');
     }
 })();
 
+// ── Qué propuestas ve el socio, y por qué el buzón arranca vacío ────────────
+//
+// El buzón se abre a todos los socios con una propuesta ya escrita dentro, del
+// administrador, que la asamblea todavía no ha visto. Estrenar la función
+// mostrándola sería publicarla por accidente: el socio entra por primera vez y
+// se encuentra una propuesta que nadie le anunció, sin saber si ya se votó.
+//
+// Así que el buzón arranca vacío. `propuestas.ocultas` guarda los ids que no se
+// publican; se siembra UNA vez al arrancar con lo que ya existía, de modo que
+// todo lo anterior a la apertura queda fuera y todo lo que un socio escriba a
+// partir de ahora se ve enseguida — que es justo lo que se espera de un buzón.
+//
+// Es una lista de ids y no una fecha de corte porque lo que se pidió es poder
+// enviar ESA propuesta después: el administrador la publica cuando quiera con
+// PUT /propuestas/:id/publicar, y el mismo botón la puede volver a ocultar. Una
+// fecha de corte no permitiría sacar una sola.
+//
+// El admin siempre las ve todas, marcadas con `oculta`, porque si no tendría
+// que acordarse de que existen para poder publicarlas.
+const CLAVE_OCULTAS = 'propuestas.ocultas';
+
+async function leerPropuestasOcultas() {
+    try {
+        const AppSetting = require('../models/AppSetting');
+        const fila = await AppSetting.findOne({ where: { key: CLAVE_OCULTAS } });
+        const lista = fila?.value ? JSON.parse(fila.value) : [];
+        return new Set(Array.isArray(lista) ? lista.map(Number) : []);
+    } catch { return new Set(); }
+}
+
+async function guardarPropuestasOcultas(conjunto) {
+    const AppSetting = require('../models/AppSetting');
+    await AppSetting.upsert({ key: CLAVE_OCULTAS, value: JSON.stringify([...conjunto].sort((a, b) => a - b)) });
+}
+
+// La siembra corre una sola vez: si la clave ya existe no se toca, porque
+// volver a sembrarla ocultaría de golpe todo lo que los socios hayan escrito.
+async function sembrarPropuestasOcultas() {
+    const AppSetting = require('../models/AppSetting');
+    const yaExiste = await AppSetting.findOne({ where: { key: CLAVE_OCULTAS } });
+    if (yaExiste) return { sembrada: false };
+    const previas = await Propuesta.findAll({ attributes: ['id'] });
+    await guardarPropuestasOcultas(new Set(previas.map(p => p.id)));
+    return { sembrada: true, ocultas: previas.length };
+}
+
 // GET /propuestas — listar todas las propuestas (admin: todas; user: solo activas)
 router.get('/propuestas', verifyToken, requireFreshPassword, async (req, res) => {
     try {
@@ -7372,12 +7469,19 @@ router.get('/propuestas', verifyToken, requireFreshPassword, async (req, res) =>
             votos.forEach(v => misVotos.add(v.propuestaId));
         }
 
-        const data = propuestas.map(p => ({
-            ...p.toJSON(),
-            yaVote: misVotos.has(p.id),
-        }));
+        const ocultas = await leerPropuestasOcultas();
+        const esAdmin = req.user?.role === 'admin';
 
-        res.json({ ok: true, data });
+        const data = propuestas
+            // El socio no las ve; el admin sí, marcadas, para poder publicarlas.
+            .filter(p => esAdmin || !ocultas.has(p.id))
+            .map(p => ({
+                ...p.toJSON(),
+                yaVote: misVotos.has(p.id),
+                oculta: ocultas.has(p.id),
+            }));
+
+        res.json({ ok: true, data, ocultas: esAdmin ? ocultas.size : undefined });
     } catch (err) {
         console.error('Error GET /propuestas:', err.message);
         res.status(500).json({ ok: false, error: err.message });
@@ -7511,6 +7615,28 @@ router.put('/propuestas/:id/voto', verifyToken, requireFreshPassword, async (req
 });
 
 // PUT /propuestas/:id/estado — cambiar estado + respuesta (solo admin)
+// PUT /propuestas/:id/publicar — mostrarla a los socios (o volver a ocultarla).
+// Es la otra mitad de "el buzón arranca vacío": lo que se aparta al abrir tiene
+// que poder enviarse después, y desde la pantalla, sin tocar la base.
+router.put('/propuestas/:id/publicar', verifyToken, requireFreshPassword, requireRole('admin'), async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        const propuesta = await Propuesta.findByPk(id);
+        if (!propuesta) return res.status(404).json({ ok: false, error: 'Propuesta no encontrada.' });
+
+        const ocultas = await leerPropuestasOcultas();
+        // Sin cuerpo, publica; con { oculta: true }, la vuelve a apartar.
+        const ocultar = req.body?.oculta === true;
+        if (ocultar) ocultas.add(id); else ocultas.delete(id);
+        await guardarPropuestasOcultas(ocultas);
+
+        res.json({ ok: true, id, oculta: ocultar });
+    } catch (err) {
+        console.error('Error en /propuestas/:id/publicar:', err.message);
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
 router.put('/propuestas/:id/estado', verifyToken, requireFreshPassword, requireRole('admin'), async (req, res) => {
     try {
         const propuesta = await Propuesta.findByPk(req.params.id);
@@ -7576,3 +7702,6 @@ router.delete('/propuestas/:id', verifyToken, requireFreshPassword, requireRole(
 module.exports = router;
 // Reutilizada por el cron de snapshots de score en server.js
 module.exports.getLoanCapacityAnalysis = getLoanCapacityAnalysis;
+// La usa server.js al arrancar, después de listen(): ver "El Buzón de
+// Propuestas arranca vacío" allí.
+module.exports.sembrarPropuestasOcultas = sembrarPropuestasOcultas;

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import PageHeroRuta from '../components/ui/PageHeroRuta';
+import MiIdentidad from '../components/user/MiIdentidad';
 import useDrawerMovil from '../utils/useDrawerMovil';
 import { motion } from 'framer-motion';
 import { Outlet, useLocation, Link } from 'react-router-dom';
@@ -228,6 +229,9 @@ const UserDashboardLayout = ({ user, onLogout }) => {
             label: 'Ahorros',
             children: [
                 { icon: Wallet, label: 'Mi Cuenta', path: '/dashboard/cuenta' },
+                // La misma rejilla de control que mira la Junta, con los datos
+                // del socio y de nadie más: mes a mes, cuál pagó y cuál no.
+                { icon: Grid3x3, label: 'Mi Matriz de Ahorros', path: '/dashboard/mi-matriz-ahorros' },
                 // Visible para el socio solo si el comité lo habilita desde admin →
                 // Cambios, mismo patrón que "Nuestro Fondo": el admin siempre lo ve.
                 ...(user?.role === 'admin' || esVisible('menu.evolucionAhorros') ? [
@@ -248,6 +252,7 @@ const UserDashboardLayout = ({ user, onLogout }) => {
             label: 'Préstamos y Pagos',
             children: [
                 { icon: CreditCard, label: 'Mis Créditos', path: '/dashboard/mis-creditos' },
+                { icon: Grid3x3, label: 'Mi Matriz de Cuotas', path: '/dashboard/mi-matriz-cuotas' },
                 { icon: Scale, label: 'Analizador de Capacidad', path: '/dashboard/loan-capacity' },
                 { icon: Gauge, label: 'Simulador de Préstamo', path: '/dashboard/loan-capacity-beta' }
             ]
@@ -256,16 +261,23 @@ const UserDashboardLayout = ({ user, onLogout }) => {
             type: 'label',
             label: 'COMUNIDAD'
         },
-        ...((propuestasEnabled && isBetaTester) || user?.role === 'admin' ? [{
+        // El Buzón es de todos los socios: un buzón que solo pueden abrir tres
+        // personas no es un buzón. Lo que sigue en beta es el Reparto de
+        // Utilidades, que muestra cifras personales y no es lo mismo que una
+        // idea escrita — por eso el submenú solo aparece cuando hay algo beta
+        // que mostrar, y el Buzón cuelga siempre.
+        {
             type: 'submenu',
             key: 'propuestas',
             icon: Lightbulb,
-            label: 'Propuestas (BETA)',
+            label: 'Propuestas',
             children: [
-                { icon: Coins, label: 'Reparto de Utilidades (BETA)', path: '/dashboard/ranking-ahorro' },
-                { icon: MessageSquareMore, label: 'Buzón de Propuestas (BETA)', path: '/dashboard/propuestas' }
+                { icon: MessageSquareMore, label: 'Buzón de Propuestas', path: '/dashboard/propuestas' },
+                ...((propuestasEnabled && isBetaTester) || user?.role === 'admin' ? [
+                    { icon: Coins, label: 'Reparto de Utilidades (BETA)', path: '/dashboard/ranking-ahorro' }
+                ] : []),
             ]
-        }] : []),
+        },
         ...(isJuntaMember ? [
             { type: 'label', label: 'JUNTA ADMINISTRATIVA' },
             { type: 'link', icon: Vote, label: 'Aprobación de Préstamos', path: '/dashboard/junta-prestamos' },
@@ -456,6 +468,10 @@ const UserDashboardLayout = ({ user, onLogout }) => {
                     {/* Presentación de la pantalla, resuelta por ruta desde
                         utils/paginasInfo.js. Va aquí y no dentro de cada página
                         para que una pantalla nueva la herede sin tocarla. */}
+                    {/* Los datos del socio autenticado, en todas sus pantallas.
+                        Va aquí y no dentro de cada página por lo mismo que el
+                        hero: una pantalla nueva la hereda sin tocarla. */}
+                    <MiIdentidad />
                     <PageHeroRuta />
                     <Outlet />
                 </div>

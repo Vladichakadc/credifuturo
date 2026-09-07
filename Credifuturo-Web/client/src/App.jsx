@@ -196,6 +196,13 @@ function App() {
                         backend las restringe por su cuenta (JUNTA_ROUTES). */}
                     <Route path="junta-matriz-ahorros" element={<SavingsMatrixPage />} />
                     <Route path="junta-matriz-cuotas" element={<LoansMatrixPage />} />
+                    {/* Las mismas dos rejillas, acotadas al socio autenticado
+                        (`mio`), que es lo que hace que el socio vea su propio
+                        historial mes a mes con el mismo criterio de control con
+                        el que lo mira la Junta — y no una versión distinta. El
+                        backend las acota por el id del token, no por la URL. */}
+                    <Route path="mi-matriz-ahorros" element={<SavingsMatrixPage mio />} />
+                    <Route path="mi-matriz-cuotas" element={<LoansMatrixPage mio />} />
                     {/* Informes: misma página que /admin/informes/:filename, reutilizada para
                         la Junta Administrativa (gerente/subgerente/tesorera). El backend ya
                         restringe /admin/informes a admin + Junta (ver JUNTA_ROUTES). */}
