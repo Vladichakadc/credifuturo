@@ -58,13 +58,63 @@ const compacto = (n) => {
  * mediana del socio convierte la rejilla en un diagnóstico: se ve quién aportó
  * de menos sin dejar de aportar, que es la señal que precede a una mora.
  */
+/**
+ * Qué significa cada cifra de la rejilla.
+ *
+ * Los filtros —mes, "solo con faltantes", el orden— estaban escritos SOBRE
+ * `abonos`, no sobre la cifra que el usuario tiene seleccionada. Mientras solo
+ * hubo dos cifras (Abonos y Neto, que comparten el mismo "¿hubo movimiento?")
+ * no se notó; al entrar Aportes se rompió de dos maneras opuestas y las dos
+ * silenciosas, que es lo peor que le puede pasar a una pantalla de control:
+ *
+ *   · "Solo con faltantes" seguía filtrando en Aportes con el botón ya oculto:
+ *     la rejilla mostraba 8 socios de 9 y el total decía $2.900.000 en vez de
+ *     $3.650.000, sin nada en pantalla que explicara los $750.000 que faltaban.
+ *   · El filtro de mes NO filtraba nada en Aportes: elegir enero, febrero o
+ *     marzo devolvía siempre las mismas 9 filas y el mismo total.
+ *
+ * Por eso cada cifra declara aquí su lectura, y los filtros preguntan por ella
+ * en vez de asumir `abonos`. Añadir una cuarta cifra es añadir una entrada,
+ * no repasar seis sitios y olvidarse de dos.
+ *
+ *   valor     — qué número lleva la casilla
+ *   hay       — cuándo la casilla "tiene algo" (para el filtro de mes)
+ *   total     — el total del período de una fila
+ *   acumulado — el histórico que va en la última columna
+ *   exigible  — si un mes vacío es una FALTA. El aporte inicial se paga una
+ *               sola vez al entrar, así que no: sin esto, la rejilla acusaría
+ *               al socio de no pagar algo que nunca debió.
+ */
+const LECTURA = {
+    abonos: {
+        valor: (c) => c.abonos,
+        hay: (c) => c.abonos > 0,
+        total: (f) => f.abonosAnio,
+        acumulado: (f) => f.historico,
+        exigible: true,
+    },
+    neto: {
+        valor: (c) => c.neto,
+        hay: (c) => c.n > 0,
+        total: (f) => f.totalAnio,
+        acumulado: (f) => f.historico,
+        exigible: true,
+    },
+    aportes: {
+        valor: (c) => c.aportes,
+        hay: (c) => c.aportes > 0,
+        total: (f) => f.aportesAnio || 0,
+        acumulado: (f) => f.historicoAportes || 0,
+        exigible: false,
+    },
+};
+const lecturaDe = (modo) => LECTURA[modo] || LECTURA.abonos;
+
 // El total del período de una fila, según la cifra que se está mirando. Existe
 // para no repetir el mismo ternario en las seis partes que lo necesitan —y para
 // que añadir una cifra sea un caso más aquí y no seis descuidos repartidos.
 function totalDe(fila, modo) {
-    if (modo === 'neto') return fila.totalAnio;
-    if (modo === 'aportes') return fila.aportesAnio || 0;
-    return fila.abonosAnio;
+    return lecturaDe(modo).total(fila);
 }
 
 function tonoVerde(valor, referencia) {
@@ -158,8 +208,12 @@ export default function SavingsMatrixPage({ mio = false }) {
     const filas = useMemo(() => {
         if (!datos) return [];
         const q = busqueda.trim().toLowerCase();
+        const lec = lecturaDe(modo);
+
         let f = datos.data.filter((s) => {
-            if (soloActivos && s.estatus !== 'Activo') return false;
+            // En la vista del socio no hay más fila que la suya: aplicar el
+            // filtro con el botón oculto sería un filtro invisible activo.
+            if (!mio && soloActivos && s.estatus !== 'Activo') return false;
             if (q && !`${s.nombre} ${s.cedula} ${s.customerId}`.toLowerCase().includes(q)) return false;
             return true;
         });
@@ -168,16 +222,21 @@ export default function SavingsMatrixPage({ mio = false }) {
         // es un registro que nunca ahorró (el propio admin, por ejemplo).
         f = f.filter((s) => s.historico !== 0 || s.totalAnio !== 0 || (s.historicoAportes || 0) !== 0);
 
-        const faltaEn = (s, m) => s.meses[m - 1].abonos <= 0 && m <= datos.mesLimite;
-        if (soloFaltantes) {
+        // Un mes "en falta" solo existe donde la cifra es una obligación
+        // mensual. En Aportes no lo es, así que este filtro no se aplica —y su
+        // botón tampoco se pinta—, en vez de quedarse filtrando a escondidas.
+        const faltaEn = (s, m) => lec.exigible && !lec.hay(s.meses[m - 1]) && m <= datos.mesLimite;
+        if (soloFaltantes && lec.exigible) {
             f = f.filter((s) => (mesFoco ? faltaEn(s, mesFoco) : s.meses.some((_, i) => faltaEn(s, i + 1))));
         }
-        if (mesFoco) f = f.filter((s) => s.meses[mesFoco - 1].n > 0 || faltaEn(s, mesFoco));
+        // El mes se filtra por la cifra que se mira: preguntar por `n` dejaba
+        // pasar todas las filas en Aportes, porque `n` cuenta solo los abonos.
+        if (mesFoco) f = f.filter((s) => lec.hay(s.meses[mesFoco - 1]) || faltaEn(s, mesFoco));
 
         const valor = (s) => {
             if (orden.campo === 'nombre') return s.nombre.toLowerCase();
             if (orden.campo === 'total') return totalDe(s, modo);
-            if (orden.campo === 'historico') return s.historico;
+            if (orden.campo === 'historico') return lec.acumulado(s);
             if (orden.campo === 'cobertura') return s.mesesConAbono;
             if (typeof orden.campo === 'number') return s.meses[orden.campo][modo];
             return 0;
@@ -187,18 +246,20 @@ export default function SavingsMatrixPage({ mio = false }) {
             const cmp = typeof va === 'string' ? va.localeCompare(vb, 'es') : va - vb;
             return orden.dir === 'asc' ? cmp : -cmp;
         });
-    }, [datos, busqueda, soloActivos, soloFaltantes, mesFoco, orden, modo]);
+    }, [datos, busqueda, soloActivos, soloFaltantes, mesFoco, orden, modo, mio]);
 
     // ── Resumen ───────────────────────────────────────────────────────
     const resumen = useMemo(() => {
         if (!datos) return null;
         const lim = datos.mesLimite;
         const totalPeriodo = filas.reduce((s, f) => s + totalDe(f, modo), 0);
-        const historico = filas.reduce((s, f) => s + (modo === 'aportes' ? (f.historicoAportes || 0) : f.historico), 0);
-        const huecos = modo === 'aportes' ? 0
-            : filas.reduce((s, f) => s + f.meses.filter((c, i) => c.abonos <= 0 && i + 1 <= lim).length, 0);
-        const alDia = modo === 'aportes' ? filas.length
-            : filas.filter((f) => f.meses.every((c, i) => i + 1 > lim || c.abonos > 0)).length;
+        const lec = lecturaDe(modo);
+        const historico = filas.reduce((s, f) => s + lec.acumulado(f), 0);
+        // Sin obligación mensual no hay huecos que contar ni "al día" que medir.
+        const huecos = !lec.exigible ? 0
+            : filas.reduce((s, f) => s + f.meses.filter((c, i) => !lec.hay(c) && i + 1 <= lim).length, 0);
+        const alDia = !lec.exigible ? filas.length
+            : filas.filter((f) => f.meses.every((c, i) => i + 1 > lim || lec.hay(c))).length;
         const conceptos = filas.reduce((s2, f) => s2 + f.meses.reduce((a, c) => a + c.conceptos, 0), 0);
         const mesRef = mesFoco || lim;
         const delMes = mesRef >= 1 ? filas.reduce((s, f) => s + f.meses[mesRef - 1][modo], 0) : 0;
@@ -250,13 +311,30 @@ export default function SavingsMatrixPage({ mio = false }) {
         toast.success('Matriz exportada.');
     };
 
+    // Los filtros que de verdad están recortando lo que se ve. Solo entran los
+    // que APLICAN a la cifra actual: "solo con faltantes" no filtra en Aportes,
+    // así que anunciarlo ahí sería inventar una causa que no existe.
+    const filtrosActivos = useMemo(() => {
+        const lec = lecturaDe(modo);
+        const l = [];
+        if (busqueda.trim()) l.push({ etiqueta: `Búsqueda: "${busqueda.trim()}"`, quitar: () => setBusqueda('') });
+        if (mesFoco) l.push({ etiqueta: MESES_LARGOS[mesFoco - 1], quitar: () => setMesFoco(null) });
+        if (soloFaltantes && lec.exigible) l.push({ etiqueta: 'Solo con faltantes', quitar: () => setSoloFaltantes(false) });
+        if (soloActivos && !mio) l.push({ etiqueta: 'Solo socios activos', quitar: () => setSoloActivos(false) });
+        return l;
+    }, [busqueda, mesFoco, soloFaltantes, soloActivos, modo, mio]);
+
+    const limpiarFiltros = () => {
+        setBusqueda(''); setMesFoco(null); setSoloFaltantes(false); setSoloActivos(false);
+    };
+
     const totalesColumna = useMemo(() => (
         Array.from({ length: 12 }, (_, i) => ({
             valor: filas.reduce((s, f) => s + f.meses[i][modo], 0),
             // Contar siempre por `abonos` daba "500k · 0 soc." en la cifra de
             // aportes: la casilla decía que hubo aporte y el total, que no hubo
             // nadie. Se cuenta por la cifra que se está mirando.
-            socios: filas.filter((f) => (modo === 'aportes' ? f.meses[i].aportes : f.meses[i].abonos) > 0).length,
+            socios: filas.filter((f) => lecturaDe(modo).hay(f.meses[i])).length,
         }))
     ), [filas, modo]);
 
@@ -453,6 +531,37 @@ export default function SavingsMatrixPage({ mio = false }) {
                     </div>
                 </div>
 
+                {/* ── Qué se está dejando fuera ──────────────────────────
+                    Una cifra recortada por un filtro y un total legítimamente
+                    pequeño se ven igual. Esa ambigüedad es la que hizo que
+                    "$2.900.000" pasara por el total de aportes cuando el total
+                    era $3.650.000 y había un filtro activo. Si algo filtra, se
+                    dice aquí y se puede quitar de un clic. */}
+                {filtrosActivos.length > 0 && (
+                    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-amber-700">
+                            Mostrando {filas.length} de {datos?.data?.length ?? 0}
+                        </span>
+                        {filtrosActivos.map((fl) => (
+                            <button
+                                key={fl.etiqueta}
+                                onClick={fl.quitar}
+                                title={`Quitar: ${fl.etiqueta}`}
+                                className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-amber-900 transition-colors hover:bg-amber-100"
+                            >
+                                {fl.etiqueta}
+                                <X className="h-3 w-3" />
+                            </button>
+                        ))}
+                        <button
+                            onClick={limpiarFiltros}
+                            className="ml-auto text-[11px] font-bold text-amber-800 underline underline-offset-2 hover:text-amber-900"
+                        >
+                            Quitar todos
+                        </button>
+                    </div>
+                )}
+
                 {/* Leyenda: sin ella la rejilla es un mosaico de colores sin significado. */}
                 <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-ui-border pt-3 text-xs text-gray-600">
                     <span className="font-semibold uppercase tracking-wider text-gray-500">Lectura</span>
@@ -528,7 +637,7 @@ export default function SavingsMatrixPage({ mio = false }) {
 
                             <tbody>
                                 {filas.map((s, idx) => {
-                                    const ref = mediana(s.meses.map((c) => (modoAportes ? c.aportes : c.abonos)));
+                                    const ref = mediana(s.meses.map((c) => lecturaDe(modo).valor(c)));
                                     const total = totalDe(s, modo);
                                     const activa = cruz.fila === idx;
                                     return (
@@ -556,15 +665,15 @@ export default function SavingsMatrixPage({ mio = false }) {
                                                 // El aporte inicial se paga UNA vez, al entrar al fondo. Un
                                                 // mes sin aporte no es una falta, así que en esta cifra no
                                                 // hay casillas rojas: o hubo aporte, o ese mes no tocaba.
-                                                const vencido = modoAportes ? false : i + 1 <= lim;
-                                                const hayAbono = modoAportes ? c.aportes > 0 : c.abonos > 0;
+                                                const vencido = lecturaDe(modo).exigible && i + 1 <= lim;
+                                                const hayAbono = lecturaDe(modo).hay(c);
                                                 const soloConcepto = !modoAportes && !hayAbono && c.n > 0;
                                                 const enCruz = cruz.col === i || activa;
 
                                                 let clases;
                                                 let contenido;
                                                 if (hayAbono) {
-                                                    clases = tonoVerde(modoAportes ? c.aportes : c.abonos, ref);
+                                                    clases = tonoVerde(lecturaDe(modo).valor(c), ref);
                                                     contenido = compacto(valor);
                                                 } else if (soloConcepto) {
                                                     // Hubo movimiento del fondo pero el socio no aportó: ni verde
@@ -600,7 +709,7 @@ export default function SavingsMatrixPage({ mio = false }) {
                                                 {pesos(total)}
                                             </td>
                                             <td className={`sticky right-0 z-10 border-b border-l border-ui-border px-3 py-2 text-right font-mono text-[13px] tabular-nums text-gray-600 ${activa ? 'bg-emerald-50' : 'bg-white'}`}>
-                                                {pesos(modoAportes ? (s.historicoAportes || 0) : s.historico)}
+                                                {pesos(lecturaDe(modo).acumulado(s))}
                                             </td>
                                         </tr>
                                     );
