@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import api from '../../config/api';
 import { cn } from '../../utils/cn';
+import TiraMeses, { CabeceraTira } from '../../components/admin/TiraMeses';
 import { useUi } from '../../context/UiContext';
 import { Button } from '../../components/ui/Button';
 import { exportToExcel } from '../../utils/excelUtils';
@@ -122,13 +123,15 @@ function Tarjeta({ icon: Icon, titulo, valor, nota, acento = 'emerald', alerta =
         sky: 'text-sky-600 bg-sky-50 ring-sky-100',
     };
     return (
-        <div className={`rounded-xl border bg-white p-4 shadow-card transition-shadow hover:shadow-card-hover ${alerta ? 'border-rose-200' : 'border-ui-border'}`}>
-            <div className="flex items-start justify-between gap-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{titulo}</p>
-                <span className={`rounded-lg p-1.5 ring-1 ${tonos[acento]}`}><Icon className="h-4 w-4" /></span>
+        <div className={`rounded-xl border bg-white p-3 shadow-card transition-shadow hover:shadow-card-hover sm:p-4 ${alerta ? 'border-rose-200' : 'border-ui-border'}`}>
+            <div className="flex items-start justify-between gap-2">
+                <p className="text-[10px] font-semibold uppercase leading-tight tracking-wider text-gray-500 sm:text-[11px]">{titulo}</p>
+                <span className={`hidden rounded-lg p-1.5 ring-1 sm:inline-flex ${tonos[acento]}`}><Icon className="h-4 w-4" /></span>
             </div>
-            <p className="mt-2 font-mono text-2xl font-bold tabular-nums text-brand-dark">{valor}</p>
-            {nota && <p className="mt-1 text-xs leading-snug text-gray-500">{nota}</p>}
+            <p className="mt-1.5 font-mono text-lg font-bold tabular-nums text-brand-dark sm:mt-2 sm:text-2xl">{valor}</p>
+            {/* El pie se guarda en móvil: en una tarjeta de media pantalla, tres
+                líneas de explicación pesan más que la cifra que explican. */}
+            {nota && <p className="mt-1 hidden text-xs leading-snug text-gray-500 sm:block">{nota}</p>}
         </div>
     );
 }
@@ -395,11 +398,14 @@ export default function LoansMatrixPage({ mio = false }) {
                 </div>
             )}
 
-            <div className="rounded-xl border border-ui-border bg-white p-4 shadow-card">
-                <div className="flex flex-wrap items-end gap-4">
+            <div className="rounded-xl border border-ui-border bg-white p-3 shadow-card sm:p-4">
+                {/* En móvil los desplegables van a dos por fila: cada uno en su
+                    propia línea, con su rótulo encima, ocupaba media pantalla de
+                    controles antes de llegar a un solo dato. */}
+                <div className="grid grid-cols-2 items-end gap-3 sm:flex sm:flex-wrap sm:gap-4">
                     {/* Con solo los créditos propios, buscar por socio no busca nada. */}
                     {!mio && (
-                    <label className="min-w-[240px] flex-1">
+                    <label className="col-span-2 sm:min-w-[240px] sm:flex-1">
                         <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-gray-500">Socio, cédula o préstamo</span>
                         <div className="relative">
                             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -448,7 +454,7 @@ export default function LoansMatrixPage({ mio = false }) {
                         </div>
                     </label>
 
-                    <div>
+                    <div className="col-span-2 sm:col-auto">
                         <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-gray-500">Cifra</span>
                         <div className="flex rounded-lg border border-ui-border p-0.5">
                             {[['pagado', 'Pagado'], ['programado', 'Programado']].map(([v, etiqueta]) => (
@@ -571,7 +577,54 @@ export default function LoansMatrixPage({ mio = false }) {
                         <p className="mt-1 text-sm text-gray-500">Prueba a quitar algún filtro.</p>
                     </div>
                 ) : (
-                    <div className="max-h-[68vh] overflow-auto" onMouseLeave={() => setCruz({ fila: null, col: null })}>
+                    <>
+                    {/* ── En el teléfono: una tarjeta por crédito ────────────
+                        Misma razón que en la matriz de ahorros: doce columnas no
+                        caben en 390px y el scroll horizontal anidado no fluye.
+                        Aquí la fila sigue siendo EL CRÉDITO, no el socio —un
+                        socio con dos créditos tiene dos tarjetas—, porque
+                        juntarlos borraría lo único que la rejilla existe para
+                        mostrar: si cada uno está al día. */}
+                    <div className="sm:hidden">
+                        <div className="sticky top-0 z-10 border-b border-ui-border bg-white/95 px-3 pb-1.5 pt-2 backdrop-blur">
+                            <CabeceraTira mesFoco={mesFoco} />
+                        </div>
+                        <div className="space-y-2 p-3">
+                            {filas.map((p2) => (
+                                <TiraMeses
+                                    key={p2.idVm}
+                                    titulo={p2.socio}
+                                    subtitulo={`${p2.idVm} · ${pesos(p2.valorPrestado)} · ${p2.pagadasTotal}/${p2.cuotasTotal} cuotas`}
+                                    cifra={pesos(p2.saldoVigente)}
+                                    cifraEtiqueta="saldo"
+                                    mesFoco={mesFoco}
+                                    celdas={p2.meses.map((c, i) => {
+                                        const est = estadoCelda(c, i + 1, lim);
+                                        // Igual que en ahorros: en 26px manda el estado, no el importe.
+                                        const GLIFO = {
+                                            'sin-cuota': '·', 'prepagada': '≡', 'mora': '!', 'vencida': '—',
+                                            'pendiente': '○', 'parcial': '½', 'pagada': '✓', 'abono': '✓✓',
+                                        };
+                                        return {
+                                            clases: ESTILOS[est],
+                                            contenido: GLIFO[est] ?? '·',
+                                            activa: false,
+                                            titulo: `${MESES_LARGOS[i]} · ${est} · ${pesos(modo === 'programado' ? c.programado : c.pagado)}`,
+                                        };
+                                    })}
+                                    pie={<>
+                                        {modo === 'programado' ? 'Programado' : 'Pagado'}{' '}
+                                        <strong className="font-mono tabular-nums text-gray-700">
+                                            {pesos(modo === 'programado' ? p2.programadoAnio : p2.pagadoAnio)}
+                                        </strong>
+                                        {p2.estadoPrestamo && <span className="ml-2 text-gray-400">· {p2.estadoPrestamo}</span>}
+                                    </>}
+                                />
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="hidden max-h-[68vh] overflow-auto sm:block" onMouseLeave={() => setCruz({ fila: null, col: null })}>
                         <table className="w-full border-separate border-spacing-0 text-sm">
                             <thead>
                                 <tr>
@@ -702,6 +755,7 @@ export default function LoansMatrixPage({ mio = false }) {
                             </tfoot>
                         </table>
                     </div>
+                    </>
                 )}
             </div>
 
