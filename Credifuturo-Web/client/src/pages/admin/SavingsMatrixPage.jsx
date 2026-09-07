@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import api from '../../config/api';
 import { cn } from '../../utils/cn';
+import TiraMeses, { CabeceraTira } from '../../components/admin/TiraMeses';
 import { useUi } from '../../context/UiContext';
 import { Button } from '../../components/ui/Button';
 import { exportToExcel } from '../../utils/excelUtils';
@@ -111,6 +112,50 @@ const LECTURA = {
 };
 const lecturaDe = (modo) => LECTURA[modo] || LECTURA.abonos;
 
+/**
+ * El aspecto de una casilla: un solo sitio que decide color y contenido.
+ *
+ * Lo usan la tabla (pantalla ancha) y la lista de tarjetas (móvil). Si cada una
+ * lo dedujera por su cuenta, el mismo mes acabaría pintado de dos colores según
+ * el tamaño de la pantalla — y entonces la rejilla dejaría de ser una fuente
+ * fiable, que es lo único que tiene que ser.
+ */
+function aspectoCelda(celda, mes, { modo, lim, ref }) {
+    const lec = lecturaDe(modo);
+    const hay = lec.hay(celda);
+    const vencido = lec.exigible && mes <= lim;
+    const soloConcepto = lec.exigible && !hay && celda.n > 0;
+
+    if (hay) return {
+        clases: tonoVerde(lec.valor(celda), ref),
+        contenido: compacto(lec.valor(celda)),
+        activa: true,
+        estado: 'abono',
+        glifo: '✓',
+    };
+    if (soloConcepto) return {
+        clases: 'bg-amber-100 text-amber-900 border-amber-300',
+        contenido: compacto(celda.neto),
+        activa: true,
+        estado: 'concepto',
+        glifo: '~',
+    };
+    if (vencido) return {
+        clases: 'bg-rose-500 text-white border-rose-600',
+        contenido: '—',
+        activa: true,
+        estado: 'falta',
+        glifo: '—',
+    };
+    return {
+        clases: 'bg-gray-50 text-gray-300 border-gray-100',
+        contenido: '·',
+        activa: false,
+        estado: 'vacio',
+        glifo: '·',
+    };
+}
+
 // El total del período de una fila, según la cifra que se está mirando. Existe
 // para no repetir el mismo ternario en las seis partes que lo necesitan —y para
 // que añadir una cifra sea un caso más aquí y no seis descuidos repartidos.
@@ -143,13 +188,15 @@ function Tarjeta({ icon: Icon, titulo, valor, nota, acento = 'emerald', alerta =
         slate: 'text-slate-600 bg-slate-100 ring-slate-200',
     };
     return (
-        <div className={`rounded-xl border bg-white p-4 shadow-card transition-shadow hover:shadow-card-hover ${alerta ? 'border-rose-200' : 'border-ui-border'}`}>
-            <div className="flex items-start justify-between gap-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{titulo}</p>
-                <span className={`rounded-lg p-1.5 ring-1 ${tonos[acento]}`}><Icon className="h-4 w-4" /></span>
+        <div className={`rounded-xl border bg-white p-3 shadow-card transition-shadow hover:shadow-card-hover sm:p-4 ${alerta ? 'border-rose-200' : 'border-ui-border'}`}>
+            <div className="flex items-start justify-between gap-2">
+                <p className="text-[10px] font-semibold uppercase leading-tight tracking-wider text-gray-500 sm:text-[11px]">{titulo}</p>
+                <span className={`hidden rounded-lg p-1.5 ring-1 sm:inline-flex ${tonos[acento]}`}><Icon className="h-4 w-4" /></span>
             </div>
-            <p className="mt-2 font-mono text-2xl font-bold tabular-nums text-brand-dark">{valor}</p>
-            {nota && <p className="mt-1 text-xs leading-snug text-gray-500">{nota}</p>}
+            <p className="mt-1.5 font-mono text-lg font-bold tabular-nums text-brand-dark sm:mt-2 sm:text-2xl">{valor}</p>
+            {/* El pie se guarda en móvil: en una tarjeta de media pantalla, tres
+                líneas de explicación pesan más que la cifra que explican. */}
+            {nota && <p className="mt-1 hidden text-xs leading-snug text-gray-500 sm:block">{nota}</p>}
         </div>
     );
 }
@@ -181,6 +228,9 @@ export default function SavingsMatrixPage({ mio = false }) {
     const [celda, setCelda] = useState(null);         // {socio, mes} — detalle
     const [cruz, setCruz] = useState({ fila: null, col: null });
     const contenedor = useRef(null);
+    // El encabezado de ruta (PageHeroRuta) solo existe dentro del panel del
+    // socio; en /admin no, así que allí la cabecera propia no sobra.
+    const enPanelSocio = typeof window !== 'undefined' && window.location.pathname.startsWith('/dashboard');
 
     const cargar = useCallback(async (anioPedido) => {
         setCargando(true);
@@ -359,8 +409,14 @@ export default function SavingsMatrixPage({ mio = false }) {
 
     return (
         <div className="space-y-6">
-            {/* ── Encabezado ─────────────────────────────────────────── */}
-            <div className="flex flex-wrap items-start justify-between gap-4">
+            {/* ── Encabezado ─────────────────────────────────────────────
+                En el panel del socio y de la Junta, el encabezado de la ruta ya
+                nombra y describe esta pantalla: repetirlo aquí es el mismo texto
+                dos veces seguidas y, en un teléfono, media pantalla de scroll
+                antes de ver un solo dato. En /admin no hay encabezado de ruta,
+                así que allí este bloque sigue siendo la cabecera. Los botones
+                salen del bloque para no perderse con él. */}
+            <div className={cn('flex flex-wrap items-start justify-between gap-4', enPanelSocio && 'hidden sm:flex')}>
                 <div>
                     <div className="flex items-center gap-2.5">
                         <span className="rounded-lg bg-brand-primary/10 p-2 text-brand-primary ring-1 ring-brand-primary/15">
@@ -385,8 +441,10 @@ export default function SavingsMatrixPage({ mio = false }) {
             </div>
 
             {/* ── Tarjetas de resumen ────────────────────────────────── */}
+            {/* Dos por fila en móvil: apiladas a lo ancho ocupaban 1.250px de
+                scroll —cinco pantallas de teléfono— antes de llegar a la rejilla. */}
             {resumen && (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-5">
                     <Tarjeta
                         icon={Wallet}
                         titulo={mesFoco
@@ -453,11 +511,14 @@ export default function SavingsMatrixPage({ mio = false }) {
             )}
 
             {/* ── Filtros ────────────────────────────────────────────── */}
-            <div className="rounded-xl border border-ui-border bg-white p-4 shadow-card">
-                <div className="flex flex-wrap items-end gap-4">
+            <div className="rounded-xl border border-ui-border bg-white p-3 shadow-card sm:p-4">
+                {/* En móvil los desplegables van a dos por fila: cada uno en su
+                    propia línea, con su rótulo encima, ocupaba media pantalla de
+                    controles antes de llegar a un solo dato. */}
+                <div className="grid grid-cols-2 items-end gap-3 sm:flex sm:flex-wrap sm:gap-4">
                     {/* Buscar entre una sola fila —la propia— no busca nada. */}
                     {!mio && (
-                    <label className="min-w-[240px] flex-1">
+                    <label className="col-span-2 sm:min-w-[240px] sm:flex-1">
                         <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-gray-500">Socio, cédula o id</span>
                         <div className="relative">
                             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -506,7 +567,7 @@ export default function SavingsMatrixPage({ mio = false }) {
                         </div>
                     </label>
 
-                    <div>
+                    <div className="col-span-2 sm:col-auto">
                         <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-gray-500">Cifra</span>
                         <div className="flex rounded-lg border border-ui-border p-0.5">
                             {[['abonos', 'Abonos'], ['neto', 'Neto'], ['aportes', 'Aportes']].map(([v, etiqueta]) => (
@@ -609,7 +670,50 @@ export default function SavingsMatrixPage({ mio = false }) {
                         <p className="mt-1 text-sm text-gray-500">Prueba a quitar algún filtro.</p>
                     </div>
                 ) : (
-                    <div ref={contenedor} className="max-h-[68vh] overflow-auto" onMouseLeave={() => setCruz({ fila: null, col: null })}>
+                    <>
+                    {/* ── En el teléfono: una tarjeta por socio ──────────────
+                        La tabla de doce columnas medía 1384px en una pantalla de
+                        390px, dentro de un scroll horizontal anidado en el scroll
+                        de la página. Aquí el año cabe entero y solo se desplaza
+                        en vertical, que es el gesto natural en móvil. */}
+                    <div className="sm:hidden">
+                        <div className="sticky top-0 z-10 border-b border-ui-border bg-white/95 px-3 pb-1.5 pt-2 backdrop-blur">
+                            <CabeceraTira mesFoco={mesFoco} />
+                        </div>
+                        <div className="space-y-2 p-3">
+                            {filas.map((s) => {
+                                const ref = mediana(s.meses.map((c) => lecturaDe(modo).valor(c)));
+                                return (
+                                    <TiraMeses
+                                        key={s.clientId}
+                                        titulo={s.nombre}
+                                        subtitulo={`#${s.customerId} · ${s.cedula}`}
+                                        cifra={pesos(totalDe(s, modo))}
+                                        cifraEtiqueta={anio === 'todos' ? 'total' : anio}
+                                        mesFoco={mesFoco}
+                                        onCelda={(mes) => setCelda({ socio: s, mes })}
+                                        celdas={s.meses.map((c, i) => {
+                                            const a = aspectoCelda(c, i + 1, { modo, lim, ref });
+                                            return {
+                                                ...a,
+                                                // El importe no cabe en 26px —"300k" se salía de la
+                                                // casilla—; aquí manda el estado y la cifra exacta
+                                                // está a un toque, en el detalle del mes.
+                                                contenido: a.glifo,
+                                                titulo: `${MESES_LARGOS[i]}: ${a.estado === 'falta' ? 'sin aporte' : pesos(lecturaDe(modo).valor(c))}`,
+                                            };
+                                        })}
+                                        pie={<>Acumulado <strong className="font-mono tabular-nums text-gray-700">{pesos(lecturaDe(modo).acumulado(s))}</strong></>}
+                                        insignia={s.estatus !== 'Activo' && (
+                                            <span className="mt-1 inline-block rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">{s.estatus}</span>
+                                        )}
+                                    />
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    <div ref={contenedor} className="hidden max-h-[68vh] overflow-auto sm:block" onMouseLeave={() => setCruz({ fila: null, col: null })}>
                         <table className="w-full border-separate border-spacing-0 text-sm">
                             <thead>
                                 <tr>
@@ -680,32 +784,11 @@ export default function SavingsMatrixPage({ mio = false }) {
                                             </th>
 
                                             {s.meses.map((c, i) => {
-                                                const valor = c[modo];
-                                                // El aporte inicial se paga UNA vez, al entrar al fondo. Un
-                                                // mes sin aporte no es una falta, así que en esta cifra no
-                                                // hay casillas rojas: o hubo aporte, o ese mes no tocaba.
-                                                const vencido = lecturaDe(modo).exigible && i + 1 <= lim;
-                                                const hayAbono = lecturaDe(modo).hay(c);
-                                                const soloConcepto = !modoAportes && !hayAbono && c.n > 0;
+                                                const asp = aspectoCelda(c, i + 1, { modo, lim, ref });
+                                                const { clases, contenido } = asp;
+                                                const hayAbono = asp.estado === 'abono';
+                                                const vencido = asp.estado === 'falta';
                                                 const enCruz = cruz.col === i || activa;
-
-                                                let clases;
-                                                let contenido;
-                                                if (hayAbono) {
-                                                    clases = tonoVerde(lecturaDe(modo).valor(c), ref);
-                                                    contenido = compacto(valor);
-                                                } else if (soloConcepto) {
-                                                    // Hubo movimiento del fondo pero el socio no aportó: ni verde
-                                                    // ni rojo, porque las dos lecturas serían falsas.
-                                                    clases = 'bg-amber-100 text-amber-900 border-amber-300';
-                                                    contenido = compacto(c.neto);
-                                                } else if (vencido) {
-                                                    clases = 'bg-rose-500 text-white border-rose-600';
-                                                    contenido = '—';
-                                                } else {
-                                                    clases = 'bg-gray-50 text-gray-300 border-gray-100';
-                                                    contenido = '·';
-                                                }
 
                                                 return (
                                                     <td
@@ -765,6 +848,7 @@ export default function SavingsMatrixPage({ mio = false }) {
                             </tfoot>
                         </table>
                     </div>
+                    </>
                 )}
             </div>
 

@@ -1,5 +1,5 @@
-import React from 'react';
-import { Check } from 'lucide-react';
+import React, { useState } from 'react';
+import { Check, ChevronDown } from 'lucide-react';
 
 /**
  * Encabezado de presentación de una pantalla — el mismo en todo el sistema.
@@ -16,7 +16,26 @@ import { Check } from 'lucide-react';
  * El contenido no está aquí: viene de utils/paginasInfo.js, indexado por ruta,
  * y lo monta el layout. Este componente solo sabe pintarlo.
  */
+/**
+ * En el teléfono, "Lo que encontrarás aquí" viene plegado.
+ *
+ * El encabezado ocupaba ~600px de los 844 de una pantalla de móvil: una
+ * presentación a pantalla completa delante del contenido, en cada navegación y
+ * en cada visita. La primera vez orienta; a partir de la segunda es un peaje.
+ * En pantalla ancha no estorba, así que allí sigue desplegado.
+ */
+const CLAVE_HERO = 'credifuturo.hero.desplegado';
+
 const PageHero = ({ icono: Icono, titulo, descripcion, encontraras = [] }) => {
+    const [abierto, setAbierto] = useState(() => {
+        try { return localStorage.getItem(CLAVE_HERO) === '1'; } catch { return false; }
+    });
+    const alternar = () => setAbierto((a) => {
+        const sig = !a;
+        try { localStorage.setItem(CLAVE_HERO, sig ? '1' : '0'); } catch { /* modo privado */ }
+        return sig;
+    });
+
     if (!titulo) return null;
 
     return (
@@ -48,13 +67,21 @@ const PageHero = ({ icono: Icono, titulo, descripcion, encontraras = [] }) => {
 
                     {encontraras.length > 0 && (
                         <>
-                            <p className="text-[10px] font-black uppercase tracking-widest text-white/45 mt-4">
+                            {/* En móvil es un botón que despliega; desde `sm` es
+                                un rótulo y la lista va siempre visible. */}
+                            <button
+                                type="button"
+                                onClick={alternar}
+                                aria-expanded={abierto}
+                                className="mt-4 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-white/45 transition-colors hover:text-white/70 sm:pointer-events-none sm:mt-4"
+                            >
                                 Lo que encontrarás aquí
-                            </p>
+                                <ChevronDown className={`h-3.5 w-3.5 transition-transform sm:hidden ${abierto ? 'rotate-180' : ''}`} />
+                            </button>
                             {/* Dos columnas desde `sm` para que tres viñetas no
                                 estiren el encabezado más que el contenido que
                                 presenta; en móvil, una sola. */}
-                            <ul className="mt-2 grid gap-1.5 sm:grid-cols-2 sm:gap-x-6">
+                            <ul className={`mt-2 gap-1.5 sm:grid sm:grid-cols-2 sm:gap-x-6 ${abierto ? 'grid' : 'hidden'}`}>
                                 {encontraras.map((punto, i) => (
                                     <li key={i} className="flex items-start gap-2 text-[12px] sm:text-[13px] text-white/85 leading-snug">
                                         <Check className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-brand-gold" />
