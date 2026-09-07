@@ -4,6 +4,7 @@ import {
     AlertTriangle, Wallet, TrendingUp, CheckCircle2, Info, ChevronDown,
 } from 'lucide-react';
 import api from '../../config/api';
+import { cn } from '../../utils/cn';
 import { useUi } from '../../context/UiContext';
 import { Button } from '../../components/ui/Button';
 import { exportToExcel } from '../../utils/excelUtils';
@@ -261,12 +262,18 @@ export default function SavingsMatrixPage({ mio = false }) {
         const alDia = !lec.exigible ? filas.length
             : filas.filter((f) => f.meses.every((c, i) => i + 1 > lim || lec.hay(c))).length;
         const conceptos = filas.reduce((s2, f) => s2 + f.meses.reduce((a, c) => a + c.conceptos, 0), 0);
+        // Lo que movió EL MES elegido. Sin esto, elegir "Marzo" dejaba la tarjeta
+        // del período mostrando el total del año entero: el control parecía no
+        // hacer nada, y peor, contestaba una pregunta distinta de la que se hizo.
+        const totalMes = mesFoco
+            ? filas.reduce((s, f) => s + lec.valor(f.meses[mesFoco - 1]), 0)
+            : null;
         const mesRef = mesFoco || lim;
         const delMes = mesRef >= 1 ? filas.reduce((s, f) => s + f.meses[mesRef - 1][modo], 0) : 0;
         const previo = mesRef >= 2 ? filas.reduce((s, f) => s + f.meses[mesRef - 2][modo], 0) : 0;
         const variacion = previo > 0 ? ((delMes - previo) / previo) * 100 : null;
         return {
-            totalPeriodo, historico, huecos, alDia, mesRef, delMes, variacion, conceptos,
+            totalPeriodo, totalMes, historico, huecos, alDia, mesRef, delMes, variacion, conceptos,
             celdasExigibles: filas.length * lim,
             cobertura: filas.length * lim > 0 ? ((filas.length * lim - huecos) / (filas.length * lim)) * 100 : 100,
             // El cuadre solo puede afirmarse mirando todos los años y en modo
@@ -274,13 +281,13 @@ export default function SavingsMatrixPage({ mio = false }) {
             // los socios, y el acumulado del fondo incluye además devoluciones y
             // descuentos. La diferencia entre ambos no es un descuadre, es esa
             // partida — y decirlo vale más que esconderla.
-            cuadra: anio === 'todos' && modo === 'neto' && Math.abs(totalPeriodo - historico) < 1,
+            cuadra: !mesFoco && anio === 'todos' && modo === 'neto' && Math.abs(totalPeriodo - historico) < 1,
             // Los aportes cuadran contra su propio acumulado, no contra el del
             // ahorro mensual. Sin esta rama, mirar "Aportes" en todos los años
             // caía en el mensaje de descuadre y denunciaba un problema que no
             // existe — la peor avería que puede tener una pantalla de control.
-            cuadraAportes: anio === 'todos' && modo === 'aportes' && Math.abs(totalPeriodo - historico) < 1,
-            explicaDiferencia: anio === 'todos' && modo === 'abonos'
+            cuadraAportes: !mesFoco && anio === 'todos' && modo === 'aportes' && Math.abs(totalPeriodo - historico) < 1,
+            explicaDiferencia: !mesFoco && anio === 'todos' && modo === 'abonos'
                 && Math.abs(totalPeriodo + conceptos - historico) < 1,
         };
     }, [datos, filas, modo, mesFoco, anio]);
@@ -382,11 +389,15 @@ export default function SavingsMatrixPage({ mio = false }) {
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                     <Tarjeta
                         icon={Wallet}
-                        titulo={modoAportes
-                            ? (anio === 'todos' ? 'Aporte inicial' : `Aportes ${anio}`)
-                            : (anio === 'todos' ? 'Ahorro histórico' : `Ahorro ${anio}`)}
-                        valor={pesos(resumen.totalPeriodo)}
-                        nota={modoAportes ? (mio ? 'Lo que aportaste al entrar' : 'Lo aportado al entrar al fondo')
+                        titulo={mesFoco
+                            ? `${modoAportes ? 'Aportes' : 'Ahorro'} de ${MESES_LARGOS[mesFoco - 1]}`
+                            : modoAportes
+                                ? (anio === 'todos' ? 'Aporte inicial' : `Aportes ${anio}`)
+                                : (anio === 'todos' ? 'Ahorro histórico' : `Ahorro ${anio}`)}
+                        valor={pesos(mesFoco ? resumen.totalMes : resumen.totalPeriodo)}
+                        nota={mesFoco
+                            ? `Solo ese mes · el ${anio === 'todos' ? 'total' : `año ${anio}`} suma ${pesos(resumen.totalPeriodo)}`
+                            : modoAportes ? (mio ? 'Lo que aportaste al entrar' : 'Lo aportado al entrar al fondo')
                             : modo === 'neto' ? 'Neto, con devoluciones y descuentos'
                             : (mio ? 'Solo tus abonos' : 'Solo abonos de los socios')}
                     />
@@ -613,9 +624,17 @@ export default function SavingsMatrixPage({ mio = false }) {
                                             key={m}
                                             onClick={() => ordenar(i)}
                                             onMouseEnter={() => setCruz((c) => ({ ...c, col: i }))}
-                                            className={`sticky top-0 z-20 min-w-[74px] cursor-pointer border-b border-ui-border px-2 py-3 text-center text-[11px] font-semibold uppercase tracking-wider transition-colors
-                                                ${cruz.col === i ? 'bg-brand-primary text-white' : 'bg-brand-dark text-white/90'}
-                                                ${i + 1 > lim ? 'opacity-60' : ''}`}
+                                            className={cn(
+                                                'sticky top-0 z-20 min-w-[74px] cursor-pointer border-b border-ui-border px-2 py-3 text-center text-[11px] font-semibold uppercase tracking-wider transition-colors',
+                                                // El mes elegido en el selector ES el sujeto de la pantalla:
+                                                // antes se elegía "Marzo" y la columna de marzo se veía igual
+                                                // que las once restantes, así que el control no parecía hacer
+                                                // nada. Ahora se marca, y las demás se apagan.
+                                                mesFoco === i + 1 ? 'bg-brand-gold text-brand-dark ring-2 ring-inset ring-brand-gold'
+                                                    : cruz.col === i ? 'bg-brand-primary text-white' : 'bg-brand-dark text-white/90',
+                                                mesFoco && mesFoco !== i + 1 && 'opacity-40',
+                                                i + 1 > lim && 'opacity-60',
+                                            )}
                                         >
                                             {m}
                                         </th>
@@ -696,7 +715,14 @@ export default function SavingsMatrixPage({ mio = false }) {
                                                         title={modoAportes
                                                             ? `${s.nombre} · ${MESES_LARGOS[i]}\n${c.aportes > 0 ? `Aporte de ${pesos(c.aportes)}` : 'Sin aporte inicial este mes'}`
                                                             : `${s.nombre} · ${MESES_LARGOS[i]}\n${hayAbono ? `Abonó ${pesos(c.abonos)}` : vencido ? 'Sin aporte' : 'Mes no vencido'}${c.conceptos ? `\nMovimientos del fondo: ${pesos(c.conceptos)}` : ''}`}
-                                                        className={`cursor-pointer border-b border-r p-0 text-center transition-[filter] ${enCruz ? 'brightness-105' : ''}`}
+                                                        className={cn(
+                                                            'cursor-pointer border-b border-r p-0 text-center transition-[filter]',
+                                                            enCruz && 'brightness-105',
+                                                            // Fuera del mes elegido, la casilla se aparta: la
+                                                            // rejilla sigue completa para no perder el contexto,
+                                                            // pero se ve de qué mes se está hablando.
+                                                            mesFoco && mesFoco !== i + 1 && 'opacity-30',
+                                                        )}
                                                     >
                                                         <span className={`m-[3px] flex h-8 items-center justify-center rounded-md border font-mono text-[12px] font-semibold tabular-nums ${clases}`}>
                                                             {contenido}
@@ -751,7 +777,13 @@ export default function SavingsMatrixPage({ mio = false }) {
                     {resumen.cuadra || resumen.explicaDiferencia
                         ? <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
                         : <Info className="h-5 w-5 shrink-0 text-gray-400" />}
-                    {resumen.cuadraAportes ? (
+                    {mesFoco ? (
+                        <p>
+                            Estás viendo solo <strong className="font-semibold">{MESES_LARGOS[mesFoco - 1]}</strong>:
+                            <span className="font-mono font-semibold tabular-nums"> {pesos(resumen.totalMes)}</span>.
+                            {' '}Quita el filtro de mes para comprobar que la matriz cuadra con el acumulado.
+                        </p>
+                    ) : resumen.cuadraAportes ? (
                         <p>
                             <strong className="font-semibold">Cuadra.</strong> La suma de los aportes iniciales —
                             <span className="font-mono font-semibold tabular-nums"> {pesos(resumen.totalPeriodo)}</span> — coincide

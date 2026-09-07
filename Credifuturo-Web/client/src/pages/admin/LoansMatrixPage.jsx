@@ -4,6 +4,7 @@ import {
     AlertTriangle, Wallet, TrendingUp, CheckCircle2, Info, ChevronDown, Clock,
 } from 'lucide-react';
 import api from '../../config/api';
+import { cn } from '../../utils/cn';
 import { useUi } from '../../context/UiContext';
 import { Button } from '../../components/ui/Button';
 import { exportToExcel } from '../../utils/excelUtils';
@@ -237,26 +238,43 @@ export default function LoansMatrixPage({ mio = false }) {
             });
         }
 
+        // Lo que movió EL MES elegido: sin esto la tarjeta seguía mostrando el
+        // total del año y el selector parecía inerte.
+        const totalMes = mesFoco ? filas.reduce((s, p) => s + p.meses[mesFoco - 1][modo], 0) : null;
         const mesRef = mesFoco || lim;
         const delMes = mesRef >= 1 ? filas.reduce((s, p) => s + p.meses[mesRef - 1][modo], 0) : 0;
         const previo = mesRef >= 2 ? filas.reduce((s, p) => s + p.meses[mesRef - 2][modo], 0) : 0;
 
         return {
             total, programado, cartera, prestado, intereses, programadoTotal, porCobrar, proxima,
-            exigibles, cubiertas, descubiertas, conAbono, mesRef, delMes,
+            exigibles, cubiertas, descubiertas, conAbono, mesRef, delMes, totalMes,
             variacion: previo > 0 ? ((delMes - previo) / previo) * 100 : null,
             cumplimiento: exigibles > 0 ? (cubiertas / exigibles) * 100 : 100,
             alDia: filas.filter((p) => p.meses.every((c, i) => i + 1 > lim || c.n === 0 || c.pagadas + c.prepago >= c.n)).length,
             // Con todos los años a la vista, la suma de las cuotas tiene que ser
             // el capital prestado más los intereses pactados. Es el cuadre
             // equivalente al de la matriz de ahorros.
-            cuadra: anio === 'todos' && modo === 'programado'
+            cuadra: !mesFoco && anio === 'todos' && modo === 'programado'
                 && Math.abs(programado - programadoTotal) < 1
                 && Math.abs(programadoTotal - (prestado + intereses)) < filas.length + 1,
         };
     }, [datos, filas, modo, mesFoco, anio, lim]);
 
     const ordenar = (campo) => setOrden((o) => ({ campo, dir: o.campo === campo && o.dir === 'asc' ? 'desc' : 'asc' }));
+
+    // Los filtros que de verdad recortan lo que se ve.
+    const filtrosActivos = useMemo(() => {
+        const l = [];
+        if (busqueda.trim()) l.push({ etiqueta: `Búsqueda: "${busqueda.trim()}"`, quitar: () => setBusqueda('') });
+        if (mesFoco) l.push({ etiqueta: MESES_LARGOS[mesFoco - 1], quitar: () => setMesFoco(null) });
+        if (soloMora) l.push({ etiqueta: 'Solo en descubierto', quitar: () => setSoloMora(false) });
+        if (soloVigentes) l.push({ etiqueta: 'Solo créditos vigentes', quitar: () => setSoloVigentes(false) });
+        return l;
+    }, [busqueda, mesFoco, soloMora, soloVigentes]);
+
+    const limpiarFiltros = () => {
+        setBusqueda(''); setMesFoco(null); setSoloMora(false); setSoloVigentes(false);
+    };
 
     const totalesColumna = useMemo(() => (
         Array.from({ length: 12 }, (_, i) => ({
@@ -327,9 +345,13 @@ export default function LoansMatrixPage({ mio = false }) {
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                     <Tarjeta
                         icon={Wallet}
-                        titulo={anio === 'todos' ? 'Recaudo histórico' : `Recaudo ${anio}`}
-                        valor={pesos(resumen.total)}
-                        nota={modo === 'programado' ? 'Lo que dicta el cronograma' : (mio ? 'Lo que has pagado' : 'Lo que los socios pagaron')}
+                        titulo={mesFoco
+                            ? `${modo === 'programado' ? 'Programado' : 'Recaudo'} de ${MESES_LARGOS[mesFoco - 1]}`
+                            : (anio === 'todos' ? 'Recaudo histórico' : `Recaudo ${anio}`)}
+                        valor={pesos(mesFoco ? resumen.totalMes : resumen.total)}
+                        nota={mesFoco
+                            ? `Solo ese mes · el ${anio === 'todos' ? 'total' : `año ${anio}`} suma ${pesos(resumen.total)}`
+                            : modo === 'programado' ? 'Lo que dicta el cronograma' : (mio ? 'Lo que has pagado' : 'Lo que los socios pagaron')}
                     />
                     <Tarjeta
                         icon={CalendarCheck}
@@ -459,6 +481,35 @@ export default function LoansMatrixPage({ mio = false }) {
                     </div>
                 </div>
 
+                {/* Qué se está dejando fuera. Aquí faltaba por completo, y era
+                    peor que en ahorros: "Solo créditos vigentes" viene activado
+                    de fábrica, así que un fondo con todos los créditos saldados
+                    mostraba "0 filas · $0" sin una palabra que lo explicara. */}
+                {filtrosActivos.length > 0 && (
+                    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-amber-700">
+                            Mostrando {filas.length} de {datos?.data?.length ?? 0}
+                        </span>
+                        {filtrosActivos.map((fl) => (
+                            <button
+                                key={fl.etiqueta}
+                                onClick={fl.quitar}
+                                title={`Quitar: ${fl.etiqueta}`}
+                                className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-amber-900 transition-colors hover:bg-amber-100"
+                            >
+                                {fl.etiqueta}
+                                <X className="h-3 w-3" />
+                            </button>
+                        ))}
+                        <button
+                            onClick={limpiarFiltros}
+                            className="ml-auto text-[11px] font-bold text-amber-800 underline underline-offset-2 hover:text-amber-900"
+                        >
+                            Quitar todos
+                        </button>
+                    </div>
+                )}
+
                 <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-ui-border pt-3 text-xs text-gray-600">
                     <span className="font-semibold uppercase tracking-wider text-gray-500">Lectura</span>
                     <span className="flex items-center gap-1.5"><i className="h-3.5 w-5 rounded-sm bg-emerald-700" /> pagada con abono a capital</span>
@@ -535,9 +586,15 @@ export default function LoansMatrixPage({ mio = false }) {
                                             key={m}
                                             onClick={() => ordenar(i)}
                                             onMouseEnter={() => setCruz((c) => ({ ...c, col: i }))}
-                                            className={`sticky top-0 z-20 min-w-[76px] cursor-pointer border-b border-ui-border px-2 py-3 text-center text-[11px] font-semibold uppercase tracking-wider transition-colors
-                                                ${cruz.col === i ? 'bg-brand-primary text-white' : 'bg-brand-dark text-white/90'}
-                                                ${i + 1 > lim ? 'opacity-60' : ''}`}
+                                            className={cn(
+                                                'sticky top-0 z-20 min-w-[76px] cursor-pointer border-b border-ui-border px-2 py-3 text-center text-[11px] font-semibold uppercase tracking-wider transition-colors',
+                                                // El mes elegido es el sujeto de la pantalla; sin marcarlo,
+                                                // el selector no parecía hacer nada.
+                                                mesFoco === i + 1 ? 'bg-brand-gold text-brand-dark ring-2 ring-inset ring-brand-gold'
+                                                    : cruz.col === i ? 'bg-brand-primary text-white' : 'bg-brand-dark text-white/90',
+                                                mesFoco && mesFoco !== i + 1 && 'opacity-40',
+                                                i + 1 > lim && 'opacity-60',
+                                            )}
                                         >
                                             {m}
                                         </th>
@@ -600,7 +657,11 @@ export default function LoansMatrixPage({ mio = false }) {
                                                         key={i}
                                                         onMouseEnter={() => setCruz({ fila: idx, col: i })}
                                                         title={titulo}
-                                                        className={`border-b border-r p-0 text-center transition-[filter] ${enCruz ? 'brightness-105' : ''}`}
+                                                        className={cn(
+                                                            'border-b border-r p-0 text-center transition-[filter]',
+                                                            enCruz && 'brightness-105',
+                                                            mesFoco && mesFoco !== i + 1 && 'opacity-30',
+                                                        )}
                                                     >
                                                         <span className={`m-[3px] flex h-8 items-center justify-center rounded-md border font-mono text-[12px] font-semibold tabular-nums transition-colors duration-500 ${ESTILOS[est]} ${esProxima ? 'ring-2 ring-brand-primary ring-offset-1' : ''}`}>
                                                             {contenidoCelda(est, c, modo)}
