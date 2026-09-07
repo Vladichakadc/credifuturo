@@ -1584,15 +1584,17 @@ const matrizAhorros = async (req, res, soloClientId = null) => {
         });
 
         // Los aportes iniciales viven en su propio menú y no son ahorro mensual.
+        // Ahora entran TAMBIÉN los aportes iniciales, pero como una cifra aparte
+        // —ver más abajo—, nunca sumados a `abonos` ni a `neto`: esas dos
+        // conservan exactamente el significado que ya tenían, y el cuadre de la
+        // rejilla contra el acumulado del socio sigue dando lo mismo.
         const movimientos = await Saving.findAll({
             // Se acota en la consulta, no filtrando después: traer los movimientos
             // de todo el fondo para descartarlos en memoria sería leer la vida
             // financiera de los demás socios para no usarla.
-            where: soloClientId
-                ? { type: NO_ES_APORTE_INICIAL(), clientId: soloClientId }
-                : { type: NO_ES_APORTE_INICIAL() },
+            where: soloClientId ? { clientId: soloClientId } : {},
             attributes: ['id', 'clientId', 'year', 'monthInt', 'mesAbonado', 'anioAbonado',
-                'valorAhorrado', 'amount', 'status', 'diasPenalizacion'],
+                'valorAhorrado', 'amount', 'status', 'diasPenalizacion', 'type'],
         });
 
         const aniosDisponibles = new Set();
@@ -1612,7 +1614,14 @@ const matrizAhorros = async (req, res, soloClientId = null) => {
                 || e.includes('evoluc') || e.includes('istribuc') || e.includes('escuent') || e.includes('enaliz');
         };
 
-        const vacio = () => Array.from({ length: 12 }, () => ({ abonos: 0, neto: 0, conceptos: 0, n: 0 }));
+        // El aporte inicial es una tercera cifra, no una suma a las otras dos.
+        // `abonos` responde "¿ahorró este mes?" y `neto` "¿cuánto cuadra con su
+        // acumulado?"; el aporte de entrada no responde ninguna de las dos —se
+        // paga una sola vez al entrar al fondo— y mezclarlo pintaría de verde un
+        // mes en que el socio no ahorró, que es justo lo que la rejilla existe
+        // para detectar.
+        const esAporteInicial = (m) => String(m.type || '') === 'Aporte Inicial';
+        const vacio = () => Array.from({ length: 12 }, () => ({ abonos: 0, neto: 0, conceptos: 0, aportes: 0, n: 0, nAportes: 0 }));
         const porSocio = new Map();
         for (const c of clientes) {
             porSocio.set(c.id, {
@@ -1628,6 +1637,10 @@ const matrizAhorros = async (req, res, soloClientId = null) => {
                 // El acumulado de toda la vida del socio, para cuadrar la fila
                 // contra lo que lleva ahorrado desde que entró al fondo.
                 historico: 0,
+                // El acumulado de aportes, para la columna de la derecha cuando
+                // se está mirando esa cifra.
+                aportesAnio: 0,
+                historicoAportes: 0,
                 mesesConAbono: 0,
             });
         }
@@ -1640,10 +1653,23 @@ const matrizAhorros = async (req, res, soloClientId = null) => {
             // prefiere el neto y se cae al bruto cuando no está, que es el mismo
             // criterio del Ranking de Ahorro: las dos pantallas deben cuadrar.
             const valor = parseFloat(m.valorAhorrado > 0 ? m.valorAhorrado : m.amount) || 0;
-            fila.historico += valor;
+            const aporte = esAporteInicial(m);
+
+            // El acumulado de siempre sigue siendo el del ahorro mensual: es el
+            // que cuadra con "lo que llevo ahorrado" en la pantalla del socio.
+            if (aporte) fila.historicoAportes += valor;
+            else fila.historico += valor;
+
             if (anioPedido !== null && anio !== anioPedido) continue;
             if (!(mes >= 1 && mes <= 12)) continue;
             const celda = fila.meses[mes - 1];
+
+            if (aporte) {
+                celda.aportes += valor;
+                celda.nAportes += 1;
+                continue;
+            }
+
             celda.neto += valor;
             celda.n += 1;
             if (esConcepto(m)) celda.conceptos += valor;
@@ -1655,15 +1681,20 @@ const matrizAhorros = async (req, res, soloClientId = null) => {
             f.totalAnio = f.meses.reduce((s, c) => s + c.neto, 0);
             f.abonosAnio = f.meses.reduce((s, c) => s + c.abonos, 0);
             f.mesesConAbono = f.meses.filter((c) => c.abonos > 0).length;
+            f.aportesAnio = f.meses.reduce((s, c) => s + c.aportes, 0);
             f.meses = f.meses.map((c) => ({
                 abonos: parseFloat(c.abonos.toFixed(2)),
                 neto: parseFloat(c.neto.toFixed(2)),
                 conceptos: parseFloat(c.conceptos.toFixed(2)),
+                aportes: parseFloat(c.aportes.toFixed(2)),
                 n: c.n,
+                nAportes: c.nAportes,
             }));
             f.totalAnio = parseFloat(f.totalAnio.toFixed(2));
             f.abonosAnio = parseFloat(f.abonosAnio.toFixed(2));
+            f.aportesAnio = parseFloat(f.aportesAnio.toFixed(2));
             f.historico = parseFloat(f.historico.toFixed(2));
+            f.historicoAportes = parseFloat(f.historicoAportes.toFixed(2));
         }
 
         // Totales de cada columna, que es la otra mitad del control: cuánto
@@ -1671,10 +1702,12 @@ const matrizAhorros = async (req, res, soloClientId = null) => {
         const totalesMes = Array.from({ length: 12 }, (_, i) => {
             const abonos = filas.reduce((s, f) => s + f.meses[i].abonos, 0);
             const neto = filas.reduce((s, f) => s + f.meses[i].neto, 0);
+            const aportes = filas.reduce((s, f) => s + f.meses[i].aportes, 0);
             return {
                 mes: i + 1,
                 abonos: parseFloat(abonos.toFixed(2)),
                 neto: parseFloat(neto.toFixed(2)),
+                aportes: parseFloat(aportes.toFixed(2)),
                 socios: filas.filter((f) => f.meses[i].abonos > 0).length,
             };
         });
@@ -1693,6 +1726,8 @@ const matrizAhorros = async (req, res, soloClientId = null) => {
                 abonos: parseFloat(filas.reduce((s, f) => s + f.abonosAnio, 0).toFixed(2)),
                 neto: parseFloat(filas.reduce((s, f) => s + f.totalAnio, 0).toFixed(2)),
                 historico: parseFloat(filas.reduce((s, f) => s + f.historico, 0).toFixed(2)),
+                aportes: parseFloat(filas.reduce((s, f) => s + f.aportesAnio, 0).toFixed(2)),
+                historicoAportes: parseFloat(filas.reduce((s, f) => s + f.historicoAportes, 0).toFixed(2)),
                 socios: filas.length,
                 sociosActivos: filas.filter((f) => f.estatus === 'Activo').length,
             },

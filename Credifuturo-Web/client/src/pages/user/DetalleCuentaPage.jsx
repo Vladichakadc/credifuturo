@@ -710,9 +710,10 @@ const DetalleCuentaPage = () => {
                         </div>
                         <div className="min-w-0 flex-1">
                             <p className="text-lg font-extrabold leading-tight truncate">{nombreCompleto}</p>
-                            <p className="text-xs text-white/60 font-mono mt-0.5">
-                                {socio?.cedula ? `C.C. ${socio.cedula}` : ''}{socio?.customerId ? ` · ${socio.customerId}` : ''}
-                            </p>
+                            {/* La cédula y el número de socio viven en la ficha de
+                                Mi Panel; repetirlos aquí es el mismo dato dos veces.
+                                (En la cabecera del PDF sí se quedan: allí
+                                identifican el documento, que sale del sistema.) */}
                         </div>
                         <div className="text-right shrink-0">
                             <p className="text-[10px] font-bold uppercase tracking-wider text-white/50">Patrimonio neto</p>

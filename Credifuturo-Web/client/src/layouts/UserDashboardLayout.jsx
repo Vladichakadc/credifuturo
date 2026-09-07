@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import PageHeroRuta from '../components/ui/PageHeroRuta';
-import MiIdentidad from '../components/user/MiIdentidad';
 import useDrawerMovil from '../utils/useDrawerMovil';
 import { motion } from 'framer-motion';
 import { Outlet, useLocation, Link } from 'react-router-dom';
@@ -422,7 +421,11 @@ const UserDashboardLayout = ({ user, onLogout }) => {
                         </div>
                         <div className="flex-1 min-w-0">
                             <p className="text-sm font-semibold text-white truncate">{userName}</p>
-                            <p className="text-xs text-white/40 truncate">{user?.cedula ? `C.C. ${user.cedula}` : 'Socio'}</p>
+                            {/* Aquí solo va con qué sesión se está entrando. La
+                                cédula, el ID y la fecha de ingreso viven en la
+                                ficha de Mi Panel: repetirlos en todas las
+                                pantallas es duplicar el mismo dato. */}
+                            <p className="text-xs text-white/40 truncate">Socio</p>
                         </div>
                         <NotificationBell variant="sidebar" />
                     </div>
@@ -468,10 +471,6 @@ const UserDashboardLayout = ({ user, onLogout }) => {
                     {/* Presentación de la pantalla, resuelta por ruta desde
                         utils/paginasInfo.js. Va aquí y no dentro de cada página
                         para que una pantalla nueva la herede sin tocarla. */}
-                    {/* Los datos del socio autenticado, en todas sus pantallas.
-                        Va aquí y no dentro de cada página por lo mismo que el
-                        hero: una pantalla nueva la hereda sin tocarla. */}
-                    <MiIdentidad />
                     <PageHeroRuta />
                     <Outlet />
                 </div>

@@ -4,6 +4,7 @@ import api from '../../config/api';
 import ProyeccionCupo from '../../components/user/ProyeccionCupo';
 import { calcVerdict } from '../../utils/loanCapacity';
 import { useUi } from '../../context/UiContext';
+import MiIdentidad from '../../components/user/MiIdentidad';
 import {
     PiggyBank,
     Wallet,
@@ -278,7 +279,6 @@ const MiPanelPage = () => {
         }, 0), [payments]);
 
     const nombre = profile?.name || 'Socio';
-    const anioIngreso = profile?.fechaIngreso ? String(profile.fechaIngreso).slice(0, 4) : null;
 
     // Socio nuevo (< 3 meses): aún no puede pedir préstamo (Resolución #13) y
     // se beneficia de un resumen de las reglas más relevantes de sus primeros meses.
@@ -304,18 +304,24 @@ const MiPanelPage = () => {
                     <h1 className="text-2xl lg:text-3xl font-extrabold text-gray-900 tracking-tight">
                         Hola, {nombre} 👋
                     </h1>
-                    <p className="text-sm text-gray-500 mt-0.5">
-                        {profile?.customerId ? `Socio ${profile.customerId}` : 'Socio'}
-                        {anioIngreso ? ` · desde ${anioIngreso}` : ''}
-                        {racha.streak > 0 && (
-                            <span className="inline-flex items-center gap-1 ml-2 text-brand-primary font-semibold">
+                    {/* El número de socio y el año de ingreso salieron de aquí:
+                        están —completos— en la ficha de abajo, y decirlos dos
+                        veces con dos precisiones distintas es peor que decirlos
+                        una. Queda la racha, que no está en ninguna otra parte. */}
+                    {racha.streak > 0 && (
+                        <p className="text-sm mt-0.5">
+                            <span className="inline-flex items-center gap-1 text-brand-primary font-semibold">
                                 <Flame className="h-3.5 w-3.5" />
                                 {racha.streak} {racha.streak === 1 ? 'mes' : 'meses'} ahorrando
                             </span>
-                        )}
-                    </p>
+                        </p>
+                    )}
                 </div>
             </div>
+
+            {/* Sus datos, justo debajo del saludo: es donde se van a mirar, y no
+                tienen por qué acompañar cada navegación del socio. */}
+            <MiIdentidad socio={profile} />
 
             {/* 0 · Bienvenida (solo socios con menos de 3 meses en el fondo) */}
             {esSocioNuevo && (
