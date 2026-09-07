@@ -2,7 +2,7 @@ import {
     LayoutDashboard, Landmark, Activity, BarChart3, PiggyBank, TrendingUp,
     HandCoins, CreditCard, Scale, Calculator, Lightbulb, Trophy, Gavel,
     ScrollText, FileText, Users, Wallet, Receipt, ShieldCheck, SlidersHorizontal,
-    ClipboardList, Undo2, LinkIcon, FolderOpen, Coins
+    ClipboardList, Undo2, LinkIcon, FolderOpen, Coins, Grid3x3
 } from 'lucide-react';
 
 /**
@@ -150,6 +150,26 @@ export const PAGINAS_INFO = {
             'El detalle de cada ahorro y cada aporte',
             'Tu capital acumulado y su composición',
             'La descarga del extracto en PDF',
+        ],
+    },
+    '/dashboard/mi-matriz-ahorros': {
+        icono: Grid3x3,
+        titulo: 'Mi Matriz de Ahorros',
+        descripcion: 'Tu año mes a mes: en cuáles ahorraste y en cuáles no. Es la misma rejilla de control con la que la Junta mira el fondo, con tus datos.',
+        encontraras: [
+            'Verde donde hay abono, rojo donde falta y vencido',
+            'Cada casilla abre los movimientos que la componen',
+            'Tu acumulado de toda la vida en el fondo',
+        ],
+    },
+    '/dashboard/mi-matriz-cuotas': {
+        icono: Grid3x3,
+        titulo: 'Mi Matriz de Cuotas',
+        descripcion: 'Tus créditos mes a mes: qué cuota cayó en cada uno, cuál está pagada y cuál sigue pendiente.',
+        encontraras: [
+            'Una fila por crédito, no una por año',
+            'Lo pagado y lo programado, con el saldo de cada uno',
+            'La próxima cuota por pagar, señalada',
         ],
     },
     '/dashboard/propuestas': {

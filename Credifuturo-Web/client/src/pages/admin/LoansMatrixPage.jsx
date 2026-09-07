@@ -132,7 +132,9 @@ function Tarjeta({ icon: Icon, titulo, valor, nota, acento = 'emerald', alerta =
     );
 }
 
-export default function LoansMatrixPage() {
+/** `mio` la acota al socio autenticado — ver el comentario de SavingsMatrixPage. */
+export default function LoansMatrixPage({ mio = false }) {
+    const base = mio ? '/admin/my' : '/admin';
     const { toast } = useUi();
     const [datos, setDatos] = useState(null);
     const [cargando, setCargando] = useState(true);
@@ -152,7 +154,7 @@ export default function LoansMatrixPage() {
         setError(null);
         try {
             const q = anioPedido === 'todos' ? '?anio=todos' : anioPedido ? `?anio=${anioPedido}` : '';
-            const res = await api.get(`/admin/payments/matriz${q}`);
+            const res = await api.get(`${base}/payments/matriz${q}`);
             if (!res.data?.ok) throw new Error(res.data?.error || 'Respuesta inesperada del servidor');
             setDatos(res.data);
             setAnio((a) => (a === null ? (res.data.anio ?? 'todos') : a));
@@ -162,7 +164,7 @@ export default function LoansMatrixPage() {
         } finally {
             setCargando(false);
         }
-    }, []);
+    }, [base]);
 
     useEffect(() => { cargar(null); }, [cargar]);
 
@@ -303,10 +305,11 @@ export default function LoansMatrixPage() {
                         <span className="rounded-lg bg-brand-primary/10 p-2 text-brand-primary ring-1 ring-brand-primary/15">
                             <Grid3x3 className="h-5 w-5" />
                         </span>
-                        <h1 className="text-2xl font-bold text-brand-primary">Matriz de Cuotas</h1>
+                        <h1 className="text-2xl font-bold text-brand-primary">{mio ? 'Mi Matriz de Cuotas' : 'Matriz de Cuotas'}</h1>
                     </div>
                     <p className="mt-1.5 max-w-2xl text-sm text-gray-600">
-                        Control mes a mes de cada crédito. En verde la cuota pagada, en rojo la vencida sin pagar, en
+                        {mio ? 'Tus créditos mes a mes. ' : 'Control mes a mes de cada crédito. '}
+                        En verde la cuota pagada, en rojo la vencida sin pagar, en
                         gris la que aún no vence, y en blanco los meses en que ese préstamo no tiene cuota.
                     </p>
                 </div>
@@ -326,7 +329,7 @@ export default function LoansMatrixPage() {
                         icon={Wallet}
                         titulo={anio === 'todos' ? 'Recaudo histórico' : `Recaudo ${anio}`}
                         valor={pesos(resumen.total)}
-                        nota={modo === 'programado' ? 'Lo que dicta el cronograma' : 'Lo que los socios pagaron'}
+                        nota={modo === 'programado' ? 'Lo que dicta el cronograma' : (mio ? 'Lo que has pagado' : 'Lo que los socios pagaron')}
                     />
                     <Tarjeta
                         icon={CalendarCheck}
@@ -372,6 +375,8 @@ export default function LoansMatrixPage() {
 
             <div className="rounded-xl border border-ui-border bg-white p-4 shadow-card">
                 <div className="flex flex-wrap items-end gap-4">
+                    {/* Con solo los créditos propios, buscar por socio no busca nada. */}
+                    {!mio && (
                     <label className="min-w-[240px] flex-1">
                         <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-gray-500">Socio, cédula o préstamo</span>
                         <div className="relative">
@@ -389,6 +394,7 @@ export default function LoansMatrixPage() {
                             )}
                         </div>
                     </label>
+                    )}
 
                     <label>
                         <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-gray-500">Año</span>

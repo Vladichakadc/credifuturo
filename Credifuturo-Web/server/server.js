@@ -495,6 +495,30 @@ sequelize.sync().then(async () => {
             }
         })();
 
+        // ── El Buzón de Propuestas arranca vacío ───────────────────────────
+        // Al abrirlo a todos los socios ya había una propuesta escrita por el
+        // administrador que la asamblea no ha visto. Estrenar la función
+        // mostrándola sería publicarla por accidente, así que lo anterior a la
+        // apertura queda apartado y el administrador la envía cuando quiera
+        // (PUT /propuestas/:id/publicar). Corre UNA vez: si la clave ya existe
+        // no se toca, porque volver a sembrarla ocultaría de golpe todo lo que
+        // los socios hayan escrito desde entonces.
+        //
+        // Va después de listen() y con su propio try/catch, como el resto de lo
+        // que escribe en la base al arrancar: una excepción antes de listen()
+        // dejaría el servidor sin puerto y con un diagnóstico equivocado.
+        (async () => {
+            try {
+                const { sembrarPropuestasOcultas } = require('./routes/admin');
+                const r = await sembrarPropuestasOcultas();
+                if (r?.sembrada) {
+                    console.log(`[PROPUESTAS] Buzón abierto a todos los socios · ${r.ocultas} propuesta(s) previa(s) apartada(s) hasta que el comité las publique.`);
+                }
+            } catch (e) {
+                console.warn('[PROPUESTAS] No se pudo preparar el buzón:', e.message);
+            }
+        })();
+
         // ── Backup Automático Diario a las 8 PM ────────────────────────────
         // Formato cron: 'segundo minuto hora dia mes dia-semana'
         // '0 0 20 * * *' = todos los días a las 20:00:00 (8 PM) hora local del servidor
