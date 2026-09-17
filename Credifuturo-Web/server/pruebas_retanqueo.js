@@ -101,6 +101,28 @@ const desembolsar = (cuerpo) =>
     fetch(`${BASE}/admin/disbursed-loans`, { method: 'POST', headers: H, body: JSON.stringify(cuerpo) })
         .then(async r => ({ status: r.status, body: await r.json() }));
 
+/**
+ * Fechas relativas a HOY, no fijas en el calendario.
+ *
+ * La sección 7 sembraba cuotas con vencimiento el 10 de septiembre de 2026 y
+ * pasó verde durante semanas. El 17 de septiembre empezó a fallar: esa cuota
+ * ya estaba vencida, el socio entraba en mora, y la mora bloquea cualquier
+ * desembolso nuevo — o sea que el test no probaba lo que decía probar, probaba
+ * que el calendario todavía no lo había alcanzado.
+ *
+ * Una suite que se pone roja sola es una suite que la gente deja de mirar. Las
+ * fechas se derivan del día en que corre.
+ */
+const HOY = new Date();
+const enDias = (n) => {
+    const d = new Date(Date.UTC(HOY.getUTCFullYear(), HOY.getUTCMonth(), HOY.getUTCDate() + n));
+    return d.toISOString().slice(0, 10);
+};
+const enMeses = (n, dia = 10) => {
+    const d = new Date(Date.UTC(HOY.getUTCFullYear(), HOY.getUTCMonth() + n, dia));
+    return d.toISOString().slice(0, 10);
+};
+
 async function main() {
     await sequelize.sync();
     await sequelize.query('CREATE UNIQUE INDEX IF NOT EXISTS ux_disbursed_id_vm ON DisbursedLoans(id_vm)');
@@ -127,6 +149,9 @@ async function main() {
     console.log('\n1. Préstamo SIN cuotas pagadas: el periodo arranca en la fecha del préstamo');
     // El interés corre desde que se desembolsó. 13 días al 1,4% sobre 4.000.000.
     {
+        // Fechas FIJAS a propósito: esta sección solo previsualiza —no desembolsa—,
+        // así que la mora no la bloquea, y lo que mide es la aritmética entre dos
+        // días concretos. Las secciones que sí desembolsan usan fechas relativas.
         const { socio } = await sembrar({
             principal: 4000000, cuotas: 6, tasa: 0.014, pagadas: 0,
             fechaPrestamo: '2026-08-17',
@@ -248,13 +273,16 @@ async function main() {
     // ───────────────────────────────────────────────────────────────────────
     console.log('\n7. Neto negativo: el préstamo nuevo no cubre lo que se cancela');
     {
+        // Todas las cuotas por vencer: este caso prueba el neto negativo, no la
+        // mora. Con fechas fijas, al pasar el tiempo la primera vencía y el
+        // desembolso se bloqueaba por mora, tapando lo que se quería medir.
         const { socio } = await sembrar({
             principal: 6000000, cuotas: 6, tasa: 0.014, pagadas: 0,
-            fechaPrestamo: '2026-08-17',
-            vencimientos: ['2026-09-10','2026-10-10','2026-11-10','2026-12-10','2027-01-10','2027-02-10'],
+            fechaPrestamo: enDias(-14),
+            vencimientos: [enMeses(1), enMeses(2), enMeses(3), enMeses(4), enMeses(5), enMeses(6)],
         });
         const { status, body } = await desembolsar({
-            clientId: socio.id, fechaPrestamo: '2026-08-30', mesDesembolso: 'Agosto', anioDesembolso: 2026,
+            clientId: socio.id, fechaPrestamo: enDias(-1), mesDesembolso: 'Agosto', anioDesembolso: 2026,
             valorPrestado: 2000000, cuotas: 3, interesMensual: 0.014, estado: 'Vigente',
         });
         comprobar('se permite (el socio consigna la diferencia)', status === 201, `HTTP ${status}`);
@@ -379,8 +407,8 @@ async function main() {
     {
         const { socio, idVm } = await sembrar({
             principal: 6000000, cuotas: 6, tasa: 0.014, pagadas: 0,
-            fechaPrestamo: '2026-08-17',
-            vencimientos: ['2026-09-10','2026-10-10','2026-11-10','2026-12-10','2027-01-10','2027-02-10'],
+            fechaPrestamo: enDias(-14),
+            vencimientos: [enMeses(1), enMeses(2), enMeses(3), enMeses(4), enMeses(5), enMeses(6)],
         });
 
         // El socio abonó a capital: el cronograma real deja de responder a
@@ -465,8 +493,8 @@ async function main() {
     {
         const { socio, idVm } = await sembrar({
             principal: 6000000, cuotas: 6, tasa: 0.014, pagadas: 0,
-            fechaPrestamo: '2026-08-17',
-            vencimientos: ['2026-09-10','2026-10-10','2026-11-10','2026-12-10','2027-01-10','2027-02-10'],
+            fechaPrestamo: enDias(-14),
+            vencimientos: [enMeses(1), enMeses(2), enMeses(3), enMeses(4), enMeses(5), enMeses(6)],
         });
         // El campo dice 8 cuotas; el cronograma real tiene 6.
         await DisbursedLoan.update({ cuotas: 8 }, { where: { idVm } });
@@ -497,8 +525,8 @@ async function main() {
     {
         const { socio, idVm: idA } = await sembrar({
             principal: 3000000, cuotas: 3, tasa: 0.014, pagadas: 0,
-            fechaPrestamo: '2026-08-17',
-            vencimientos: ['2026-10-10','2026-11-10','2026-12-10'],
+            fechaPrestamo: enDias(-14),
+            vencimientos: [enMeses(1), enMeses(2), enMeses(3)],
         });
         const b = await desembolsar({
             clientId: socio.id, fechaPrestamo: '2026-08-25', mesDesembolso: 'Agosto', anioDesembolso: 2026,
@@ -538,8 +566,8 @@ async function main() {
     {
         const { socio, idVm: idPrimero } = await sembrar({
             principal: 3000000, cuotas: 3, tasa: 0.014, pagadas: 0,
-            fechaPrestamo: '2026-08-17',
-            vencimientos: ['2026-10-10','2026-11-10','2026-12-10'],
+            fechaPrestamo: enDias(-14),
+            vencimientos: [enMeses(1), enMeses(2), enMeses(3)],
         });
         // Un segundo préstamo vigente del mismo socio, como el que dejaba la reversión rota.
         secuencia++;
@@ -731,8 +759,8 @@ async function main() {
     {
         const { socio, idVm } = await sembrar({
             principal: 3000000, cuotas: 3, tasa: 0.014, pagadas: 0,
-            fechaPrestamo: '2026-08-17',
-            vencimientos: ['2026-10-10','2026-11-10','2026-12-10'],
+            fechaPrestamo: enDias(-14),
+            vencimientos: [enMeses(1), enMeses(2), enMeses(3)],
         });
         const PARCIAL = 250000;
         const primera = await LoanPayment.findOne({ where: { idVm }, order: [['item_quantity', 'ASC']] });
@@ -796,6 +824,94 @@ async function main() {
             `dio ${p.diasTranscurridos} días`);
         comprobar('y cobra el interés que corresponde', cerca(p.interesCausado, 2000000 * 0.014 * 11 / 30, 1),
             `dio ${money(p.interesCausado)}`);
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    console.log('\n20. El gerente corrige el interés causado');
+    // La fecha que el sistema conoce no siempre es la de los hechos. El gerente
+    // puede corregir el interés, pero esa cifra entra a los ingresos del fondo y
+    // decide cuánto sale por ventanilla, así que el ajuste tiene guardas.
+    {
+        const base = async () => (await sembrar({
+            principal: 4000000, cuotas: 4, tasa: 0.014, pagadas: 0,
+            fechaPrestamo: enDias(-30),
+            vencimientos: [enMeses(1), enMeses(2), enMeses(3), enMeses(4)],
+        }));
+
+        // ── Sin motivo no se registra ────────────────────────────────────
+        {
+            const { socio } = await base();
+            const r = await desembolsar({
+                clientId: socio.id, fechaPrestamo: enDias(-1), mesDesembolso: 'Agosto', anioDesembolso: 2026,
+                valorPrestado: 6000000, cuotas: 4, interesMensual: 0.014, estado: 'Vigente',
+                ajusteInteresRetanqueo: { dias: 25, motivo: 'corto' },
+            });
+            comprobar('sin motivo suficiente se rechaza', r.status === 400, `HTTP ${r.status}`);
+            comprobar('y el mensaje dice por qué', /motivo/i.test(String(r.body.error || '')), String(r.body.error));
+        }
+
+        // ── Por encima de un mes de interés, tampoco ─────────────────────
+        {
+            const { socio } = await base();
+            const r = await desembolsar({
+                clientId: socio.id, fechaPrestamo: enDias(-1), mesDesembolso: 'Agosto', anioDesembolso: 2026,
+                valorPrestado: 6000000, cuotas: 4, interesMensual: 0.014, estado: 'Vigente',
+                ajusteInteresRetanqueo: { interesCausado: 9999999, motivo: 'intento de pasarse del tope' },
+            });
+            comprobar('no se puede cobrar más de un mes de interés', r.status === 400, `HTTP ${r.status}`);
+        }
+
+        // ── Ajustando los DÍAS se recalcula el interés ───────────────────
+        {
+            const { socio, idVm } = await base();
+            const r = await desembolsar({
+                clientId: socio.id, fechaPrestamo: enDias(-1), mesDesembolso: 'Agosto', anioDesembolso: 2026,
+                valorPrestado: 6000000, cuotas: 4, interesMensual: 0.014, estado: 'Vigente',
+                ajusteInteresRetanqueo: { dias: 30, motivo: 'el dinero se movio el 1 de agosto, no el 20' },
+            });
+            comprobar('el ajuste por días se registra', r.status === 201, `HTTP ${r.status} ${JSON.stringify(r.body).slice(0,120)}`);
+            const ref = r.body.refinanciacion || {};
+            // 30 días sobre 4.000.000 al 1,4% = un mes completo = 56.000
+            comprobar('cobra el mes completo', Math.round(ref.interesCausado) === 56000, money(ref.interesCausado));
+            comprobar('el neto se recalcula con esa cifra',
+                ref.netoEntregado === 6000000 - ref.totalCancelado, money(ref.netoEntregado));
+            comprobar('el resumen reporta el ajuste',
+                ref.ajusteInteres && ref.ajusteInteres.aplicado === 56000, JSON.stringify(ref.ajusteInteres));
+
+            // La constancia lleva LAS DOS cifras, no solo la aplicada.
+            const obs = String((await DisbursedLoan.findByPk(r.body.loan.id)).observaciones || '');
+            comprobar('la constancia dice lo que el sistema calculó', /el sistema calculó/i.test(obs), obs.slice(0, 200));
+            comprobar('y el motivo escrito por el gerente', /no el 20/.test(obs), obs.slice(0, 260));
+            comprobar('el préstamo anterior queda cancelado',
+                (await DisbursedLoan.findOne({ where: { idVm } })).estado === 'Cancelado');
+        }
+
+        // ── Fijando el VALOR a mano ──────────────────────────────────────
+        {
+            const { socio } = await base();
+            const r = await desembolsar({
+                clientId: socio.id, fechaPrestamo: enDias(-1), mesDesembolso: 'Agosto', anioDesembolso: 2026,
+                valorPrestado: 6000000, cuotas: 4, interesMensual: 0.014, estado: 'Vigente',
+                ajusteInteresRetanqueo: { interesCausado: 20000, dias: null, motivo: 'acuerdo de la Junta del 6 de septiembre' },
+            });
+            comprobar('el valor fijado a mano se respeta', r.status === 201 && Math.round(r.body.refinanciacion.interesCausado) === 20000,
+                money(r.body.refinanciacion?.interesCausado));
+            comprobar('lo condonado se recalcula en consecuencia',
+                r.body.refinanciacion.interesCondonado >= 0, money(r.body.refinanciacion?.interesCondonado));
+        }
+
+        // ── Sin ajuste, nada cambia ──────────────────────────────────────
+        {
+            const { socio } = await base();
+            const r = await desembolsar({
+                clientId: socio.id, fechaPrestamo: enDias(-1), mesDesembolso: 'Agosto', anioDesembolso: 2026,
+                valorPrestado: 6000000, cuotas: 4, interesMensual: 0.014, estado: 'Vigente',
+            });
+            comprobar('sin ajuste el cálculo automático manda', r.status === 201, `HTTP ${r.status}`);
+            comprobar('y no se anota ningún ajuste', !r.body.refinanciacion.ajusteInteres);
+            const obs = String((await DisbursedLoan.findByPk(r.body.loan.id)).observaciones || '');
+            comprobar('la constancia no menciona ajustes', !/Interés ajustado/i.test(obs));
+        }
     }
 
     console.log('\n──────────────────────────────────────────────');
