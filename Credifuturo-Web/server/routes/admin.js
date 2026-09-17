@@ -1021,6 +1021,10 @@ router.get('/clients/:id/active-loan', async (req, res) => {
                 cuotas: prestamoVigente.cuotas,
                 cuotasPendientes: cuotasPendientes.length,
                 saldoPendiente: Math.round(saldoPendiente),
+                // La tasa del préstamo que se cancela. La necesita el formulario para
+                // recalcular el interés cuando el gerente corrige los días: sin ella
+                // el tope del ajuste daba cero y bloqueaba cualquier corrección.
+                interesMensual: parseFloat(prestamoVigente.interesMensual || 0),
                 interesCausado: Math.round(interesCausado),
                 interesCondonable: Math.round(interesCondonado),
                 diasTranscurridos,
@@ -3037,11 +3041,92 @@ router.post('/disbursed-loans', async (req, res) => {
             // mes real desde su vencimiento. Es una limitación conocida — evaluar si vale la
             // pena calcular el interés causado cuota por cuota si en la práctica llegan a
             // darse retanqueos con mora de varios meses.
-            const { interesCausado, interesCondonado, diasTranscurridos } = calcularInteresRetanqueo({
+            const calculado = calcularInteresRetanqueo({
                 prestamoAnterior,
                 cuotasPendientesAnteriores,
                 fechaNuevoDesembolso: fechaPrestamo // fecha del nuevo desembolso elegida en el formulario
             });
+
+            // ── El gerente puede corregir el interés causado ────────────────
+            //
+            // El cálculo automático parte de la fecha que el sistema conoce, y esa
+            // fecha no siempre es la de los hechos: un desembolso que se registró
+            // días después de mover el dinero, una cuota con la fecha invertida de
+            // la importación, un acuerdo de la Junta sobre un caso concreto. Antes
+            // la única salida era registrar el desembolso con una cifra que el
+            // gerente sabía equivocada, o no registrarlo.
+            //
+            // Pero esta cifra no es un campo más: entra a "Intereses de préstamos"
+            // y al recaudo, o sea que el fondo la declara como ingreso cobrado, y
+            // además decide cuánto dinero sale por la ventanilla. Por eso el ajuste
+            // NO se acepta a secas:
+            //
+            //   · exige justificación escrita — un número que nadie puede explicar
+            //     seis meses después es peor que un número mal calculado, porque el
+            //     mal calculado al menos se puede recalcular;
+            //   · se topa en el mismo límite del cálculo automático (30 días de
+            //     interés sobre el saldo), para que un cero de más no se lleve el
+            //     desembolso por delante;
+            //   · y queda escrito lo que el sistema calculó Y lo que se aplicó, no
+            //     solo el resultado. Sin las dos cifras la diferencia es invisible.
+            const ajuste = req.body.ajusteInteresRetanqueo || null;
+            let interesCausado = calculado.interesCausado;
+            let interesCondonado = calculado.interesCondonado;
+            let diasTranscurridos = calculado.diasTranscurridos;
+            let ajusteAplicado = null;
+
+            if (ajuste && (ajuste.interesCausado != null || ajuste.dias != null)) {
+                const motivo = String(ajuste.motivo || '').trim();
+                if (motivo.length < 10) {
+                    await t.rollback();
+                    return res.status(400).json({
+                        error: 'Para ajustar el interés causado hay que escribir el motivo (mínimo 10 caracteres). Queda en las observaciones del préstamo.',
+                    });
+                }
+
+                const primera = [...cuotasPendientesAnteriores].sort((a, b) => a.itemQuantity - b.itemQuantity)[0];
+                const saldoBase = parseFloat(primera?.saldoInicial || 0);
+                const tasa = parseFloat(prestamoAnterior.interesMensual || 0);
+                // El mismo techo que ya aplica el cálculo automático: 30 días.
+                const techo = Math.max(0, saldoBase * tasa);
+
+                let propuesto;
+                if (ajuste.interesCausado != null) {
+                    propuesto = Number(ajuste.interesCausado);
+                    diasTranscurridos = ajuste.dias != null ? Math.max(0, Math.min(30, Number(ajuste.dias))) : diasTranscurridos;
+                } else {
+                    diasTranscurridos = Math.max(0, Math.min(30, Number(ajuste.dias)));
+                    propuesto = saldoBase * tasa * (diasTranscurridos / 30);
+                }
+
+                if (!Number.isFinite(propuesto) || propuesto < 0) {
+                    await t.rollback();
+                    return res.status(400).json({ error: 'El interés causado ajustado debe ser un número positivo.' });
+                }
+                if (propuesto > techo + 1) {
+                    await t.rollback();
+                    return res.status(400).json({
+                        error: `El interés causado no puede pasar de ${Math.round(techo).toLocaleString('es-CO')}, que es un mes completo sobre el saldo de ${Math.round(saldoBase).toLocaleString('es-CO')}.`,
+                    });
+                }
+
+                interesCausado = propuesto;
+                // Lo condonado es el resto del interés pendiente: si se cobra más,
+                // se condona menos. Recalcularlo aquí evita que las dos cifras
+                // sumen algo distinto del interés que el cronograma tenía pactado.
+                const interesPendienteTotal = cuotasPendientesAnteriores.reduce(
+                    (acc, c) => acc + parseFloat(c.valorInteresesAmortizados || 0), 0);
+                interesCondonado = Math.max(0, interesPendienteTotal - interesCausado);
+
+                ajusteAplicado = {
+                    motivo,
+                    calculado: Math.round(calculado.interesCausado),
+                    diasCalculados: calculado.diasTranscurridos,
+                    aplicado: Math.round(interesCausado),
+                    diasAplicados: diasTranscurridos,
+                    por: req.user?.name || req.user?.cedula || 'admin',
+                };
+            }
 
             // Lo que el socio ya había abonado a estas cuotas es dinero que el fondo YA
             // recibió en efectivo. Si no se descuenta, se le cobra dos veces: una cuando lo
@@ -3121,7 +3206,8 @@ router.post('/disbursed-loans', async (req, res) => {
                 interesCondonado: Math.round(interesCondonado),
                 yaAbonado,
                 totalCancelado,
-                netoEntregado
+                netoEntregado,
+                ajusteInteres: ajusteAplicado,
             };
 
             // Constancia permanente en el préstamo nuevo. Sin esto la operación no se puede
@@ -3133,9 +3219,16 @@ router.post('/disbursed-loans', async (req, res) => {
             const notaRetanqueo = netoEntregado >= 0
                 ? `[Retanqueo de ${prestamoAnterior.idVm}: se cancelan ${pesos(capitalCancelado)} de capital + ${pesos(interesCausado)} de interés por ${diasTranscurridos} día(s)${detalleAbonado} = ${pesos(totalCancelado)}. Interés condonado: ${pesos(interesCondonado)}. Neto entregado al socio: ${pesos(netoEntregado)}]`
                 : `[Retanqueo de ${prestamoAnterior.idVm}: se cancelan ${pesos(capitalCancelado)} de capital + ${pesos(interesCausado)} de interés por ${diasTranscurridos} día(s)${detalleAbonado} = ${pesos(totalCancelado)}. Interés condonado: ${pesos(interesCondonado)}. El préstamo nuevo no alcanza a cubrirlo: el socio debe consignar ${pesos(Math.abs(netoEntregado))}]`;
+            // Si el gerente corrigió el interés, la constancia lleva LAS DOS cifras
+            // y el motivo. Guardar solo la aplicada dejaría la diferencia invisible:
+            // quien audite vería un interés que no cuadra con los días y no tendría
+            // cómo saber si fue una decisión o un error.
+            const notaAjuste = ajusteAplicado
+                ? ` [Interés ajustado por ${ajusteAplicado.por}: el sistema calculó ${pesos(ajusteAplicado.calculado)} por ${ajusteAplicado.diasCalculados} día(s) y se aplicaron ${pesos(ajusteAplicado.aplicado)} por ${ajusteAplicado.diasAplicados} día(s). Motivo: ${ajusteAplicado.motivo}]`
+                : '';
             loanData.observaciones = loanData.observaciones
-                ? `${notaRetanqueo} ${loanData.observaciones}`
-                : notaRetanqueo;
+                ? `${notaRetanqueo}${notaAjuste} ${loanData.observaciones}`
+                : `${notaRetanqueo}${notaAjuste}`;
 
             console.log(`🔄 Refinanciación: préstamo ${prestamoAnterior.idVm} cancelado. ` +
                 `${cuotasPendientesAnteriores.length} cuotas saldadas, ` +

@@ -525,6 +525,22 @@ const LoansListPage = () => {
     // Alerta de préstamo activo para refinanciación
     const [activeLoanWarning, setActiveLoanWarning] = useState(null);
 
+    // ── Ajuste del interés causado ──────────────────────────────────────
+    //
+    // Viene cerrado a propósito. Esta cifra entra a "Intereses de préstamos"
+    // y decide cuánto dinero sale por la ventanilla: si el campo estuviera
+    // abierto como cualquier otro, un tecleo distraído mueve plata del fondo
+    // sin que nadie lo note. Abrirlo es un gesto deliberado.
+    //
+    // `dias` manda sobre `valor`: al cambiar los días se recalcula el interés
+    // (saldo × tasa × días/30). Escribir el valor a mano lo fija y marca los
+    // días como "a mano", para que no queden dos fuentes peleando por la misma
+    // cifra — que es como se acaba mostrando una y guardando otra.
+    const [ajusteInteres, setAjusteInteres] = useState({
+        abierto: false, dias: '', valor: '', motivo: '', fijadoAMano: false,
+    });
+    const cerrarAjuste = () => setAjusteInteres({ abierto: false, dias: '', valor: '', motivo: '', fijadoAMano: false });
+
     // Capacidad de crédito del socio seleccionado (regla 3× ahorro / mora EP) — misma
     // fuente que el Analizador de Capacidad y que ya bloquea POST /disbursed-loans en
     // el backend. Se trae al elegir socio para advertir en vivo, ANTES de llegar al
@@ -807,7 +823,18 @@ const LoansListPage = () => {
             // loanRequestId: si este desembolso viene de una solicitud ya votada y
             // aprobada por la Junta (Aprobación de Préstamos), el backend la usa para
             // eximir del tope 3× sin votación — ya pasó por el canal de gobierno correcto.
+            // El ajuste del interés viaja aparte, no mezclado con el formulario: el
+            // servidor lo valida por su cuenta (motivo obligatorio y tope de un mes)
+            // y guarda en las observaciones LO CALCULADO y LO APLICADO. Confiar en lo
+            // que manda la pantalla dejaría mover dinero del fondo sin dejar rastro.
             const payload = { ...disbursedForm, interesMensual: interes, loanRequestId: prefillRequestId || null, gerenteAprueba };
+            if (ajusteInteres.abierto && (ajusteInteres.valor !== '' || ajusteInteres.dias !== '')) {
+                payload.ajusteInteresRetanqueo = {
+                    interesCausado: Number(ajusteInteres.valor) || 0,
+                    dias: ajusteInteres.fijadoAMano ? null : (Number(ajusteInteres.dias) || 0),
+                    motivo: ajusteInteres.motivo.trim(),
+                };
+            }
 
             if (isEditing) {
                 await api.put(`/admin/disbursed-loans/${disbursedForm.id}`, payload);
@@ -1280,11 +1307,36 @@ const LoansListPage = () => {
                 // El respaldo replica la misma resta que hace el servidor, incluido el
                 // descuento de lo ya abonado: si divergen, la pantalla prometería un neto
                 // distinto del que se registra.
+                // El techo del ajuste: un mes completo de interés sobre el saldo, que
+                // es el mismo límite que ya aplica el cálculo automático (30 días).
+                const saldoBaseAjuste = Number(activeLoanWarning?.saldoPendiente) || 0;
+                const tasaAnteriorAjuste = Number(activeLoanWarning?.interesMensual) || 0;
+                const techoInteres = Math.max(0, saldoBaseAjuste * tasaAnteriorAjuste);
+
+                // El interés que rige la pantalla: el ajustado si el gerente lo abrió y
+                // escribió algo; si no, el que calculó el servidor. Todo lo que viene
+                // debajo —total a cancelar, neto, resumen— se deriva de aquí, así que no
+                // hay forma de que la pantalla muestre un neto y registre otro.
+                const interesCalculado = Number(activeLoanWarning?.interesCausado) || 0;
+                const diasCalculados = activeLoanWarning?.diasTranscurridos ?? 0;
+                const hayAjuste = ajusteInteres.abierto
+                    && (ajusteInteres.valor !== '' || ajusteInteres.dias !== '');
+                const interesVigente = hayAjuste
+                    ? Math.max(0, Number(ajusteInteres.valor) || 0)
+                    : interesCalculado;
+                const diasVigentes = hayAjuste
+                    ? (ajusteInteres.fijadoAMano ? null : (Number(ajusteInteres.dias) || 0))
+                    : diasCalculados;
+                const ajusteExcede = hayAjuste && interesVigente > techoInteres + 1;
+                const ajusteSinMotivo = hayAjuste && ajusteInteres.motivo.trim().length < 10;
+                // Un ajuste a medias no se puede registrar: o está justificado y dentro
+                // del tope, o se vuelve al valor que calculó el sistema.
+                const ajusteInvalido = ajusteExcede || ajusteSinMotivo;
+
                 const totalACancelar = activeLoanWarning
-                    ? (Number(activeLoanWarning.totalACancelar) ||
-                       ((Number(activeLoanWarning.saldoPendiente) || 0)
-                        + (Number(activeLoanWarning.interesCausado) || 0)
-                        - (Number(activeLoanWarning.yaAbonado) || 0)))
+                    ? ((Number(activeLoanWarning.saldoPendiente) || 0)
+                       + interesVigente
+                       - (Number(activeLoanWarning.yaAbonado) || 0))
                     : 0;
                 const netoAEntregar = P - totalACancelar;
 
@@ -1617,11 +1669,120 @@ const LoansListPage = () => {
                                                     revisiones distintas: o el socio va por delante y su próximo período
                                                     no ha empezado, o la fecha del desembolso es anterior al arranque de
                                                     ese período — que casi siempre significa que la fecha está mal. */}
-                                                {Number(activeLoanWarning.interesCausado) > 0 ? (
-                                                    <li>• Interés causado por {activeLoanWarning.diasTranscurridos ?? '—'} día(s) transcurrido(s) (<strong>SÍ se cobra</strong>): <strong>${Number(activeLoanWarning.interesCausado).toLocaleString('es-CO')}</strong></li>
+                                                {interesVigente > 0 ? (
+                                                    <li>
+                                                        • Interés causado por {diasVigentes ?? '—'} día(s) transcurrido(s) (<strong>SÍ se cobra</strong>):{' '}
+                                                        <strong>${fmt(interesVigente)}</strong>
+                                                        {hayAjuste && (
+                                                            <span className="ml-1 text-[10px] font-bold uppercase tracking-wide text-amber-900 bg-amber-200 rounded px-1.5 py-0.5">
+                                                                ajustado · el sistema calculó ${fmt(interesCalculado)}
+                                                            </span>
+                                                        )}
+                                                    </li>
                                                 ) : (
                                                     <li>• Interés causado: <strong>$0</strong> — el período de la próxima cuota aún no empieza a correr, así que no hay días que cobrar. El socio ya pagó por adelantado el mes en curso. <span className="text-amber-600">Revisa la fecha del desembolso si no esperabas esto.</span></li>
                                                 )}
+
+                                                {/* ── Corregir el interés causado ──────────────────────
+                                                    Va cerrado: esta cifra entra a "Intereses de préstamos"
+                                                    y decide cuánto sale por la ventanilla. Abrirlo tiene
+                                                    que ser un gesto deliberado, no un campo más del
+                                                    formulario donde se teclea sin querer. */}
+                                                <li className="!mt-2 list-none">
+                                                    {!ajusteInteres.abierto ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setAjusteInteres({
+                                                                abierto: true, motivo: '', fijadoAMano: false,
+                                                                dias: String(diasCalculados ?? 0),
+                                                                valor: String(Math.round(interesCalculado)),
+                                                            })}
+                                                            className="text-[11px] font-bold text-amber-800 underline underline-offset-2 hover:text-amber-900"
+                                                        >
+                                                            Corregir el interés causado
+                                                        </button>
+                                                    ) : (
+                                                        <div className="rounded-xl border border-amber-400 bg-white p-3 mt-1">
+                                                            <div className="flex items-center justify-between gap-2 mb-2">
+                                                                <p className="text-[11px] font-black uppercase tracking-wider text-amber-800">
+                                                                    Corregir el interés causado
+                                                                </p>
+                                                                <button type="button" onClick={cerrarAjuste}
+                                                                    className="text-[11px] font-bold text-gray-400 hover:text-gray-700">
+                                                                    Usar el calculado
+                                                                </button>
+                                                            </div>
+
+                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                                <label className="block">
+                                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Días transcurridos</span>
+                                                                    <input
+                                                                        inputMode="numeric" value={ajusteInteres.dias}
+                                                                        onChange={(e) => {
+                                                                            const d = Math.max(0, Math.min(30, Number(e.target.value.replace(/\D/g, '')) || 0));
+                                                                            // Los días mandan: al moverlos se recalcula el interés.
+                                                                            setAjusteInteres((a) => ({
+                                                                                ...a, dias: String(d), fijadoAMano: false,
+                                                                                valor: String(Math.round(saldoBaseAjuste * tasaAnteriorAjuste * (d / 30))),
+                                                                            }));
+                                                                        }}
+                                                                        className="mt-1 w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm font-bold tabular-nums focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                                                    />
+                                                                    <span className="text-[10px] text-gray-400">máximo 30 · recalcula el valor</span>
+                                                                </label>
+
+                                                                <label className="block">
+                                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Interés a cobrar</span>
+                                                                    <input
+                                                                        inputMode="numeric"
+                                                                        value={Number(ajusteInteres.valor || 0).toLocaleString('es-CO')}
+                                                                        onChange={(e) => setAjusteInteres((a) => ({
+                                                                            ...a, fijadoAMano: true,
+                                                                            valor: String(Number(e.target.value.replace(/\D/g, '')) || 0),
+                                                                        }))}
+                                                                        className="mt-1 w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm font-bold tabular-nums focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                                                    />
+                                                                    <span className="text-[10px] text-gray-400">
+                                                                        {ajusteInteres.fijadoAMano ? 'fijado a mano' : `tope $${fmt(techoInteres)} (un mes)`}
+                                                                    </span>
+                                                                </label>
+                                                            </div>
+
+                                                            <label className="block mt-2">
+                                                                <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                                                                    Motivo del ajuste <span className="text-red-600">·  obligatorio</span>
+                                                                </span>
+                                                                <input
+                                                                    type="text" maxLength={300} value={ajusteInteres.motivo}
+                                                                    onChange={(e) => setAjusteInteres((a) => ({ ...a, motivo: e.target.value }))}
+                                                                    placeholder="Ej.: el dinero se entregó el 3 de agosto, no el 12 que quedó registrado"
+                                                                    className="mt-1 w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                                                />
+                                                                <span className="text-[10px] text-gray-400">
+                                                                    Queda escrito en las observaciones del préstamo, junto a la cifra que el sistema había calculado.
+                                                                </span>
+                                                            </label>
+
+                                                            {ajusteExcede && (
+                                                                <p className="mt-2 text-[11px] font-bold text-red-700">
+                                                                    No puede pasar de ${fmt(techoInteres)}: es un mes completo de interés sobre el saldo de ${fmt(saldoBaseAjuste)}.
+                                                                </p>
+                                                            )}
+                                                            {ajusteSinMotivo && !ajusteExcede && (
+                                                                <p className="mt-2 text-[11px] font-bold text-amber-800">
+                                                                    Escribe el motivo (mínimo 10 caracteres) para poder registrar el desembolso.
+                                                                </p>
+                                                            )}
+                                                            {hayAjuste && !ajusteExcede && !ajusteSinMotivo && (
+                                                                <p className="mt-2 text-[11px] text-emerald-800 bg-emerald-50 rounded-lg px-2.5 py-1.5">
+                                                                    Se cobrarán <strong>${fmt(interesVigente)}</strong> en vez de ${fmt(interesCalculado)}
+                                                                    {' '}({interesVigente > interesCalculado ? '+' : '−'}${fmt(Math.abs(interesVigente - interesCalculado))}).
+                                                                    El neto a entregar cambia en consecuencia.
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </li>
                                                 <li>• Interés condonado (no cobrado): <strong>${Number(activeLoanWarning.interesCondonable).toLocaleString('es-CO')}</strong></li>
                                                 {/* Lo ya abonado es efectivo que el fondo recibió: se descuenta, o el
                                                     socio lo pagaría dos veces. Se muestra aparte para poder revisarlo
@@ -1738,12 +1899,17 @@ const LoansListPage = () => {
                                                 type="button"
                                                 onClick={() => handleSubmitDisbursed()}
                                                 size="lg"
-                                                variant={excedeCapacidad ? 'secondary' : 'primary'}
-                                                disabled={excedeCapacidad}
-                                                title={excedeCapacidad ? 'Supera el cupo sin votación de la Junta — regístralo como solicitud, o usa "Aprobar como Gerente"' : undefined}
+                                                variant={excedeCapacidad || ajusteInvalido ? 'secondary' : 'primary'}
+                                                disabled={excedeCapacidad || ajusteInvalido}
+                                                title={excedeCapacidad
+                                                    ? 'Supera el cupo sin votación de la Junta — regístralo como solicitud, o usa "Aprobar como Gerente"'
+                                                    : ajusteInvalido ? 'Completa el motivo del ajuste del interés, o vuelve al valor calculado' : undefined}
                                             >
                                                 <Save className="mr-2 h-4 w-4" />
-                                                {isEditing ? 'Guardar cambios' : excedeCapacidad ? 'Requiere votación de la Junta' : 'Confirmar y Registrar'}
+                                                {isEditing ? 'Guardar cambios'
+                                                    : excedeCapacidad ? 'Requiere votación de la Junta'
+                                                    : ajusteInvalido ? 'Falta justificar el ajuste'
+                                                    : 'Confirmar y Registrar'}
                                             </Button>
                                         </div>
                                     </div>
