@@ -47,7 +47,15 @@ export default function MisInformesPage() {
 
     useEffect(() => {
         api.get('/admin/informes')
-            .then((res) => setInformes((res.data || []).filter((i) => i.personal)))
+            // Solo los suyos: a la Junta el servidor le manda los de todos, y esta
+            // página dice "Mis Informes". El servidor sigue siendo quien decide
+            // a qué tiene acceso; esto decide qué es SUYO.
+            .then((res) => {
+                const yo = JSON.parse(localStorage.getItem('user') || '{}');
+                setInformes((res.data || []).filter(
+                    (i) => i.personal && String(i.cedula || '') === String(yo.cedula || '')
+                ));
+            })
             .catch((err) => setError(err.response?.data?.error || 'No se pudieron cargar tus informes.'));
     }, []);
 
