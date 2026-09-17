@@ -146,8 +146,14 @@ const UserDashboardLayout = ({ user, onLogout }) => {
     const [openSubmenus, setOpenSubmenus] = useState({ ahorros: true, estatutos: true, prestamos: true, propuestas: true });
     const [propuestasEnabled, setPropuestasEnabled] = useState(false);
     const [informesList, setInformesList] = useState([]);
-    // Los que llevan su nombre, que son los que el socio reconoce como suyos.
-    const informesPersonales = informesList.filter((i) => i.personal);
+    // Los que llevan SU nombre. El filtro por cédula no sobra: a un miembro de la
+    // Junta el servidor le manda los informes personales de todos —los necesita
+    // para gobernar—, y sin esto el submenú "Informes" de COMUNIDAD le mostraba
+    // el de otra socia como si fuera suyo. Ahí la separación importa más que en
+    // ningún otro sitio: ese menú dice "lo mío".
+    const informesPersonales = informesList.filter(
+        (i) => i.personal && String(i.cedula || '') === String(user?.cedula || '')
+    );
     const location = useLocation();
     const { esVisible } = useVisibilidad();
 
@@ -280,6 +286,35 @@ const UserDashboardLayout = ({ user, onLogout }) => {
                 ] : []),
             ]
         },
+        // Informes: los documentos que el fondo prepara A NOMBRE del socio —hoy,
+        // el detalle de un abono a capital que le bajó las cuotas—.
+        //
+        // Cuelga siempre, para todos los socios, aunque todavía no tenga ninguno.
+        // Antes solo aparecía cuando había alguno, y eso lo volvía invisible justo
+        // para quien más falta le hace saber que existe: el socio que aún no ha
+        // abonado de más y no sabe que el fondo se lo explicaría por escrito si lo
+        // hiciera. Un menú que aparece y desaparece tampoco se aprende.
+        //
+        // Va en COMUNIDAD, al lado del Buzón, porque es la sección de lo que el
+        // socio tiene COMO socio, no de lo que consulta del fondo.
+        {
+            type: 'submenu',
+            key: 'informesSocio',
+            icon: ClipboardList,
+            label: informesPersonales.length > 0 ? `Informes (${informesPersonales.length})` : 'Informes',
+            children: informesPersonales.length > 0
+                ? [
+                    ...informesPersonales.map((inf) => ({
+                        icon: FileText,
+                        label: inf.titulo || inf.name.replace(/\.md$|\.txt$|\.pdf$/, '').replace(/_/g, ' '),
+                        path: `/dashboard/informes/${encodeURIComponent(inf.name)}`,
+                    })),
+                    { icon: ClipboardList, label: 'Ver todos', path: '/dashboard/mis-informes' },
+                ]
+                // Sin informes, el submenú lleva a la página, que explica cuándo
+                // aparecerá uno. Un "no hay nada" muerto no enseña nada.
+                : [{ icon: ClipboardList, label: 'Mis informes', path: '/dashboard/mis-informes' }],
+        },
         ...(isJuntaMember ? [
             { type: 'label', label: 'JUNTA ADMINISTRATIVA' },
             { type: 'link', icon: Vote, label: 'Aprobación de Préstamos', path: '/dashboard/junta-prestamos' },
@@ -292,7 +327,11 @@ const UserDashboardLayout = ({ user, onLogout }) => {
                 type: 'submenu',
                 key: 'informesJunta',
                 icon: ClipboardList,
-                label: `Informes (${informesList.length})`,
+                // "Informes del Fondo" y no "Informes" a secas: un miembro de la
+                // Junta es también socio y tiene el suyo en COMUNIDAD. Dos
+                // entradas con el mismo nombre para la misma persona obligan a
+                // abrir las dos para saber cuál es cuál.
+                label: `Informes del Fondo (${informesList.length})`,
                 children: informesList.length > 0
                     ? informesList.map(inf => ({
                         icon: FileText,
@@ -302,20 +341,6 @@ const UserDashboardLayout = ({ user, onLogout }) => {
                     : [{ icon: FileText, label: 'No hay informes', path: '#' }]
             }
         ] : []),
-        // Mis Informes: los documentos que el fondo genera A NOMBRE del socio —hoy,
-        // el detalle de un abono a capital que le bajó las cuotas—. Solo aparece
-        // cuando tiene alguno: un menú vacío promete algo que no está.
-        //
-        // Para la Junta y el gerente esta entrada no se pinta: ellos ya tienen su
-        // propio menú de Informes más arriba, con estos incluidos. Repetirlos en
-        // dos sitios para la misma persona es la duplicación que este panel viene
-        // evitando.
-        ...(!isJuntaMember && informesPersonales.length > 0 ? [{
-            type: 'link',
-            icon: ClipboardList,
-            label: `Mis Informes (${informesPersonales.length})`,
-            path: '/dashboard/mis-informes',
-        }] : []),
         {
             type: 'submenu',
             key: 'estatutos',
