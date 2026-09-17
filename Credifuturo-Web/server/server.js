@@ -502,7 +502,14 @@ sequelize.sync().then(async () => {
             try {
                 const { sembrarInformeGimena } = require('./services/informeAbono');
                 const r = await sembrarInformeGimena();
-                if (r?.sembrado) console.log(`[INFORMES] ${r.nombre} publicado en el menú de su socia.`);
+                // Dice siempre en qué quedó, no solo cuando siembra: un arranque
+                // mudo no distingue "ya estaba publicado" de "no corrió", y esa
+                // es justo la pregunta que hay que poder contestar desde el log.
+                if (r?.sembrado) {
+                    console.log(`[INFORMES] ${r.nombre} publicado en el menú de su socia y avisado por la campana.`);
+                } else if (r?.yaEstaba) {
+                    console.log(`[INFORMES] Abono_SOL30_Gimena_Tascon.pdf ya estaba publicado (cédula ${r.deQuien}).`);
+                }
             } catch (e) {
                 console.warn('[INFORMES] No se pudo publicar el informe previo:', e.message);
             }

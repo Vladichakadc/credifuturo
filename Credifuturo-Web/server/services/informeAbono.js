@@ -158,11 +158,56 @@ async function leerRegistroInformes() {
     } catch { return {}; }
 }
 
-async function registrarInformeSocio(nombre, datos) {
+/**
+ * Deja el informe registrado a nombre del socio Y se lo avisa.
+ *
+ * El aviso va AQUÍ y no en cada sitio que publique un informe, porque este es
+ * el punto único por el que un documento pasa a ser de alguien: lo que se
+ * registre por cualquier vía —el abono automático, la siembra de uno anterior,
+ * lo que venga después— queda avisado sin que haya que acordarse.
+ *
+ * Un documento que aparece en el menú de una persona sin avisarle es un
+ * documento que no se va a leer: nadie entra a mirar si hay algo nuevo en un
+ * sitio donde nunca hubo nada. Y este en concreto le explica qué pasó con su
+ * dinero, así que enterarse no es un detalle.
+ *
+ * No notificar es la excepción (`notificar: false`), para poder re-registrar un
+ * informe —corregir su título, añadirle cifras— sin volver a sonar la campana
+ * por algo que el socio ya vio.
+ */
+async function registrarInformeSocio(nombre, datos, { notificar = true } = {}) {
     const AppSetting = require('../models/AppSetting');
     const registro = await leerRegistroInformes();
+    const yaEstaba = Boolean(registro[nombre]);
     registro[nombre] = { ...datos, generadoEl: datos.generadoEl || new Date().toISOString() };
     await AppSetting.upsert({ key: CLAVE_INFORMES_SOCIO, value: JSON.stringify(registro) });
+
+    // Solo la primera vez, y solo si sabemos a quién. El aviso no puede tumbar
+    // el registro: el informe ya está publicado y eso es lo que importa.
+    if (notificar && !yaEstaba && datos.cedula) {
+        try {
+            const Client = require('../models/Client');
+            const { createNotification } = require('./NotificationService');
+            const socio = await Client.findOne({ where: { cedula: String(datos.cedula) } });
+            if (socio) {
+                const r = datos.resumen || {};
+                const detalle = r.bajaMensual > 0
+                    ? `Tu cuota bajó ${pesos(r.bajaMensual)} cada mes y te ahorraste ${pesos(r.ahorroInteres)} en intereses.`
+                    : 'Ábrelo para ver el detalle.';
+                await createNotification({
+                    clientId: socio.id,
+                    type: 'informe',
+                    title: 'Tienes un informe nuevo',
+                    message: `${datos.titulo || nombre}. ${detalle}`,
+                    // Lleva directo al documento, no al listado: el aviso dice que
+                    // hay algo que leer, así que el clic tiene que abrirlo.
+                    link: `/dashboard/informes/${encodeURIComponent(nombre)}`,
+                });
+            }
+        } catch (err) {
+            console.warn('[INFORME] Registrado, pero no se pudo avisar al socio:', err.message);
+        }
+    }
     return registro;
 }
 
@@ -199,7 +244,7 @@ async function publicarInforme({ plan, socio, idVm }) {
 async function sembrarInformeGimena() {
     const registro = await leerRegistroInformes();
     const NOMBRE = 'Abono_SOL30_Gimena_Tascon.pdf';
-    if (registro[NOMBRE]) return { sembrado: false };
+    if (registro[NOMBRE]) return { sembrado: false, yaEstaba: true, deQuien: registro[NOMBRE].cedula };
     await registrarInformeSocio(NOMBRE, {
         cedula: '65772720',
         socio: 'Gimena Tascón',
