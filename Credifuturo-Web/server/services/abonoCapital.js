@@ -566,10 +566,21 @@ async function barridoProgramado({ anio = anioBogota() } = {}) {
 
     try {
         const previo = await barrer({ anio, aplicar: false });
+        // Los bloqueados se nombran, uno por línea, con su motivo y el dinero en
+        // juego. Decir "6 requieren revisión manual" sin decir CUÁLES deja al
+        // administrador con una alarma que no puede atender: hay que abrir la
+        // pantalla y comparar préstamo por préstamo para dar con ellos. Y como
+        // este mismo aviso se repite idéntico cada noche, sin los nombres no hay
+        // forma de ver si son siempre los mismos seis o si entró uno nuevo.
+        const detalle = (previo.bloqueados || [])
+            .map((b) => `    · ${b.idVm} — excedente $${Math.round(num(b.excedente)).toLocaleString('es-CO')} — ${b.motivo}`)
+            .join('\n');
         if (previo.pendientes.length === 0) {
             console.log(`[ABONOS] Sin abonos pendientes de aplicar (${previo.revisados} préstamo(s) con sobrepago revisados, ${previo.bloqueados.length} requieren revisión manual).`);
+            if (detalle) console.log(`[ABONOS] Requieren revisión manual:\n${detalle}`);
             return { ...previo, aplicados: [] };
         }
+        if (detalle) console.log(`[ABONOS] Requieren revisión manual:\n${detalle}`);
 
         const copia = copiaDeSeguridad();
         console.log(`[ABONOS] ${previo.pendientes.length} préstamo(s) con abono sin aplicar. Copia previa: ${copia || 'no disponible'}`);
