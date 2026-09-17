@@ -1889,10 +1889,20 @@ const LoansListPage = () => {
                                                     type="button"
                                                     onClick={() => handleSubmitDisbursed(null, true)}
                                                     size="lg"
-                                                    className="bg-amber-500 text-white hover:bg-amber-600 active:bg-amber-700 shadow-sm border-0"
+                                                    // La misma guarda que el botón de abajo. Esta es la OTRA
+                                                    // vía de guardado —aparece cuando el monto supera el cupo
+                                                    // sin votación— y sin esto dejaba registrar un ajuste sin
+                                                    // justificar: el servidor lo rechazaba igual, pero el
+                                                    // gerente se llevaba un error crudo en vez de que el botón
+                                                    // le dijera qué le falta.
+                                                    disabled={ajusteInvalido}
+                                                    title={ajusteInvalido ? 'Completa el motivo del ajuste del interés, o vuelve al valor calculado' : undefined}
+                                                    className={ajusteInvalido
+                                                        ? 'bg-gray-300 text-gray-500 border-0 shadow-sm'
+                                                        : 'bg-amber-500 text-white hover:bg-amber-600 active:bg-amber-700 shadow-sm border-0'}
                                                 >
                                                     <ShieldCheck className="mr-2 h-4 w-4" />
-                                                    Aprobar como Gerente y Registrar
+                                                    {ajusteInvalido ? 'Falta justificar el ajuste' : 'Aprobar como Gerente y Registrar'}
                                                 </Button>
                                             )}
                                             <Button
