@@ -42,6 +42,7 @@ import UserContributionsListPage from './pages/user/UserContributionsListPage';
 import UserAccountDetailsPage from './pages/user/UserAccountDetailsPage';
 import UserStatutesPage from './pages/user/UserStatutesPage';
 import UserResolutionsPage from './pages/user/UserResolutionsPage';
+import MisInformesPage from './pages/user/MisInformesPage';
 import UserLoanAnalyzerPage from './pages/user/UserLoanAnalyzerPage';
 import DetalleCuentaPage from './pages/user/DetalleCuentaPage';
 import CapacidadBetaPage from './pages/user/CapacidadBetaPage';
@@ -207,6 +208,9 @@ function App() {
                         la Junta Administrativa (gerente/subgerente/tesorera). El backend ya
                         restringe /admin/informes a admin + Junta (ver JUNTA_ROUTES). */}
                     <Route path="informes/:filename" element={<InformesViewerPage />} />
+                    {/* Los documentos que el fondo genera a nombre del socio. El
+                        visor de arriba ya sabe abrirlos; esto es la lista. */}
+                    <Route path="mis-informes" element={<MisInformesPage />} />
                 </Route>
 
                 <Route path="/" element={<Navigate to={user ? (user.role === 'admin' ? '/admin' : '/dashboard') : '/login'} />} />

@@ -293,7 +293,30 @@ async function aplicarPlan(plan, { origen = 'barrido', aplicadoPor = 'sistema' }
         }, { transaction: t });
 
         await t.commit();
-        return { ...plan, aplicado: true, registroId: registro.id };
+
+        // ── El informe para el socio ────────────────────────────────────────
+        //
+        // Va DESPUÉS del commit y con su propio try/catch: el abono ya está
+        // aplicado y es lo que importa. Un informe que no se pudo escribir es un
+        // documento que falta, no una razón para deshacer la reducción de la
+        // cuota de alguien.
+        //
+        // Solo con reducción de cuota: es el caso donde hay algo que explicar mes
+        // a mes. Con reducción de plazo lo que cambia es cuándo termina el
+        // crédito, y eso pide otro documento, no este.
+        let informe = null;
+        if (plan.politica === REDUCIR_CUOTA) {
+            try {
+                const Client = require('../models/Client');
+                const { publicarInforme } = require('./informeAbono');
+                const socio = await Client.findByPk(plan.clientId);
+                informe = await publicarInforme({ plan, socio, idVm: plan.idVm });
+            } catch (e) {
+                console.warn('[INFORME] No se pudo publicar el informe del abono:', e.message);
+            }
+        }
+
+        return { ...plan, aplicado: true, registroId: registro.id, informe };
     } catch (err) {
         await t.rollback();
         throw err;

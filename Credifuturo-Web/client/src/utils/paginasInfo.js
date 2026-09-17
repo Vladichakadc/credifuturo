@@ -172,6 +172,16 @@ export const PAGINAS_INFO = {
             'La próxima cuota por pagar, señalada',
         ],
     },
+    '/dashboard/mis-informes': {
+        icono: ClipboardList,
+        titulo: 'Mis Informes',
+        descripcion: 'Los documentos que el fondo prepara a tu nombre, con el detalle de lo que pasó con tu dinero.',
+        encontraras: [
+            'Qué pasó cuando abonaste por encima de tu cuota',
+            'Cuánto bajó cada cuota y cuánto te ahorraste',
+            'La cuenta completa, para comprobarla tú mismo',
+        ],
+    },
     '/dashboard/propuestas': {
         icono: Lightbulb,
         titulo: 'Buzón de Propuestas',
