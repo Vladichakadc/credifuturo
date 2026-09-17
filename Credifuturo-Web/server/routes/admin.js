@@ -154,6 +154,13 @@ const BETA_ROUTES = [
 // Escribir un estado o borrar una propuesta NO está aquí: caen al gate por
 // defecto (solo admin). El socio propone y vota; el comité resuelve.
 const SOCIO_ROUTES = [
+    // Listar y leer informes. Cualquiera autenticado puede pedirlos: QUÉ ve cada
+    // quien lo decide el propio handler, que es donde está la información para
+    // decidirlo — el institucional lo ve la Junta, y el personal, su dueño. Un
+    // gate por ruta no puede distinguir eso, porque depende del archivo.
+    // El DELETE no está aquí: cae al gate por defecto (solo admin).
+    { method: 'GET', path: '/informes' },
+    { method: 'GET', test: p => /^\/informes\/[^/]+$/.test(p) },
     { method: 'GET', path: '/propuestas' },
     { method: 'POST', path: '/propuestas' },
     { method: 'PUT', test: p => /^\/propuestas\/\d+\/voto$/.test(p) },
@@ -189,11 +196,7 @@ const JUNTA_ROUTES = [
     { method: 'PUT', test: p => /^\/loan-requests\/\d+$/.test(p) },
     { method: 'GET', test: p => /^\/clients\/\d+\/loan-capacity$/.test(p) },
     { method: 'GET', path: '/junta/members' },
-    // Solo lectura — listar y ver informes. El DELETE de /informes/:name NO se
-    // agrega aquí a propósito: cae al gate por defecto (solo admin), la Junta
-    // puede consultar documentos institucionales pero no borrarlos.
-    { method: 'GET', path: '/informes' },
-    { method: 'GET', test: p => /^\/informes\/[^/]+$/.test(p) },
+
     // Las dos matrices de control. La Junta aprueba créditos y responde por la
     // cartera, así que necesita ver el comportamiento de cada socio: quién
     // ahorra al día y quién lleva cuotas en descubierto. Son de solo lectura y
@@ -5905,41 +5908,88 @@ const JUNTA_INFORMES_VISIBLES = new Set([
     'Abonos_Extraordinarios_a_Capital.pdf',
 ]);
 
+// ── Informes de un socio concreto ───────────────────────────────────────────
+//
+// Los dos informes de arriba son institucionales: explican una regla del fondo y
+// valen igual para todos. Lo que entra aquí es distinto — el detalle del crédito
+// de UNA persona— y por eso necesita dos cosas que el modelo anterior no tenía:
+//
+//   · vivir donde no lo borre el próximo despliegue. `INFORMES_DIR` apunta a una
+//     ruta de Windows que en Railway no existe, y `shared-informes/` viaja en la
+//     imagen: un archivo escrito ahí en caliente desaparece al redesplegar. Se
+//     anclan al volumen, junto a las copias de seguridad, por la misma razón que
+//     el registro de accesos tuvo que dejar de vivir en un fichero suelto.
+//   · saber de quién son. El registro va en AppSettings y se indexa por CÉDULA,
+//     no por id: la cédula es la que el fondo usa para identificar a la persona
+//     en todas partes, y así un informe sigue apuntando al socio correcto aunque
+//     la base se restaure desde otra copia.
+const {
+    INFORMES_SOCIO_DIR, leerRegistroInformes, registrarInformeSocio,
+} = require('../services/informeAbono');
+
+function puedeVerInformeSocio(user, meta) {
+    if (!meta) return false;
+    if (user?.role === 'admin' || isJuntaMember(user)) return true;
+    return String(meta.cedula || '') === String(user?.cedula || '');
+}
+
 function findInformePath(name) {
     const sharedPath = path.join(SHARED_INFORMES_DIR, name);
     if (fs.existsSync(sharedPath)) return sharedPath;
     const localPath = path.join(INFORMES_DIR, name);
     if (fs.existsSync(localPath)) return localPath;
+    // Los generados por el sistema viven en el volumen, no en la imagen.
+    const volumenPath = path.join(INFORMES_SOCIO_DIR, name);
+    if (fs.existsSync(volumenPath)) return volumenPath;
     return null;
 }
 
 router.get('/informes', async (req, res) => {
     try {
-        const isAdminReq = req.user?.role === 'admin';
-        const seen = new Set();
+        const esAdmin = req.user?.role === 'admin';
+        const esJunta = isJuntaMember(req.user);
+        const registro = await leerRegistroInformes();
+        const vistos = new Set();
         const reports = [];
 
-        if (fs.existsSync(SHARED_INFORMES_DIR)) {
-            for (const f of fs.readdirSync(SHARED_INFORMES_DIR)) {
-                if (!(f.endsWith('.md') || f.endsWith('.txt') || f.endsWith('.pdf'))) continue;
-                if (!(isAdminReq || JUNTA_INFORMES_VISIBLES.has(f))) continue;
-                const stat = fs.statSync(path.join(SHARED_INFORMES_DIR, f));
-                reports.push({ name: f, createdAt: stat.birthtime, updatedAt: stat.mtime });
-                seen.add(f);
+        // Un archivo es PERSONAL si está en el registro; si no, es institucional.
+        // Se decide por el registro y no por dónde está guardado, porque el de
+        // Gimena nació a mano y vive junto a los institucionales: la carpeta no
+        // dice de quién es un documento, el registro sí.
+        const agregar = (dir, f) => {
+            if (vistos.has(f)) return;
+            if (!(f.endsWith('.md') || f.endsWith('.txt') || f.endsWith('.pdf'))) return;
+            const meta = registro[f];
+
+            if (meta) {
+                if (!puedeVerInformeSocio(req.user, meta)) return;
+            } else {
+                // Institucional: del gerente y de la Junta. Antes bastaba con
+                // estar autenticado porque la ruta ya era exclusiva de la Junta;
+                // al abrirla a todos los socios, esa condición tenía que subir
+                // aquí — si no, cualquiera vería los documentos de gobierno.
+                if (!(esAdmin || (esJunta && JUNTA_INFORMES_VISIBLES.has(f)))) return;
             }
+
+            const stat = fs.statSync(path.join(dir, f));
+            vistos.add(f);
+            reports.push({
+                name: f,
+                createdAt: meta?.generadoEl ? new Date(meta.generadoEl) : stat.birthtime,
+                updatedAt: stat.mtime,
+                ...(meta ? {
+                    personal: true, titulo: meta.titulo || null, socio: meta.socio || null,
+                    cedula: meta.cedula || null, idVm: meta.idVm || null, resumen: meta.resumen || null,
+                } : {}),
+            });
+        };
+
+        for (const dir of [SHARED_INFORMES_DIR, INFORMES_DIR, INFORMES_SOCIO_DIR]) {
+            if (!fs.existsSync(dir)) continue;
+            for (const f of fs.readdirSync(dir)) agregar(dir, f);
         }
 
-        if (fs.existsSync(INFORMES_DIR)) {
-            for (const f of fs.readdirSync(INFORMES_DIR)) {
-                if (seen.has(f)) continue;
-                if (!(f.endsWith('.md') || f.endsWith('.txt') || f.endsWith('.pdf'))) continue;
-                if (!(isAdminReq || JUNTA_INFORMES_VISIBLES.has(f))) continue;
-                const stat = fs.statSync(path.join(INFORMES_DIR, f));
-                reports.push({ name: f, createdAt: stat.birthtime, updatedAt: stat.mtime });
-            }
-        }
-
-        reports.sort((a, b) => b.createdAt - a.createdAt);
+        reports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
         res.json(reports);
     } catch (err) {
         console.error('Error al listar informes:', err);
@@ -5953,8 +6003,12 @@ router.get('/informes/:name', async (req, res) => {
         if (name.includes('..') || name.includes('/') || name.includes('\\')) {
             return res.status(400).json({ error: 'Nombre de archivo inválido' });
         }
-        const isAdminReq = req.user?.role === 'admin';
-        if (!isAdminReq && !JUNTA_INFORMES_VISIBLES.has(name)) {
+        // Mismo criterio que el listado: el registro decide de quién es.
+        const meta = (await leerRegistroInformes())[name];
+        const permitido = meta
+            ? puedeVerInformeSocio(req.user, meta)
+            : (req.user?.role === 'admin' || (isJuntaMember(req.user) && JUNTA_INFORMES_VISIBLES.has(name)));
+        if (!permitido) {
             return res.status(403).json({ error: 'No tienes acceso a este informe.' });
         }
         const filePath = findInformePath(name);

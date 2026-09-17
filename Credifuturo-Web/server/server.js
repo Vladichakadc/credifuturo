@@ -495,6 +495,19 @@ sequelize.sync().then(async () => {
             }
         })();
 
+        // ── El informe que ya existía antes de automatizar esto ────────────
+        // Va después de listen() y con su propio try/catch, como todo lo que
+        // escribe en la base al arrancar.
+        (async () => {
+            try {
+                const { sembrarInformeGimena } = require('./services/informeAbono');
+                const r = await sembrarInformeGimena();
+                if (r?.sembrado) console.log(`[INFORMES] ${r.nombre} publicado en el menú de su socia.`);
+            } catch (e) {
+                console.warn('[INFORMES] No se pudo publicar el informe previo:', e.message);
+            }
+        })();
+
         // ── El Buzón de Propuestas arranca vacío ───────────────────────────
         // Al abrirlo a todos los socios ya había una propuesta escrita por el
         // administrador que la asamblea no ha visto. Estrenar la función

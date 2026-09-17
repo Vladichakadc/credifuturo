@@ -146,6 +146,8 @@ const UserDashboardLayout = ({ user, onLogout }) => {
     const [openSubmenus, setOpenSubmenus] = useState({ ahorros: true, estatutos: true, prestamos: true, propuestas: true });
     const [propuestasEnabled, setPropuestasEnabled] = useState(false);
     const [informesList, setInformesList] = useState([]);
+    // Los que llevan su nombre, que son los que el socio reconoce como suyos.
+    const informesPersonales = informesList.filter((i) => i.personal);
     const location = useLocation();
     const { esVisible } = useVisibilidad();
 
@@ -165,10 +167,11 @@ const UserDashboardLayout = ({ user, onLogout }) => {
     const JUNTA_CEDULAS_NO_ADMIN = ['79863805', '52496873']; // Leonardo Rojas, Xiomara Rojas
     const isJuntaMember = user?.role === 'admin' || JUNTA_CEDULAS_NO_ADMIN.includes(user?.cedula);
 
-    // Informes solo se pide si es Junta — el backend ya lo restringe (JUNTA_ROUTES en
-    // admin.js), pedirlo para un socio raso solo generaría un 403 innecesario.
+    // Se pide para TODOS: el endpoint ya no es exclusivo de la Junta. Devuelve a
+    // cada quien lo que le corresponde —los institucionales a la Junta, y a cada
+    // socio los suyos—, así que un socio raso recibe su propia lista en vez de
+    // un 403. Quién ve qué lo decide el servidor, que es donde está el dato.
     useEffect(() => {
-        if (!isJuntaMember) return;
         api.get('/admin/informes')
            .then(res => setInformesList(res.data || []))
            .catch(err => console.error(err));
@@ -299,6 +302,20 @@ const UserDashboardLayout = ({ user, onLogout }) => {
                     : [{ icon: FileText, label: 'No hay informes', path: '#' }]
             }
         ] : []),
+        // Mis Informes: los documentos que el fondo genera A NOMBRE del socio —hoy,
+        // el detalle de un abono a capital que le bajó las cuotas—. Solo aparece
+        // cuando tiene alguno: un menú vacío promete algo que no está.
+        //
+        // Para la Junta y el gerente esta entrada no se pinta: ellos ya tienen su
+        // propio menú de Informes más arriba, con estos incluidos. Repetirlos en
+        // dos sitios para la misma persona es la duplicación que este panel viene
+        // evitando.
+        ...(!isJuntaMember && informesPersonales.length > 0 ? [{
+            type: 'link',
+            icon: ClipboardList,
+            label: `Mis Informes (${informesPersonales.length})`,
+            path: '/dashboard/mis-informes',
+        }] : []),
         {
             type: 'submenu',
             key: 'estatutos',
