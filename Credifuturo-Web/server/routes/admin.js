@@ -6605,10 +6605,34 @@ router.get('/executive-stats', async (req, res) => {
             carteraRows, recaudoYtdRows, topDeudores, vencimientos,
             penetracionRows, ahorroAnio, colocacionAnio, interesesAnio, flujo30Rows
         ] = await Promise.all([
-            // Cartera pendiente: vigente vs vencida (PAR)
-            q(`SELECT CASE WHEN date(fecha_pago_max) < date('now') THEN 'vencida' ELSE 'vigente' END estado,
-                      COUNT(*) cuotas, ROUND(SUM(valor_cuota_variable)) valor
-               FROM LoanPayments WHERE estado='Pendiente' GROUP BY 1`),
+            // Cartera pendiente: vigente vs vencida (PAR).
+            //
+            // Se traen las cuotas y se clasifican en JS, no con date() en SQL. Tres
+            // motivos, y los tres inflaban la cifra que el Centro de Alertas publica
+            // como "cartera vencida — revisar cuotas en mora EP":
+            //
+            //  1. LA FECHA. Las cuotas importadas guardan fechaPagoMax como
+            //     YYYY-DD-MM —día y mes al revés—, y cuando ambas posiciones son
+            //     <= 12 SQLite la acepta sin protestar y la lee cambiada. Una cuota
+            //     que vence el 5 de noviembre, guardada como '2026-05-11', se lee
+            //     como 11 de mayo: ya pasada. `mesPago` es el dato explícito que
+            //     desambigua, y es lo que ya usan la matriz de cuotas y el cálculo
+            //     de mora EP; este SQL era el único sitio que lo ignoraba.
+            //  2. EL PRÉSTAMO QUE YA NO ESTÁ. La base de producción es anterior a
+            //     la FK LoanPayments→DisbursedLoans, así que arrastra cuotas cuyo
+            //     préstamo se borró (de ahí la pantalla de préstamos huérfanos).
+            //     Nadie va a cobrar una cuota de un crédito que no existe.
+            //  3. LA CUOTA YA PAGADA. Una fila puede seguir en 'Pendiente' con
+            //     valorCuotaPago > 0. El cálculo de mora EP ya la descarta.
+            //
+            // Es la misma definición que bloquea un desembolso por mora. Que la
+            // alerta contara distinto que la regla que frena el dinero es
+            // exactamente la clase de discrepancia que este panel existe para no
+            // tener: una alarma que nadie puede cuadrar deja de mirarse.
+            q(`SELECT p.id, p.fecha_pago_max fechaPagoMax, p.mes_pago mesPago,
+                      p.valor_cuota_variable valor, p.valor_cuota_pago pagado,
+                      p.id_vm idVm, (SELECT COUNT(*) FROM DisbursedLoans d WHERE d.id_vm = p.id_vm) tienePrestamo
+               FROM LoanPayments p WHERE p.estado='Pendiente'`),
             // Recaudo del año: cuotas con vencimiento ya cumplido este año, por estado
             q(`SELECT estado, COUNT(*) n, ROUND(SUM(valor_cuota_variable)) valor
                FROM LoanPayments
@@ -6654,9 +6678,30 @@ router.get('/executive-stats', async (req, res) => {
                  AND date(fecha_pago_max) BETWEEN date('now') AND date('now','+30 day')`),
         ]);
 
-        const vigente = carteraRows.find(r => r.estado === 'vigente') || { cuotas: 0, valor: 0 };
-        const vencida = carteraRows.find(r => r.estado === 'vencida') || { cuotas: 0, valor: 0 };
-        const carteraTotal = (vigente.valor || 0) + (vencida.valor || 0);
+        // Clasificación de la cartera con el criterio real de mora (ver la consulta).
+        const hoyCartera = diaEnBogota(new Date());
+        const vigente = { cuotas: 0, valor: 0 };
+        const vencida = { cuotas: 0, valor: 0 };
+        // Lo que se descarta y por qué: sin esto, la corrección sería otra cifra
+        // sin explicación, que es el problema que se está arreglando.
+        const descartes = { huerfanas: { n: 0, valor: 0 }, yaPagadas: { n: 0, valor: 0 }, fechaCorregida: { n: 0, valor: 0 } };
+
+        for (const c of carteraRows) {
+            const valor = Number(c.valor) || 0;
+            if (!c.tienePrestamo) { descartes.huerfanas.n++; descartes.huerfanas.valor += valor; continue; }
+            if (Number(c.pagado) > 0) { descartes.yaPagadas.n++; descartes.yaPagadas.valor += valor; continue; }
+
+            const cruda = c.fechaPagoMax ? new Date(`${String(c.fechaPagoMax).slice(0, 10)}T00:00:00`) : null;
+            const buena = safeParseDateAdmin(c.fechaPagoMax, c.mesPago) || cruda;
+            if (cruda && buena && cruda.getTime() !== buena.getTime()) {
+                descartes.fechaCorregida.n++; descartes.fechaCorregida.valor += valor;
+            }
+            const destino = (buena && buena < hoyCartera) ? vencida : vigente;
+            destino.cuotas++; destino.valor += valor;
+        }
+        vigente.valor = Math.round(vigente.valor);
+        vencida.valor = Math.round(vencida.valor);
+        const carteraTotal = vigente.valor + vencida.valor;
 
         const pagadasYtd = recaudoYtdRows
             .filter(r => r.estado === 'Pago' || r.estado === 'Abono')
@@ -6683,6 +6728,15 @@ router.get('/executive-stats', async (req, res) => {
                 vencida: vencida.valor || 0,
                 cuotasPendientes: (vigente.cuotas || 0) + (vencida.cuotas || 0),
                 parPct: carteraTotal > 0 ? +(((vencida.valor || 0) / carteraTotal) * 100).toFixed(1) : 0,
+                // Lo que quedó fuera del conteo y por qué. Una cifra que baja sin
+                // explicación es tan difícil de defender como una que estaba mal:
+                // con esto, la diferencia contra el dato anterior se puede cuadrar
+                // fila por fila en vez de discutirse.
+                descartes: {
+                    huerfanas: { cuotas: descartes.huerfanas.n, valor: Math.round(descartes.huerfanas.valor) },
+                    yaPagadas: { cuotas: descartes.yaPagadas.n, valor: Math.round(descartes.yaPagadas.valor) },
+                    fechaCorregida: { cuotas: descartes.fechaCorregida.n, valor: Math.round(descartes.fechaCorregida.valor) },
+                },
             },
             recaudoYtd: {
                 pagadas: pagadasYtd.n,

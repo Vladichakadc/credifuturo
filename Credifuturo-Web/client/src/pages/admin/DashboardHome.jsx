@@ -89,7 +89,7 @@ const ValidateModal = ({ result, onClose }) => {
                         </div>
                         <div>
                             <h3 className="text-lg font-bold text-brand-primary">
-                                {allOk ? '✅ Base de Datos Validada' : result.hasWarnings ? '⚠️ Validación con Advertencias' : '❌ Error en Validación'}
+                                {allOk ? '✅ Base de datos sin problemas' : result.hasWarnings ? '⚠️ Revisión con advertencias' : '❌ La revisión encontró errores'}
                             </h3>
                             <p className="text-xs text-gray-500 mt-0.5">{formattedTime}</p>
                         </div>
@@ -623,15 +623,17 @@ const DashboardHome = () => {
             setValidateResult(res.data);
             setShowModal(true);
             if (res.data.ok && !res.data.hasWarnings) {
-                toast.success('Base de datos validada correctamente. Todos los cambios están guardados.');
+                // No se afirma que "todo está guardado": eso no se comprobó, y en
+                // esta aplicación ya lo estaba. Se informa lo que sí se revisó.
+                toast.success('Revisión completa: sin problemas de integridad.');
             } else if (res.data.hasWarnings) {
-                toast.error('Validación completada con advertencias. Revisa el detalle.');
+                toast.error('La revisión encontró advertencias. Mira el detalle.');
             } else {
-                toast.error('Error durante la validación. Revisa el detalle.');
+                toast.error('La revisión encontró errores. Mira el detalle.');
             }
         } catch (err) {
             console.error('validate-db error:', err);
-            toast.error('No se pudo conectar con el servidor para validar.');
+            toast.error('No se pudo conectar con el servidor para revisar la base.');
         } finally {
             setSaving(false);
         }
@@ -1081,9 +1083,19 @@ const DashboardHome = () => {
                                 }
                             `}
                         >
+                            {/* Decía "Guardar Cambios en la Base de Datos" y no guarda
+                                nada: POST /validate-db solo cuenta registros y revisa
+                                integridad — cero escrituras. No hacía falta que guardara,
+                                porque en esta aplicación cada cambio se graba al hacerlo
+                                (cada formulario tiene su POST/PUT) y no existe un búfer de
+                                cambios pendientes. Lo que sí hacía era prometer algo que no
+                                cumplía, y encima el aviso de éxito afirmaba "todos los
+                                cambios están guardados" — una frase que el endpoint nunca
+                                comprobó. Un botón que miente sobre lo que hizo es peor que
+                                no tenerlo: quien lo pulsa se queda tranquilo sin motivo. */}
                             {saving
-                                ? <><RefreshCw className="h-4 w-4 animate-spin" /> Validando...</>
-                                : <><Save className="h-4 w-4" /> Guardar Cambios en la Base de Datos</>
+                                ? <><RefreshCw className="h-4 w-4 animate-spin" /> Revisando...</>
+                                : <><Database className="h-4 w-4" /> Revisar la Base de Datos</>
                             }
                         </button>
                     )}
