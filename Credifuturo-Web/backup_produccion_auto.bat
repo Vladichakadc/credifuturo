@@ -1,6 +1,5 @@
 @echo off
 chcp 65001 >nul
-cd /d "%~dp0"
 setlocal EnableDelayedExpansion
 
 REM ===========================================================
@@ -8,14 +7,18 @@ REM  backup_produccion_auto.bat
 REM  Backup SILENCIOSO de la BD de produccion (Railway)
 REM  + Genera los 6 archivos Excel de reporte
 REM  Ejecutado por el Programador de Tareas de Windows.
-REM  NO tiene "pause" — corre sin interaccion humana.
+REM  NO tiene "pause" - corre sin interaccion humana.
 REM  Log: c:\Credifuturo\Backups\backup_log.txt
 REM ===========================================================
 
 REM --- Rutas ---
-set "BACKUP_ROOT=c:\Credifuturo\Backups"
+set "BACKUP_ROOT=C:\Credifuturo\Backups"
 set "LOG_FILE=%BACKUP_ROOT%\backup_log.txt"
-set "WEBDIR=c:\Credifuturo\Credifuturo-Web"
+set "WEBDIR=C:\Credifuturo\Credifuturo-Web"
+
+REM  OJO: la unidad va en MAYUSCULA a proposito. Railway CLI busca el proyecto
+REM  vinculado por ruta exacta: con "c:\..." responde "No linked project found".
+cd /d "%WEBDIR%"
 
 REM --- Timestamp para nombre de carpeta y log ---
 for /f "usebackq delims=" %%i in (`powershell -NoProfile -Command "Get-Date -Format 'yyyy-MM-dd_HHmmss'"`) do set "TS=%%i"
@@ -37,14 +40,16 @@ if errorlevel 1 (
 )
 
 REM --- Verificar autenticacion Railway ---
-railway whoami >nul 2>&1
+REM  OJO: "railway" es un .cmd de npm. Sin "call", cmd le cede el control y
+REM  este script termina ahi en silencio (por eso el log solo tenia "INICIO").
+call railway whoami >nul 2>&1
 if errorlevel 1 (
     call :log "[ERROR] No autenticado en Railway. Ejecuta: railway login"
     exit /b 1
 )
 
 REM --- Verificar proyecto vinculado ---
-railway status >nul 2>&1
+call railway status >nul 2>&1
 if errorlevel 1 (
     call :log "[ERROR] No hay proyecto Railway vinculado en: %WEBDIR%"
     call :log "        Ejecuta: railway link  (dentro de Credifuturo-Web)"
@@ -56,15 +61,15 @@ for /f "usebackq delims=" %%i in (`powershell -NoProfile -Command "$b=New-Object
 call :log "[1/5] SETUP_KEY temporal generada."
 
 REM --- Activar variables en Railway ---
-railway variables --set "SETUP_KEY=%TEMP_KEY%" >nul 2>&1
+call railway variables --set "SETUP_KEY=%TEMP_KEY%" >nul 2>&1
 if errorlevel 1 (
     call :log "[ERROR] No se pudo establecer SETUP_KEY en Railway."
     exit /b 1
 )
-railway variables --set "ALLOW_SETUP_IN_PRODUCTION=true" >nul 2>&1
+call railway variables --set "ALLOW_SETUP_IN_PRODUCTION=true" >nul 2>&1
 if errorlevel 1 (
     call :log "[ERROR] No se pudo establecer ALLOW_SETUP_IN_PRODUCTION."
-    railway variables --remove SETUP_KEY >nul 2>&1
+    call railway variable delete SETUP_KEY >nul 2>&1
     exit /b 1
 )
 call :log "[2/5] Variables Railway activadas. Esperando redeploy..."
@@ -75,8 +80,8 @@ set /a ATTEMPTS=0
 set /a ATTEMPTS+=1
 if !ATTEMPTS! GTR 24 (
     call :log "[ERROR] Tiempo de espera excedido (6 min). Redeploy no termino."
-    railway variables --remove SETUP_KEY >nul 2>&1
-    railway variables --remove ALLOW_SETUP_IN_PRODUCTION >nul 2>&1
+    call railway variable delete SETUP_KEY >nul 2>&1
+    call railway variable delete ALLOW_SETUP_IN_PRODUCTION >nul 2>&1
     exit /b 1
 )
 timeout /t 15 /nobreak >nul
@@ -97,8 +102,8 @@ curl.exe -s -f -H "X-Setup-Key: %TEMP_KEY%" -o "%BACKUP_DIR%\database.sqlite.tmp
 if errorlevel 1 (
     call :log "[ERROR] Descarga fallida."
     if exist "%BACKUP_DIR%\database.sqlite.tmp" del "%BACKUP_DIR%\database.sqlite.tmp"
-    railway variables --remove SETUP_KEY >nul 2>&1
-    railway variables --remove ALLOW_SETUP_IN_PRODUCTION >nul 2>&1
+    call railway variable delete SETUP_KEY >nul 2>&1
+    call railway variable delete ALLOW_SETUP_IN_PRODUCTION >nul 2>&1
     exit /b 1
 )
 
@@ -107,8 +112,8 @@ for %%A in ("%BACKUP_DIR%\database.sqlite.tmp") do set SIZE=%%~zA
 if !SIZE! LSS 100000 (
     call :log "[ERROR] Archivo muy pequeno (!SIZE! bytes). Probable error de descarga."
     del "%BACKUP_DIR%\database.sqlite.tmp"
-    railway variables --remove SETUP_KEY >nul 2>&1
-    railway variables --remove ALLOW_SETUP_IN_PRODUCTION >nul 2>&1
+    call railway variable delete SETUP_KEY >nul 2>&1
+    call railway variable delete ALLOW_SETUP_IN_PRODUCTION >nul 2>&1
     exit /b 1
 )
 
@@ -133,9 +138,9 @@ if errorlevel 1 (
 REM --- Desactivar variables Railway ---
 call :log "[6/6] Desactivando variables temporales en Railway..."
 set /a REMOVE_ERRORS=0
-railway variables --remove SETUP_KEY >nul 2>&1
+call railway variable delete SETUP_KEY >nul 2>&1
 if errorlevel 1 set /a REMOVE_ERRORS+=1
-railway variables --remove ALLOW_SETUP_IN_PRODUCTION >nul 2>&1
+call railway variable delete ALLOW_SETUP_IN_PRODUCTION >nul 2>&1
 if errorlevel 1 set /a REMOVE_ERRORS+=1
 if !REMOVE_ERRORS! EQU 0 (
     call :log "        OK - Variables removidas."
