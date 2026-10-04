@@ -18,7 +18,15 @@
       "Bash(grep -E \"^d|\\\\.js$\")",
       "Bash(findstr /i \"lucide-react\" \"C:\\\\Credifuturo\\\\Credifuturo-Web\\\\client\\\\package.json\")",
       "Bash(npm run *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(grep -i -E \"^\\(sqlite3|better-sqlite3\\)$\")",
+      "Bash(sed -i \"s/jwt.sign\\({ id: 1, role/jwt.sign\\({ id: 68, role/\" harness.js)",
+      "Bash(export AUD_SERVER=\"$S/prod/Credifuturo-Web/server\" AUD_SRC=\"C:/Credifuturo/Backups/2026-10-04_135056/database.sqlite\")",
+      "Bash(node harness.js P_DIAG)",
+      "Bash(AUD_LOAN=SOL36 node harness.js P_FORM_CUOTA)",
+      "Bash(AUD_LOAN=SOL27 node harness.js P_FORM_CUOTA)",
+      "Bash(git log *)",
+      "Read(//c/Users/vladi/.claude/projects/c--Credifuturo/memory/**)"
     ]
   }
 }
