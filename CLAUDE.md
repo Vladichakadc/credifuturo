@@ -61,7 +61,7 @@ SQLite3 (Credifuturo-Web/database.sqlite, ~11 MB)
 - **`routes/admin.js`** — All CRUD operations (members, loans, savings, payments) plus the `/my/*` user-facing endpoints and the governance flows (loan-request approval, notifications, proposals, `settings/:key`). At ~5,500 lines / ~90 routes, this is the bulk of the API — see "Authorization gate in `admin.js`" below before adding a route.
 - **`routes/user.js`** — Legacy minimal file; active user-dashboard pages call `/api/admin/my/*` instead
 - **`middleware/authMiddleware.js`** — JWT verification (`verifyToken`); `requireRole(...roles)` accepts one or more roles (e.g. `requireRole('user', 'admin')`); `requireFreshPassword` blocks everything except password-change while `mustChangePassword` is true
-- **`services/BackupService.js`** — Exports all tables to dated Excel files; triggered daily at 8 PM Colombia time (`America/Bogota` timezone) by node-cron and on-demand via admin UI. Output: `C:\Credifuturo\Backups\`
+- **`services/BackupService.js`** — Exports all tables to dated Excel files; triggered daily at 8 PM Colombia time (`America/Bogota` timezone) by node-cron and on-demand via admin UI. Output: `getBackupBaseDir()` — `BACKUP_DIR` if set (local: `C:\Credifuturo\Backups\`), else `Backups/` next to `DATABASE_PATH` (prod: `/data/Backups/`, on the same volume as the DB). After each backup `pruneOldBackups()` keeps only the newest N timestamp folders (7 in production, off locally; `BACKUP_RETENTION` overrides) so backups can't fill the DB's volume
 - **`services/DBClient.js`** — Higher-level DB operations service (upsert/transaction helpers); used by import scripts, not by routes directly
 - **`services/DataImportService.js`** — Excel import logic (currently disabled via `ENABLE_EXCEL_SYNC=false` in `.env`)
 - **`services/EmailService.js`** — nodemailer wrapper; sends password-reset-request and loan-approval/rejection notifications
@@ -253,6 +253,7 @@ ENABLE_EXCEL_SYNC=false        # toggle for Excel import pipeline
 NODE_ENV=production            # flips on static React serving, helmet CSP, strict CORS, trust proxy, hidden 5xx errors
 ALLOWED_ORIGINS=https://...    # comma-separated cross-origin allow-list (prod only; same-origin is always allowed)
 DATABASE_PATH=/data/database.sqlite   # overrides the SQLite location (Railway volume)
+BACKUP_RETENTION=7             # optional — backup folders to keep (default: 7 in production, 0 = no pruning elsewhere)
 SETUP_KEY=...                  # >=32 chars; enables /api/setup/* maintenance endpoints
 ALLOW_SETUP_IN_PRODUCTION=true # additionally required to enable /api/setup/* when NODE_ENV=production
 

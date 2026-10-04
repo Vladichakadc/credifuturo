@@ -29,6 +29,57 @@ function getBackupBaseDir() {
 }
 const BACKUP_BASE_DIR = getBackupBaseDir();
 
+// Retención — cuántas carpetas de backup se conservan.
+//
+// Los backups viven en el MISMO volumen que la base de datos (ver arriba), y
+// nada los borraba: en oct-2026 el volumen de Railway (500 MB) llegó al 77 %,
+// con 301 MB de backups frente a 26 MB de BD. Cada "Backup Completo" copia la
+// BD entera; si el volumen se llena, la que deja de poder escribir es la BD.
+//
+// En producción se conservan los últimos 7 por defecto. En local NO se poda:
+// C:\Credifuturo\Backups es el archivo histórico (ahí caen también las copias
+// bajadas de producción). BACKUP_RETENTION=<n> lo fija a mano; 0 lo apaga.
+const BACKUP_FOLDER_PATTERN = /^\d{4}-\d{2}-\d{2}_\d{6}$/;
+
+function getBackupRetention() {
+    const raw = process.env.BACKUP_RETENTION;
+    if (raw !== undefined && raw !== '') {
+        const n = Number(raw);
+        // Un valor ilegible apaga la poda: ante la duda, no se borra nada.
+        return Number.isInteger(n) && n > 0 ? n : 0;
+    }
+    return process.env.NODE_ENV === 'production' ? 7 : 0;
+}
+
+// Borra las carpetas más antiguas hasta dejar `keep`. Solo toca carpetas cuyo
+// nombre es el timestamp de getTodayFolder(): cualquier otra cosa que haya en
+// la carpeta (p. ej. los pre-abonos-*.sqlite del barrido) queda intacta.
+// Nunca lanza: que falle la limpieza no puede tumbar un backup ya escrito.
+function pruneOldBackups(keep = getBackupRetention(), protectedFolder = null) {
+    const removed = [];
+    if (!keep) return removed;
+    try {
+        if (!fs.existsSync(BACKUP_BASE_DIR)) return removed;
+        const protectedName = protectedFolder ? path.basename(protectedFolder) : null;
+        const folders = fs.readdirSync(BACKUP_BASE_DIR, { withFileTypes: true })
+            .filter(e => e.isDirectory() && BACKUP_FOLDER_PATTERN.test(e.name))
+            .map(e => e.name)
+            .sort(); // el nombre es el timestamp: orden alfabético = cronológico
+        const sobrantes = folders.slice(0, Math.max(0, folders.length - keep));
+        for (const name of sobrantes) {
+            if (name === protectedName) continue;
+            fs.rmSync(path.join(BACKUP_BASE_DIR, name), { recursive: true, force: true });
+            removed.push(name);
+        }
+        if (removed.length) {
+            console.log(`[BackupService] 🧹 Retención (${keep}): ${removed.length} backup(s) antiguo(s) eliminado(s): ${removed.join(', ')}`);
+        }
+    } catch (err) {
+        console.error('[BackupService] No se pudieron limpiar backups antiguos:', err.message);
+    }
+    return removed;
+}
+
 // Formatea fechas al formato dd-mm-aaaa para los Excel de backup
 const formatDate = (value) => {
     if (!value) return '';
@@ -291,7 +342,10 @@ async function generateAllBackups() {
         console.log(`[BackupService] ✅ Guardado: ${filePath}`);
     }
 
+    // Después de escribir, nunca antes: si el backup nuevo falla, los viejos siguen ahí.
+    pruneOldBackups(getBackupRetention(), folder);
+
     return { folder, files: savedPaths, timestamp: new Date().toISOString() };
 }
 
-module.exports = { generateAllBackups, getBackupBaseDir, BACKUP_BASE_DIR };
+module.exports = { generateAllBackups, getBackupBaseDir, BACKUP_BASE_DIR, pruneOldBackups, getBackupRetention };
