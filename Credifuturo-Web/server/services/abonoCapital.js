@@ -324,6 +324,9 @@ async function aplicarPlan(plan, { origen = 'barrido', aplicadoPor = 'sistema' }
                 const { publicarInforme } = require('./informeAbono');
                 const socio = await Client.findByPk(plan.clientId);
                 informe = await publicarInforme({ plan, socio, idVm: plan.idVm });
+                // El reajuste anota qué informe publicó: si un día se
+                // revierte, hay que saber cuál retirar sin adivinarlo.
+                if (informe) await registro.update({ resumen: JSON.stringify({ ...plan.resumen, informe }) });
             } catch (e) {
                 console.warn('[INFORME] No se pudo publicar el informe del abono:', e.message);
             }
@@ -426,9 +429,27 @@ async function aplicarReparto(plan, { origen = 'manual', aplicadoPor = 'sistema'
     }
 }
 
-/** Deshace un reajuste devolviendo cada cuota a como estaba. */
-async function revertir(registroId, { revertidoPor = 'sistema' } = {}) {
-    const registro = await AbonoAplicado.findByPk(registroId);
+/** Una observación sin la nota que el reajuste le antepone a la cuota abonada. */
+const sinNotaDeAbono = (texto) => String(texto || '').replace(NOTA_ABONO, '').trim() || null;
+
+/**
+ * Deshace un reajuste devolviendo cada cuota a como estaba.
+ *
+ * Con `transaction` corre dentro de una transacción ajena y no la confirma ni
+ * la deshace: así quien desmarca una cuota abonada puede revertir y guardar el
+ * cambio como una sola operación, en vez de quedarse con el reajuste deshecho
+ * y la cuota a medio cambiar si lo segundo falla. En ese caso también se LEE
+ * por ella — al revertir dos reajustes seguidos, el segundo tiene que ver que
+ * el primero ya no está vigente, y eso todavía no está confirmado.
+ *
+ * Al terminar retira el informe y avisa al socio (`despuesDeRevertir`). Con una
+ * transacción ajena NO lo hace: eso escribe por la conexión normal, que se
+ * quedaría esperando el bloqueo que la propia transacción tiene tomado. Le toca
+ * a quien la abrió, una vez confirmada.
+ */
+async function revertir(registroId, { revertidoPor = 'sistema', transaction: externa = null, notificar = true } = {}) {
+    const lectura = externa ? { transaction: externa } : {};
+    const registro = await AbonoAplicado.findByPk(registroId, lectura);
     if (!registro) return { ok: false, motivo: 'No existe ese registro de abono.' };
     if (registro.revertidoEn) return { ok: false, motivo: 'Ese reajuste ya se revirtió.' };
 
@@ -437,13 +458,14 @@ async function revertir(registroId, { revertidoPor = 'sistema' } = {}) {
     // viejas lo que el segundo calculó encima. Se deshacen en orden inverso.
     const posterior = await AbonoAplicado.findOne({
         where: { idVm: registro.idVm, revertidoEn: null, id: { [Op.gt]: registro.id } },
+        ...lectura,
     });
     if (posterior) {
         return { ok: false, motivo: 'Este préstamo tiene un reajuste más reciente. Revierte primero ese y después este.' };
     }
 
     const filas = JSON.parse(registro.estadoAnterior || '[]');
-    const t = await sequelize.transaction({ type: 'IMMEDIATE' });
+    const t = externa || await sequelize.transaction({ type: 'IMMEDIATE' });
     try {
         for (const fila of filas) {
             const destino = await LoanPayment.findByPk(fila.id, { transaction: t });
@@ -469,16 +491,111 @@ async function revertir(registroId, { revertidoPor = 'sistema' } = {}) {
             const abonada = await LoanPayment.findByPk(registro.loanPaymentId, { transaction: t });
             const obs = String((abonada && abonada.observaciones) || '');
             if (abonada && NOTA_ABONO.test(obs)) {
-                await abonada.update({ observaciones: obs.replace(NOTA_ABONO, '').trim() || null }, { transaction: t });
+                await abonada.update({ observaciones: sinNotaDeAbono(obs) }, { transaction: t });
             }
         }
         await registro.update({ revertidoEn: new Date(), revertidoPor: String(revertidoPor) }, { transaction: t });
-        await t.commit();
-        return { ok: true, cuotas: filas.length, idVm: registro.idVm };
+        if (!externa) await t.commit();
     } catch (err) {
-        await t.rollback();
+        if (!externa) await t.rollback();
         throw err;
     }
+    const despues = externa ? {} : await despuesDeRevertir(registro.id, { notificar });
+    return { ok: true, cuotas: filas.length, idVm: registro.idVm, ...despues };
+}
+
+/**
+ * Lo que este reajuste aplicó por su cuenta.
+ *
+ * `excedente` guarda el acumulado del préstamo —el plan se rehace desde todos
+ * los pagos reales—, así que el segundo abono de un crédito lleva dentro el
+ * primero. Decirle al socio "se revirtió tu abono de $510.220" cuando lo que se
+ * deshizo fueron $288.887 y los otros $221.333 siguen aplicados sería avisarle
+ * de algo que no pasó.
+ */
+async function excedentePropio(registro) {
+    const previo = await AbonoAplicado.findOne({
+        where: {
+            idVm: registro.idVm, revertidoEn: null,
+            politica: { [Op.ne]: 'pago-adelantado' }, id: { [Op.lt]: registro.id },
+        },
+        order: [['id', 'DESC']],
+    });
+    const propio = num(registro.excedente) - (previo ? num(previo.excedente) : 0);
+    return { importe: propio > 0 ? propio : num(registro.excedente), quedanAnteriores: Boolean(previo) };
+}
+
+/**
+ * Le cuenta al socio que un reajuste suyo se deshizo.
+ *
+ * Cuando se aplicó se le avisó que sus cuotas bajaban; si vuelven a subir sin
+ * una palabra, lo siguiente que ve es una cuota más alta que la que el fondo le
+ * anunció. Nunca lanza: la reversión ya está confirmada.
+ */
+async function avisarReversion(registroId, { informeRetirado = false, pagoIntacto = true } = {}) {
+    try {
+        const registro = await AbonoAplicado.findByPk(registroId);
+        if (!registro || !registro.clientId) return false;
+        const { createNotification } = require('./NotificationService');
+
+        if (registro.politica === 'pago-adelantado') {
+            await createNotification({
+                clientId: registro.clientId,
+                type: 'pago_adelantado',
+                title: 'Se deshizo el reparto de tu pago adelantado',
+                message: `En tu crédito ${registro.idVm}, las cuotas que se habían dado por pagadas con tu pago adelantado `
+                    + 'vuelven a estar pendientes. Lo que pagaste sigue registrado en la cuota original.',
+                link: '/dashboard/mis-creditos?tab=cuotas',
+            });
+            return true;
+        }
+
+        const { importe, quedanAnteriores } = await excedentePropio(registro);
+        await createNotification({
+            clientId: registro.clientId,
+            type: 'abono_capital',
+            title: 'Se revirtió un abono a capital de tu crédito',
+            message: `El fondo deshizo el reajuste hecho con los ${pesos(importe)} que pagaste de más en tu crédito ${registro.idVm}: `
+                + 'tus cuotas siguientes volvieron al valor que tenían antes de ese abono.'
+                + (pagoIntacto ? ' Lo que pagaste sigue registrado.' : '')
+                + (quedanAnteriores ? ' Tus abonos anteriores siguen aplicados.' : '')
+                + (informeRetirado ? ' El informe que lo explicaba ya no está vigente y se retiró de tus informes.' : ''),
+            link: '/dashboard/mis-creditos?tab=cuotas',
+        });
+        return true;
+    } catch (err) {
+        console.warn('[ABONOS] Reajuste revertido, pero no se pudo avisar al socio:', err.message);
+        return false;
+    }
+}
+
+/**
+ * Lo que sigue a una reversión ya confirmada: retirar el informe que explicaba
+ * ese abono y avisar al socio. Va fuera de la transacción y nunca lanza — un
+ * aviso que no salió no es motivo para dejar la reversión en duda.
+ */
+async function despuesDeRevertir(registroId, { notificar = true, pagoIntacto = true } = {}) {
+    const hecho = { informesRetirados: [], avisado: false };
+    try {
+        const registro = await AbonoAplicado.findByPk(registroId);
+        if (!registro || !registro.revertidoEn) return hecho;
+        if (registro.politica !== 'pago-adelantado') {
+            const { retirarInformesDeAbono } = require('./informeAbono');
+            let resumen = {};
+            try { resumen = JSON.parse(registro.resumen || '{}') || {}; } catch { /* resumen ilegible: se busca por cifras */ }
+            hecho.informesRetirados = await retirarInformesDeAbono({
+                idVm: registro.idVm, excedente: registro.excedente, nombre: resumen.informe || null,
+            });
+        }
+    } catch (err) {
+        console.warn('[INFORME] Reajuste revertido, pero no se pudo retirar su informe:', err.message);
+    }
+    if (notificar) {
+        hecho.avisado = await avisarReversion(registroId, {
+            informeRetirado: hecho.informesRetirados.length > 0, pagoIntacto,
+        });
+    }
+    return hecho;
 }
 
 /**
@@ -689,6 +806,10 @@ module.exports = {
     planificarPrestamo,
     aplicarPlan,
     revertir,
+    despuesDeRevertir,
+    avisarReversion,
+    sinNotaDeAbono,
+    COLUMNAS,
     barrer,
     barridoProgramado,
     REDUCIR_CUOTA,

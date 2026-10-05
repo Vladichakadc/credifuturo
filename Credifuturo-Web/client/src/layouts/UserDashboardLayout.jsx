@@ -152,7 +152,9 @@ const UserDashboardLayout = ({ user, onLogout }) => {
     // el de otra socia como si fuera suyo. Ahí la separación importa más que en
     // ningún otro sitio: ese menú dice "lo mío".
     const informesPersonales = informesList.filter(
-        (i) => i.personal && String(i.cedula || '') === String(user?.cedula || '')
+        // Sin los retirados: a un socio el servidor ya no se los manda, pero a
+        // quien además es Junta o gerente sí, y este menú es el de su cuenta.
+        (i) => i.personal && !i.retirado && String(i.cedula || '') === String(user?.cedula || '')
     );
     const location = useLocation();
     const { esVisible } = useVisibilidad();

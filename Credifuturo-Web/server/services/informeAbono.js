@@ -178,7 +178,10 @@ async function leerRegistroInformes() {
 async function registrarInformeSocio(nombre, datos, { notificar = true } = {}) {
     const AppSetting = require('../models/AppSetting');
     const registro = await leerRegistroInformes();
-    const yaEstaba = Boolean(registro[nombre]);
+    // Uno retirado no cuenta como "ya estaba": si el abono se vuelve a aplicar
+    // el mismo día, el informe sale con el mismo nombre y para el socio es
+    // noticia otra vez — lo último que supo es que ese abono se había revertido.
+    const yaEstaba = Boolean(registro[nombre]) && !registro[nombre].retiradoEl;
     registro[nombre] = { ...datos, generadoEl: datos.generadoEl || new Date().toISOString() };
     await AppSetting.upsert({ key: CLAVE_INFORMES_SOCIO, value: JSON.stringify(registro) });
 
@@ -233,6 +236,45 @@ async function publicarInforme({ plan, socio, idVm }) {
 }
 
 /**
+ * Retira los informes que explicaban un abono que ya no está aplicado.
+ *
+ * Un informe que sigue en el menú del socio diciendo "tu cuota bajó $23.220"
+ * después de revertir el abono es un documento del fondo afirmando algo que
+ * dejó de ser cierto. Se retira de su vista.
+ *
+ * Retirar NO es borrar: el archivo se queda donde está y la entrada sigue en el
+ * registro, marcada. Es lo que el fondo le dijo a esa persona en su momento, y
+ * eso tiene que poder consultarse — el gerente y la Junta lo siguen viendo. Hay
+ * además una razón práctica: si la entrada desapareciera, la siembra del
+ * informe de Gimena la volvería a crear en el siguiente arranque y le avisaría
+ * de un "informe nuevo" sobre un abono revertido.
+ *
+ * Se busca por el nombre que el reajuste dejó anotado y, para los reajustes
+ * anteriores a esa anotación, por las cifras: mismo crédito y mismo abonado.
+ */
+async function retirarInformesDeAbono({ idVm, excedente, nombre = null }) {
+    const AppSetting = require('../models/AppSetting');
+    const registro = await leerRegistroInformes();
+    const abonado = Math.round(Number(excedente) || 0);
+    const retirados = [];
+    for (const [clave, meta] of Object.entries(registro)) {
+        if (!meta || meta.retiradoEl) continue;
+        const porCifras = meta.idVm === idVm && abonado > 0 && Number(meta.resumen?.excedente) === abonado;
+        if (clave !== nombre && !porCifras) continue;
+        registro[clave] = {
+            ...meta,
+            retiradoEl: new Date().toISOString(),
+            motivoRetiro: 'El abono a capital que explicaba fue revertido.',
+        };
+        retirados.push(clave);
+    }
+    if (retirados.length > 0) {
+        await AppSetting.upsert({ key: CLAVE_INFORMES_SOCIO, value: JSON.stringify(registro) });
+    }
+    return retirados;
+}
+
+/**
  * El informe de Gimena, que ya existía antes de que esto se automatizara.
  *
  * Se generó a mano al investigar su caso y quedó en `Informes/` del repositorio,
@@ -260,4 +302,5 @@ module.exports = {
     sembrarInformeGimena,
     construirMarkdown, resumenDelInforme, guardarInforme, nombreArchivo, publicarInforme,
     INFORMES_SOCIO_DIR, CLAVE_INFORMES_SOCIO, leerRegistroInformes, registrarInformeSocio,
+    retirarInformesDeAbono,
 };

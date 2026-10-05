@@ -53,7 +53,7 @@ export default function MisInformesPage() {
             .then((res) => {
                 const yo = JSON.parse(localStorage.getItem('user') || '{}');
                 setInformes((res.data || []).filter(
-                    (i) => i.personal && String(i.cedula || '') === String(yo.cedula || '')
+                    (i) => i.personal && !i.retirado && String(i.cedula || '') === String(yo.cedula || '')
                 ));
             })
             .catch((err) => setError(err.response?.data?.error || 'No se pudieron cargar tus informes.'));

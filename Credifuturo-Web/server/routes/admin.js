@@ -3986,6 +3986,9 @@ async function aplicarAbonoExtraordinario(payment, politicaPedida, contexto = {}
     const plan = await abonoCapital.planificarPrestamo({
         idVm: payment.idVm,
         politica: politicaPedida,
+        // Una reversión anterior frena al barrido, no a quien está registrando
+        // el pago ahora mismo: ver el PUT de la cuota.
+        ...(contexto.respetarReversion === false ? { respetarReversion: false } : {}),
     });
 
     if (!plan.aplicable) {
@@ -4437,6 +4440,30 @@ async function reajusteVigenteDe(loanPaymentId) {
     });
 }
 
+/**
+ * Los reajustes que descansan sobre el pago de esta cuota, del más reciente al
+ * más antiguo, y —si lo hay— el de OTRA cuota del mismo préstamo aplicado
+ * después, que es el que impide deshacerlos.
+ */
+async function reajustesDeLaCuota(payment) {
+    const { Op } = require('sequelize');
+    const AbonoAplicado = require('../models/AbonoAplicado');
+    const propios = await AbonoAplicado.findAll({
+        where: { loanPaymentId: payment.id, revertidoEn: null, politica: { [Op.ne]: 'pago-adelantado' } },
+        order: [['id', 'DESC']],
+    });
+    if (propios.length === 0) return { propios, ajeno: null };
+    const ajeno = await AbonoAplicado.findOne({
+        where: {
+            idVm: propios[0].idVm,
+            revertidoEn: null,
+            id: { [Op.gt]: propios[propios.length - 1].id, [Op.notIn]: propios.map((r) => r.id) },
+        },
+        order: [['id', 'DESC']],
+    });
+    return { propios, ajeno };
+}
+
 router.put('/payments/:id', async (req, res) => {
     try {
         const payment = await LoanPayment.findByPk(req.params.id);
@@ -4453,19 +4480,43 @@ router.put('/payments/:id', async (req, res) => {
         // la cuota pendiente y las siguientes rebajadas — si luego se cobraba
         // por su valor normal, el fondo perdía el abono entero. Primero se
         // revierte el reajuste, que devuelve cada cuota a como estaba.
+        //
+        // Lo que NO hace falta es obligar a hacerlo en dos pantallas. Sin
+        // `revertirAbono` el servidor se niega y dice por qué; con él, deshace
+        // el reajuste y guarda el cambio en la misma operación. La bandera es
+        // la confirmación de quien guarda: reescribir la deuda de un socio no
+        // puede ser el efecto secundario callado de cambiar un desplegable.
         const dejaDeEstarPagada = estadoAnterior === 'Pago' && updateData.estado !== undefined && updateData.estado !== 'Pago';
         const bajaElPago = updateData.valorCuotaPago !== undefined
             && (parseFloat(updateData.valorCuotaPago) || 0) + 1 < (parseFloat(payment.valorCuotaPago) || 0);
+        let aRevertir = [];
+        let informesRetirados = [];
         if (dejaDeEstarPagada || bajaElPago) {
-            const reajuste = await reajusteVigenteDe(payment.id);
-            if (reajuste) {
+            const { propios, ajeno } = await reajustesDeLaCuota(payment);
+            if (propios.length > 0 && ajeno) {
+                // Los reajustes se deshacen en orden inverso, y el más reciente
+                // es de otra cuota: deshacerlo aquí dejaría ESA cuota pagada
+                // con su abono sin aplicar, sin que nadie lo haya pedido.
+                const otra = ajeno.loanPaymentId
+                    ? await LoanPayment.findByPk(ajeno.loanPaymentId, { attributes: ['externalId', 'itemQuantity'] })
+                    : null;
+                return res.status(409).json({
+                    error: `El excedente de esta cuota ya se aplicó a capital (${payment.idVm}), y después se aplicó otro abono `
+                        + `sobre el mismo préstamo${otra ? ` (cuota ${otra.externalId || otra.itemQuantity})` : ''}. `
+                        + 'Los reajustes se deshacen del más reciente al más antiguo: revierte primero ese.',
+                    registroId: ajeno.id,
+                });
+            }
+            if (propios.length > 0 && req.body.revertirAbono !== true) {
                 return res.status(409).json({
                     error: `El excedente de esta cuota ya se aplicó a capital (${payment.idVm}). `
                         + 'Revierte ese reajuste desde el historial de abonos antes de desmarcar el pago o bajar su valor.',
                     requiereRevertir: true,
-                    registroId: reajuste.id,
+                    registroId: propios[0].id,
+                    excedenteCuota: Math.max(0, (parseFloat(payment.valorCuotaPago) || 0) - (parseFloat(payment.valorCuotaVariable) || 0)),
                 });
             }
+            aRevertir = propios;
         }
 
         // Igual que en POST /payments: estadoPrestamo se deriva del préstamo real,
@@ -4476,7 +4527,47 @@ router.put('/payments/:id', async (req, res) => {
             if (prestamoRef) updateData.estadoPrestamo = (prestamoRef.estado || '').trim();
         }
 
-        await payment.update(updateData);
+        if (aRevertir.length > 0) {
+            const abonoCapital = require('../services/abonoCapital');
+            const comoEstaba = payment.toJSON();
+            const t = await require('../config/database').transaction({ type: 'IMMEDIATE' });
+            try {
+                for (const reajuste of aRevertir) {
+                    const r = await abonoCapital.revertir(reajuste.id, {
+                        revertidoPor: (req.user && req.user.cedula) || 'admin', transaction: t,
+                    });
+                    if (!r.ok) throw new Error(`No se pudo revertir el abono a capital: ${r.motivo}`);
+                }
+                // El formulario se abrió ANTES de revertir, así que trae las
+                // cifras del cronograma reajustado. Lo que el administrador no
+                // tocó se queda como lo dejó la reversión; solo se escribe lo
+                // que cambió de verdad. Sin esto, guardar devolvía a la cuota
+                // el saldo rebajado y la nota del abono que se acababa de quitar.
+                for (const col of abonoCapital.COLUMNAS) {
+                    if (updateData[col] === undefined) continue;
+                    if (Math.abs((parseFloat(updateData[col]) || 0) - (parseFloat(comoEstaba[col]) || 0)) <= 1) delete updateData[col];
+                }
+                if (updateData.observaciones !== undefined) {
+                    updateData.observaciones = abonoCapital.sinNotaDeAbono(updateData.observaciones);
+                }
+                await payment.reload({ transaction: t });
+                await payment.update(updateData, { transaction: t });
+                await t.commit();
+            } catch (e) {
+                await t.rollback();
+                throw e;
+            }
+            // El informe que explicaba ese abono se retira YA, antes de mirar si
+            // el abono se vuelve a aplicar: el nuevo informe sale con el mismo
+            // nombre el mismo día, y retirarlo después se llevaría el nuevo.
+            // El aviso al socio espera a saber cómo termina este guardado.
+            for (const reajuste of aRevertir) {
+                const d = await abonoCapital.despuesDeRevertir(reajuste.id, { notificar: false });
+                informesRetirados = informesRetirados.concat(d.informesRetirados);
+            }
+        } else {
+            await payment.update(updateData);
+        }
         validateAndFixLoanStatuses().catch(() => { });
 
         // ── Abono extraordinario a capital ────────────────────────────
@@ -4487,9 +4578,47 @@ router.put('/payments/:id', async (req, res) => {
         // siguientes no cambiaban y el socio seguía pagando el mismo interés.
         let abono = null;
         if (payment.estado === 'Pago' && payment.idVm) {
+            // Una reversión anterior frena al barrido nocturno, que no puede
+            // deshacerle la decisión al administrador cada noche. No frena a
+            // quien registra AHORA un pago por encima de esta cuota: ni cuando
+            // la reversión la provocó este mismo guardado (bajar el valor de
+            // un pago abonado), ni cuando la cuota vuelve a quedar pagada
+            // después de haberla desmarcado para corregirla.
+            const conExcedente = (parseFloat(payment.valorCuotaPago) || 0) - (parseFloat(payment.valorCuotaVariable) || 0) > 1;
+            const pedidoExpreso = conExcedente && (aRevertir.length > 0 || estadoAnterior !== 'Pago');
             abono = await aplicarAbonoExtraordinario(payment, req.body.politicaAbono, {
                 origen: 'edicion', aplicadoPor: req.user && req.user.cedula,
+                ...(pedidoExpreso ? { respetarReversion: false } : {}),
             });
+        }
+
+        // Al socio se le avisó que sus cuotas bajaban; si este guardado las
+        // devuelve a como estaban, tiene que saberlo por el fondo y no al ver
+        // una cuota más alta de la anunciada. Un solo aviso, que cuenta cómo
+        // quedó: revertido sin más, o corregido y vuelto a aplicar.
+        if (aRevertir.length > 0) {
+            const abonoCapital = require('../services/abonoCapital');
+            if (abono && abono.aplicado) {
+                if (payment.clientId) {
+                    const { createNotification } = require('../services/NotificationService');
+                    const monto = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
+                    await createNotification({
+                        clientId: payment.clientId,
+                        type: 'abono_capital',
+                        title: 'Se corrigió tu abono a capital',
+                        message: `Se corrigió el pago de tu cuota${payment.externalId ? ` ${payment.externalId}` : ''} del crédito ${payment.idVm}. `
+                            + `Con el valor corregido quedan ${monto(abono.excedente)} abonados a capital, `
+                            + `que te ahorran ${monto(abono.ahorroInteres)} en intereses.`
+                            + (informesRetirados.length > 0 ? ' El informe anterior ya no está vigente.' : ''),
+                        link: '/dashboard/mis-creditos?tab=cuotas',
+                    });
+                }
+            } else {
+                // El más reciente de los revertidos lleva el acumulado de todos.
+                await abonoCapital.avisarReversion(aRevertir[0].id, {
+                    informeRetirado: informesRetirados.length > 0, pagoIntacto: !bajaElPago,
+                });
+            }
         }
 
         // Notifica al socio solo cuando la cuota PASA a 'Pago' (no en cualquier otra
@@ -4509,7 +4638,13 @@ router.put('/payments/:id', async (req, res) => {
 
         // El resumen del abono viaja aparte del registro para que la pantalla
         // pueda explicar qué se recalculó — o por qué no se recalculó nada.
-        res.json(abono ? { ...payment.toJSON(), abonoExtraordinario: abono } : payment);
+        res.json({
+            ...payment.toJSON(),
+            ...(abono ? { abonoExtraordinario: abono } : {}),
+            ...(aRevertir.length > 0
+                ? { abonoRevertido: { idVm: payment.idVm, reajustes: aRevertir.length, informesRetirados } }
+                : {}),
+        });
     } catch (err) {
         res.status(400).json({ error: err.message });
     }
@@ -5976,6 +6111,10 @@ const {
 function puedeVerInformeSocio(user, meta) {
     if (!meta) return false;
     if (user?.role === 'admin' || isJuntaMember(user)) return true;
+    // Retirado: explicaba un abono que se revirtió. Sigue existiendo para quien
+    // gobierna —es lo que el fondo le dijo al socio—, pero a él ya no se le
+    // muestra un documento con cifras que dejaron de ser las suyas.
+    if (meta.retiradoEl) return false;
     return String(meta.cedula || '') === String(user?.cedula || '');
 }
 
@@ -6026,6 +6165,9 @@ router.get('/informes', async (req, res) => {
                 ...(meta ? {
                     personal: true, titulo: meta.titulo || null, socio: meta.socio || null,
                     cedula: meta.cedula || null, idVm: meta.idVm || null, resumen: meta.resumen || null,
+                    // Quien gobierna lo sigue recibiendo; los menús de "lo mío"
+                    // lo descartan con esta marca.
+                    ...(meta.retiradoEl ? { retirado: true, motivoRetiro: meta.motivoRetiro || null } : {}),
                 } : {}),
             });
         };
@@ -6055,6 +6197,14 @@ router.get('/informes/:name', async (req, res) => {
             ? puedeVerInformeSocio(req.user, meta)
             : (req.user?.role === 'admin' || (isJuntaMember(req.user) && JUNTA_INFORMES_VISIBLES.has(name)));
         if (!permitido) {
+            // Al dueño de un informe retirado se le dice por qué no abre: el
+            // aviso que recibió en su día sigue enlazando aquí, y un "no tienes
+            // acceso" sobre un documento que era suyo no explica nada.
+            if (meta?.retiradoEl && String(meta.cedula || '') === String(req.user?.cedula || '')) {
+                return res.status(410).json({
+                    error: 'Este informe se retiró: el abono a capital que explicaba fue revertido y sus cifras ya no corresponden a tu crédito.',
+                });
+            }
             return res.status(403).json({ error: 'No tienes acceso a este informe.' });
         }
         const filePath = findInformePath(name);

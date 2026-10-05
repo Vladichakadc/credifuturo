@@ -26,11 +26,13 @@ const InformesViewerPage = () => {
     const [pdfUrl, setPdfUrl] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [retirado, setRetirado] = useState(false);
 
     useEffect(() => {
         const fetchReport = async () => {
             setLoading(true);
             setError(null);
+            setRetirado(false);
             try {
                 if (isPdf) {
                     // Igual que la descarga de soportes: se pide como blob autenticado
@@ -44,7 +46,14 @@ const InformesViewerPage = () => {
                 }
             } catch (err) {
                 console.error('Error fetching report:', err.message);
-                setError(err.response?.data?.error || 'Error al cargar el informe');
+                // Un PDF se pide como blob, así que el error del servidor también
+                // llega como blob: hay que leerlo para poder mostrar su motivo.
+                let motivo = err.response?.data?.error;
+                if (!motivo && err.response?.data instanceof Blob) {
+                    try { motivo = JSON.parse(await err.response.data.text()).error; } catch { /* no era JSON */ }
+                }
+                setRetirado(err.response?.status === 410);
+                setError(motivo || 'Error al cargar el informe');
             } finally {
                 setLoading(false);
             }
@@ -89,7 +98,7 @@ const InformesViewerPage = () => {
                 <div className="bg-red-50 border border-red-200 text-red-700 p-6 rounded-lg flex items-start gap-4">
                     <AlertCircle className="h-6 w-6 mt-0.5" />
                     <div>
-                        <h3 className="font-bold text-lg mb-1">Informe no encontrado</h3>
+                        <h3 className="font-bold text-lg mb-1">{retirado ? 'Informe retirado' : 'Informe no encontrado'}</h3>
                         <p>{error}</p>
                     </div>
                 </div>

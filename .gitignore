@@ -51,3 +51,7 @@ sincronizar_desde_railway.bat
 .claude/skills/
 __pycache__/
 *.pyc
+
+# Informes generados para un socio (abonos a capital). Son datos de una persona y
+# salen de la BD local: en producción viven en el volumen, nunca en el repositorio.
+Credifuturo-Web/Informes/

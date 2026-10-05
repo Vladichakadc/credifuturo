@@ -381,7 +381,9 @@ const DashboardLayout = ({ user, onLogout }) => {
                 });
                 if (filtered.length > 0) return filtered.map(inf => ({
                     icon: FileText,
-                    label: inf.name.replace(/\.md$|\.txt$|\.pdf$/, '').replace(/_/g, ' '),
+                    // Retirado: explicaba un abono que se revirtió. El socio ya no
+                    // lo ve; aquí se conserva, marcado, como constancia.
+                    label: inf.name.replace(/\.md$|\.txt$|\.pdf$/, '').replace(/_/g, ' ') + (inf.retirado ? ' (retirado)' : ''),
                     path: `/admin/informes/${encodeURIComponent(inf.name)}`
                 }));
                 if (informesSearch.trim()) return [{ icon: Search, label: 'Sin resultados', path: '#' }];

@@ -566,12 +566,17 @@ const PaymentsListPage = () => {
     const handleRevertirAbono = useCallback(async (registro) => {
         if (!window.confirm(
             `¿Revertir el abono de ${formatCurrency(registro.excedente)} de ${registro.idVm}?\n\n`
-            + 'Las cuotas vuelven a como estaban antes del reajuste. El pago del socio no se modifica.'
+            + 'Las cuotas vuelven a como estaban antes del reajuste. El pago del socio no se modifica.\n\n'
+            + 'Al socio se le avisa por la campana y, si ese abono tenía informe, se retira de sus informes.'
         )) return;
         setRevirtiendoId(registro.id);
         try {
-            await api.post(`/admin/payments/abonos/${registro.id}/revertir`);
-            toast.success(`${registro.idVm}: reajuste revertido. El excedente queda sin aplicar a capital.`);
+            const res = await api.post(`/admin/payments/abonos/${registro.id}/revertir`);
+            toast.success(`${registro.idVm}: reajuste revertido. El excedente queda sin aplicar a capital.`
+                + (res.data?.avisado ? ' Se avisó al socio' : '')
+                + (res.data?.informesRetirados?.length ? ' y se retiró su informe.' : (res.data?.avisado ? '.' : '')));
+            // El menú de informes del gerente tiene que mostrarlo ya como retirado.
+            window.dispatchEvent(new CustomEvent('informesUpdated'));
             await fetchPayments();
             await fetchAbonos();
         } catch (err) {
@@ -793,18 +798,66 @@ const PaymentsListPage = () => {
         (parseFloat(paymentForm.valorCuotaPago) || 0) - (parseFloat(paymentForm.valorCuotaVariable) || 0)
     );
 
+    // ── Guardar una cuota cuyo abono ya está aplicado a capital ───────────────
+    // Desmarcar el pago, o bajar su valor, exige deshacer antes el reajuste que
+    // se hizo con ese dinero. El servidor se niega (409) hasta que se lo piden
+    // expresamente; aquí se pregunta y, si el administrador confirma, se
+    // reintenta con `revertirAbono`, que revierte y guarda en un solo paso.
+    // Antes el mensaje mandaba a otra sección de la pantalla y se leía como un
+    // fallo del formulario.
+    const guardarCuota = async (id, payload, { cuota, idVm } = {}) => {
+        try {
+            return await api.put(`/admin/payments/${id}`, payload);
+        } catch (err) {
+            const d = err.response?.data;
+            if (err.response?.status !== 409 || !d?.requiereRevertir) throw err;
+
+            const sigueConExcedente = payload.estado === 'Pago'
+                && (parseFloat(payload.valorCuotaPago) || 0) - (parseFloat(payload.valorCuotaVariable) || 0) > 1;
+            const confirmado = window.confirm(
+                `La cuota ${cuota || ''} de ${idVm || 'este préstamo'} tiene un abono a capital aplicado`
+                + `${d.excedenteCuota > 0 ? ` (${formatCurrency(d.excedenteCuota)})` : ''}.\n\n`
+                + 'Para guardar este cambio hay que revertir ese reajuste: las cuotas siguientes '
+                + 'vuelven al valor que tenían antes del abono.\n\n'
+                + (sigueConExcedente
+                    ? 'Como el pago sigue por encima de la cuota, el abono se vuelve a aplicar con el valor nuevo.\n\n'
+                    : '')
+                + 'Al socio se le avisa por la campana y, si ese abono tenía informe, se retira de sus informes.\n\n'
+                + '¿Revertir el abono y guardar?'
+            );
+            if (!confirmado) {
+                const cancelado = new Error('Cambio cancelado');
+                cancelado.cancelado = true;
+                throw cancelado;
+            }
+            const res = await api.put(`/admin/payments/${id}`, { ...payload, revertirAbono: true });
+            // El menú de informes del gerente tiene que mostrarlo ya como retirado.
+            window.dispatchEvent(new CustomEvent('informesUpdated'));
+            return res;
+        }
+    };
+
     // ── Toggle Activar/Desactivar (estado Pago <-> Pendiente) ─────────────────
     const handleToggle = async (payment) => {
         const newEstado = payment.estado === 'Pago' ? 'Pendiente' : 'Pago';
         setTogglingId(payment.id);
         try {
-            await api.put(`/admin/payments/${payment.id}`, { ...payment, estado: newEstado });
+            const res = await guardarCuota(payment.id, { ...payment, estado: newEstado },
+                { cuota: payment.externalId, idVm: payment.idVm });
             setPayments(prev => prev.map(p => p.id === payment.id ? { ...p, estado: newEstado } : p));
-            toast.success(`Estado cambiado a "${newEstado}"`);
+            if (res.data?.abonoRevertido) {
+                toast.success(`Estado cambiado a "${newEstado}". Se revirtió el abono a capital de ${payment.idVm} y se avisó al socio.`);
+                // Revertir cambia las cuotas siguientes, no solo esta fila.
+                fetchPayments();
+                fetchAbonos();
+            } else {
+                toast.success(`Estado cambiado a "${newEstado}"`);
+            }
             notifyUpdate('payments');
         } catch (err) {
-            // El servidor explica por qué no: p. ej. una cuota cuyo abono ya se
-            // aplicó a capital no se desmarca sin revertir antes el reajuste.
+            if (err.cancelado) return;
+            // El servidor explica por qué no: p. ej. un préstamo con un abono
+            // más reciente sobre otra cuota, que hay que revertir primero.
             toast.error('Error al cambiar estado: ' + (err.response?.data?.error || err.message || ''));
         } finally {
             setTogglingId(null);
@@ -843,12 +896,20 @@ const PaymentsListPage = () => {
             };
 
             if (isEditing) {
-                const res = await api.put(`/admin/payments/${editingId}`, payload);
+                const res = await guardarCuota(editingId, payload,
+                    { cuota: paymentForm.externalId, idVm: paymentForm.idVm });
                 // El backend devuelve qué hizo con el excedente — o por qué no
                 // pudo hacer nada. Decirlo importa: el administrador acaba de
                 // provocar (o no) una reescritura del cronograma del préstamo.
                 const abono = res.data?.abonoExtraordinario;
-                if (abono?.aplicado) {
+                const revertido = res.data?.abonoRevertido;
+                if (revertido && !abono) {
+                    toast.success(
+                        `Registro actualizado. Se revirtió el abono a capital de ${revertido.idVm}: ` +
+                        'las cuotas siguientes volvieron al valor que tenían antes. Se avisó al socio' +
+                        (revertido.informesRetirados?.length ? ' y se retiró su informe.' : '.')
+                    );
+                } else if (abono?.aplicado) {
                     toast.success(
                         `Abono aplicado: ${formatCurrency(abono.excedente)} a capital. ` +
                         `El socio ahorra ${formatCurrency(abono.ahorroInteres)} en intereses` +
@@ -905,6 +966,8 @@ const PaymentsListPage = () => {
             fetchAbonos();
             notifyUpdate('payments');
         } catch (error) {
+            // Dijo que no a revertir el abono: el formulario sigue abierto, sin aviso de error.
+            if (error.cancelado) return;
             console.error('Error saving payment:', error);
             const msg = error.response?.data?.error || error.response?.data?.message || error.message || 'Error desconocido';
             toast.error('Error al guardar: ' + msg);
