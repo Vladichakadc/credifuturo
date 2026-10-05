@@ -45,6 +45,16 @@ const COLUMNAS = ['saldoInicial', 'valorInteresesAmortizados', 'valorCuotaVariab
 const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
 const pesos = (n) => `$${Math.round(num(n)).toLocaleString('es-CO')}`;
 
+// Por debajo de este importe el abono se aplica igual —la deuda tiene que
+// quedar exacta—, pero no se le publica un informe al socio. Quien consigna
+// $160.000 sobre una cuota de $154.286 está redondeando, no abonando a capital,
+// y un informe mensual por cada redondeo entierra los que sí importan.
+const UMBRAL_INFORME = 20000;
+
+// La nota que `aplicarPlan` antepone a las observaciones de la cuota abonada.
+// Se necesita reconocerla para retirarla cuando el reajuste se revierte.
+const NOTA_ABONO = /^Abono extraordinario de \$[\d.]+ a capital · reducción de (?:cuota|plazo)\.\s*/;
+
 /**
  * El año en Colombia, no el del reloj del servidor.
  *
@@ -305,7 +315,10 @@ async function aplicarPlan(plan, { origen = 'barrido', aplicadoPor = 'sistema' }
         // a mes. Con reducción de plazo lo que cambia es cuándo termina el
         // crédito, y eso pide otro documento, no este.
         let informe = null;
-        if (plan.politica === REDUCIR_CUOTA) {
+        // Lo que se aplica en ESTA operación, no el acumulado del préstamo:
+        // `resumen.excedente` suma también los abonos anteriores.
+        const excedenteNuevo = (plan.abonos || []).reduce((s, a) => s + num(a.excedente), 0);
+        if (plan.politica === REDUCIR_CUOTA && excedenteNuevo >= UMBRAL_INFORME) {
             try {
                 const Client = require('../models/Client');
                 const { publicarInforme } = require('./informeAbono');
@@ -419,6 +432,16 @@ async function revertir(registroId, { revertidoPor = 'sistema' } = {}) {
     if (!registro) return { ok: false, motivo: 'No existe ese registro de abono.' };
     if (registro.revertidoEn) return { ok: false, motivo: 'Ese reajuste ya se revirtió.' };
 
+    // Cada reajuste guarda el cronograma tal como lo encontró. Si después hubo
+    // otro sobre el mismo préstamo, restaurar el primero pisaría con cifras
+    // viejas lo que el segundo calculó encima. Se deshacen en orden inverso.
+    const posterior = await AbonoAplicado.findOne({
+        where: { idVm: registro.idVm, revertidoEn: null, id: { [Op.gt]: registro.id } },
+    });
+    if (posterior) {
+        return { ok: false, motivo: 'Este préstamo tiene un reajuste más reciente. Revierte primero ese y después este.' };
+    }
+
     const filas = JSON.parse(registro.estadoAnterior || '[]');
     const t = await sequelize.transaction({ type: 'IMMEDIATE' });
     try {
@@ -437,6 +460,17 @@ async function revertir(registroId, { revertidoPor = 'sistema' } = {}) {
                 datos.observaciones = null;
             }
             await destino.update(datos, { transaction: t });
+        }
+        // La cuota abonada conserva lo que el socio pagó —eso no se revierte—,
+        // pero deja de decir que el abono redujo la cuota o el plazo. La lista
+        // de pagos lee esa nota para contar qué se hizo con el excedente, y sin
+        // retirarla seguía mostrando "reduce la cuota" sobre un reajuste deshecho.
+        if (registro.politica !== 'pago-adelantado' && registro.loanPaymentId) {
+            const abonada = await LoanPayment.findByPk(registro.loanPaymentId, { transaction: t });
+            const obs = String((abonada && abonada.observaciones) || '');
+            if (abonada && NOTA_ABONO.test(obs)) {
+                await abonada.update({ observaciones: obs.replace(NOTA_ABONO, '').trim() || null }, { transaction: t });
+            }
         }
         await registro.update({ revertidoEn: new Date(), revertidoPor: String(revertidoPor) }, { transaction: t });
         await t.commit();
@@ -477,7 +511,10 @@ async function barrer({ anio = anioBogota(), aplicar = false, origen = 'barrido'
             const plan = await planificarPrestamo({ idVm, anio });
             if (!plan.aplicable) {
                 if (plan.yaAlDia) resultado.alDia++;
-                else resultado.bloqueados.push({ idVm, motivo: plan.motivo, excedente: plan.excedente || 0 });
+                // `revertido` viaja aparte del motivo: esos no están bloqueados por
+                // sus cifras sino por una decisión, y la pantalla ofrece volver a
+                // aplicarlos en vez de solo listarlos.
+                else resultado.bloqueados.push({ idVm, motivo: plan.motivo, excedente: plan.excedente || 0, revertido: Boolean(plan.revertido) });
                 continue;
             }
             if (!aplicar) { resultado.pendientes.push(plan); continue; }

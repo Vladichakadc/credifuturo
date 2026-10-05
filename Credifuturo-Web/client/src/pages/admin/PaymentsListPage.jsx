@@ -402,6 +402,10 @@ const PaymentsListPage = () => {
     // se negó a tocar y necesitan una decisión de una persona.
     const [abonos, setAbonos] = useState(null);
     const [aplicandoAbonos, setAplicandoAbonos] = useState(false);
+    // Reajustes ya aplicados. Cada uno guarda cómo estaba el cronograma antes,
+    // así que desde aquí se puede deshacer.
+    const [historialAbonos, setHistorialAbonos] = useState([]);
+    const [revirtiendoId, setRevirtiendoId] = useState(null);
     const [selectingRecord, setSelectingRecord] = useState(false);
     const [selectorSearch, setSelectorSearch] = useState('');
     const [selectorClientId, setSelectorClientId] = useState('');
@@ -461,6 +465,12 @@ const PaymentsListPage = () => {
         } catch {
             // Que falle esta revisión no debe estropear la lista de pagos.
             setAbonos(null);
+        }
+        try {
+            const res = await api.get('/admin/payments/abonos/historial');
+            setHistorialAbonos(res.data && res.data.ok ? (res.data.data || []) : []);
+        } catch {
+            setHistorialAbonos([]);
         }
     }, []);
 
@@ -547,6 +557,27 @@ const PaymentsListPage = () => {
             toast.error('No se pudieron aplicar los abonos: ' + (err.response?.data?.error || err.message || ''));
         } finally {
             setAplicandoAbonos(false);
+        }
+    }, [fetchPayments, fetchAbonos, toast]);
+
+    // Deshace un reajuste: cada cuota vuelve a como estaba antes del abono. Lo
+    // que el socio pagó no se toca; el excedente queda otra vez sin aplicar y
+    // el barrido nocturno ya no lo reaplica solo.
+    const handleRevertirAbono = useCallback(async (registro) => {
+        if (!window.confirm(
+            `¿Revertir el abono de ${formatCurrency(registro.excedente)} de ${registro.idVm}?\n\n`
+            + 'Las cuotas vuelven a como estaban antes del reajuste. El pago del socio no se modifica.'
+        )) return;
+        setRevirtiendoId(registro.id);
+        try {
+            await api.post(`/admin/payments/abonos/${registro.id}/revertir`);
+            toast.success(`${registro.idVm}: reajuste revertido. El excedente queda sin aplicar a capital.`);
+            await fetchPayments();
+            await fetchAbonos();
+        } catch (err) {
+            toast.error('No se pudo revertir: ' + (err.response?.data?.error || err.message || ''));
+        } finally {
+            setRevirtiendoId(null);
         }
     }, [fetchPayments, fetchAbonos, toast]);
 
@@ -772,7 +803,9 @@ const PaymentsListPage = () => {
             toast.success(`Estado cambiado a "${newEstado}"`);
             notifyUpdate('payments');
         } catch (err) {
-            toast.error('Error al cambiar estado: ' + (err.message || ''));
+            // El servidor explica por qué no: p. ej. una cuota cuyo abono ya se
+            // aplicó a capital no se desmarca sin revertir antes el reajuste.
+            toast.error('Error al cambiar estado: ' + (err.response?.data?.error || err.message || ''));
         } finally {
             setTogglingId(null);
         }
@@ -890,7 +923,7 @@ const PaymentsListPage = () => {
             notifyUpdate('payments');
             refreshAll();
         } catch (err) {
-            toast.error(err.message || 'Error al eliminar');
+            toast.error(err.response?.data?.error || err.message || 'Error al eliminar');
         } finally {
             setDeletingId(null);
         }
@@ -1433,6 +1466,21 @@ const PaymentsListPage = () => {
                                         <span className="font-medium">{b.idVm}</span>
                                         {b.excedente > 0 && <> · ${Math.round(b.excedente).toLocaleString('es-CO')}</>}
                                         {' — '}{b.motivo}
+                                        {/* Un reajuste revertido no está bloqueado por sus
+                                            cifras sino por una decisión: se puede deshacer. */}
+                                        {b.revertido && (
+                                            <>
+                                                {' '}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleAplicarAbonos(b.idVm)}
+                                                    disabled={aplicandoAbonos}
+                                                    className="font-semibold text-amber-900 underline underline-offset-2 hover:text-amber-700 disabled:opacity-50"
+                                                >
+                                                    Aplicar de nuevo
+                                                </button>
+                                            </>
+                                        )}
                                     </li>
                                 ))}
                                 {abonos.bloqueados.length > 5 && (
@@ -1442,6 +1490,85 @@ const PaymentsListPage = () => {
                         </div>
                     )}
                 </div>
+            )}
+
+            {/* Historial de abonos a capital ya aplicados.
+                Cada reajuste reescribió la deuda registrada de un socio, y el
+                servidor guarda cómo estaba antes precisamente para poder
+                deshacerlo. Sin esta lista ese punto de retorno existía pero no
+                había desde dónde usarlo. */}
+            {historialAbonos.length > 0 && (
+                <details className="rounded-lg border border-gray-200 bg-white p-4">
+                    <summary className="cursor-pointer select-none text-sm font-semibold text-gray-900">
+                        Historial de abonos a capital ({historialAbonos.length})
+                        <span className="ml-2 font-normal text-gray-500">
+                            {formatCurrency(historialAbonos.filter(a => !a.revertidoEn && a.politica !== 'pago-adelantado')
+                                .reduce((s, a) => s + (parseFloat(a.excedente) || 0), 0))} abonados a capital
+                        </span>
+                    </summary>
+                    <div className="mt-3 overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="border-b border-gray-200 text-left text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                                    <th className="py-2 pr-4">Fecha</th>
+                                    <th className="py-2 pr-4">Préstamo</th>
+                                    <th className="py-2 pr-4 text-right">Excedente</th>
+                                    <th className="py-2 pr-4">Qué se hizo</th>
+                                    <th className="py-2 pr-4 text-right">Ahorro en intereses</th>
+                                    <th className="py-2 pr-4">Origen</th>
+                                    <th className="py-2 text-right">Estado</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {historialAbonos.map((a) => {
+                                    // Solo se revierte el reajuste más reciente de cada préstamo:
+                                    // deshacer uno anterior dejaría en pie el que se calculó encima.
+                                    const hayPosterior = historialAbonos.some(o => o.idVm === a.idVm && !o.revertidoEn && o.id > a.id);
+                                    return (
+                                        <tr key={a.id} className="border-b border-gray-100 last:border-0">
+                                            <td className="py-2 pr-4 tabular-nums text-gray-700">{formatDate(a.createdAt)}</td>
+                                            <td className="py-2 pr-4 font-medium text-gray-900">{a.idVm}</td>
+                                            <td className="py-2 pr-4 text-right tabular-nums text-gray-900">{formatCurrency(a.excedente)}</td>
+                                            <td className="py-2 pr-4 text-gray-700">
+                                                {a.politica === 'reducir-plazo' ? 'Reducir el plazo'
+                                                    : a.politica === 'pago-adelantado' ? 'Pago adelantado de cuotas'
+                                                        : 'Reducir la cuota'}
+                                            </td>
+                                            <td className="py-2 pr-4 text-right tabular-nums text-gray-700">
+                                                {a.resumen?.ahorroInteres > 0 ? formatCurrency(a.resumen.ahorroInteres) : '—'}
+                                            </td>
+                                            <td className="py-2 pr-4 text-gray-600">
+                                                {a.origen === 'barrido' ? 'Automático' : a.origen === 'edicion' ? 'Al guardar el pago' : 'Manual'}
+                                            </td>
+                                            <td className="py-2 text-right">
+                                                {a.revertidoEn ? (
+                                                    <span className="text-xs text-gray-500">Revertido el {formatDate(a.revertidoEn)}</span>
+                                                ) : hayPosterior ? (
+                                                    <span className="text-xs text-gray-400" title="Revierte primero el reajuste más reciente de este préstamo">
+                                                        Hay uno posterior
+                                                    </span>
+                                                ) : (
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() => handleRevertirAbono(a)}
+                                                        disabled={revirtiendoId === a.id}
+                                                    >
+                                                        {revirtiendoId === a.id ? 'Revirtiendo…' : 'Revertir'}
+                                                    </Button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                    <p className="mt-2 text-xs text-gray-500">
+                        Revertir devuelve cada cuota a como estaba antes del reajuste. Lo que el socio pagó no cambia,
+                        y el sistema no vuelve a aplicar ese abono solo: hay que pedirlo desde el aviso de arriba.
+                    </p>
+                </details>
             )}
 
             {/* Smart Summary Cards - Row 1: Financiero */}
@@ -2084,11 +2211,21 @@ const PaymentsListPage = () => {
                                                 <strong className="ml-1">Los {formatCurrency(excedenteAbono)} de diferencia irán a capital.</strong>
                                             </span>
                                         </div>
-                                        <p className="mt-1 text-xs text-amber-800">
-                                            Al guardar se recalculará el saldo y los intereses de las cuotas pendientes
-                                            posteriores a esta. No se tocan las ya pagadas, las anteriores que sigan
-                                            debiéndose, ni las que estén en mora.
-                                        </p>
+                                        {paymentForm.estado === 'Pago' ? (
+                                            <p className="mt-1 text-xs text-amber-800">
+                                                Al guardar se recalculará el saldo y los intereses de las cuotas pendientes
+                                                posteriores a esta. No se tocan las ya pagadas, las anteriores que sigan
+                                                debiéndose, ni las que estén en mora.
+                                            </p>
+                                        ) : (
+                                            // El servidor solo aplica el abono cuando la cuota queda
+                                            // en 'Pago'. Anunciar el recálculo con otro estado era
+                                            // prometer algo que no iba a ocurrir.
+                                            <p className="mt-1 text-xs font-semibold text-red-700">
+                                                Con el estado en «{paymentForm.estado || 'sin definir'}» el abono NO se aplicará:
+                                                cambia el estado a «Pago» para que se recalculen las cuotas siguientes.
+                                            </p>
+                                        )}
                                         <p className="mt-3 text-xs font-bold text-amber-900">
                                             ¿Qué se hace con ese abono?
                                         </p>

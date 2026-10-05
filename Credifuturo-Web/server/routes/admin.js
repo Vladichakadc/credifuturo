@@ -4427,6 +4427,16 @@ async function avisarAlSocio(createNotification, plan) {
     }
 }
 
+/** El reajuste por abono a capital que sigue en pie sobre esta cuota, si lo hay. */
+async function reajusteVigenteDe(loanPaymentId) {
+    const { Op } = require('sequelize');
+    const AbonoAplicado = require('../models/AbonoAplicado');
+    return AbonoAplicado.findOne({
+        where: { loanPaymentId, revertidoEn: null, politica: { [Op.ne]: 'pago-adelantado' } },
+        order: [['createdAt', 'DESC']],
+    });
+}
+
 router.put('/payments/:id', async (req, res) => {
     try {
         const payment = await LoanPayment.findByPk(req.params.id);
@@ -4436,6 +4446,27 @@ router.put('/payments/:id', async (req, res) => {
 
         // A08: whitelist; bloquea cambios a externalId.
         const updateData = pickFields(req.body, ALLOWED_LOAN_PAYMENT_FIELDS);
+
+        // Una cuota cuyo excedente ya se aplicó a capital no puede dejar de
+        // estar pagada ni bajar su importe así como así: el resto del
+        // cronograma ya se rehízo contando con ese dinero. Desmarcarla dejaba
+        // la cuota pendiente y las siguientes rebajadas — si luego se cobraba
+        // por su valor normal, el fondo perdía el abono entero. Primero se
+        // revierte el reajuste, que devuelve cada cuota a como estaba.
+        const dejaDeEstarPagada = estadoAnterior === 'Pago' && updateData.estado !== undefined && updateData.estado !== 'Pago';
+        const bajaElPago = updateData.valorCuotaPago !== undefined
+            && (parseFloat(updateData.valorCuotaPago) || 0) + 1 < (parseFloat(payment.valorCuotaPago) || 0);
+        if (dejaDeEstarPagada || bajaElPago) {
+            const reajuste = await reajusteVigenteDe(payment.id);
+            if (reajuste) {
+                return res.status(409).json({
+                    error: `El excedente de esta cuota ya se aplicó a capital (${payment.idVm}). `
+                        + 'Revierte ese reajuste desde el historial de abonos antes de desmarcar el pago o bajar su valor.',
+                    requiereRevertir: true,
+                    registroId: reajuste.id,
+                });
+            }
+        }
 
         // Igual que en POST /payments: estadoPrestamo se deriva del préstamo real,
         // nunca del valor que traiga el formulario.
@@ -4488,6 +4519,17 @@ router.delete('/payments/:id', async (req, res) => {
     try {
         const payment = await LoanPayment.findByPk(req.params.id);
         if (!payment) return res.status(404).json({ error: 'Registro de pago no encontrado' });
+
+        // Misma razón que al desmarcarla: el cronograma ya cuenta con su abono.
+        const reajuste = await reajusteVigenteDe(payment.id);
+        if (reajuste) {
+            return res.status(409).json({
+                error: `El excedente de esta cuota ya se aplicó a capital (${payment.idVm}). `
+                    + 'Revierte ese reajuste desde el historial de abonos antes de eliminarla.',
+                requiereRevertir: true,
+                registroId: reajuste.id,
+            });
+        }
 
         // Eliminar soporte asociado si existe para evitar error de llave foránea
         await Soporte.destroy({ where: { paymentId: payment.id } });
@@ -4877,7 +4919,11 @@ router.get('/dashboard-stats', async (req, res) => {
             const pagadoReal = parseFloat(p.valorCuotaPago || 0);
             const valor = pagadoReal > 0 ? pagadoReal : parseFloat(p.valorCuotaVariable || 0);
             totalCuotasPagadas += valor;
-            recaudoCuotasCount++;
+            // Una cuota que un abono dejó sin nada que cobrar figura como 'Pago'
+            // con valor cero: no es un pago recibido. Contarla inflaba "pagos
+            // completados" — un abono que cancelaba un crédito de 12 cuotas
+            // sumaba 12 pagos por un solo ingreso.
+            if (!(p.esPrepago && valor === 0)) recaudoCuotasCount++;
         }
         totalCuotasPagadas = Math.round(totalCuotasPagadas);
 
@@ -6687,11 +6733,22 @@ router.get('/executive-stats', async (req, res) => {
                       p.valor_cuota_variable valor, p.valor_cuota_pago pagado,
                       p.id_vm idVm, (SELECT COUNT(*) FROM DisbursedLoans d WHERE d.id_vm = p.id_vm) tienePrestamo
                FROM LoanPayments p WHERE p.estado='Pendiente'`),
-            // Recaudo del año: cuotas con vencimiento ya cumplido este año, por estado
-            q(`SELECT estado, COUNT(*) n, ROUND(SUM(valor_cuota_variable)) valor
+            // Recaudo del año: cuotas con vencimiento ya cumplido este año, por estado.
+            //
+            // En lo pagado se suma lo REALMENTE recibido, igual que
+            // `totalCuotasPagadas` en /dashboard-stats. Sumando el valor de la
+            // cuota, el excedente que un socio abonaba a capital entraba en el
+            // recaudo del Panel Principal y no en el de este: dos paneles con dos
+            // cifras para el mismo dinero. Y se dejan fuera las cuotas que un
+            // abono anuló (valor cero), que no son pagos y subían la eficiencia.
+            q(`SELECT estado, COUNT(*) n,
+                      ROUND(SUM(CASE WHEN estado IN ('Pago','Abono') AND valor_cuota_pago > 0
+                                     THEN valor_cuota_pago ELSE valor_cuota_variable END)) valor
                FROM LoanPayments
                WHERE strftime('%Y', fecha_pago_max) = strftime('%Y','now')
                  AND date(fecha_pago_max) <= date('now')
+                 AND NOT (COALESCE(es_prepago, 0) = 1 AND COALESCE(valor_cuota_variable, 0) = 0
+                          AND COALESCE(valor_cuota_pago, 0) = 0)
                GROUP BY estado`),
             // Concentración: saldo pendiente por deudor (orden descendente).
             // nombre replica exactamente la construcción de clientName en /payments/list

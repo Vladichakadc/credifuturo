@@ -61,8 +61,26 @@ const num = (v) => {
 
 const redondear = (n) => parseFloat(num(n).toFixed(2));
 
-/** Ordena las cuotas como corren en el tiempo: por vencimiento y, a igual fecha, por número. */
+/**
+ * Ordena las cuotas como corren en el cronograma: por su número.
+ *
+ * Antes se ordenaba por `fechaPagoMax`, y esa columna no es de fiar para esto:
+ * el formulario de pagos la reemplaza por el día en que se registra el pago.
+ * Una cuota pagada tarde —después del vencimiento de la siguiente— quedaba
+ * detrás de ella, el saldo dejaba de encadenar y el abono se rechazaba como si
+ * el préstamo fuera una carga histórica. El número de cuota no lo toca nadie.
+ *
+ * Solo se cae a la fecha cuando la numeración no sirve (falta, se repite o no
+ * es positiva), que es lo que puede pasar en un préstamo importado.
+ */
 function ordenarCuotas(cuotas) {
+    const numeros = cuotas.map((c) => parseInt(c.itemQuantity, 10));
+    const numeracionFiable = numeros.length > 0
+        && numeros.every((n) => Number.isInteger(n) && n > 0)
+        && new Set(numeros).size === numeros.length;
+    if (numeracionFiable) {
+        return [...cuotas].sort((a, b) => parseInt(a.itemQuantity, 10) - parseInt(b.itemQuantity, 10));
+    }
     return [...cuotas].sort((a, b) => {
         const fa = String(a.fechaPagoMax || '');
         const fb = String(b.fechaPagoMax || '');
@@ -195,6 +213,16 @@ function tieneCapitalConstante(filasOrdenadas) {
     for (let i = 1; i < cuerpo.length; i++) {
         const capital = num(cuerpo[i].saldoInicial) - num(cuerpo[i].saldoFinal);
         if (Math.abs(capital - referencia) <= TOLERANCIA) continue;
+        // La propia cuota abonada amortiza su capital MÁS el excedente: el
+        // formulario de pagos le rebaja el saldoFinal mientras el administrador
+        // escribe el importe. Sin admitir ese salto, un abono solo pasaba si
+        // caía en la primera cuota del préstamo —que fija la referencia— o
+        // justo después de otro abono; en cualquier cuota intermedia el
+        // préstamo quedaba marcado "sin recalcular" y ni el botón ni el barrido
+        // podían destrabarlo. La referencia no cambia: el tramo nuevo, si lo
+        // hay, empieza en la cuota siguiente y lo admite la regla de abajo.
+        const excedentePropio = excedenteDe(cuerpo[i]);
+        if (excedentePropio > 0 && Math.abs(capital - referencia - excedentePropio) <= TOLERANCIA) continue;
         // Solo se admite el cambio si la cuota anterior recibió un abono.
         if (excedenteDe(cuerpo[i - 1]) > 0) {
             referencia = capital;
