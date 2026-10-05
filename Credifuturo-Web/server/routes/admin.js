@@ -75,31 +75,12 @@ const upload = multer({
 
 
 // --- Loan Status Validation Helper ---
+// La regla vive en services/revisionBase.js, que es quien la comparte con la
+// revisión de la base del panel. Aquí se conserva el contrato de siempre: cuántos
+// préstamos cerró, y nunca lanza.
 async function validateAndFixLoanStatuses() {
-    const { Op } = require('sequelize');
     try {
-        const activeLoans = await DisbursedLoan.findAll({
-            attributes: ['id', 'idVm', 'estado']
-        });
-
-        let fixed = 0;
-        for (const loan of activeLoans) {
-            if (!loan.idVm) continue;
-            if ((loan.estado || '').trim() === 'Cancelado') continue;
-            const total = await LoanPayment.count({ where: { idVm: loan.idVm } });
-            if (total === 0) continue;
-            const paid = await LoanPayment.count({ where: { idVm: loan.idVm, estado: 'Pago' } });
-            if (paid === total) {
-                await loan.update({ estado: 'Cancelado' });
-                await LoanPayment.update(
-                    { estadoPrestamo: 'Cancelado' },
-                    { where: { idVm: loan.idVm } }
-                );
-                fixed++;
-                console.log(`✅ Préstamo ${loan.idVm} marcado como Cancelado (${paid}/${total} cuotas pagadas)`);
-            }
-        }
-        return fixed;
+        return (await require('../services/revisionBase').cerrarPrestamosPagados()).length;
     } catch (err) {
         console.error('Error en validateAndFixLoanStatuses:', err);
         return 0;
@@ -5785,100 +5766,25 @@ router.post('/sync-init', async (req, res) => {
     }
 });
 
-// ─── POST /validate-db — Validate & confirm DB state ──────────────────────────
-// Called by the "Guardar Cambios en la Base de Datos" button on the dashboard.
-// Counts records per table and runs basic integrity checks.
+// ─── POST /validate-db — Revisar y actualizar la base ─────────────────────────
+// Lo llama el botón "Revisar y actualizar la base" del panel principal.
+//
+// Este endpoint solo contaba registros: no escribía nada, y por eso pulsar el
+// botón no cambiaba ningún campo. Ahora ejecuta, en el momento, los recálculos
+// que el sistema ya hacía por su cuenta de noche —estado de los préstamos, abonos
+// a capital sin aplicar, foto del score— y devuelve qué cambió y qué quedó para
+// decidir a mano. El detalle y los límites están en services/revisionBase.js.
+//
+// Conserva la ruta, que cae en el gate por defecto: solo admin.
 router.post('/validate-db', async (req, res) => {
     try {
-        const Client = require('../models/Client');
-        const Saving = require('../models/Saving');
-        const DisbursedLoan = require('../models/DisbursedLoan');
-        const LoanPayment = require('../models/LoanPayment');
-        const { Op } = require('sequelize');
-
-        const [
-            totalClients,
-            totalSavings,
-            totalLoans,
-            totalPayments,
-            orphanSavings,
-            orphanLoans,
-            orphanPayments
-        ] = await Promise.all([
-            Client.count(),
-            Saving.count(),
-            DisbursedLoan.count(),
-            LoanPayment.count(),
-            // Savings sin cliente válido
-            Saving.count({ where: { clientId: { [Op.notIn]: require('sequelize').literal('(SELECT id FROM Clients)') } } }).catch(() => 0),
-            // Loans sin cliente válido
-            DisbursedLoan.count({ where: { clientId: { [Op.is]: null } } }).catch(() => 0),
-            // Payments sin cliente válido
-            LoanPayment.count({ where: { clientId: { [Op.is]: null } } }).catch(() => 0),
-        ]);
-
-        // Detectar cuotas huérfanas: idVm que no existe en ningún DisbursedLoan
-        const allDisbursedIdVms = await DisbursedLoan.findAll({ attributes: ['idVm'] })
-            .then(loans => loans.map(l => l.idVm).filter(Boolean));
-        const orphanByIdVm = allDisbursedIdVms.length > 0
-            ? await LoanPayment.count({
-                where: { idVm: { [Op.notIn]: allDisbursedIdVms } }
-              }).catch(() => 0)
-            : 0;
-
-        const tables = [
-            {
-                table: 'Socios (Clientes)',
-                count: totalClients,
-                status: totalClients > 0 ? 'OK' : 'WARN',
-                message: totalClients > 0 ? `${totalClients} registros persistidos` : 'Sin registros'
-            },
-            {
-                table: 'Ahorros',
-                count: totalSavings,
-                status: totalSavings > 0 ? (orphanSavings > 0 ? 'WARN' : 'OK') : 'WARN',
-                message: orphanSavings > 0
-                    ? `${totalSavings} registros (${orphanSavings} sin socio)`
-                    : `${totalSavings} registros persistidos`
-            },
-            {
-                table: 'Préstamos Desembolsados',
-                count: totalLoans,
-                status: totalLoans > 0 ? (orphanLoans > 0 ? 'WARN' : 'OK') : 'WARN',
-                message: orphanLoans > 0
-                    ? `${totalLoans} registros (${orphanLoans} sin socio)`
-                    : `${totalLoans} registros persistidos`
-            },
-            {
-                table: 'Estado Préstamos (Pagos)',
-                count: totalPayments,
-                status: totalPayments > 0 ? (orphanPayments > 0 || orphanByIdVm > 0 ? 'WARN' : 'OK') : 'WARN',
-                message: (() => {
-                    const issues = [];
-                    if (orphanPayments > 0) issues.push(`${orphanPayments} sin socio`);
-                    if (orphanByIdVm > 0) issues.push(`${orphanByIdVm} con idVm sin préstamo padre`);
-                    return issues.length > 0
-                        ? `${totalPayments} registros (${issues.join(', ')})`
-                        : `${totalPayments} registros persistidos`;
-                })()
-            }
-        ];
-
-        const hasErrors = tables.some(t => t.status === 'ERROR');
-        const hasWarnings = tables.some(t => t.status === 'WARN');
-
-        console.log(`[validate-db] Clientes:${totalClients} Ahorros:${totalSavings} Préstamos:${totalLoans} Pagos:${totalPayments}`);
-
-        res.json({
-            ok: !hasErrors,
-            hasWarnings,
-            timestamp: new Date().toISOString(),
-            summary: tables,
-            totals: { totalClients, totalSavings, totalLoans, totalPayments }
-        });
+        const { revisarBase } = require('../services/revisionBase');
+        const informe = await revisarBase({ quien: (req.user && req.user.cedula) || 'admin' });
+        console.log(`[validate-db] ${informe.correcciones} corrección(es), ${informe.pendientes} pendiente(s) de decisión.`);
+        res.json(informe);
     } catch (err) {
         console.error('❌ validate-db error:', err);
-        res.status(500).json({ ok: false, error: err.message, summary: [] });
+        res.status(500).json({ ok: false, error: 'No se pudo completar la revisión de la base.', summary: [], pasos: [] });
     }
 });
 

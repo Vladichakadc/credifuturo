@@ -35,7 +35,7 @@ npm run preview # Preview production build locally
 ### Quick Start
 Double-click `Credifuturo-Web/iniciar_aplicacion.bat` to start both servers automatically (includes dependency checks). Use `Credifuturo-Web/reparar_instalacion.bat` to reinstall all dependencies if node_modules are corrupted.
 
-No test framework is configured. Three hand-rolled benches live in `server/` and run over a throwaway SQLite DB: `node server/pruebas_abonos.js` (extraordinary principal payments), `node server/pruebas_desmarcar_abono.js` (unmarking a quota whose abono is already applied — real HTTP route) and `node server/pruebas_retanqueo.js` (refinancing — exercises the real HTTP route, and pins `TZ=UTC` because that is the container's zone and where the date defects surface), `node server/pruebas_solicitudes.js` (correcting a loan request), `node server/pruebas_reparto.js` (the profit-distribution arithmetic — pure, no DB, runs in milliseconds) and `node server/pruebas_reparto_http.js` (the same over the real HTTP route). None of them clean up rows between sections: the throwaway DB competes with the post-boot jobs (score seed, abono sweep) and a `DELETE` there hangs on `SQLITE_BUSY`. ESLint is installed in the client (no `lint` npm script) — run it with `npx eslint .` from `client/`.
+No test framework is configured. Three hand-rolled benches live in `server/` and run over a throwaway SQLite DB: `node server/pruebas_abonos.js` (extraordinary principal payments), `node server/pruebas_desmarcar_abono.js` (unmarking a quota whose abono is already applied — real HTTP route) and `node server/pruebas_retanqueo.js` (refinancing — exercises the real HTTP route, and pins `TZ=UTC` because that is the container's zone and where the date defects surface), `node server/pruebas_solicitudes.js` (correcting a loan request), `node server/pruebas_reparto.js` (the profit-distribution arithmetic — pure, no DB, runs in milliseconds) and `node server/pruebas_reparto_http.js` (the same over the real HTTP route), and `node server/pruebas_revision_base.js` (the panel's "Revisar y Actualizar la Base" button — real HTTP route). None of them clean up rows between sections: the throwaway DB competes with the post-boot jobs (score seed, abono sweep) and a `DELETE` there hangs on `SQLITE_BUSY`. ESLint is installed in the client (no `lint` npm script) — run it with `npx eslint .` from `client/`.
 
 ## Architecture
 
@@ -70,6 +70,8 @@ SQLite3 (Credifuturo-Web/database.sqlite, ~11 MB)
 - **`services/NotificationService.js`** — `createNotification` / `notifyAdmins` / `notifyMany`; writes `Notification` rows consumed by the `/my/notifications*` endpoints, the bell icon in both dashboards, and the loan-approval flow
 - **`services/fileValidator.js`** — magic-byte verification (`verifyFileMagicBytes`) and filename sanitization for `Soporte` uploads, beyond multer's declared MIME type
 - **`services/sessionActivity.js`** — last-seen-at per user id (`touch()` on every `verifyToken` pass); backs the session-duration / "en línea" columns of "Registros de Acceso". In-memory `Map` for hot reads, mirrored to the `SessionActivities` table **throttled to one write per user per 2 min** (unthrottled it would be a DB write on the app's hottest path); `precargarDesdeBase()` refills the map after `listen()`
+- **`services/revisionBase.js`** — what the admin panel's "Revisar y Actualizar la Base" button runs (`POST /validate-db`). See "The review button" under Non-obvious Patterns
+- **`services/scoreSnapshots.js`** — `tomarSnapshots()`, the monthly score-input snapshot; shared by the cron, the post-boot seed and the review button
 - **`services/passwordPolicy.js` / `securityLogger.js`** — temp-password generation and security-event logging (used by the admin auto-seed and reset flow). `logSecurityEvent` fans out to three places: console, `logs/security.log`, and the `SecurityEvents` table — see "Access-log persistence" below
 - **`lib/security-middleware.js`** (at `Credifuturo-Web/lib/`) — `setupSecurity(app)`, the helmet/CORS/logging middleware assembled in `server.js`; `Credifuturo-Web/Dockerfile` builds the single-service Railway container
 
@@ -306,6 +308,15 @@ Anything that writes to the DB at startup must go **after** `listen()` and carry
 
 ## Non-obvious Patterns & Gotchas
 
+### The review button (`DashboardHome` + `POST /validate-db` + `services/revisionBase.js`)
+The button on the admin panel lied twice: first it read "Guardar Cambios en la Base de Datos" and saved nothing, then it read "Revisar" and only counted rows — so pressing it never changed a field, which is what was reported. It now reads "Revisar y Actualizar la Base" and does it.
+- **Almost every figure in this app is computed on read and cannot go stale.** Only three things are *stored* and can drift, and each already had its recalculation — but only at night or as a side effect of saving something else: the loan's `estado` and its copy on every quota (`estadoPrestamo`), schedules with an unpropagated abono, and the month's score snapshot. The button runs those three, now.
+- **It invents no new correction.** Everything it writes is something the system already wrote on its own (`barridoProgramado`, the fully-paid → `Cancelado` rule, `tomarSnapshots`). That is what makes a one-click write to member debt defensible: same lock, same pre-write `.sqlite` copy, same `AbonosAplicados` undo record, same notice to the member — only `origen: 'manual'` and the admin's cédula in `aplicadoPor`, so the history can tell a click from the cron.
+- **What the abono engine refuses, the button refuses too**, and returns it named with its reason as a `pendiente` step. It must never become the way around those guards.
+- **`estadoPrestamo` on a quota is a copy of the loan's `estado`, and the loan wins.** Rows from the time it was a hand-filled select say «Pendiente» (a quota state) on loans that are `Vigente`. `GET /payments/list` hides it by reading the live loan; the Excel backup and the server-side filter read the stored column.
+- **Steps that found nothing are still shown** ("Al día"). An empty modal is indistinguishable from a review that did not run.
+- **The request body is `{}`, not `null`.** axios serializes `null` to `"null"` and `express.json` rejects it with a 400 before the route — caught only in a real browser; the bench now sends the same body the button does.
+
 ### Savings matrix (`SavingsMatrixPage` + `GET /savings/matriz`)
 The control grid for "who has not paid this month". Three conventions it depends on, all easy to break:
 - **Three cell states, not two.** Green where there is a deposit, red only where the month is *past due* without one, neutral for months that have not arrived. Painting December red in August floods the grid with false alarms and makes the real ones invisible — `mesLimite` from the endpoint is what separates the two.
@@ -380,6 +391,7 @@ When querying savings/payments and filtering to active clients only, pass the fi
 - `GET /payments/list?clientId=` — all quota rows for a client (no pagination limit)
 - `GET /disbursed-loans/list` — all disbursed loans (filter client-side by `clientId`)
 - `GET /dashboard-stats` — aggregate KPIs for the admin dashboard
+- `POST /validate-db` — the panel's review button: applies unpropagated abonos, closes fully-paid loans, aligns each quota's `estadoPrestamo` with its loan, refreshes the month's score snapshot, and returns `pasos[]` (each `actualizado` / `al-dia` / `pendiente` / `error`) plus the table counts. Admin only; it writes
 - `POST /my/loan-requests`, `GET /loan-requests`, `PUT /loan-requests/:id/vote`, `PUT /loan-requests/:id/mark-disbursed` — Junta loan-approval workflow: a socio submits a request, the 3 Junta members each vote, and only once all 3 have voted does the aggregate status resolve to approved/rejected (see the comment above `PUT /loan-requests/:id/vote`)
 - `GET/POST/PUT/DELETE /propuestas`, `PUT /propuestas/:id/voto`, `PUT /propuestas/:id/estado` — Buzón de Propuestas (member proposal box + voting); beta-gated
 - `GET /my/notifications`, `GET /my/notifications/unread-count`, `PUT /my/notifications/:id/read`, `PUT /my/notifications/read-all` — in-app notification inbox

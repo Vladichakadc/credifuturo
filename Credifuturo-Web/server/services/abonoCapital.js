@@ -733,8 +733,12 @@ function mensajeParaElSocio(plan) {
  * ejercicios cerrados— no se toca: queda listado para que un administrador lo
  * mire. Cada reajuste guarda su estado anterior, así que cualquiera de ellos se
  * puede deshacer desde la pantalla de pagos.
+ *
+ * `origen` y `aplicadoPor` quedan en el registro de auditoría: la misma pasada la
+ * lanza el cron ('barrido' / 'sistema') y el gerente desde el botón del panel
+ * ('manual' / su cédula), y el historial tiene que distinguir quién fue.
  */
-async function barridoProgramado({ anio = anioBogota() } = {}) {
+async function barridoProgramado({ anio = anioBogota(), origen = 'barrido', aplicadoPor = 'sistema' } = {}) {
     const instancia = `${process.pid}@${new Date().toISOString()}`;
     if (!await tomarCerrojo(instancia)) {
         console.log('[ABONOS] Otro proceso está corriendo el barrido; esta pasada se omite.');
@@ -762,7 +766,7 @@ async function barridoProgramado({ anio = anioBogota() } = {}) {
         const copia = copiaDeSeguridad();
         console.log(`[ABONOS] ${previo.pendientes.length} préstamo(s) con abono sin aplicar. Copia previa: ${copia || 'no disponible'}`);
 
-        const informe = await barrer({ anio, aplicar: true, origen: 'barrido', aplicadoPor: 'sistema' });
+        const informe = await barrer({ anio, aplicar: true, origen, aplicadoPor });
 
         const { createNotification, notifyAdmins } = require('./NotificationService');
         const pesosDe = (n) => `$${Math.round(num(n)).toLocaleString('es-CO')}`;

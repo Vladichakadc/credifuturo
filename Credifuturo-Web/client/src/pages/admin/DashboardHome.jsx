@@ -18,6 +18,7 @@ import YearMultiSelect from '../../components/admin/YearMultiSelect';
 import FinancialChart from '../../components/admin/FinancialChart';
 import RiskReturnIndicators from '../../components/admin/RiskReturnIndicators';
 import { useVisibilidad } from '../../context/VisibilidadContext';
+import { notifyUpdate } from '../../utils/sync';
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
 const StatCard = ({ title, value, description, icon: Icon, color, onClick, customBg, isDark = false, textColor }) => {
@@ -56,9 +57,31 @@ const StatCard = ({ title, value, description, icon: Icon, color, onClick, custo
 };
 
 // ─── Validate DB Modal ────────────────────────────────────────────────────────
+// Cada paso de la revisión llega con su estado. Se muestran todos, también los
+// que no encontraron nada: "revisé y estaba bien" es información, y sin ella un
+// modal vacío no se distingue de una revisión que no corrió.
+const PASO_ESTILO = {
+    actualizado: { etiqueta: 'Actualizado', clase: 'bg-emerald-100 text-emerald-800', Icono: CheckCircle, color: 'text-emerald-500' },
+    'al-dia': { etiqueta: 'Al día', clase: 'bg-gray-100 text-gray-600', Icono: CheckCircle, color: 'text-gray-400' },
+    pendiente: { etiqueta: 'Por decidir', clase: 'bg-amber-100 text-amber-800', Icono: AlertCircle, color: 'text-amber-500' },
+    error: { etiqueta: 'Error', clase: 'bg-red-100 text-red-800', Icono: XCircle, color: 'text-red-500' },
+};
+
 const ValidateModal = ({ result, onClose }) => {
     if (!result) return null;
-    const allOk = result.ok && !result.hasWarnings;
+    const pasos = result.pasos || [];
+    const hayError = !result.ok || pasos.some(p => p.estado === 'error');
+    const hayPendiente = result.pendientes > 0 || result.hasWarnings;
+    const tono = hayError ? 'red' : hayPendiente ? 'amber' : 'emerald';
+    const titulo = hayError ? 'La revisión terminó con errores'
+        : result.correcciones > 0 ? (hayPendiente ? 'Base actualizada, con asuntos por decidir' : 'Base actualizada')
+            : hayPendiente ? 'Sin cambios, con asuntos por decidir'
+                : 'Todo estaba al día';
+    const TONOS = {
+        red: { cabecera: 'bg-red-50 border-b border-red-100', circulo: 'bg-red-100', icono: 'text-red-600' },
+        amber: { cabecera: 'bg-amber-50 border-b border-amber-100', circulo: 'bg-amber-100', icono: 'text-amber-600' },
+        emerald: { cabecera: 'bg-emerald-50 border-b border-emerald-100', circulo: 'bg-emerald-100', icono: 'text-emerald-600' },
+    }[tono];
 
     const statusIcon = (status) => {
         if (status === 'OK') return <CheckCircle className="h-4 w-4 text-emerald-500" />;
@@ -79,18 +102,16 @@ const ValidateModal = ({ result, onClose }) => {
 
     return (
         <div className="fixed inset-0 bg-black/50 z-[80] flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
 
                 {/* Header */}
-                <div className={`p-6 flex items-center justify-between ${allOk ? 'bg-emerald-50 border-b border-emerald-100' : result.hasWarnings ? 'bg-amber-50 border-b border-amber-100' : 'bg-red-50 border-b border-red-100'}`}>
+                <div className={`p-6 flex items-center justify-between shrink-0 ${TONOS.cabecera}`}>
                     <div className="flex items-center gap-3">
-                        <div className={`p-2.5 rounded-full ${allOk ? 'bg-emerald-100' : result.hasWarnings ? 'bg-amber-100' : 'bg-red-100'}`}>
-                            <Database className={`h-6 w-6 ${allOk ? 'text-emerald-600' : result.hasWarnings ? 'text-amber-600' : 'text-red-600'}`} />
+                        <div className={`p-2.5 rounded-full ${TONOS.circulo}`}>
+                            <Database className={`h-6 w-6 ${TONOS.icono}`} />
                         </div>
                         <div>
-                            <h3 className="text-lg font-bold text-brand-primary">
-                                {allOk ? '✅ Base de datos sin problemas' : result.hasWarnings ? '⚠️ Revisión con advertencias' : '❌ La revisión encontró errores'}
-                            </h3>
+                            <h3 className="text-lg font-bold text-brand-primary">{titulo}</h3>
                             <p className="text-xs text-gray-500 mt-0.5">{formattedTime}</p>
                         </div>
                     </div>
@@ -99,9 +120,39 @@ const ValidateModal = ({ result, onClose }) => {
                     </button>
                 </div>
 
-                {/* Table results */}
-                <div className="p-0">
-                    <table className="w-full text-sm">
+                <div className="overflow-y-auto">
+                    {/* Lo que hizo la revisión, paso por paso */}
+                    {pasos.length > 0 && (
+                        <ul className="divide-y divide-gray-100">
+                            {pasos.map((p, i) => {
+                                const e = PASO_ESTILO[p.estado] || PASO_ESTILO.error;
+                                return (
+                                    <li key={i} className="px-6 py-4">
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div className="flex items-start gap-2.5 min-w-0">
+                                                <e.Icono className={`h-4 w-4 mt-0.5 shrink-0 ${e.color}`} />
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-semibold text-gray-900">{p.titulo}</p>
+                                                    <p className="text-xs text-gray-600 mt-0.5">{p.resumen}</p>
+                                                </div>
+                                            </div>
+                                            <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold ${e.clase}`}>{e.etiqueta}</span>
+                                        </div>
+                                        {p.detalle?.length > 0 && (
+                                            <ul className="mt-2 ml-6 space-y-1">
+                                                {p.detalle.map((linea, k) => (
+                                                    <li key={k} className="text-xs text-gray-500 leading-snug">{linea}</li>
+                                                ))}
+                                            </ul>
+                                        )}
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    )}
+
+                    {/* Conteo e integridad de las tablas */}
+                    <table className="w-full text-sm border-t border-gray-200">
                         <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
                             <tr>
                                 <th className="px-6 py-3 text-left">Tabla</th>
@@ -127,24 +178,11 @@ const ValidateModal = ({ result, onClose }) => {
                                 </tr>
                             ))}
                         </tbody>
-                        {result.totals && (
-                            <tfoot className="bg-gray-50 border-t border-gray-200">
-                                <tr>
-                                    <td className="px-6 py-3 font-bold text-gray-800 text-sm">Total General</td>
-                                    <td className="px-6 py-3 text-center font-bold text-gray-800 tabular-nums font-mono">
-                                        {(result.totals.totalClients + result.totals.totalSavings + result.totals.totalLoans + result.totals.totalPayments).toLocaleString()}
-                                    </td>
-                                    <td colSpan={2} className="px-6 py-3 text-xs text-gray-400">
-                                        Todos los datos están almacenados correctamente en el servidor.
-                                    </td>
-                                </tr>
-                            </tfoot>
-                        )}
                     </table>
                 </div>
 
                 {/* Footer */}
-                <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+                <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end shrink-0">
                     <Button onClick={onClose} size="lg">
                         Aceptar
                     </Button>
@@ -619,21 +657,31 @@ const DashboardHome = () => {
     const handleSaveChanges = async () => {
         setSaving(true);
         try {
-            const res = await api.post('/admin/validate-db');
-            setValidateResult(res.data);
+            // Aplica abonos y refresca el score de cada socio: tarda más que una
+            // consulta, y los 15 s por defecto la cortarían a medio camino.
+            // El cuerpo va como {} y no como null: axios serializa null a "null" y
+            // el parser JSON del servidor lo rechaza con un 400 antes de llegar a la ruta.
+            const res = await api.post('/admin/validate-db', {}, { timeout: 120000 });
+            const d = res.data;
+            setValidateResult(d);
             setShowModal(true);
-            if (res.data.ok && !res.data.hasWarnings) {
-                // No se afirma que "todo está guardado": eso no se comprobó, y en
-                // esta aplicación ya lo estaba. Se informa lo que sí se revisó.
-                toast.success('Revisión completa: sin problemas de integridad.');
-            } else if (res.data.hasWarnings) {
-                toast.error('La revisión encontró advertencias. Mira el detalle.');
+            const hayError = !d.ok || (d.pasos || []).some(p => p.estado === 'error');
+            if (hayError) {
+                toast.error('La revisión terminó con errores. Mira el detalle.');
+            } else if (d.correcciones > 0) {
+                toast.success('Base actualizada. Mira el detalle de lo que cambió.');
+            } else if (d.pendientes > 0 || d.hasWarnings) {
+                toast.warning('No había nada que actualizar, pero hay asuntos por decidir.');
             } else {
-                toast.error('La revisión encontró errores. Mira el detalle.');
+                toast.success('Revisión completa: todo estaba al día.');
             }
+            // Las cifras del panel salen de lo que la revisión acaba de escribir.
+            notifyUpdate('data');
+            fetchStats();
+            fetchYearCmp();
         } catch (err) {
             console.error('validate-db error:', err);
-            toast.error('No se pudo conectar con el servidor para revisar la base.');
+            toast.error(err.response?.data?.error || 'No se pudo conectar con el servidor para revisar la base.');
         } finally {
             setSaving(false);
         }
@@ -1083,19 +1131,18 @@ const DashboardHome = () => {
                                 }
                             `}
                         >
-                            {/* Decía "Guardar Cambios en la Base de Datos" y no guarda
-                                nada: POST /validate-db solo cuenta registros y revisa
-                                integridad — cero escrituras. No hacía falta que guardara,
-                                porque en esta aplicación cada cambio se graba al hacerlo
-                                (cada formulario tiene su POST/PUT) y no existe un búfer de
-                                cambios pendientes. Lo que sí hacía era prometer algo que no
-                                cumplía, y encima el aviso de éxito afirmaba "todos los
-                                cambios están guardados" — una frase que el endpoint nunca
-                                comprobó. Un botón que miente sobre lo que hizo es peor que
-                                no tenerlo: quien lo pulsa se queda tranquilo sin motivo. */}
+                            {/* Este botón tuvo dos vidas en falso. Primero decía "Guardar
+                                Cambios en la Base de Datos" y no guardaba nada; después
+                                pasó a decir "Revisar" y solo contaba registros, así que
+                                quien lo pulsaba esperando que los cálculos quedaran al día
+                                veía todo igual. Ahora hace lo que dice: POST /validate-db
+                                aplica los abonos a capital sin propagar, cierra los
+                                préstamos ya pagos, alinea el estado de las cuotas con su
+                                préstamo y refresca la foto del score — y el modal muestra
+                                qué cambió y qué quedó para decidir a mano. */}
                             {saving
-                                ? <><RefreshCw className="h-4 w-4 animate-spin" /> Revisando...</>
-                                : <><Database className="h-4 w-4" /> Revisar la Base de Datos</>
+                                ? <><RefreshCw className="h-4 w-4 animate-spin" /> Revisando y actualizando...</>
+                                : <><Database className="h-4 w-4" /> Revisar y Actualizar la Base</>
                             }
                         </button>
                     )}
