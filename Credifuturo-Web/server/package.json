@@ -7,7 +7,7 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "lint": "eslint .",
-    "test": "node --test tests/abonos.test.js"
+    "test": "node --test tests/abonos.test.js tests/informeAbono.test.js"
   },
   "dependencies": {
     "archiver": "^7.0.1",

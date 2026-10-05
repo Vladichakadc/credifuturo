@@ -498,10 +498,15 @@ sequelize.sync().then(async () => {
         // ── El informe que ya existía antes de automatizar esto ────────────
         // Va después de listen() y con su propio try/catch, como todo lo que
         // escribe en la base al arrancar.
+        //
+        // Los tres pasos van EN FILA y no cada uno por su cuenta: todos leen,
+        // cambian y vuelven a escribir el mismo registro de informes
+        // (`informes.socios`), y sueltos se pisarían la escritura unos a otros.
+        // Cada uno con su propio try/catch: que falle uno no impide los demás.
         (async () => {
+            const informes = require('./services/informeAbono');
             try {
-                const { sembrarInformeGimena } = require('./services/informeAbono');
-                const r = await sembrarInformeGimena();
+                const r = await informes.sembrarInformeGimena();
                 // Dice siempre en qué quedó, no solo cuando siembra: un arranque
                 // mudo no distingue "ya estaba publicado" de "no corrió", y esa
                 // es justo la pregunta que hay que poder contestar desde el log.
@@ -512,6 +517,30 @@ sequelize.sync().then(async () => {
                 }
             } catch (e) {
                 console.warn('[INFORMES] No se pudo publicar el informe previo:', e.message);
+            }
+
+            // ── Lo que se escribió con el acumulado del crédito ────────────
+            // Un segundo abono sobre el mismo préstamo quedó anotado —en el
+            // registro, en la nota de la cuota, en el aviso y en el informe del
+            // socio— con la suma de los dos. El cronograma estaba bien; lo que
+            // se decía, no. Ver services/correccionAbonos.js.
+            try {
+                const { corregirExcedentesAcumulados, bitacora } = require('./services/correccionAbonos');
+                for (const linea of bitacora(await corregirExcedentesAcumulados())) console.log(`[ABONOS] ${linea}`);
+            } catch (e) {
+                console.warn('[ABONOS] No se pudo revisar los reajustes anotados con el acumulado:', e.message);
+            }
+
+            // ── Cada informe, a nombre de quien debe el crédito ────────────
+            // Después de lo anterior, para que el aviso salga ya con el título
+            // corregido.
+            try {
+                for (const d of await informes.repararDuenosDeInformes()) {
+                    console.log(`[INFORMES] ${d.nombre} estaba a nombre de la cédula ${d.antes}, que no es la de quien debe el crédito; `
+                        + `ahora es de ${d.ahora}.${d.avisado ? ' Se le avisó por la campana.' : ''}`);
+                }
+            } catch (e) {
+                console.warn('[INFORMES] No se pudo revisar a nombre de quién está cada informe:', e.message);
             }
         })();
 

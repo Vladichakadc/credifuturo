@@ -3992,7 +3992,11 @@ async function aplicarAbonoExtraordinario(payment, politicaPedida, contexto = {}
 
     return {
         aplicado: true,
+        // Lo que se abonó con ESTE pago. Lo que el socio lleva abonado en todo
+        // el crédito viaja aparte: mezclarlos fue lo que hizo que un abono de
+        // $288.887 se anunciara como de $510.220.
         excedente: plan.resumen.excedente,
+        excedenteAcumulado: plan.resumen.excedenteAcumulado,
         politica: plan.politica,
         cuotasAntes: plan.resumen.cuotasAntes,
         cuotasDespues: plan.resumen.cuotasDespues,
@@ -4383,8 +4387,27 @@ router.post('/payments/abonos/:id/revertir', async (req, res) => {
 router.get('/payments/abonos/historial', async (req, res) => {
     try {
         const AbonoAplicado = require('../models/AbonoAplicado');
+        const { cifrasDeRegistro } = require('../services/abonoCapital');
         const filas = await AbonoAplicado.findAll({ order: [['createdAt', 'DESC']], limit: 200 });
-        res.json({ ok: true, data: filas.map((f) => ({ ...f.toJSON(), resumen: JSON.parse(f.resumen || 'null'), estadoAnterior: undefined })) });
+        // `excedente` es lo que aplicó ESE reajuste, que es lo que la lista
+        // suma. Los registros antiguos guardaban el acumulado del crédito y el
+        // total salía con el primer abono contado dos veces; el arranque los
+        // corrige, y esto hace que la lista diga lo mismo aunque no haya corrido.
+        const porPrestamo = new Map();
+        for (const f of filas) porPrestamo.set(f.idVm, [...(porPrestamo.get(f.idVm) || []), f]);
+        res.json({
+            ok: true,
+            data: filas.map((f) => {
+                const cifras = cifrasDeRegistro(f, porPrestamo.get(f.idVm));
+                return {
+                    ...f.toJSON(),
+                    excedente: cifras.propio,
+                    excedenteAcumulado: cifras.acumulado,
+                    resumen: JSON.parse(f.resumen || 'null'),
+                    estadoAnterior: undefined,
+                };
+            }),
+        });
     } catch (err) {
         console.error('Error al listar el historial de abonos:', err);
         res.status(500).json({ error: 'No se pudo leer el historial.' });
@@ -4588,8 +4611,8 @@ router.put('/payments/:id', async (req, res) => {
                         type: 'abono_capital',
                         title: 'Se corrigió tu abono a capital',
                         message: `Se corrigió el pago de tu cuota${payment.externalId ? ` ${payment.externalId}` : ''} del crédito ${payment.idVm}. `
-                            + `Con el valor corregido quedan ${monto(abono.excedente)} abonados a capital, `
-                            + `que te ahorran ${monto(abono.ahorroInteres)} en intereses.`
+                            + `Con el valor corregido, lo que pagaste de más en esa cuota son ${monto(abono.excedente)}: `
+                            + `abonaron a capital y te ahorran ${monto(abono.ahorroInteres)} en intereses.`
                             + (informesRetirados.length > 0 ? ' El informe anterior ya no está vigente.' : ''),
                         link: '/dashboard/mis-creditos?tab=cuotas',
                     });

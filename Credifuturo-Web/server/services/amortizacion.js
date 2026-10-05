@@ -403,12 +403,44 @@ function planificarReajuste({ cuotas, capitalPactado = null, politica = REDUCIR_
     const interesDespues = vigentes.reduce((s, f) => s + num(f.valorInteresesAmortizados), 0);
     const interesPendienteDespues = pendientesDespues.reduce((s, f) => s + num(f.valorInteresesAmortizados), 0);
 
+    // ── Qué aplica ESTE reajuste ─────────────────────────────────────────
+    //
+    // `excedenteTotal` suma todo lo que el socio ha pagado de más en la vida
+    // del crédito, incluidos los abonos que ya se aplicaron antes. Se usaba
+    // como "el excedente" del reajuste, y el segundo abono de un préstamo salía
+    // con el acumulado: a una socia que pagó $288.887 sobre su cuota 2 se le
+    // informó un abono de $510.220 —ese más el de la cuota 1—, y la cuenta de
+    // su informe ("$510.220 + $22.244 = $311.131") no cerraba, porque todas las
+    // demás cifras sí eran solo las de ese pago.
+    //
+    // Lo que el reajuste aplica se lee donde ocurre: en cuánto baja el saldo
+    // con el que arrancan las cuotas pendientes. De esa rebaja, una parte puede
+    // ser interés ya cobrado que se reintegra como capital, y si el pago supera
+    // la deuda el resto es un sobrante por devolver; lo demás es el excedente.
+    // Leerlo del saldo, y no de sumar excesos cuota por cuota, hace que también
+    // cuadre cuando se le sube el valor a un pago que ya tenía su abono
+    // aplicado: ahí lo nuevo es solo la diferencia.
+    //
+    // Se busca por posición: `nuevas` lleva una fila por cada una de `filas`,
+    // en el mismo orden.
+    const rehecha = nuevas[filas.indexOf(pendientes[0])];
+    const capitalAplicado = redondear(num(pendientes[0].saldoInicial) - num(rehecha.saldoInicial));
+    const excedenteAplicado = Math.max(0, redondear(capitalAplicado - interesCobradoDeMas + sobrante));
+
     return {
         ok: true,
         filas: nuevas,
         cancelaElCredito: pendientesDespues.length === 0,
         resumen: {
-            excedente: redondear(excedenteTotal),
+            // El de ESTE reajuste. Es lo que se le dice al socio que abonó y lo
+            // que queda en el registro de auditoría.
+            excedente: excedenteAplicado,
+            // Todo lo que lleva pagado de más en el crédito, este incluido.
+            // Sirve de contexto ("llevas abonado…"), nunca como el del pago.
+            excedenteAcumulado: redondear(excedenteTotal),
+            // Cuánto baja el saldo de las cuotas pendientes:
+            // excedente + interesReintegrado − sobrante.
+            capitalAplicado,
             politica,
             cuotasAntes: pendientes.length,
             cuotasDespues: pendientesDespues.length,

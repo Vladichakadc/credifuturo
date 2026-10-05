@@ -43,6 +43,7 @@ const {
 const COLUMNAS = ['saldoInicial', 'valorInteresesAmortizados', 'valorCuotaVariable', 'saldoFinal'];
 
 const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
+const redondear = (n) => parseFloat(num(n).toFixed(2));
 const pesos = (n) => `$${Math.round(num(n)).toLocaleString('es-CO')}`;
 
 // Por debajo de este importe el abono se aplica igual —la deuda tiene que
@@ -54,6 +55,50 @@ const UMBRAL_INFORME = 20000;
 // La nota que `aplicarPlan` antepone a las observaciones de la cuota abonada.
 // Se necesita reconocerla para retirarla cuando el reajuste se revierte.
 const NOTA_ABONO = /^Abono extraordinario de \$[\d.]+ a capital · reducción de (?:cuota|plazo)\.\s*/;
+
+/**
+ * La nota de una cuota abonada. Lleva lo que se pagó de más EN ESA CUOTA, no lo
+ * que aplicó el reajuste entero: está escrita sobre la cuota y se lee junto a
+ * su valor y a lo pagado, así que tiene que ser la resta de esos dos.
+ */
+const notaDeAbono = (importe, politica) => `Abono extraordinario de ${pesos(importe)} a capital · `
+    + `${politica === REDUCIR_CUOTA ? 'reducción de cuota' : 'reducción de plazo'}.`;
+
+/** El resumen que guardó un reajuste, o un objeto vacío si no se puede leer. */
+function resumenDe(registro) {
+    try { return JSON.parse((registro && registro.resumen) || '{}') || {}; } catch { return {}; }
+}
+
+/**
+ * Lo que aplicó un reajuste y lo que el préstamo llevaba abonado al aplicarlo.
+ *
+ * Cada reajuste guarda en `excedente` lo que ÉL aplicó y en
+ * `resumen.excedenteAcumulado` el total del crédito. Los anteriores a octubre de
+ * 2026 guardaban el acumulado en `excedente` y no llevan esa marca; su parte se
+ * obtiene restando lo que ya llevaba aplicado el reajuste que seguía vigente
+ * cuando se crearon. `corregirExcedentesAcumulados` los reescribe al arrancar;
+ * esto existe para que la lectura sea la misma aunque esa pasada no haya corrido.
+ *
+ * `delPrestamo` son todos los reajustes del mismo préstamo, en cualquier estado.
+ */
+function cifrasDeRegistro(registro, delPrestamo = []) {
+    const propioGuardado = num(registro.excedente);
+    if (registro.politica === 'pago-adelantado') return { propio: propioGuardado, acumulado: propioGuardado, legado: false };
+
+    const resumen = resumenDe(registro);
+    if (resumen.excedenteAcumulado !== undefined && resumen.excedenteAcumulado !== null) {
+        return { propio: propioGuardado, acumulado: num(resumen.excedenteAcumulado), legado: false };
+    }
+
+    const creado = new Date(registro.createdAt).getTime();
+    const previo = delPrestamo
+        .filter((r) => r.id < registro.id && r.politica !== 'pago-adelantado'
+            && (!r.revertidoEn || new Date(r.revertidoEn).getTime() > creado))
+        .sort((a, b) => b.id - a.id)[0];
+    const yaAplicado = previo ? cifrasDeRegistro(previo, delPrestamo).acumulado : 0;
+    const propio = redondear(propioGuardado - yaAplicado);
+    return { propio: propio > 0 ? propio : propioGuardado, acumulado: propioGuardado, legado: true };
+}
 
 /**
  * El año en Colombia, no el del reloj del servidor.
@@ -237,7 +282,17 @@ async function planificarPrestamo({ idVm, politica, anio = anioBogota(), cuotas 
         origenPolitica: elegida.origen,
         cuotaAbonada: primerAbono.cuota.externalId || primerAbono.cuota.itemQuantity,
         loanPaymentId: primerAbono.cuota.id,
-        abonos: sinAplicar.map((x) => ({ cuota: x.cuota.externalId || x.cuota.itemQuantity, excedente: x.excedente })),
+        // Cada cuota pagada por encima de su valor que este reajuste recoge, con
+        // lo que se pagó y lo que valía: es lo que el socio reconoce ("pagué
+        // $1.035.000 y la cuota era de $746.113") y lo que va en su informe.
+        abonos: sinAplicar.map((x) => ({
+            id: x.cuota.id,
+            cuota: x.cuota.externalId || x.cuota.itemQuantity,
+            numero: x.cuota.itemQuantity,
+            pagado: num(x.cuota.valorCuotaPago),
+            valorCuota: num(x.cuota.valorCuotaVariable),
+            excedente: x.excedente,
+        })),
         resumen: plan.resumen,
         cancelaElCredito: plan.cancelaElCredito,
         cambios,
@@ -262,9 +317,6 @@ async function aplicarPlan(plan, { origen = 'barrido', aplicadoPor = 'sistema' }
 
     const t = await sequelize.transaction({ type: 'IMMEDIATE' });
     try {
-        const nota = `Abono extraordinario de ${pesos(plan.resumen.excedente)} a capital · `
-            + `${plan.politica === REDUCIR_CUOTA ? 'reducción de cuota' : 'reducción de plazo'}.`;
-
         for (const cambio of plan.cambios) {
             const destino = await LoanPayment.findByPk(cambio.id, { transaction: t });
             if (!destino) continue;
@@ -281,15 +333,25 @@ async function aplicarPlan(plan, { origen = 'barrido', aplicadoPor = 'sistema' }
             await destino.update(datos, { transaction: t });
         }
 
-        // La nota queda en la cuota que recibió el abono, antepuesta a lo que
+        // La nota queda en cada cuota que traía un abono, antepuesta a lo que
         // hubiera escrito el administrador. Es informativa: la marca de que el
-        // abono está aplicado son las cifras, no este texto.
-        const abonada = await LoanPayment.findByPk(plan.loanPaymentId, { transaction: t });
-        if (abonada && !String(abonada.observaciones || '').includes('Abono extraordinario')) {
-            const previas = String(abonada.observaciones || '').trim();
-            await abonada.update({ observaciones: previas ? `${nota} ${previas}` : nota }, { transaction: t });
+        // abono está aplicado son las cifras, no este texto. Si la cuota ya
+        // tenía una —se le subió el valor a un pago ya abonado— se reemplaza:
+        // la anterior hablaría de un importe que ya no es el de esa cuota.
+        const abonadas = (plan.abonos && plan.abonos.length > 0)
+            ? plan.abonos
+            : [{ id: plan.loanPaymentId, excedente: plan.resumen.excedente }];
+        for (const a of abonadas) {
+            const cuota = a.id ? await LoanPayment.findByPk(a.id, { transaction: t }) : null;
+            if (!cuota) continue;
+            const nota = notaDeAbono(a.excedente, plan.politica);
+            const previas = sinNotaDeAbono(cuota.observaciones);
+            await cuota.update({ observaciones: previas ? `${nota} ${previas}` : nota }, { transaction: t });
         }
 
+        // Con el resumen viaja a qué cuotas correspondía el excedente: al
+        // revertir hay que quitarles la nota a todas, no solo a la primera.
+        const resumenGuardado = { ...plan.resumen, abonos: plan.abonos || [] };
         const registro = await AbonoAplicado.create({
             idVm: plan.idVm,
             clientId: plan.clientId,
@@ -299,7 +361,7 @@ async function aplicarPlan(plan, { origen = 'barrido', aplicadoPor = 'sistema' }
             origen,
             aplicadoPor: String(aplicadoPor || 'sistema'),
             estadoAnterior: JSON.stringify(plan.cambios.map((c) => ({ id: c.id, antes: c.antes, estado: c.estado, cancelada: c.cancelar }))),
-            resumen: JSON.stringify(plan.resumen),
+            resumen: JSON.stringify(resumenGuardado),
         }, { transaction: t });
 
         await t.commit();
@@ -315,10 +377,7 @@ async function aplicarPlan(plan, { origen = 'barrido', aplicadoPor = 'sistema' }
         // a mes. Con reducción de plazo lo que cambia es cuándo termina el
         // crédito, y eso pide otro documento, no este.
         let informe = null;
-        // Lo que se aplica en ESTA operación, no el acumulado del préstamo:
-        // `resumen.excedente` suma también los abonos anteriores.
-        const excedenteNuevo = (plan.abonos || []).reduce((s, a) => s + num(a.excedente), 0);
-        if (plan.politica === REDUCIR_CUOTA && excedenteNuevo >= UMBRAL_INFORME) {
+        if (plan.politica === REDUCIR_CUOTA && num(plan.resumen.excedente) >= UMBRAL_INFORME) {
             try {
                 const Client = require('../models/Client');
                 const { publicarInforme } = require('./informeAbono');
@@ -326,7 +385,7 @@ async function aplicarPlan(plan, { origen = 'barrido', aplicadoPor = 'sistema' }
                 informe = await publicarInforme({ plan, socio, idVm: plan.idVm });
                 // El reajuste anota qué informe publicó: si un día se
                 // revierte, hay que saber cuál retirar sin adivinarlo.
-                if (informe) await registro.update({ resumen: JSON.stringify({ ...plan.resumen, informe }) });
+                if (informe) await registro.update({ resumen: JSON.stringify({ ...resumenGuardado, informe }) });
             } catch (e) {
                 console.warn('[INFORME] No se pudo publicar el informe del abono:', e.message);
             }
@@ -487,11 +546,16 @@ async function revertir(registroId, { revertidoPor = 'sistema', transaction: ext
         // pero deja de decir que el abono redujo la cuota o el plazo. La lista
         // de pagos lee esa nota para contar qué se hizo con el excedente, y sin
         // retirarla seguía mostrando "reduce la cuota" sobre un reajuste deshecho.
-        if (registro.politica !== 'pago-adelantado' && registro.loanPaymentId) {
-            const abonada = await LoanPayment.findByPk(registro.loanPaymentId, { transaction: t });
-            const obs = String((abonada && abonada.observaciones) || '');
-            if (abonada && NOTA_ABONO.test(obs)) {
-                await abonada.update({ observaciones: sinNotaDeAbono(obs) }, { transaction: t });
+        if (registro.politica !== 'pago-adelantado') {
+            // Todas las cuotas que traían el excedente, no solo la primera: un
+            // mismo reajuste puede recoger el de varias.
+            const abonadas = new Set([registro.loanPaymentId, ...(resumenDe(registro).abonos || []).map((a) => a.id)].filter(Boolean));
+            for (const id of abonadas) {
+                const abonada = await LoanPayment.findByPk(id, { transaction: t });
+                const obs = String((abonada && abonada.observaciones) || '');
+                if (abonada && NOTA_ABONO.test(obs)) {
+                    await abonada.update({ observaciones: sinNotaDeAbono(obs) }, { transaction: t });
+                }
             }
         }
         await registro.update({ revertidoEn: new Date(), revertidoPor: String(revertidoPor) }, { transaction: t });
@@ -505,24 +569,18 @@ async function revertir(registroId, { revertidoPor = 'sistema', transaction: ext
 }
 
 /**
- * Lo que este reajuste aplicó por su cuenta.
+ * Lo que este reajuste aplicó por su cuenta, y si quedan otros en pie.
  *
- * `excedente` guarda el acumulado del préstamo —el plan se rehace desde todos
- * los pagos reales—, así que el segundo abono de un crédito lleva dentro el
- * primero. Decirle al socio "se revirtió tu abono de $510.220" cuando lo que se
- * deshizo fueron $288.887 y los otros $221.333 siguen aplicados sería avisarle
- * de algo que no pasó.
+ * Decirle al socio "se revirtió tu abono de $510.220" cuando lo que se deshizo
+ * fueron $288.887 y los otros $221.333 siguen aplicados sería avisarle de algo
+ * que no pasó. La cifra sale de `cifrasDeRegistro`, que entiende también los
+ * reajustes antiguos que guardaban el acumulado.
  */
 async function excedentePropio(registro) {
-    const previo = await AbonoAplicado.findOne({
-        where: {
-            idVm: registro.idVm, revertidoEn: null,
-            politica: { [Op.ne]: 'pago-adelantado' }, id: { [Op.lt]: registro.id },
-        },
-        order: [['id', 'DESC']],
-    });
-    const propio = num(registro.excedente) - (previo ? num(previo.excedente) : 0);
-    return { importe: propio > 0 ? propio : num(registro.excedente), quedanAnteriores: Boolean(previo) };
+    const delPrestamo = await AbonoAplicado.findAll({ where: { idVm: registro.idVm } });
+    const { propio, acumulado } = cifrasDeRegistro(registro, delPrestamo);
+    const quedanAnteriores = delPrestamo.some((r) => r.id < registro.id && !r.revertidoEn && r.politica !== 'pago-adelantado');
+    return { importe: propio, acumulado, quedanAnteriores };
 }
 
 /**
@@ -581,10 +639,9 @@ async function despuesDeRevertir(registroId, { notificar = true, pagoIntacto = t
         if (!registro || !registro.revertidoEn) return hecho;
         if (registro.politica !== 'pago-adelantado') {
             const { retirarInformesDeAbono } = require('./informeAbono');
-            let resumen = {};
-            try { resumen = JSON.parse(registro.resumen || '{}') || {}; } catch { /* resumen ilegible: se busca por cifras */ }
+            const { importe, acumulado } = await excedentePropio(registro);
             hecho.informesRetirados = await retirarInformesDeAbono({
-                idVm: registro.idVm, excedente: registro.excedente, nombre: resumen.informe || null,
+                idVm: registro.idVm, excedente: importe, acumulado, nombre: resumenDe(registro).informe || null,
             });
         }
     } catch (err) {
@@ -813,6 +870,10 @@ module.exports = {
     despuesDeRevertir,
     avisarReversion,
     sinNotaDeAbono,
+    notaDeAbono,
+    resumenDe,
+    cifrasDeRegistro,
+    NOTA_ABONO,
     COLUMNAS,
     barrer,
     barridoProgramado,

@@ -387,11 +387,15 @@ async function main() {
         await pagar(idVm, 1, 221333.33);
         await pagar(idVm, 2, 288886.55);
         const HS = await entrarComo(socio);
-        comprobar('antes de revertir tiene informe vigente', (await informesDe(HS, idVm)).length === 1);
+        // Dos abonos el mismo día son dos informes: el segundo no pisa al primero.
+        const dos = await informesDe(HS, idVm);
+        comprobar('antes de revertir tiene un informe por cada abono', dos.length === 2, JSON.stringify(dos.map((i) => i.name)));
         await guardar((await leer(idVm))[1], { estado: 'Pendiente', revertirAbono: true });
         const aviso = await avisos(socio.id, REVERTIDO);
         comprobar('el aviso da el importe del segundo abono', /\$288\.887/.test(aviso[0]?.message || ''), aviso[0]?.message);
         comprobar('y aclara que los anteriores siguen aplicados', /anteriores siguen aplicados/.test(aviso[0]?.message || ''));
+        const queda = await informesDe(HS, idVm);
+        comprobar('solo se retira el informe del abono revertido', queda.length === 1 && /cuota 1$/.test(queda[0].titulo || ''), JSON.stringify(queda.map((i) => i.titulo)));
     }
 
     console.log('\n──────────────────────────────────────────────');

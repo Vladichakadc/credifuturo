@@ -120,6 +120,73 @@ test('un segundo abono, después de aplicar el primero en una cuota intermedia, 
     assert.equal(abonosSinAplicar(filas).length, 0);
 });
 
+// ── Qué aplica cada reajuste ────────────────────────────────────────────────
+//
+// Caso real (SOL30, octubre de 2026): $8.000.000 a 12 cuotas al 1,4%. La socia
+// pagó $1.000.000 en la cuota 1 ($221.333 de más) y, ya aplicado ese abono,
+// $1.035.000 en la cuota 2, que valía $746.113,45 ($288.887 de más). El sistema
+// le informó un abono de $510.220: la suma de los dos.
+
+/** Lo que baja el total de las cuotas pendientes entre el cronograma guardado y el plan. */
+function bajaPendiente(filas, plan) {
+    return filas.reduce((s, f) => {
+        if (f.estado !== 'Pendiente') return s;
+        return s + (f.valorCuotaVariable - plan.filas.find((n) => n.id === f.id).valorCuotaVariable);
+    }, 0);
+}
+
+test('el segundo abono informa SU excedente, no el acumulado del crédito', () => {
+    const filas = cronograma({ principal: 8000000, cuotas: 12, tasa: 0.014, primerMes: 8 });
+    pagarPorFormulario(filas, 1, 1000000);
+    const primero = planificarReajuste({ cuotas: filas, politica: REDUCIR_CUOTA });
+    assert.equal(primero.resumen.excedente, 221333.33);
+    assert.equal(primero.resumen.excedenteAcumulado, 221333.33);
+    aplicar(filas, primero);
+    assert.equal(filas[1].valorCuotaVariable, 746113.45);
+
+    pagarPorFormulario(filas, 2, 1035000);
+    const segundo = planificarReajuste({ cuotas: filas, politica: REDUCIR_CUOTA });
+    assert.equal(segundo.ok, true, segundo.motivo);
+    assert.equal(segundo.resumen.excedente, 288886.55, 'lo que pagó de más en la cuota 2');
+    assert.equal(segundo.resumen.excedenteAcumulado, 510219.88, 'lo que lleva abonado en el crédito');
+    assert.equal(segundo.resumen.capitalAplicado, 288886.55);
+    assert.equal(segundo.resumen.ahorroInteres, 22244.25);
+    // La cuenta que el informe le enseña a la socia tiene que cerrar.
+    const baja = bajaPendiente(filas, segundo);
+    assert.ok(Math.abs(baja - (segundo.resumen.excedente + segundo.resumen.ahorroInteres)) < 0.05,
+        `lo pendiente baja ${baja}`);
+});
+
+test('con cuotas pagadas después del abono, el excedente sigue siendo lo pagado de más', () => {
+    // El abono quedó sin aplicar (no pasó por el formulario) y la socia pagó
+    // después dos cuotas por su valor. Al aplicarlo, el interés que se le cobró
+    // de más en esas dos se le reconoce como capital: el saldo baja MÁS que el
+    // excedente, y esa diferencia no puede presentarse como dinero que pagó.
+    const filas = cronograma({ principal: 8000000, cuotas: 12, tasa: 0.014 });
+    filas[0].estado = 'Pago';
+    filas[0].valorCuotaPago = 1000000;
+    for (const n of [2, 3]) { filas[n - 1].estado = 'Pago'; filas[n - 1].valorCuotaPago = filas[n - 1].valorCuotaVariable; }
+
+    const plan = planificarReajuste({ cuotas: filas, politica: REDUCIR_CUOTA });
+    assert.equal(plan.ok, true, plan.motivo);
+    assert.ok(Math.abs(plan.resumen.excedente - 221333.33) < 0.05, `excedente ${plan.resumen.excedente}`);
+    assert.ok(plan.resumen.interesReintegrado > 6000, `reintegrado ${plan.resumen.interesReintegrado}`);
+    assert.ok(Math.abs(plan.resumen.capitalAplicado - (plan.resumen.excedente + plan.resumen.interesReintegrado)) < 0.05);
+    const baja = bajaPendiente(filas, plan);
+    assert.ok(Math.abs(baja - (plan.resumen.capitalAplicado + plan.resumen.ahorroInteres)) < 0.05, `lo pendiente baja ${baja}`);
+});
+
+test('un pago que supera toda la deuda: el excedente es lo pagado de más y el resto es sobrante', () => {
+    const filas = cronograma({ principal: 1200000, cuotas: 12, tasa: 0.014 });
+    pagarPorFormulario(filas, 1, filas[0].valorCuotaVariable + 1300000);
+    const plan = planificarReajuste({ cuotas: filas, politica: REDUCIR_CUOTA });
+    assert.equal(plan.ok, true, plan.motivo);
+    assert.equal(plan.cancelaElCredito, true);
+    assert.equal(plan.resumen.excedente, 1300000);
+    assert.equal(plan.resumen.sobrante, 200000);
+    assert.equal(plan.resumen.capitalAplicado, 1100000); // lo que quedaba de capital
+});
+
 test('un pago registrado tarde no desordena el cronograma', () => {
     const filas = cronograma({ principal: 7000000, cuotas: 12, tasa: 0.016, primerMes: 10 });
     // La cuota 1 vencía el 10 de octubre; se registra el 21 de noviembre, con
