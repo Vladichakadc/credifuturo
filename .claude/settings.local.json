@@ -26,7 +26,12 @@
       "Bash(AUD_LOAN=SOL36 node harness.js P_FORM_CUOTA)",
       "Bash(AUD_LOAN=SOL27 node harness.js P_FORM_CUOTA)",
       "Bash(git log *)",
-      "Read(//c/Users/vladi/.claude/projects/c--Credifuturo/memory/**)"
+      "Read(//c/Users/vladi/.claude/projects/c--Credifuturo/memory/**)",
+      "Bash(grep -n \"router\\\\.\\\\\\(get\\\\|post\\\\|put\\\\\\)\\('/\\\\\\(reparto\\\\|distribucion\\\\|utilidades\\\\|ganancia\\\\|retorno\\\\\\)[^']*'\" routes/admin.js)",
+      "Bash(node \"C:/Users/vladi/AppData/Local/Temp/claude/c--Credifuturo/b737156a-5c3c-4e7d-bdad-f3982492e513/scratchpad/audit2.js\")",
+      "Bash(sed -i 's/SELECT id, idVm, excedente, politica, origen, aplicadoPor, substr\\(createdAt,1,10\\) fecha, revertidoEn FROM AbonosAplicados/SELECT id, id_vm idVm, excedente, politica, origen, aplicado_por aplicadoPor, substr\\(createdAt,1,10\\) fecha, revertido_en revertidoEn FROM AbonosAplicados/' audit2.js)",
+      "Bash(node audit2.js)",
+      "Bash(node sched.js C:/Credifuturo/Credifuturo-Web/database.sqlite SOL18)"
     ]
   }
 }
